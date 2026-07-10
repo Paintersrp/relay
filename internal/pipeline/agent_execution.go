@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -76,16 +75,20 @@ func RenderAgentCommandTemplate(template string, ctx AgentCommandContext) (strin
 
 // AgentCommandRunResult holds the result of running a local agent command.
 type AgentCommandRunResult struct {
-	Command       string    `json:"command"`
-	WorkDir       string    `json:"work_dir"`
-	ExitCode      int       `json:"exit_code"`
-	Stdout        string    `json:"stdout"`
-	Stderr        string    `json:"stderr"`
-	TimedOut      bool      `json:"timed_out"`
-	Error         string    `json:"error,omitempty"`
-	StartedAt     time.Time `json:"started_at"`
-	FinishedAt    time.Time `json:"finished_at"`
-	LaunchStarted bool      `json:"launch_started"`
+	Command         string    `json:"command"`
+	WorkDir         string    `json:"work_dir"`
+	ExitCode        int       `json:"exit_code"`
+	Stdout          string    `json:"stdout"`
+	Stderr          string    `json:"stderr"`
+	StdoutTruncated bool      `json:"stdout_truncated"`
+	StderrTruncated bool      `json:"stderr_truncated"`
+	StdoutBytes     int64     `json:"stdout_bytes"`
+	StderrBytes     int64     `json:"stderr_bytes"`
+	TimedOut        bool      `json:"timed_out"`
+	Error           string    `json:"error,omitempty"`
+	StartedAt       time.Time `json:"started_at"`
+	FinishedAt      time.Time `json:"finished_at"`
+	LaunchStarted   bool      `json:"launch_started"`
 
 	LaunchDisposition AgentLaunchDisposition `json:"launch_disposition"`
 	ProcessIdentity   ProcessIdentity        `json:"process_identity,omitempty"`
@@ -129,6 +132,7 @@ type AgentCommandStreamCallbacks struct {
 	OnWaitReturned        func(result AgentCommandWaitResult)
 	OnStdout              func(chunk []byte)
 	OnStderr              func(chunk []byte)
+	CaptureLimitBytes     int
 }
 
 const DefaultAgentCommandTimeout = 30 * time.Minute
@@ -437,8 +441,8 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		}
 	}
 
-	var stdoutBuf bytes.Buffer
-	var stderrBuf bytes.Buffer
+	stdoutBuf := newBoundedCapture(callbacks.CaptureLimitBytes)
+	stderrBuf := newBoundedCapture(callbacks.CaptureLimitBytes)
 
 	type streamReadResult struct {
 		err error
@@ -447,23 +451,23 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	streamResults := make(chan streamReadResult, 2)
 	var wg sync.WaitGroup
 
-	readStream := func(pipe io.Reader, buf *bytes.Buffer, callback func([]byte), done func(error)) {
+	readStream := func(pipe io.Reader, capture *boundedCapture, callback func([]byte), done func(error)) {
 		defer wg.Done()
-
-		reader := bufio.NewReader(pipe)
+		buffer := make([]byte, 32*1024)
 		for {
-			chunk, err := reader.ReadBytes('\n')
-			if len(chunk) > 0 {
-				buf.Write(chunk)
+			count, err := pipe.Read(buffer)
+			if count > 0 {
+				chunk := append([]byte(nil), buffer[:count]...)
+				_, _ = capture.Write(chunk)
 				if callback != nil {
-					callback(append([]byte(nil), chunk...))
+					callback(chunk)
 				}
 			}
 			if err != nil {
 				if done != nil {
 					done(err)
 				}
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					streamResults <- streamReadResult{}
 				} else {
 					streamResults <- streamReadResult{err: err}
@@ -478,13 +482,13 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		if callbacks.OnStdoutReaderStarted != nil {
 			callbacks.OnStdoutReaderStarted()
 		}
-		readStream(stdoutPipe, &stdoutBuf, callbacks.OnStdout, callbacks.OnStdoutReaderDone)
+		readStream(stdoutPipe, stdoutBuf, callbacks.OnStdout, callbacks.OnStdoutReaderDone)
 	}()
 	go func() {
 		if callbacks.OnStderrReaderStarted != nil {
 			callbacks.OnStderrReaderStarted()
 		}
-		readStream(stderrPipe, &stderrBuf, callbacks.OnStderr, callbacks.OnStderrReaderDone)
+		readStream(stderrPipe, stderrBuf, callbacks.OnStderr, callbacks.OnStderrReaderDone)
 	}()
 
 	if callbacks.OnWaitStarted != nil {
@@ -580,6 +584,10 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			ExitCode:            -2,
 			Stdout:              stdoutBuf.String(),
 			Stderr:              stderrBuf.String(),
+			StdoutTruncated:     stdoutBuf.Truncated(),
+			StderrTruncated:     stderrBuf.Truncated(),
+			StdoutBytes:         stdoutBuf.TotalBytes(),
+			StderrBytes:         stderrBuf.TotalBytes(),
 			TimedOut:            true,
 			Error:               errText,
 			StartedAt:           start,
@@ -630,6 +638,10 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		ExitCode:            exitCode,
 		Stdout:              stdoutBuf.String(),
 		Stderr:              stderrBuf.String(),
+		StdoutTruncated:     stdoutBuf.Truncated(),
+		StderrTruncated:     stderrBuf.Truncated(),
+		StdoutBytes:         stdoutBuf.TotalBytes(),
+		StderrBytes:         stderrBuf.TotalBytes(),
 		TimedOut:            false,
 		Error:               errMsg,
 		StartedAt:           start,

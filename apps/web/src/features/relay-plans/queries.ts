@@ -1,64 +1,44 @@
 import { queryOptions } from "@tanstack/react-query";
+import {
+  getWorkflowPlan,
+  getWorkflowPlanPass,
+  listWorkflowPlans,
+} from "./api";
+import type { WorkflowPlanListFilters } from "./types";
 
-import { getPlan, getPlanPass, getPlans, getNextPassWork, getNextAuditWork } from "./api";
-import type { PlanListFilters, NextAuditWorkFilters } from "./types";
-
-export const relayPlanKeys = {
-  all: ["relay-plans"] as const,
-  list: (filters: PlanListFilters = {}) =>
-    [...relayPlanKeys.all, "list", filters] as const,
-  detail: (planId: string) =>
-    [...relayPlanKeys.all, "detail", planId] as const,
+export const workflowPlanKeys = {
+  all: ["workflow-plans"] as const,
+  lists: () => [...workflowPlanKeys.all, "list"] as const,
+  list: (filters: WorkflowPlanListFilters = {}) =>
+    [...workflowPlanKeys.lists(), filters] as const,
+  details: () => [...workflowPlanKeys.all, "detail"] as const,
+  detail: (planId: string) => [...workflowPlanKeys.details(), planId] as const,
   pass: (planId: string, passId: string) =>
-    [...relayPlanKeys.all, "detail", planId, "pass", passId] as const,
-  nextPassWork: (projectId: string, planId: string) =>
-    [...relayPlanKeys.all, "detail", planId, "next-pass-work", projectId] as const,
-  nextAuditWork: (projectId: string, planId: string, filters: NextAuditWorkFilters = {}) =>
-    [...relayPlanKeys.all, "detail", planId, "next-audit-work", projectId, filters] as const,
+    [...workflowPlanKeys.detail(planId), "pass", passId] as const,
 };
 
-export function plansListQueryOptions(filters: PlanListFilters = {}) {
-  return queryOptions({
-    queryKey: relayPlanKeys.list(filters),
-    queryFn: () => getPlans(filters),
-    staleTime: 2 * 60 * 1000,
-  });
-}
-
-export function planDetailQueryOptions(planId: string) {
-  return queryOptions({
-    queryKey: relayPlanKeys.detail(planId),
-    queryFn: () => getPlan(planId),
-    staleTime: 2 * 60 * 1000,
-  });
-}
-
-export function planPassDetailQueryOptions(planId: string, passId: string) {
-  return queryOptions({
-    queryKey: relayPlanKeys.pass(planId, passId),
-    queryFn: () => getPlanPass(planId, passId),
-    staleTime: 2 * 60 * 1000,
-  });
-}
-
-export function nextPassWorkQueryOptions(projectId: string, planId: string) {
-  return queryOptions({
-    queryKey: relayPlanKeys.nextPassWork(projectId, planId),
-    queryFn: () => getNextPassWork(projectId, planId),
-    enabled: false, // Manual refetch only
-    staleTime: 0,
-  });
-}
-
-export function nextAuditWorkQueryOptions(
-  projectId: string,
-  planId: string,
-  filters: NextAuditWorkFilters = {},
+export function workflowPlansListQueryOptions(
+  filters: WorkflowPlanListFilters = {},
 ) {
   return queryOptions({
-    queryKey: relayPlanKeys.nextAuditWork(projectId, planId, filters),
-    queryFn: () => getNextAuditWork(projectId, planId, filters),
-    enabled: false, // Manual refetch only
-    staleTime: 0,
+    queryKey: workflowPlanKeys.list(filters),
+    queryFn: () => listWorkflowPlans(filters),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function workflowPlanDetailQueryOptions(planId: string) {
+  return queryOptions({
+    queryKey: workflowPlanKeys.detail(planId),
+    queryFn: () => getWorkflowPlan(planId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function workflowPlanPassQueryOptions(planId: string, passId: string) {
+  return queryOptions({
+    queryKey: workflowPlanKeys.pass(planId, passId),
+    queryFn: () => getWorkflowPlanPass(planId, passId),
+    staleTime: 30 * 1000,
   });
 }

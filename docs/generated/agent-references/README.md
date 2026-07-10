@@ -41,4 +41,4 @@ PASS-001 creates only foundation/index output for this directory. Later selected
 
 ## Authority
 
-These generated project references are not task/run-specific context packets or Planner handoffs. They supplement — but do not override — checked-out source code, selected Planner handoffs or canonical packets, Relay DB state, run artifacts, audit evidence, and canonical `Paintersrp/relay-contracts` files.
+These generated project references are not task/run-specific context packets or Planner handoffs. They supplement, but do not override, checked-out source code, selected canonical artifacts, Relay DB state, run artifacts, audit evidence, or manifest-selected `relay-specs` sources.

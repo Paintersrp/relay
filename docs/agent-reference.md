@@ -7,7 +7,7 @@ Authority order remains:
 1. Current user/task instructions
 2. Selected Planner handoff or canonical packet, when provided
 3. Checked-out source code and tests
-4. Canonical relay-contracts GitHub repository for Planner/pipeline behavior
+4. Canonical `Paintersrp/relay-specs` source for planning, artifact, compiler, audit, and standing-agent contract behavior
 5. This reference and other older repo notes
 
 ## System Overview
@@ -37,7 +37,7 @@ Generated reference outputs:
 - `docs/generated/agent-references/storage-surface.json` — Generated storage, migration, SQL query, sqlc-boundary, and store-wrapper surface reference.
 - `docs/generated/agent-references/workflow-surfaces.json` — Generated Plan v2 workflow, intent packet, drift review, refactor backlog, and work-packet lifecycle surface reference.
 
-Generated references do not override checked-out source code, tests, selected Planner handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
+Generated references do not override checked-out source code, tests, selected canonical artifacts, Relay DB state, run artifacts, audit evidence, or manifest-selected `relay-specs` sources.
 
 ## Key Components
 
@@ -70,37 +70,42 @@ Generated references do not override checked-out source code, tests, selected Pl
 | `apps/web` package | React, React DOM, TanStack Start/Router/Query/Table/Virtual/Form, Vite, Vitest, Radix UI, lucide-react, shadcn-style components, zod, and Tailwind. |
 | Validation scripts | Root `npm run build` builds legacy CSS/JS; `npm run build:web` delegates to `apps/web`; `make validate` runs `scripts/validate.sh`. |
 
-## Planner and Pipeline Contracts
+## Planner and Artifact Contracts
 
-Canonical contract repository: `Paintersrp/relay-contracts`.
+Canonical specification repository: `Paintersrp/relay-specs`.
 
-Fetch current files from that repository when producing Planner handoffs, auditing contract behavior, or discussing current Planner/pipeline rules.
+Planner and Auditor source acquisition resolves a specific `relay-specs` ref to a full commit, loads the applicable source manifest, and fetches every required path from that same commit. The repository remains external to Relay; do not expect or create a nested checkout.
 
-Important contract paths include:
+Current canonical paths include:
 
-- `agents/knowledge/planner_github_knowledge_manifest.json`
-- `agents/instructions/planner_agent_instructions.md`
-- `contracts/planner_to_compiler_contract.md`
-- `contracts/planner_mcp_run_submission_contract.md`
-- `contracts/planner_mcp_plan_submission_contract.md`
-- `contracts/planner_pass_plan_contract.md`
-- `contracts/pipeline_artifact_model.md`
-- `templates/planner_handoff_template.md`
-- `schema/planner_handoff_manifest.schema.json`
-- `schema/canonical_packet.schema.json`
-- `schema/planner_pass_plan.schema.json`
-- `policies/artifact_naming_policy.md`
-- `policies/pipeline_lifecycle_policy.md`
-- `policies/security_redaction_policy.md`
-- `policies/human_approval_gate_policy.md`
+- `planner-source-manifest.json`
+- `auditor-source-manifest.json`
+- `agents/planner.md`
+- `agents/executor.md`
+- `agents/auditor.md`
+- `contracts/cross-cutting.md`
+- `contracts/requirements.md`
+- `contracts/design.md`
+- `contracts/requirements-to-design.md`
+- `contracts/plan.md`
+- `contracts/execution-spec.md`
+- `contracts/compiler.md`
+- `contracts/audit.md`
+- `templates/requirements.md`
+- `templates/design.md`
+- `templates/plan.json`
+- `templates/execution-spec.json`
+- `schemas/plan.schema.json`
+- `schemas/execution-spec.schema.json`
+- `schemas/audit-packet.schema.json`
 
-Do not assume these files exist inside `Paintersrp/relay` unless intentionally vendored or mounted.
+Do not vendor these files, mount them under Relay, or add a repository-local synchronization mechanism.
 
 Implementation implications:
 
-- Planner handoffs must stay scoped to the selected pass and must not implement future-pass work.
-- Plan/pass JSON validation should use contract schemas and preserve contract field names.
-- Canonical packets, executor briefs/results, validation reports, repair prompts, and audit packets should follow relay-contracts templates and schemas.
+- Current checked-out Relay source and tests govern implemented runtime behavior.
+- Planning and audit artifacts follow the manifest-selected `relay-specs` contracts, templates, and schemas.
+- The canonical shared Executor instructions from `agents/executor.md` are deployed into the marked block in Relay's `AGENTS.md`.
 - Large artifact contents remain on disk; Relay stores artifact metadata and paths in SQLite.
 
 ## Managed Plans
@@ -227,7 +232,7 @@ Structure:
 - Plan validation/submission behavior belongs in `internal/plans`; request/response mapping belongs in `internal/api`; optional run association lookup belongs in `internal/intake`.
 - `apps/web/src/routes` owns route files; reusable UI lives in `apps/web/src/components/relay`; API clients/types/query options live in `apps/web/src/features/*`.
 - Root `web/src` scripts are for the legacy/utility bundle; do not mix them with `apps/web` React code.
-- relay-contracts files should be referenced, not copied wholesale into implementation docs.
+- `relay-specs` remains external; do not copy canonical contracts into Relay documentation or generated references.
 
 Patterns:
 
@@ -301,10 +306,11 @@ Common issues:
 
 ## Durable Decisions
 
-relay-contracts is authoritative for Planner contracts.
+`relay-specs` is authoritative for planning and artifact contracts.
 
-- Planner handoffs, pass plans, canonical packets, policies, templates, schemas, and audit packet contracts are governed by relay-contracts, not repo-local notes.
-- Copying full contracts into repo-local notes is rejected because it creates a stale second source of truth.
+- Requirements, Design, Plans of Passes, Execution Specs, compiler behavior, shared agent instructions, and audit contracts are governed by manifest-selected `relay-specs` sources.
+- Checked-out Relay source and tests govern implemented runtime behavior.
+- Copying full contracts or creating a nested specification checkout is rejected because it creates stale duplicate authority.
 
 Managed plans are optional.
 

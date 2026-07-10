@@ -72,6 +72,61 @@ function jsonResponse(body: unknown, status = 200): Response {
  * Defaults are empty collections, which is sufficient for shell-presence
  * assertions (the shell renders regardless of list contents).
  */
+function normalizeRunFixture(run: any) {
+  if (!run || typeof run !== "object") return run;
+  return {
+    runId: run.runId || run.id || "run-default",
+    featureSlug: run.featureSlug || run.title || run.name || "feature-default",
+    repoTarget: run.repoTarget || "relay",
+    status: run.status || "created",
+    stage: run.stage || "specification",
+    branch: run.branch || "feat/simplification",
+    baseCommit: run.baseCommit || "a".repeat(40),
+    canonicalSha256: run.canonicalSha256 || "b".repeat(64),
+    createdAt: run.createdAt || run.updatedAt || new Date().toISOString(),
+    updatedAt: run.updatedAt || new Date().toISOString(),
+    planId: run.planId,
+    passId: run.passId,
+    passNumber: run.passNumber,
+    project: run.project || (run.projectId ? { projectId: run.projectId, name: run.projectName || "Project", status: "active" } : undefined),
+    remediatesRunId: run.remediatesRunId,
+    latestAttempt: run.latestAttempt,
+    currentPacket: run.currentPacket,
+    latestDecision: run.latestDecision,
+  };
+}
+
+function normalizePlanFixture(plan: any) {
+  if (!plan || typeof plan !== "object") return plan;
+  return {
+    planId: plan.planId || plan.id || "plan-default",
+    featureSlug: plan.featureSlug || plan.title || "feature-default",
+    status: plan.status || "active",
+    canonicalSha256: plan.canonicalSha256 || "b".repeat(64),
+    createdAt: plan.createdAt || plan.updatedAt || new Date().toISOString(),
+    updatedAt: plan.updatedAt || new Date().toISOString(),
+    passCount: plan.passCount || 0,
+    completedPassCount: plan.completedPassCount || 0,
+    project: plan.project || {
+      projectId: plan.projectId || "project-default",
+      name: plan.projectName || "Project Default",
+      status: "active",
+    },
+  };
+}
+
+function normalizeProjectFixture(proj: any) {
+  if (!proj || typeof proj !== "object") return proj;
+  return {
+    projectId: proj.projectId || proj.id || "project-default",
+    name: proj.name || "Project Default",
+    description: proj.description || "",
+    status: proj.status || "active",
+    createdAt: proj.createdAt || proj.updatedAt || new Date().toISOString(),
+    updatedAt: proj.updatedAt || new Date().toISOString(),
+  };
+}
+
 export function installApiStub(fixtures: ApiStubFixtures = {}): () => void {
   const previousFetch = globalThis.fetch;
 
@@ -96,28 +151,68 @@ export function installApiStub(fixtures: ApiStubFixtures = {}): () => void {
     const runDetailMatch = pathname.match(/^\/api\/runs\/([^/]+)$/);
     if (runDetailMatch) {
       const id = decodeURIComponent(runDetailMatch[1]);
-      const detail = fixtures.runDetail?.[id] ?? { id, status: "draft" };
-      return jsonResponse(detail);
+      const detail = fixtures.runDetail?.[id];
+      if (detail && "run" in (detail as any)) {
+        return jsonResponse(detail);
+      }
+      const runObj = detail || { id, status: "draft" };
+      return jsonResponse({
+        run: normalizeRunFixture(runObj),
+        attempts: (runObj as any).attempts || [],
+        artifacts: (runObj as any).artifacts || [],
+      });
     }
 
     // GET /api/plans/{id}
     const planDetailMatch = pathname.match(/^\/api\/plans\/([^/]+)$/);
     if (planDetailMatch && pathname !== "/api/plans") {
       const id = decodeURIComponent(planDetailMatch[1]);
-      const detail = fixtures.planDetail?.[id] ?? { planId: id, passes: [] };
-      return jsonResponse(detail);
+      const detail = fixtures.planDetail?.[id];
+      if (detail && "plan" in (detail as any)) {
+        return jsonResponse(detail);
+      }
+      const planObj = detail || { planId: id, passes: [] };
+      return jsonResponse({
+        plan: normalizePlanFixture(planObj),
+        repositories: (planObj as any).repositories || [],
+        passes: ((planObj as any).passes || []).map((pass: any) => ({
+          passId: pass.passId || pass.id || "pass-default",
+          number: pass.number || pass.sequence || 1,
+          name: pass.name || "Pass One",
+          repoTarget: pass.repoTarget || "relay",
+          status: pass.status || "planned",
+          dependsOn: pass.dependsOn || [],
+          createdAt: pass.createdAt || new Date().toISOString(),
+          updatedAt: pass.updatedAt || new Date().toISOString(),
+          runs: pass.runs || [],
+        })),
+        artifacts: (planObj as any).artifacts || [],
+      });
     }
 
     if (pathname === "/api/runs") {
-      return jsonResponse(fixtures.runs ?? []);
+      const rawRuns = fixtures.runs ?? [];
+      const items = Array.isArray(rawRuns) ? rawRuns.map(normalizeRunFixture) : [];
+      return jsonResponse({
+        count: items.length,
+        items,
+      });
     }
     if (pathname === "/api/plans") {
-      return jsonResponse(fixtures.plans ?? { plans: [] });
+      const rawPlans = fixtures.plans?.plans ?? fixtures.plans?.items ?? [];
+      const items = Array.isArray(rawPlans) ? rawPlans.map(normalizePlanFixture) : [];
+      return jsonResponse({
+        count: items.length,
+        items,
+      });
     }
     if (pathname === "/api/projects") {
-      return jsonResponse(
-        fixtures.projects ?? { success: true, count: 0, projects: [] },
-      );
+      const rawProjects = fixtures.projects?.projects ?? fixtures.projects?.items ?? [];
+      const items = Array.isArray(rawProjects) ? rawProjects.map(normalizeProjectFixture) : [];
+      return jsonResponse({
+        count: items.length,
+        items,
+      });
     }
 
     // Unknown endpoint — empty JSON object keeps callers from hard-failing.
@@ -165,8 +260,6 @@ function buildRouteTree() {
     createRoute({ getParentRoute: () => rootRoute, path: "/runs", component: () => <RouteStub label="runs" /> }),
     createRoute({ getParentRoute: () => rootRoute, path: "/runs/new", component: () => <RouteStub label="run-new" /> }),
     createRoute({ getParentRoute: () => rootRoute, path: "/runs/$runId", component: () => <RouteStub label="run-detail" /> }),
-    createRoute({ getParentRoute: () => rootRoute, path: "/runs/$runId/intake", component: () => <RouteStub label="run-intake" /> }),
-    createRoute({ getParentRoute: () => rootRoute, path: "/runs/$runId/prepare", component: () => <RouteStub label="run-prepare" /> }),
     createRoute({ getParentRoute: () => rootRoute, path: "/runs/$runId/execute", component: () => <RouteStub label="run-execute" /> }),
     createRoute({ getParentRoute: () => rootRoute, path: "/runs/$runId/audit", component: () => <RouteStub label="run-audit" /> }),
     createRoute({ getParentRoute: () => rootRoute, path: "/plans", component: () => <RouteStub label="plans" /> }),

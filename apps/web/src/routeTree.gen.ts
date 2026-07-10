@@ -19,11 +19,10 @@ import { Route as ProjectsNewRouteImport } from './routes/projects/new'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as PlansNewRouteImport } from './routes/plans/new'
 import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
-import { Route as RunsRunIdPrepareRouteImport } from './routes/runs/$runId/prepare'
-import { Route as RunsRunIdIntakeRouteImport } from './routes/runs/$runId/intake'
+import { Route as RunsRunIdIndexRouteImport } from './routes/runs/$runId/index'
+import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
 import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
-import { Route as ProjectsProjectIdRefactorBacklogRouteImport } from './routes/projects/$projectId.refactor-backlog'
 import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId.passes.$passId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -76,14 +75,14 @@ const PlansPlanIdRoute = PlansPlanIdRouteImport.update({
   path: '/plans/$planId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RunsRunIdPrepareRoute = RunsRunIdPrepareRouteImport.update({
-  id: '/prepare',
-  path: '/prepare',
+const RunsRunIdIndexRoute = RunsRunIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
-const RunsRunIdIntakeRoute = RunsRunIdIntakeRouteImport.update({
-  id: '/intake',
-  path: '/intake',
+const RunsRunIdSpecificationRoute = RunsRunIdSpecificationRouteImport.update({
+  id: '/specification',
+  path: '/specification',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
 const RunsRunIdExecuteRoute = RunsRunIdExecuteRouteImport.update({
@@ -96,12 +95,6 @@ const RunsRunIdAuditRoute = RunsRunIdAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
-const ProjectsProjectIdRefactorBacklogRoute =
-  ProjectsProjectIdRefactorBacklogRouteImport.update({
-    id: '/refactor-backlog',
-    path: '/refactor-backlog',
-    getParentRoute: () => ProjectsProjectIdRoute,
-  } as any)
 const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
   id: '/passes/$passId',
   path: '/passes/$passId',
@@ -112,36 +105,33 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
   '/plans/': typeof PlansIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/runs/': typeof RunsIndexRoute
-  '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
-  '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
-  '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
+  '/runs/$runId/': typeof RunsRunIdIndexRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
-  '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
   '/plans': typeof PlansIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/runs': typeof RunsIndexRoute
-  '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
-  '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
-  '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
+  '/runs/$runId': typeof RunsRunIdIndexRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRoutesById {
@@ -149,18 +139,17 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
   '/plans/': typeof PlansIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/runs/': typeof RunsIndexRoute
-  '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
-  '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
-  '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
+  '/runs/$runId/': typeof RunsRunIdIndexRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRouteTypes {
@@ -176,11 +165,10 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/projects/'
     | '/runs/'
-    | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
+    | '/runs/$runId/specification'
+    | '/runs/$runId/'
     | '/plans/$planId/passes/$passId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -189,16 +177,14 @@ export interface FileRouteTypes {
     | '/plans/new'
     | '/projects/$projectId'
     | '/projects/new'
-    | '/runs/$runId'
     | '/runs/new'
     | '/plans'
     | '/projects'
     | '/runs'
-    | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
+    | '/runs/$runId/specification'
+    | '/runs/$runId'
     | '/plans/$planId/passes/$passId'
   id:
     | '__root__'
@@ -212,11 +198,10 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/projects/'
     | '/runs/'
-    | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
+    | '/runs/$runId/specification'
+    | '/runs/$runId/'
     | '/plans/$planId/passes/$passId'
   fileRoutesById: FileRoutesById
 }
@@ -224,7 +209,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
   PlansNewRoute: typeof PlansNewRoute
-  ProjectsProjectIdRoute: typeof ProjectsProjectIdRouteWithChildren
+  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   ProjectsNewRoute: typeof ProjectsNewRoute
   RunsRunIdRoute: typeof RunsRunIdRouteWithChildren
   RunsNewRoute: typeof RunsNewRoute
@@ -305,18 +290,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlansPlanIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/runs/$runId/prepare': {
-      id: '/runs/$runId/prepare'
-      path: '/prepare'
-      fullPath: '/runs/$runId/prepare'
-      preLoaderRoute: typeof RunsRunIdPrepareRouteImport
+    '/runs/$runId/': {
+      id: '/runs/$runId/'
+      path: '/'
+      fullPath: '/runs/$runId/'
+      preLoaderRoute: typeof RunsRunIdIndexRouteImport
       parentRoute: typeof RunsRunIdRoute
     }
-    '/runs/$runId/intake': {
-      id: '/runs/$runId/intake'
-      path: '/intake'
-      fullPath: '/runs/$runId/intake'
-      preLoaderRoute: typeof RunsRunIdIntakeRouteImport
+    '/runs/$runId/specification': {
+      id: '/runs/$runId/specification'
+      path: '/specification'
+      fullPath: '/runs/$runId/specification'
+      preLoaderRoute: typeof RunsRunIdSpecificationRouteImport
       parentRoute: typeof RunsRunIdRoute
     }
     '/runs/$runId/execute': {
@@ -332,13 +317,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/runs/$runId/audit'
       preLoaderRoute: typeof RunsRunIdAuditRouteImport
       parentRoute: typeof RunsRunIdRoute
-    }
-    '/projects/$projectId/refactor-backlog': {
-      id: '/projects/$projectId/refactor-backlog'
-      path: '/refactor-backlog'
-      fullPath: '/projects/$projectId/refactor-backlog'
-      preLoaderRoute: typeof ProjectsProjectIdRefactorBacklogRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
     }
     '/plans/$planId/passes/$passId': {
       id: '/plans/$planId/passes/$passId'
@@ -362,29 +340,18 @@ const PlansPlanIdRouteWithChildren = PlansPlanIdRoute._addFileChildren(
   PlansPlanIdRouteChildren,
 )
 
-interface ProjectsProjectIdRouteChildren {
-  ProjectsProjectIdRefactorBacklogRoute: typeof ProjectsProjectIdRefactorBacklogRoute
-}
-
-const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
-  ProjectsProjectIdRefactorBacklogRoute: ProjectsProjectIdRefactorBacklogRoute,
-}
-
-const ProjectsProjectIdRouteWithChildren =
-  ProjectsProjectIdRoute._addFileChildren(ProjectsProjectIdRouteChildren)
-
 interface RunsRunIdRouteChildren {
   RunsRunIdAuditRoute: typeof RunsRunIdAuditRoute
   RunsRunIdExecuteRoute: typeof RunsRunIdExecuteRoute
-  RunsRunIdIntakeRoute: typeof RunsRunIdIntakeRoute
-  RunsRunIdPrepareRoute: typeof RunsRunIdPrepareRoute
+  RunsRunIdSpecificationRoute: typeof RunsRunIdSpecificationRoute
+  RunsRunIdIndexRoute: typeof RunsRunIdIndexRoute
 }
 
 const RunsRunIdRouteChildren: RunsRunIdRouteChildren = {
   RunsRunIdAuditRoute: RunsRunIdAuditRoute,
   RunsRunIdExecuteRoute: RunsRunIdExecuteRoute,
-  RunsRunIdIntakeRoute: RunsRunIdIntakeRoute,
-  RunsRunIdPrepareRoute: RunsRunIdPrepareRoute,
+  RunsRunIdSpecificationRoute: RunsRunIdSpecificationRoute,
+  RunsRunIdIndexRoute: RunsRunIdIndexRoute,
 }
 
 const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
@@ -395,7 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PlansPlanIdRoute: PlansPlanIdRouteWithChildren,
   PlansNewRoute: PlansNewRoute,
-  ProjectsProjectIdRoute: ProjectsProjectIdRouteWithChildren,
+  ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ProjectsNewRoute: ProjectsNewRoute,
   RunsRunIdRoute: RunsRunIdRouteWithChildren,
   RunsNewRoute: RunsNewRoute,

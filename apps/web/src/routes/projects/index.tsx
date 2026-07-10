@@ -5,25 +5,21 @@ import { Plus } from "lucide-react";
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { RelayProjectsRegistry } from "@/components/relay/RelayProjectsRegistry";
 import { Button } from "@/components/ui/button";
-import { projectsListQueryOptions } from "@/features/relay-projects";
+import { workflowProjectsListQueryOptions } from "@/features/relay-projects";
 
 export const Route = createFileRoute("/projects/")({
   component: ProjectsListPage,
 });
 
 function ProjectsListPage() {
-  const { data, isLoading, error } = useQuery(projectsListQueryOptions({ limit: 100 }));
+  const projectsQuery = useQuery(workflowProjectsListQueryOptions({ limit: 100 }));
 
   return (
     <AppPageFrame
       title="Projects"
-      description="Local project and repository registry"
+      description="Organize Plans, repository references, and Project Notes."
       actions={
-        <Button
-          asChild
-          variant="outline"
-          size="sm"
-        >
+        <Button asChild variant="outline" size="sm">
           <Link to="/projects/new">
             <Plus className="size-3.5" />
             New Project
@@ -33,9 +29,9 @@ function ProjectsListPage() {
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
     >
       <RelayProjectsRegistry
-        projects={data?.projects}
-        isLoading={isLoading}
-        error={error}
+        projects={projectsQuery.data?.projects}
+        isLoading={projectsQuery.isLoading}
+        error={projectsQuery.error}
       />
     </AppPageFrame>
   );

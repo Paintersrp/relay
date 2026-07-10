@@ -1,0 +1,493 @@
+package mcp
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
+
+	workflowplans "relay/internal/app/plans/workflow"
+	workflowsubmissions "relay/internal/app/submissions"
+	"relay/internal/speccompiler"
+	workflowstore "relay/internal/store/workflow"
+)
+
+const maxSubmissionDiagnostics = 50
+
+const (
+	submissionBlockerCompilerRejected   = "compiler_rejected"
+	submissionBlockerPersistenceFailed  = "persistence_failed"
+	submissionBlockerAssociationInvalid = "association_invalid"
+	submissionBlockerArtifactKind       = "artifact_kind_mismatch"
+)
+
+var artifactFileSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["download_url", "file_id", "file_name"],
+  "properties": {
+    "download_url": {"type": "string", "format": "uri"},
+    "file_id": {"type": "string", "minLength": 1},
+    "mime_type": {"type": "string"},
+    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\.plan\\.json|\\.execution-spec\\.json)$"}
+  }
+}`)
+
+var validateArtifactSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact_file"],
+  "properties": {"artifact_file": ` + string(artifactFileSchema) + `}
+}`)
+
+var submitPlanSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "artifact_file", "expected_sha256"],
+  "properties": {
+    "project_id": {"type": "string", "minLength": 1},
+    "artifact_file": ` + string(artifactFileSchema) + `,
+    "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}`)
+
+var getPlanSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_id"],
+  "properties": {"plan_id": {"type": "string", "minLength": 1}}
+}`)
+
+var createRunSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact_file", "expected_sha256"],
+  "properties": {
+    "artifact_file": ` + string(artifactFileSchema) + `,
+    "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "plan_id": {"type": "string", "minLength": 1},
+    "pass_number": {"type": "integer", "minimum": 1},
+    "remediates_run_id": {"type": "string", "minLength": 1}
+  },
+  "dependentRequired": {"plan_id": ["pass_number"], "pass_number": ["plan_id"]}
+}`)
+
+var (
+	ToolValidateArtifact = ToolDefinition{
+		Name:        "validate_artifact",
+		Description: "Validate one canonical Plan or Execution Spec JSON file by exact downloaded bytes. Returns bounded diagnostics and SHA-256 only; never returns artifact bodies.",
+		InputSchema: validateArtifactSchema,
+		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
+	}
+	ToolSubmitPlan = ToolDefinition{
+		Name:        "submit_plan",
+		Description: "Submit one canonical Plan JSON file to an active Relay Project after exact SHA-256 verification and deterministic recompilation. Creates Plan, Pass, and artifact metadata atomically.",
+		InputSchema: submitPlanSchema,
+		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
+	}
+	ToolGetPlan = ToolDefinition{
+		Name:        "get_plan",
+		Description: "Read bounded Project, Plan, Pass, and artifact metadata without returning canonical JSON or rendered Markdown bodies.",
+		InputSchema: getPlanSchema,
+	}
+	ToolCreateRun = ToolDefinition{
+		Name:        "create_run",
+		Description: "Submit one canonical Execution Spec JSON file after exact SHA-256 verification and deterministic recompilation. Creates a setup-ready Run atomically.",
+		InputSchema: createRunSchema,
+		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
+	}
+)
+
+type artifactArgs struct {
+	ArtifactFile ChatGPTFileReference `json:"artifact_file"`
+}
+
+type artifactSubmissionArgs struct {
+	ProjectID       string               `json:"project_id,omitempty"`
+	ArtifactFile    ChatGPTFileReference `json:"artifact_file"`
+	ExpectedSHA256  string               `json:"expected_sha256"`
+	PlanID          string               `json:"plan_id,omitempty"`
+	PassNumber      int64                `json:"pass_number,omitempty"`
+	RemediatesRunID string               `json:"remediates_run_id,omitempty"`
+}
+
+type getPlanArgs struct {
+	PlanID string `json:"plan_id"`
+}
+
+type artifactValidationOutput struct {
+	OK          bool                      `json:"ok"`
+	Tool        string                    `json:"tool"`
+	Status      string                    `json:"status"`
+	Artifact    SubmittedArtifactIdentity `json:"artifact"`
+	SHA256      string                    `json:"sha256"`
+	Kind        string                    `json:"kind"`
+	Diagnostics []speccompiler.Diagnostic `json:"diagnostics"`
+	Notices     []speccompiler.Diagnostic `json:"notices"`
+}
+
+type planOutput struct {
+	OK        bool                     `json:"ok"`
+	Tool      string                   `json:"tool"`
+	Project   projectMetadata          `json:"project"`
+	Plan      planMetadata             `json:"plan"`
+	Passes    []passMetadata           `json:"passes"`
+	Artifacts []workflowArtifactOutput `json:"artifacts"`
+}
+
+type runOutput struct {
+	OK         bool                      `json:"ok"`
+	Tool       string                    `json:"tool"`
+	Run        runMetadata               `json:"run"`
+	Artifacts  []workflowArtifactOutput  `json:"artifacts"`
+	Provenance ExactSubmissionProvenance `json:"provenance"`
+	ReviewURL  string                    `json:"review_url"`
+}
+
+type planMetadata struct {
+	PlanID          string `json:"plan_id"`
+	FeatureSlug     string `json:"feature_slug"`
+	Status          string `json:"status"`
+	CanonicalSHA256 string `json:"canonical_sha256"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
+type passMetadata struct {
+	PassID     string `json:"pass_id"`
+	Number     int64  `json:"number"`
+	Name       string `json:"name"`
+	RepoTarget string `json:"repo_target"`
+	Status     string `json:"status"`
+}
+
+type runMetadata struct {
+	RunID           string `json:"run_id"`
+	FeatureSlug     string `json:"feature_slug"`
+	RepoTarget      string `json:"repo_target"`
+	Status          string `json:"status"`
+	Branch          string `json:"branch"`
+	BaseCommit      string `json:"base_commit"`
+	CanonicalSHA256 string `json:"canonical_sha256"`
+	PlanID          string `json:"plan_id,omitempty"`
+	PassNumber      int64  `json:"pass_number,omitempty"`
+	RemediatesRunID string `json:"remediates_run_id,omitempty"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
+type workflowArtifactOutput struct {
+	ArtifactID   string `json:"artifact_id"`
+	OwnerType    string `json:"owner_type"`
+	Kind         string `json:"kind"`
+	RelativePath string `json:"relative_path"`
+	MediaType    string `json:"media_type"`
+	SHA256       string `json:"sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
+	CreatedAt    string `json:"created_at"`
+}
+
+func workflowToolDefinitions(profile ToolProfile) []ToolDefinition {
+	switch profile {
+	case ToolProfileAuditor:
+		return []ToolDefinition{ToolValidateArtifact, ToolCreateRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
+	case ToolProfileLocalOperator:
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolCreateRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
+	case ToolProfilePlanner:
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolCreateRun}
+	default:
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolCreateRun}
+	}
+}
+
+func (s *Server) artifactFetcher() ArtifactFileParameterFetcher {
+	if s != nil && s.deps != nil && s.deps.ArtifactFileFetcher != nil {
+		return s.deps.ArtifactFileFetcher
+	}
+	return NewHTTPSFileParameterFetcher()
+}
+
+func (s *Server) workflowStore() *workflowstore.Store {
+	if s == nil || s.deps == nil {
+		return nil
+	}
+	return s.deps.WorkflowStore
+}
+
+func (s *Server) HandleValidateArtifact(rawArgs json.RawMessage) ToolCallResult {
+	var input artifactArgs
+	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
+		return workflowBlocked("validate_artifact", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "validate_artifact", nil)
+	}
+	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
+	if fetchErr != nil {
+		return toolBlockedResult("validate_artifact", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
+	}
+	service, err := s.submissionService()
+	if err != nil {
+		return workflowBlocked("validate_artifact", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", nil)
+	}
+	result, err := service.ValidateArtifact(context.Background(), workflowsubmissions.ValidationInput{
+		DisplayName:    content.DisplayName,
+		CanonicalBytes: content.Bytes,
+	})
+	if err != nil {
+		return submissionApplicationBlocked("validate_artifact", err, nil)
+	}
+	return workflowOK(artifactValidationOutput{
+		OK:          result.OK,
+		Tool:        "validate_artifact",
+		Status:      result.Status,
+		Artifact:    SubmittedArtifactIdentity{ArtifactKind: result.Kind, DisplayName: content.DisplayName, ByteCount: int64(len(content.Bytes))},
+		SHA256:      result.SHA256,
+		Kind:        result.Kind,
+		Diagnostics: result.Diagnostics,
+		Notices:     result.Notices,
+	})
+}
+
+func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
+	if s.workflowStore() == nil {
+		return workflowBlocked("submit_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+	}
+	var input artifactSubmissionArgs
+	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
+		return workflowBlocked("submit_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "submit_plan", nil)
+	}
+	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
+	if fetchErr != nil {
+		return toolBlockedResult("submit_plan", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
+	}
+	provenance := exactArtifactProvenance(content, input.ExpectedSHA256)
+	service, err := s.submissionService()
+	if err != nil {
+		return workflowBlocked("submit_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
+	}
+	result, err := service.SubmitPlan(context.Background(), workflowsubmissions.SubmitPlanInput{
+		ProjectID:      input.ProjectID,
+		DisplayName:    content.DisplayName,
+		ExpectedSHA256: input.ExpectedSHA256,
+		CanonicalBytes: content.Bytes,
+	})
+	if err != nil {
+		return submissionApplicationBlocked("submit_plan", err, provenance)
+	}
+	return workflowOK(planOutput{
+		OK:        true,
+		Tool:      "submit_plan",
+		Project:   projectOut(result.Project),
+		Plan:      planOut(result.Plan),
+		Passes:    passOut(result.Passes),
+		Artifacts: artifactOut(result.Artifacts),
+	})
+}
+
+func (s *Server) HandleGetPlan(rawArgs json.RawMessage) ToolCallResult {
+	if s.workflowStore() == nil {
+		return workflowBlocked("get_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+	}
+	var input getPlanArgs
+	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
+		return workflowBlocked("get_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "get_plan", nil)
+	}
+	svc, err := workflowplans.NewService(s.workflowStore())
+	if err != nil {
+		return workflowBlocked("get_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", nil)
+	}
+	result, err := svc.GetPlan(context.Background(), input.PlanID)
+	if err != nil {
+		return submissionApplicationBlocked("get_plan", err, nil)
+	}
+	return workflowOK(planOutput{
+		OK:        true,
+		Tool:      "get_plan",
+		Project:   projectOut(result.Project),
+		Plan:      planOut(result.Plan),
+		Passes:    passOut(result.Passes),
+		Artifacts: artifactOut(result.Artifacts),
+	})
+}
+
+func (s *Server) HandleCreateRun(rawArgs json.RawMessage) ToolCallResult {
+	if s.workflowStore() == nil {
+		return workflowBlocked("create_run", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+	}
+	var input artifactSubmissionArgs
+	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
+		return workflowBlocked("create_run", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "create_run", nil)
+	}
+	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
+	if fetchErr != nil {
+		return toolBlockedResult("create_run", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
+	}
+	provenance := exactArtifactProvenance(content, input.ExpectedSHA256)
+	service, err := s.submissionService()
+	if err != nil {
+		return workflowBlocked("create_run", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
+	}
+	result, err := service.CreateRun(context.Background(), workflowsubmissions.CreateRunInput{
+		DisplayName:     content.DisplayName,
+		ExpectedSHA256:  input.ExpectedSHA256,
+		CanonicalBytes:  content.Bytes,
+		PlanID:          input.PlanID,
+		PassNumber:      input.PassNumber,
+		RemediatesRunID: input.RemediatesRunID,
+	})
+	if err != nil {
+		return submissionApplicationBlocked("create_run", err, provenance)
+	}
+	return workflowOK(runOutput{
+		OK:         true,
+		Tool:       "create_run",
+		Run:        runOut(result.Run, s.workflowStore()),
+		Artifacts:  artifactOut(result.Artifacts),
+		Provenance: provenance,
+		ReviewURL:  runReviewURL(result.Run.RunID),
+	})
+}
+
+func runReviewURL(runID string) string {
+	base := strings.TrimSpace(os.Getenv("RELAY_WEB_BASE_URL"))
+	if base == "" {
+		base = "http://localhost:3000"
+	}
+	return strings.TrimRight(base, "/") + "/runs/" + url.PathEscape(runID) + "/specification"
+}
+
+func workflowBlocked(tool, code, message string, recoverable bool, ref string, metadata any) ToolCallResult {
+	return toolBlockedResult(tool, []MCPBlocker{newMCPBlocker(code, message, recoverable, []MCPBlockerEvidence{{Kind: "field", Ref: ref}}, []string{"Correct the blocker and retry the tool."})}, metadata)
+}
+
+func workflowOK(out any) ToolCallResult {
+	text, err := marshalTool(out)
+	if err != nil {
+		return toolErr(fmt.Sprintf("INTERNAL_ERROR: %s", err))
+	}
+	return ToolCallResult{
+		Content:           []ContentBlock{{Type: "text", Text: text}},
+		StructuredContent: out,
+	}
+}
+
+func artifactKind(displayName string) string {
+	return workflowsubmissions.ArtifactKind(displayName)
+}
+
+func exactArtifactProvenance(content FileParameterContent, expectedSHA string) ExactSubmissionProvenance {
+	out := exactSubmissionProvenance(content.Bytes, expectedSHA, "file_parameter", content.DisplayName)
+	out.ArtifactIdentity.ArtifactKind = artifactKind(content.DisplayName)
+	out.ArtifactIdentity.DisplayName = safeArtifactDisplayName(content.DisplayName, "artifact.json")
+	return out
+}
+
+func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName string) ExactSubmissionProvenance {
+	submittedSHA := sha256Hex(data)
+	status := "not_supplied"
+	if strings.TrimSpace(expectedSHA) != "" {
+		status = "mismatched"
+		if expectedSHA == submittedSHA {
+			status = "matched"
+		}
+	}
+	return ExactSubmissionProvenance{
+		SubmittedSHA256: submittedSHA,
+		ExpectedSHA256:  strings.TrimSpace(expectedSHA),
+		SHAMatchStatus:  status,
+		SourceMode:      sourceMode,
+		ArtifactIdentity: SubmittedArtifactIdentity{
+			DisplayName: safeArtifactDisplayName(displayName, "artifact.json"),
+			ByteCount:   int64(len(data)),
+		},
+	}
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func artifactFileParameterBlocker(err *FileParameterError) MCPBlocker {
+	if err == nil {
+		err = fileParamErr(MCPBlockerFileDownloadFailed, "artifact_file could not be downloaded")
+	}
+	recoverable := err.Code != MCPBlockerUnsafeDownloadTarget
+	return newMCPBlocker(err.Code, err.Message, recoverable, []MCPBlockerEvidence{{Kind: "field", Ref: "artifact_file"}}, []string{"Attach one reviewed canonical JSON artifact file and retry."})
+}
+
+func boundedDiagnostics(in []speccompiler.Diagnostic) []speccompiler.Diagnostic {
+	if len(in) > maxSubmissionDiagnostics {
+		in = in[:maxSubmissionDiagnostics]
+	}
+	if in == nil {
+		return []speccompiler.Diagnostic{}
+	}
+	return append([]speccompiler.Diagnostic(nil), in...)
+}
+
+func planOut(plan workflowstore.Plan) planMetadata {
+	return planMetadata{PlanID: plan.PlanID, FeatureSlug: plan.FeatureSlug, Status: plan.Status, CanonicalSHA256: plan.CanonicalSHA256, CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt}
+}
+
+func passOut(passes []workflowstore.PlanPass) []passMetadata {
+	out := make([]passMetadata, 0, len(passes))
+	for _, pass := range passes {
+		out = append(out, passMetadata{PassID: pass.PassID, Number: pass.PassNumber, Name: pass.Name, RepoTarget: pass.RepoTarget, Status: pass.Status})
+	}
+	return out
+}
+
+func artifactOut(artifacts []workflowstore.Artifact) []workflowArtifactOutput {
+	out := make([]workflowArtifactOutput, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		out = append(out, workflowArtifactOutput{
+			ArtifactID:   artifact.ArtifactID,
+			OwnerType:    artifact.OwnerType,
+			Kind:         artifact.Kind,
+			RelativePath: artifact.RelativePath,
+			MediaType:    artifact.MediaType,
+			SHA256:       artifact.SHA256,
+			SizeBytes:    artifact.SizeBytes,
+			CreatedAt:    artifact.CreatedAt,
+		})
+	}
+	return out
+}
+
+func runOut(run workflowstore.Run, store *workflowstore.Store) runMetadata {
+	out := runMetadata{
+		RunID:           run.RunID,
+		FeatureSlug:     run.FeatureSlug,
+		RepoTarget:      run.RepoTarget,
+		Status:          run.Status,
+		Branch:          run.Branch,
+		BaseCommit:      run.BaseCommit,
+		CanonicalSHA256: run.CanonicalSHA256,
+		CreatedAt:       run.CreatedAt,
+		UpdatedAt:       run.UpdatedAt,
+	}
+	if store != nil && run.PlanRowID.Valid {
+		if plan, err := store.GetPlanByRowID(context.Background(), run.PlanRowID.Int64); err == nil {
+			out.PlanID = plan.PlanID
+		}
+	}
+	if store != nil && run.PlanPassRowID.Valid {
+		if pass, err := store.GetPlanPassByRowID(context.Background(), run.PlanPassRowID.Int64); err == nil {
+			out.PassNumber = pass.PassNumber
+			if out.PlanID == "" {
+				if plan, err := store.GetPlanByRowID(context.Background(), pass.PlanRowID); err == nil {
+					out.PlanID = plan.PlanID
+				}
+			}
+		}
+	}
+	if store != nil && run.RemediatesRunRowID.Valid {
+		if remediates, err := store.GetRunByRowID(context.Background(), run.RemediatesRunRowID.Int64); err == nil {
+			out.RemediatesRunID = remediates.RunID
+		}
+	}
+	return out
+}

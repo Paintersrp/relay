@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "compiler-fixture",
+  "repo_target": "relay",
+  "branch": "feat/simplification",
+  "base_commit": "e9e1759821de943643f6ea7f6ae0ceb7db9db951",
+  "goal": "Compile a representative Execution Spec fixture.",
+  "context": "Representative context with `inline code`.\n\n```go\npackage example\n```",
+  "scope": {
+    "in_scope": [
+      "Exercise every supported file operation."
+    ],
+    "out_of_scope": [
+      "Do not perform repository mutation."
+    ]
+  },
+  "steps": [
+    {
+      "number": 1,
+      "goal": "Render exact implementation directives.",
+      "substeps": [
+        {
+          "number": 1,
+          "instruction": "Render the declared file operations in source order.",
+          "files": [
+            {
+              "path": "internal/example/config.go",
+              "operation": "modify",
+              "purpose": "Exercise modify rendering.",
+              "implementation": {
+                "changes": [
+                  {
+                    "kind": "replace",
+                    "old_text": "const enabled = false\n",
+                    "new_text": "const enabled = true\n",
+                    "expected_occurrences": 1
+                  },
+                  {
+                    "kind": "insert_after",
+                    "anchor": "const enabled = true\n",
+                    "content": "const mode = `strict`\n",
+                    "expected_occurrences": 1
+                  },
+                  {
+                    "kind": "remove",
+                    "old_text": "const obsolete = true\n",
+                    "expected_occurrences": 1
+                  }
+                ]
+              }
+            },
+            {
+              "path": "internal/example/new.go",
+              "operation": "create",
+              "purpose": "Exercise create rendering.",
+              "implementation": {
+                "content": "package example\n\nfunc Enabled() bool {\n\treturn true\n}\n"
+              }
+            },
+            {
+              "path": "internal/example/old.go",
+              "operation": "delete",
+              "purpose": "Exercise delete rendering.",
+              "implementation": {
+                "delete_file": true
+              }
+            },
+            {
+              "path": "internal/example/name.go",
+              "destination_path": "internal/example/new_name.go",
+              "operation": "rename",
+              "purpose": "Exercise rename rendering.",
+              "implementation": {
+                "preserve_content": true
+              }
+            }
+          ],
+          "completion_criteria": [
+            "Every file operation is rendered exactly once."
+          ]
+        }
+      ],
+      "completion_criteria": [
+        "The complete step renders deterministically."
+      ]
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "go test ./internal/speccompiler",
+        "expected": "The focused compiler tests pass."
+      }
+    ],
+    "executor_checks": [
+      "Verify the rendered brief ends with exactly one newline."
+    ]
+  },
+  "completion_criteria": [
+    "The fixture compiles without errors.",
+    "The rendered brief matches the golden file."
+  ]
+}

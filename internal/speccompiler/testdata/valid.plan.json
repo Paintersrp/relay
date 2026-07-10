@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "compiler-plan-fixture",
+  "goal": "Render a representative Plan fixture.",
+  "context": "The Plan fixture covers repository targets, dependencies, and pass sections.",
+  "scope": {
+    "in_scope": [
+      "Render all Plan sections."
+    ],
+    "out_of_scope": [
+      "Do not add execution instructions."
+    ]
+  },
+  "repo_targets": [
+    {
+      "repo_target": "relay",
+      "branch": "feat/simplification",
+      "planning_base_commit": "e9e1759821de943643f6ea7f6ae0ceb7db9db951"
+    }
+  ],
+  "passes": [
+    {
+      "number": 1,
+      "name": "Foundation",
+      "repo_target": "relay",
+      "goal": "Create the foundation.",
+      "context": "The first pass has no dependencies.",
+      "scope": {
+        "in_scope": [
+          "Create the bounded foundation."
+        ],
+        "out_of_scope": [
+          "Do not implement later integration."
+        ]
+      },
+      "depends_on": [],
+      "outcomes": [
+        "The foundation exists."
+      ],
+      "source_targets": [
+        {
+          "path": "internal/speccompiler",
+          "purpose": "Compiler package."
+        }
+      ],
+      "validation_intent": [
+        "Prove the package is deterministic."
+      ],
+      "completion_criteria": [
+        "The foundation is complete."
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Integration",
+      "repo_target": "relay",
+      "goal": "Integrate the foundation.",
+      "context": "The second pass consumes the committed foundation.",
+      "scope": {
+        "in_scope": [
+          "Integrate the compiler."
+        ],
+        "out_of_scope": [
+          "Do not redesign the compiler."
+        ]
+      },
+      "depends_on": [
+        1
+      ],
+      "outcomes": [
+        "The compiler is integrated."
+      ],
+      "source_targets": [
+        {
+          "path": "internal/mcp",
+          "purpose": "Future integration surface."
+        }
+      ],
+      "validation_intent": [
+        "Prove integration consumes the compiler."
+      ],
+      "completion_criteria": [
+        "The integration is complete."
+      ]
+    }
+  ],
+  "completion_criteria": [
+    "The complete Plan renders deterministically."
+  ]
+}

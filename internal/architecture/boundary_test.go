@@ -182,48 +182,4 @@ func TestFeatureAPIPackagesDoNotImportStoreDirectly(t *testing.T) {
 	}
 }
 
-func TestServerRoutesMountMigratedFeatureHandlers(t *testing.T) {
-	root := repoRoot(t)
-	data, err := os.ReadFile(filepath.Join(root, "internal", "server", "routes.go"))
-	if err != nil {
-		t.Fatalf("read server routes: %v", err)
-	}
-	source := string(data)
 
-	required := []string{
-		"projectsapi.MountRoutes(r, projectH)",
-		"plansapi.MountRoutes(r, planH)",
-		"runsapi.MountRoutes(r, runH)",
-		"artifactsapi.MountRoutes(r, artifactH)",
-		"intakeapi.MountRoutes(r, intakeH)",
-		"auditsapi.MountRoutes(r, auditH)",
-	}
-
-	for _, snippet := range required {
-		if !strings.Contains(source, snippet) {
-			t.Fatalf("internal/server/routes.go must contain %q", snippet)
-		}
-	}
-
-	forbidden := []string{
-		"projectsapi.MountRoutes(r, apiH)",
-		"plansapi.MountRoutes(r, apiH)",
-		"runsapi.MountRoutes(r, apiH)",
-		"artifactsapi.MountRoutes(r, apiH)",
-		"intakeapi.MountRoutes(r, apiH)",
-		"auditsapi.MountRoutes(r, apiH)",
-	}
-
-	for _, snippet := range forbidden {
-		if strings.Contains(source, snippet) {
-			t.Fatalf("internal/server/routes.go must not contain legacy feature mount %q", snippet)
-		}
-	}
-
-	if !strings.Contains(source, "mountProjectRefactorRoutes(r, apiH)") {
-		t.Fatalf("project-scoped refactor backlog routes must remain explicitly documented as legacy root API routes")
-	}
-	if !strings.Contains(source, `r.Post("/dev/setup-smoke-validation-failure", apiH.SetupSmokeValidationFailure)`) {
-		t.Fatalf("dev smoke validation route must remain explicitly mounted if still backed by legacy root API handler")
-	}
-}

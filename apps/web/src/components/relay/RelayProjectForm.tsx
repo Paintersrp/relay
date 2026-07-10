@@ -1,189 +1,118 @@
 import * as React from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { createProject, relayProjectKeys } from "@/features/relay-projects";
+  createWorkflowProject,
+  workflowProjectKeys,
+} from "@/features/relay-projects";
 import { RelayApiError } from "@/features/relay-runs";
-import type { ProjectValidationIssue } from "@/features/relay-projects/types";
+
+function projectErrorMessage(error: unknown): string {
+  if (error instanceof RelayApiError) {
+    return error.errorShape?.message || error.message;
+  }
+  if (error instanceof Error) return error.message;
+  return "Project creation failed.";
+}
 
 export function RelayProjectForm() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
-  const [projectId, setProjectId] = React.useState("");
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
-  const [status, setStatus] = React.useState("active");
-  const [defaultRepositoryId, setDefaultRepositoryId] = React.useState("");
-
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
-  const [validationErrors, setValidationErrors] = React.useState<ProjectValidationIssue[] | null>(null);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: createProject,
-    onSuccess: (data) => {
-      void queryClient.invalidateQueries({
-        queryKey: relayProjectKeys.all,
-      });
-      void navigate({
-        to: "/projects/$projectId",
-        params: { projectId: data.project.projectId },
-      });
+    mutationFn: createWorkflowProject,
+    onSuccess: (project) => {
+      void queryClient.invalidateQueries({ queryKey: workflowProjectKeys.all });
+      const navigation = {
+        to: "/projects/$projectId" as const,
+        params: { projectId: project.projectId },
+      };
+      void navigate(navigation);
     },
-    onError: (err: unknown) => {
-      if (err instanceof RelayApiError) {
-        if (err.errorShape?.error === "VALIDATION_ERROR" && Array.isArray(err.errorShape.details?.validation)) {
-          setValidationErrors(err.errorShape.details.validation as ProjectValidationIssue[]);
-          setErrorMsg(err.errorShape.message || "Validation failed");
-        } else {
-          setErrorMsg(err.errorShape?.message || err.message);
-          setValidationErrors(null);
-        }
-      } else {
-        setErrorMsg(err instanceof Error ? err.message : "An unexpected error occurred");
-        setValidationErrors(null);
-      }
+    onError: (error) => {
+      setErrorMessage(projectErrorMessage(error));
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setValidationErrors(null);
-
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setErrorMessage(null);
     mutation.mutate({
-      project_id: projectId.trim(),
       name: name.trim(),
       description: description.trim(),
-      status,
-      default_repository_id: defaultRepositoryId.trim() || undefined,
     });
   };
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <div className="flex items-center gap-2">
-        <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <Link to="/projects">
-            <ArrowLeft className="h-4 w-4" />
-            <span className="sr-only">Back to projects</span>
-          </Link>
-        </Button>
-        <span className="text-sm font-medium text-muted-foreground">Back to Projects</span>
-      </div>
-
+    <div className="mx-auto w-full max-w-xl">
       <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {validationErrors && validationErrors.length > 0 ? (
-            <div className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-              <p className="font-semibold mb-1">Validation failed:</p>
-              <ul className="list-inside list-disc space-y-1 text-xs">
-                {validationErrors.map((issue, idx) => (
-                  <li key={idx}>
-                    <span className="font-medium">{issue.field}</span> — {issue.message}{" "}
-                    <span className="opacity-70 text-[10px]">({issue.code})</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : errorMsg ? (
-            <div className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-              {errorMsg}
+          {errorMessage ? (
+            <div
+              role="alert"
+              className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {errorMessage}
             </div>
           ) : null}
 
           <div className="space-y-1.5">
-            <Label htmlFor="projectId">Project ID <span className="text-destructive">*</span></Label>
+            <Label htmlFor="project-name">
+              Project Name <span className="text-destructive">*</span>
+            </Label>
             <Input
-              id="projectId"
-              placeholder="e.g. relay-contracts"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              required
-              disabled={mutation.isPending}
-              className="font-mono text-sm"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              A unique lowercase identifier with no spaces.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="name">Project Name <span className="text-destructive">*</span></Label>
-            <Input
-              id="name"
-              placeholder="e.g. Relay Contracts"
+              id="project-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Relay"
+              autoFocus
               required
               disabled={mutation.isPending}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="project-description">Description</Label>
             <Textarea
-              id="description"
-              placeholder="Provide a brief description of this project..."
+              id="project-description"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Describe the work organized by this Project."
+              rows={4}
               disabled={mutation.isPending}
-              rows={3}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="status">Status</Label>
-            <Select
-              value={status}
-              onValueChange={setStatus}
-              disabled={mutation.isPending}
-            >
-              <SelectTrigger id="status">
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="defaultRepositoryId">Default Repository ID</Label>
-            <Input
-              id="defaultRepositoryId"
-              placeholder="e.g. main-repo (optional)"
-              value={defaultRepositoryId}
-              onChange={(e) => setDefaultRepositoryId(e.target.value)}
-              disabled={mutation.isPending}
-              className="font-mono text-sm"
             />
             <p className="text-[10px] text-muted-foreground">
-              Optionally specify the primary repository registered under this project.
+              Relay assigns the Project identity and creates it in the active state.
             </p>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Button asChild variant="outline" size="sm" disabled={mutation.isPending}>
-              <Link to="/projects">Cancel</Link>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={mutation.isPending}
+              onClick={() => void navigate({ to: "/projects" })}
+            >
+              Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={mutation.isPending || name.trim().length === 0}
+            >
               {mutation.isPending ? (
                 <>
-                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="size-3.5 animate-spin" />
                   Creating...
                 </>
               ) : (

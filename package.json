@@ -3,41 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css",
-    "build:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020",
-    "build": "npm run build:css && npm run build:js",
-    "chatgpt-mcp:init": "node scripts/local/chatgpt-mcp.mjs init",
-    "chatgpt-mcp:start": "node scripts/local/chatgpt-mcp.mjs start",
-    "chatgpt-mcp:doctor": "node scripts/local/chatgpt-mcp.mjs doctor",
-    "chatgpt-mcp:help": "node scripts/local/chatgpt-mcp.mjs help",
-    "dev:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css --watch",
-    "dev:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch",
-    "dev:templ": "templ generate --watch",
-    "dev:server": "air -c .air.toml",
-    "dev": "concurrently \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:templ\" \"npm:dev:server\"",
-    "dev:web": "cd apps/web && npm run dev",
-    "build:web": "cd apps/web && npm run build",
-    "validate": "make validate",
-    "validate:fast": "make validate-fast",
-    "validate:broad": "make validate-broad",
-    "validate:full": "make validate-full",
-    "hooks:setup": "make hooks-setup",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "typecheck:web": "npm --prefix apps/web run typecheck",
+    "test:web": "npm --prefix apps/web run test",
     "test:local-scripts": "node --test scripts/local/chatgpt-mcp.test.mjs",
-    "smoke": "npm run agentrefs:check && go test ./internal/smoke && go test ./internal/mcp && go test ./internal/server && npm run test:local-scripts && npm --prefix apps/web run typecheck && npm --prefix apps/web test",
-    "plan-seed-smoke": "go run ./cmd/plan-seed-smoke",
     "agentrefs:generate": "go run ./cmd/agentrefs generate",
     "agentrefs:check": "go run ./cmd/agentrefs check",
     "release:smoke": "bash scripts/release-smoke.sh"
   },
-  "devDependencies": {
-    "@tailwindcss/cli": "^4.0.0",
-    "concurrently": "^9.0.0",
-    "esbuild": "^0.23.0",
-    "tailwindcss": "^4.0.0",
-    "typescript": "^5.5.0"
-  },
-  "dependencies": {
-    "alpinejs": "^3.14.0",
-    "htmx.org": "^1.9.0"
-  }
+  "devDependencies": {},
+  "dependencies": {}
 }

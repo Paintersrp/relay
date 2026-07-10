@@ -19,7 +19,7 @@
 //   label or icon — it is intentionally NOT consulted here and never adds a Run
 //   to the attention classification.
 
-import type { RelayRunStatus } from "@/features/relay-runs";
+import type { WorkflowRunStatus } from "@/features/relay-runs";
 import { AWAITING_REVIEW_STATUSES, BLOCKED_STATUSES } from "./statusSets";
 import type { RecentActivityItem } from "./types";
 
@@ -45,7 +45,7 @@ const ATTENTION_STATUSES: ReadonlySet<string> = new Set<string>([
  * True when the canonical `status` is in the closed blocked / awaiting-review
  * classification (Requirement 3.11).
  */
-function isAttentionStatus(status: RelayRunStatus | string): boolean {
+function isAttentionStatus(status: WorkflowRunStatus | string): boolean {
   return ATTENTION_STATUSES.has(status);
 }
 
@@ -57,7 +57,7 @@ function isAttentionStatus(status: RelayRunStatus | string): boolean {
 export interface AttentionRunInput {
   id: string;
   label: string;
-  status: RelayRunStatus | string;
+  status: WorkflowRunStatus | string;
   updatedAt: string; // ISO-8601
 }
 
@@ -70,7 +70,7 @@ export interface AttentionRunItem {
   type: "run";
   id: string;
   label: string;
-  status: RelayRunStatus | string;
+  status: WorkflowRunStatus | string;
   updatedAt: string; // ISO-8601
   to: string;
   params: Record<string, string>;

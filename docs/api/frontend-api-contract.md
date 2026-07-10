@@ -1,774 +1,512 @@
-# Relay Frontend-Facing API Contract
+# Relay Frontend API Contract
 
-This document specifies the typed JSON API contract between the TanStack Start React frontend and the Go orchestration backend.
+## Runtime boundary
 
-## Purpose
+The Go daemon is the only backend authority for Projects, repository targets, Plans, Runs, execution attempts, artifacts, audit packets, audit decisions, and lifecycle transitions.
 
-The purpose of this contract is to define the exact JSON boundary between the frontend and the backend for the Relay workbench. This allows the frontend to run independently using standardized type models and mock data, while ensuring seamless integration once the Go backend implements the matching JSON routes.
+The React workbench uses this JSON API only. The backend exposes no handoff intake, prepare, brief-approval, project-scoped planning, source/context, seed, Plan Attempt, refactor-backlog, or legacy closeout routes.
 
-## Runtime Model
+Default development addresses:
 
-Relay is partitioned into two runtime environments:
+- Backend: `http://localhost:8080`
+- Frontend: `http://localhost:3000`
+- Frontend backend configuration: `VITE_RELAY_API_BASE_URL`
+- Backend frontend configuration: `RELAY_WEB_BASE_URL`
 
-1. **Go Daemon (Backend)**: 
-   - Runs on `http://localhost:8080` (or configured port).
-   - Serves as the single source of truth for orchestration, SQLite storage, execution status, validation engines, and disk-based artifact storage.
-   - Exposes JSON endpoints matching this contract.
-2. **TanStack Start (React Frontend)**:
-   - Runs on `http://localhost:3000` (development server).
-   - Handles the React UI and coordinates state transitions by querying the Go daemon's API.
-   - Configures the Go backend URL using the environment variable `VITE_RELAY_API_BASE_URL` (defaults to `http://localhost:8080`).
+All IDs in paths are Relay string identities such as `project-*`, `note-*`, `plan-*`, `pass-*`, `run-*`, `attempt-*`, and `artifact-*`. Numeric legacy IDs are not accepted.
 
-## CORS Origin Configuration
+## Workflow stages
 
-By default, the Go backend allows cross-origin resource sharing (CORS) from the following local React development origins:
-- `http://localhost:3000`
-- `http://127.0.0.1:3000`
-- `http://localhost:5173`
-- `http://127.0.0.1:5173`
+Every Run exposes its exact durable `status` and one derived `stage`.
 
-If the frontend runs on a different host or port, you can customize the allowed origins by setting the `RELAY_CORS_ALLOWED_ORIGINS` environment variable on the Go backend (e.g. as a comma-separated list of origins):
+| Run status | Stage |
+| --- | --- |
+| `created` | `specification` |
+| `setup_ready` | `specification` |
+| `executing` | `execute` |
+| `execution_failed` | `execute` |
+| `cancelled` | `execute` |
+| `validating` | `audit` |
+| `validation_failed` | `audit` |
+| `audit_ready` | `audit` |
+| `needs_revision` | `audit` |
+| `completed` | `audit` |
 
-```bash
-RELAY_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+Unknown or legacy statuses are errors. They do not fall back to another stage.
+
+The non-API route `GET /runs/{runId}` redirects to:
+
+```text
+${RELAY_WEB_BASE_URL}/runs/{runId}/{stage}
 ```
 
-## Contract Rules
+A newly created Run therefore opens at `/specification`.
 
-- **Go Daemon Orchestration**: Go remains the sole backend orchestration engine. Pipeline execution logic, validation runners, and git worktrees must not move into TanStack Start server functions.
-- **No Templ/Htmx UI Calls**: The new React UI must interact only with the JSON API endpoints specified below. It must not call old HTML-rendering routes or templ/htmx form action handlers.
-- **No Old Route Naming Schemes**: Do not reuse the old templ/htmx form action names (`/approve_intake`, `/execute_handoff`, etc.) or layout page names as API endpoint paths. The JSON API uses clean rest-style routes (e.g. `/api/runs/{id}/approve-intake`).
+## List bounds
 
-## Workflow Status Contract
+- Project, Plan, and Run lists default to 50 items.
+- Project, Plan, and Run lists are capped at 100 items.
+- A Run detail exposes at most the 50 most recent execution attempts.
+- Artifact content defaults to 64 KiB and is capped at 64 KiB per request.
+- Artifact bodies are never embedded in Plan, Run, execution-attempt, or audit metadata responses.
 
-`RelayRun.status` is the **canonical workflow state** used for action gating. It is set to the exact store status value and must not be collapsed into a broad display bucket. Display/helper fields are derived separately:
+## Global repository targets
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `status` | `RelayRunStatus` | Canonical workflow state for action gating |
-| `activeStep` | `RelayRunStep` | Current pipeline step (`intake`, `prepare`, `execute`, `audit`) |
-| `lifecycleState` | `RelayRunLifecycleState` | Lifecycle bucket (`intake`, `prepare`, `execute`, `audit`, `completed`, `failed`) |
-| `state` | `string` | Human-readable display state label |
-| `statusSeverity` | `RelayRunStatusSeverity` | UI badge severity (`neutral`, `info`, `success`, `warning`, `danger`) |
-| `latestExecutionStatus` | `string` (optional) | Latest agent execution phase (`starting`, `running`, `completed`, `failed`, etc.) — separate from canonical status; `""` when no execution has been recorded |
+### `GET /api/repositories`
 
-### Canonical Status Values
-
-The following canonical statuses are emitted by `GET /api/runs` and `GET /api/runs/{id}`:
-
-- `draft` — Run created but not yet submitted
-- `needs_cleanup` — Run has uncommitted or dirty state
-- `intake_received` — Handoff received, no validation warnings
-- `intake_needs_review` — Handoff received with warnings, awaiting review
-- `validated` — Legacy: intake validated
-- `approved_for_prepare` — Intake approved; compilation allowed
-- `packet_validated` — Compilation succeeded, packet valid
-- `packet_validation_failed` — Compilation failed validation
-- `repair_validated` — Repair succeeded
-- `brief_ready_for_review` — Executor brief rendered, awaiting approval
-- `approved_for_executor` — Brief approved; executor dispatch allowed
-- `executor_dispatched` — Executor dispatched and running
-- `executor_done` — Executor completed successfully
-- `executor_blocked` — Executor encountered a blocking error
-- `local_validation_running` — Local validation commands are executing
-- `audit_ready` — Audit packet generated, ready for review
-- `audit_ready_for_review` — Legacy: audit ready (htmx fallback)
-- `revision_required` — Revision requested, audit must be regenerated
-- `accepted` — Audit approved
-- `accepted_with_warnings` — Audit approved with warnings
-- `completed` — Run closed
-- `blocked` — Run blocked (intake or general)
-- `validation_passed` — All required validation commands passed (audit step entry point)
-- `validation_failed` — One or more required validation commands failed
-- Legacy agent states: `agent_done`, `agent_blocked`, `agent_result_needs_review`, `validation_failed_accepted`
-
-Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are derived from the canonical status and must not be used for action gating. Frontend action gating must use `status` only.
-
-The canonical final state is `completed`. No mutating actions are available in this state.
-
-## Shared Models
-
-### RelayRun
+Returns:
 
 ```json
 {
-  "id": "string",
-  "name": "string",
-  "repo": "string",
-  "branch": "string",
-  "activeStep": "intake | prepare | execute | audit",
-  "status": "<canonical workflow state>",
-  "lifecycleState": "intake | prepare | execute | audit | completed | failed",
-  "createdAt": "string (ISO-8601)",
-  "updatedAt": "string (ISO-8601)",
-  "summary": "string",
-  "model": "string",
-  "riskLevel": "low | medium | high | critical",
-  "validation": {
-    "errors": 0,
-    "warnings": 0,
-    "passed": 0,
-    "issues": []
+  "items": [
+    {
+      "repoTarget": "relay",
+      "localPath": "D:\\Code\\relay",
+      "createdAt": "2026-07-06T00:00:00Z",
+      "updatedAt": "2026-07-06T00:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+### `POST /api/repositories`
+
+Request:
+
+```json
+{
+  "repoTarget": "relay",
+  "localPath": "D:\\Code\\relay"
+}
+```
+
+Repository targets are globally unique case-insensitive keys. The local path must resolve to an existing directory.
+
+### `GET /api/repositories/{repoTarget}`
+
+Returns one repository target or `404 NOT_FOUND`.
+
+Project repository routes create or remove non-owning references to these global targets; they never copy repository configuration.
+
+
+## Projects
+
+Projects are lightweight organizational records. They contain attached Plan references, non-owning repository references, and bounded Notes.
+
+### `GET /api/projects`
+
+Optional query parameters:
+
+- `status=active|archived`
+- `limit=1..100`
+
+Returns compact Projects with repository and note counts.
+
+### `POST /api/projects`
+
+Request:
+
+```json
+{
+  "name": "Relay",
+  "description": "Primary Relay workflow work."
+}
+```
+
+Returns `201 Created` with the created active Project.
+
+### `GET /api/projects/{projectId}`
+
+Returns one Project with repository references and bounded Notes.
+
+### `PATCH /api/projects/{projectId}`
+
+Updates Project name, description, or status. Archived Projects remain readable.
+
+### `POST /api/projects/{projectId}/repositories`
+
+Request:
+
+```json
+{
+  "repoTarget": "relay"
+}
+```
+
+Attaches an existing global repository target to the Project as a non-owning case-insensitive reference.
+
+### `DELETE /api/projects/{projectId}/repositories/{repoTarget}`
+
+Removes the non-owning Project repository reference.
+
+### `POST /api/projects/{projectId}/notes`
+
+Request:
+
+```json
+{
+  "title": "Future cleanup",
+  "body": "Review remaining legacy cleanup."
+}
+```
+
+Creates an open Project Note.
+
+### `PATCH /api/projects/{projectId}/notes/{noteId}`
+
+Updates title, body, or `status=open|done`.
+
+## Canonical browser validation
+
+### `POST /api/canonical-artifacts/validate`
+
+Request:
+
+```json
+{
+  "fileName": "feature.plan.json",
+  "canonicalContent": "{...}\n"
+}
+```
+
+Returns the computed hash, artifact kind, bounded compiler diagnostics, and notices without creating database rows or artifact files. Validation does not accept an expected hash. Canonical basenames and mutation `expectedSha256` values are validated exactly and are not whitespace-normalized.
+
+## Plans
+
+### `GET /api/plans`
+
+Optional query parameters:
+
+- `status=active|completed`
+- `projectId=project-*`
+- `limit=1..100`
+
+Returns:
+
+```json
+{
+  "items": [
+    {
+      "planId": "plan-*",
+      "project": {"projectId": "project-*", "name": "Relay", "status": "active"},
+      "featureSlug": "feature",
+      "status": "active",
+      "canonicalSha256": "64 lowercase hex characters",
+      "createdAt": "ISO-8601",
+      "updatedAt": "ISO-8601",
+      "passCount": 3,
+      "completedPassCount": 1,
+      "inProgressPassCount": 1,
+      "plannedPassCount": 1,
+      "currentPassId": "pass-*"
+    }
+  ],
+  "count": 1
+}
+```
+
+### `POST /api/plans`
+
+Request:
+
+```json
+{
+  "projectId": "project-*",
+  "fileName": "feature.plan.json",
+  "canonicalContent": "{...}\n",
+  "expectedSha256": "64 lowercase hex characters"
+}
+```
+
+The exact UTF-8 bytes of `canonicalContent` are hash-checked and compiled through the same application service used by MCP. The destination Project must be active. Project metadata is stored separately from canonical Plan JSON.
+
+### `GET /api/plans/{planId}`
+
+Returns:
+
+- bounded Plan summary;
+- ordered repository targets;
+- ordered passes;
+- dependency pass IDs;
+- associated Run summaries;
+- Plan artifact metadata with explicit `contentUrl`.
+
+Canonical Plan JSON and rendered Plan Markdown are retrieved only through the artifact content endpoint.
+
+### `PATCH /api/plans/{planId}/project`
+
+Request:
+
+```json
+{
+  "projectId": "project-*"
+}
+```
+
+Moves the Plan atomically to an active Project without changing canonical artifacts, passes, Runs, or audit evidence.
+
+### `GET /api/plans/{planId}/passes/{passId}`
+
+Returns one pass with dependency IDs and associated Run summaries.
+
+No Project review settings, Plan Attempt, legacy Plan Seed orchestration, next-pass-work, or next-audit-work HTTP route exists.
+
+## Runs
+
+### `GET /api/runs`
+
+Optional query parameters:
+
+- `status=<exact workflow Run status>`
+- `planId=plan-*`
+- `passId=pass-*` only when `planId` is also supplied
+- `limit=1..100`
+
+Returns:
+
+```json
+{
+  "items": [
+    {
+      "runId": "run-*",
+      "featureSlug": "feature",
+      "repoTarget": "relay",
+      "status": "setup_ready",
+      "stage": "specification",
+      "branch": "main",
+      "baseCommit": "40 lowercase hex characters",
+      "canonicalSha256": "64 lowercase hex characters",
+      "planId": "plan-*",
+      "passId": "pass-*",
+      "passNumber": 1,
+      "project": {"projectId": "project-*", "name": "Relay", "status": "active"},
+      "remediatesRunId": "run-*",
+      "createdAt": "ISO-8601",
+      "updatedAt": "ISO-8601",
+      "latestAttempt": {},
+      "currentPacket": {},
+      "latestDecision": {}
+    }
+  ],
+  "count": 1
+}
+```
+
+Optional properties are omitted when not applicable.
+
+### `POST /api/runs`
+
+Request:
+
+```json
+{
+  "fileName": "feature.pass-1.execution-spec.json",
+  "canonicalContent": "{...}\n",
+  "expectedSha256": "64 lowercase hex characters",
+  "planId": "plan-*",
+  "passNumber": 1,
+  "remediatesRunId": "run-*"
+}
+```
+
+`planId` and `passNumber` are supplied together for a Managed Run, whose `fileName` must end in the matching `.pass-<number>.execution-spec.json` qualifier. A Standalone Run omits both association fields and must use the unqualified `feature.execution-spec.json` form. Missing, malformed, mismatched, or Standalone pass qualifiers block before persistence. Run creation never accepts or stores a direct Project association.
+
+### `GET /api/runs/{runId}`
+
+Returns:
+
+```json
+{
+  "run": {},
+  "attempts": [],
+  "artifacts": []
+}
+```
+
+Run-owned artifacts and attempt-owned evidence are metadata only. Every artifact includes an explicit `/api/artifacts/{artifactId}/content` URL.
+
+### `GET /api/runs/{runId}/specification`
+
+Returns the Specification review projection:
+
+```json
+{
+  "run": {},
+  "executionSpec": {
+    "artifactId": "artifact-*",
+    "kind": "execution_spec",
+    "contentUrl": "/api/artifacts/artifact-*/content"
   },
-  "artifacts": [],
-  "latestEvents": [],
-  "statusSeverity": "neutral | info | success | warning | danger",
-  "state": "string",
-  "executor": "string",
-  "executorAdapter": "string",
-  "latestExecutionStatus": "string (optional)"
+  "executorBrief": {
+    "artifactId": "artifact-*",
+    "kind": "executor_brief",
+    "contentUrl": "/api/artifacts/artifact-*/content"
+  },
+  "plan": {
+    "planId": "plan-*",
+    "featureSlug": "feature",
+    "status": "active"
+  },
+  "pass": {
+    "passId": "pass-*",
+    "number": 1,
+    "name": "Pass name",
+    "repoTarget": "relay",
+    "status": "in_progress"
+  },
+  "remediatesRunId": "run-*"
 }
 ```
 
-### RelayArtifact
+Plan, pass, and remediation properties are omitted for unmanaged ordinary Runs.
+
+## Execution attempts
+
+### `POST /api/runs/{runId}/attempts`
+
+Request:
 
 ```json
 {
-  "id": "string",
-  "label": "string",
-  "path": "string",
-  "kind": "prompt | handoff | result | audit | validation | diff",
-  "sizeHint": "string (optional)",
-  "createdAt": "string (ISO-8601, optional)"
+  "adapter": "codex",
+  "model": "model-id"
 }
 ```
 
-### RelayRunEvent
+Performs read-only repository and executor preflight before creating the immutable attempt. Returns `202 Accepted`.
+
+### `GET /api/runs/{runId}/attempts`
+
+Returns:
 
 ```json
 {
-  "id": "string",
-  "runId": "string",
-  "kind": "log | status_change | artifact_created | validation_run | step_transition",
-  "message": "string",
-  "createdAt": "string (ISO-8601)"
+  "items": [],
+  "count": 0
 }
 ```
 
-### RelayApiErrorShape
+At most 50 attempts are returned.
+
+### `GET /api/runs/{runId}/attempts/{attemptId}`
+
+Returns the bounded attempt projection, artifact metadata, and bounded live stdout/stderr tails. Runtime owner IDs, process identities, and command previews are excluded.
+
+### `POST /api/runs/{runId}/attempts/{attemptId}/cancel`
+
+Requests cancellation for the matching Run and attempt.
+
+### `POST /api/runs/{runId}/attempts/{attemptId}/reconcile`
+
+Reopens durable process ownership and resolves cleanup-pending execution state.
+
+The former `/api/workflow/runs/...` prefix does not exist.
+
+## Artifacts
+
+### `GET /api/artifacts/{artifactId}`
+
+Returns metadata only:
 
 ```json
 {
-  "error": "string",
-  "message": "string",
-  "code": "string (optional)",
-  "details": {}
+  "artifactId": "artifact-*",
+  "ownerType": "run",
+  "kind": "executor_brief",
+  "mediaType": "text/markdown",
+  "sha256": "64 lowercase hex characters",
+  "sizeBytes": 123,
+  "createdAt": "ISO-8601",
+  "contentUrl": "/api/artifacts/artifact-*/content"
 }
 ```
 
-### Managed Plan Models
+Filesystem paths are not returned.
 
-```ts
-type PlanAPIPlan = {
-  id: string
-  planId: string
-  schemaVersion: string
-  title: string
-  goal: string
-  repoTarget: string
-  branchContext: string
-  status: 'active' | 'complete' | 'abandoned'
-  sourceIntentSummary: string
-  sourceArtifactPath?: string
-  createdAt: string
-  updatedAt: string
-}
+### `GET /api/artifacts/{artifactId}/content`
 
-type PlanAPIPass = {
-  id: string
-  planRowId: string
-  passId: string
-  sequence: number
-  name: string
-  goal: string
-  intendedExecutionScope: string[]
-  nonGoals: string[]
-  dependencies: string[]
-  status: 'planned' | 'in_progress' | 'completed' | 'skipped'
-  createdAt: string
-  updatedAt: string
-}
+Optional query parameters:
 
-type PlanAPIReadPlan = PlanAPIPlan & {
-  passCount: number
-  completionReady: boolean
-  completedPassCount?: number
-  inProgressPassCount?: number
-  plannedPassCount?: number
-  skippedPassCount?: number
-  currentPassId?: string
-  currentPassName?: string
-  currentPassGoal?: string
-  nextPassId?: string
-  nextPassName?: string
-  nextPassGoal?: string
+- `offset`, default `0`
+- `limit`, default and maximum `65536`
+
+The daemon verifies the artifact's exact size and SHA-256 before returning content.
+
+Response:
+
+```json
+{
+  "artifact": {},
+  "offset": 0,
+  "byteCount": 65536,
+  "encoding": "utf-8",
+  "content": "bounded content",
+  "truncated": true,
+  "nextOffset": 65536
 }
 ```
 
-`completionReady` is read-only. It is `true` only when every pass in the plan is terminal (`completed` or `skipped`). It does not mutate `plans.status`.
+`encoding` is `utf-8` when the returned bytes are valid UTF-8 and `base64` otherwise. `nextOffset` is omitted when no further bytes remain.
 
----
+## Audit
 
-### Audit State Machine
+### `POST /api/runs/{runId}/audit/prepare`
 
-The audit lifecycle follows these state transitions:
+Request:
 
-```
-executor_done / executor_blocked
-  → POST /audit (GenerateAudit)
-  → audit_ready
-      → POST /audit/approve → accepted / accepted_with_warnings
-          → POST /audit/prepare-commit-message (artifact only, no git)
-          → POST /audit/close → completed (final state, read-only)
-      → POST /audit/request-revision → revision_required
-          → POST /audit (regenerate from executor terminal states) → audit_ready
+```json
+{
+  "auditedCommit": "40 lowercase hex characters"
+}
 ```
 
-**Rules:**
-- `audit_ready` and `audit_ready_for_review` are equivalent for action gating.
-- `revision_required` blocks all review actions until audit is regenerated.
-- `completed` is the canonical final state. All actions are blocked in this state.
-- ApproveAudit transitions to `accepted` or `accepted_with_warnings` only; never closes the run.
-- PrepareCommitMessage is gated to `accepted`/`accepted_with_warnings` only.
-- CloseRun is gated to `accepted`/`accepted_with_warnings` only; transitions to `completed`.
-- No audit action performs git add, commit, push, merge, reset, checkout, or worktree mutation.
+Validates the exact clean local commit range and creates or returns the current immutable audit packet.
 
-### Executor Adapter Semantics
+### `GET /api/runs/{runId}/audit/status`
 
-The `executorAdapter` / `executor_adapter` field controls which executor backend the run uses.
+Returns current packet, latest packet, and recorded decision metadata using camel-case fields. Packet bodies remain available only through their artifact `contentUrl`.
 
-**Canonical Values**:
-Responses always emit canonical values: `opencode_go`, `codex`, or `antigravity`.
-`opencode_go`, `codex`, and `antigravity` are active adapters.
-Codex dispatch relies on local Codex CLI installation/auth/config available to the Relay daemon.
-Codex does not require Relay to store OpenAI API keys.
-Codex sandbox defaults to `workspace-write`; `danger-full-access` is not allowed by Relay.
-Antigravity dispatch relies on local Antigravity CLI installation/auth/config available to the Relay daemon.
-Antigravity does not require Relay to store API keys.
-Antigravity dispatch uses a prompt file, empty stdin, no-color JSON output, and a zero-exit plus JSON-status success policy.
+Audit decisions are recorded through the canonical Auditor MCP tool and require exact packet identity plus explicit operator confirmation.
 
-**Accepted Input Aliases**:
-Input resolution is case-insensitive and ignores surrounding whitespace. Aliases map to canonical values:
-- Missing, empty string, `opencode`, or `opencode_go` map to `opencode_go`.
-- `codex` maps to `codex`.
-- `agy` or `antigravity` maps to `antigravity`.
+The former local-audit, project-audit, audit submit, approve, request-revision, commit-message, and close routes do not exist.
 
-**Explicit Invalid Input Behavior**:
-If an explicit `executorAdapter` or `executor_adapter` field contains an invalid or unrecognized value, the API returns a `400 BAD_REQUEST` and **must not** persist the invalid value to the database or run config.
+## MCP
 
-**Implicit Fallback Behavior (`target_executor`)**:
-For legacy compatibility, if no explicit adapter field is provided during planner handoff, the metadata field `target_executor` may be used as a fallback.
-- If `target_executor` maps to a known adapter alias (e.g., `codex`), it is accepted.
-- If `target_executor` contains a non-adapter value (such as `deepseek-v4-flash`, `manual`, or `other`), the system safely ignores it and defaults to `opencode_go` rather than returning an error.
+`POST /mcp` remains the canonical ChatGPT-facing JSON-RPC endpoint.
 
-**Executor Preflight Behavior**:
-Before launching any executor command, Relay performs local preflight checks for binary availability, workdir existence, stdin/prompt source existence, and command preview presence.
-Preflight does not run the executor CLI or perform auth probes.
-If preflight fails, Relay blocks the run as `executor_blocked` and writes `executor_result` plus `command_log` artifacts with the preflight failure details.
+Canonical tool inventories remain profile-specific:
 
-**Frontend Artifact Surfacing**:
-The Execute UI should classify artifacts using `storageKind` first, then `kind`, `filename`, and `label`.
-Preflight failures should be shown as a specific blocked subtype when `executor_result` contains `executor preflight failed` or `command_log` contains `Preflight: BLOCKED`.
-The UI must use existing artifact list/content endpoints and must not require new API fields for this display.
+- Planner: `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run`
+- Auditor: `validate_artifact`, `create_run`, `get_audit_packet`, `record_audit_decision`
+- Local operator: the union of Planner and Auditor tools, including `list_projects`
 
-## Endpoints
+`submit_plan` requires external `project_id`. `validate_artifact` and `create_run` remain Project-independent. `get_plan` returns compact Project metadata.
 
-### 1. GET `/api/runs`
-- **Purpose**: Retrieve a list of all active and historic runs.
-- **Request Body**: None
-- **Response Body**: `RelayRun[]`
-- **Fallback Policy**: Allowed. Falls back to static mock run lists if the endpoint is unavailable, unimplemented, or the daemon is offline.
-- **Expected Error Behavior**: Throws a descriptive error if the response contains invalid or malformed JSON.
+Successful `create_run` output includes:
 
-### 2. GET `/api/runs/{id}`
-- **Purpose**: Fetch details of a single run by ID.
-- **Request Body**: None
-- **Expected status values for key pipeline states**:
-  - `approved_for_prepare` — Intake approved, ready to compile (activeStep: `prepare`, lifecycleState: `prepare`)
-  - `packet_validated` — Compilation succeeded (activeStep: `prepare`, lifecycleState: `prepare`)
-  - `approved_for_executor` — Brief approved, ready to dispatch executor (activeStep: `execute`, lifecycleState: `execute`)
-  - `executor_done` — Executor completed (activeStep: `execute`, lifecycleState: `execute`)
-  - `local_validation_running` — Validation commands running (activeStep: `execute`, lifecycleState: `execute`)
-  - `validation_passed` — Validation passed (activeStep: `audit`, lifecycleState: `audit`)
-  - `validation_failed` — Validation failed (activeStep: `audit`, lifecycleState: `failed`)
-- **Response Body**: `RelayRun`
-- **Fallback Policy**: Allowed. Falls back to the corresponding static mock run if the endpoint is 404, unimplemented, or the daemon is offline.
-- **Expected Error Behavior**: Throws a descriptive error if the response contains invalid or malformed JSON.
+```json
+{
+  "review_url": "http://localhost:3000/runs/run-*/specification"
+}
+```
 
-### 3. GET `/api/runs/{id}/artifacts`
-- **Purpose**: Get all artifacts associated with the specified run.
-- **Request Body**: None
-- **Response Body**: `RelayArtifact[]`
-- **Fallback Policy**: Allowed. Falls back to mock artifacts if the endpoint is 404/501 or the daemon is offline.
-- **Expected Error Behavior**: Throws a descriptive error if the response contains invalid or malformed JSON.
+The URL uses `RELAY_WEB_BASE_URL` when configured.
 
-### 4. GET `/api/runs/{id}/events`
-- **Purpose**: Stream or fetch all events and log messages for the specified run.
-- **Request Body**: None
-- **Response Body**: `RelayRunEvent[]`
-- **Fallback Policy**: Allowed. Falls back to mock events if the endpoint is 404/501 or the daemon is offline.
-- **Expected Error Behavior**: Throws a descriptive error if the response contains invalid or malformed JSON.
+## Removed routes
 
-### 5. POST `/api/intake/planner-handoff`
-- **Purpose**: Submit a new implementation handoff packet to begin the pipeline.
-- **Request Body**:
-  ```json
-  {
-    "repo": "string",
-    "branch": "string",
-    "handoffPath": "string",
-    "packetId": "string (optional)",
-    "name": "string (optional)",
-    "executorAdapter": "string (optional)",
-    "executor_adapter": "string (optional)",
-    "planId": "string optional",
-    "passId": "string optional",
-    "plan_id": "string optional snake_case alias",
-    "pass_id": "string optional snake_case alias"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "intake_received | intake_needs_review",
-    "lifecycleState": "intake",
-    "createdAt": "string (ISO-8601)",
-    "planId": "string (optional)",
-    "passId": "string (optional)"
-  }
-  ```
-- **Validation rules for plan/pass association**:
-  - `passId` / `pass_id` without a plan ID is rejected.
-  - An unknown `planId` returns `404`.
-  - A `passId` that does not exist under the specified plan returns `404`.
-  - A successful pass association moves the pass to `in_progress`.
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+The daemon returns `404 NOT_FOUND` for every obsolete workflow route, including:
 
-### 6. POST `/api/runs/{id}/approve-intake`
-- **Purpose**: Approve, request revision, or block the parsed metadata and git preflights of the intake step.
-- **Request Body**:
-  ```json
-  {
-    "action": "approve | needs_revision | blocked",
-    "notes": "string (optional)",
-    "overrides": {
-      "model": "string (optional)",
-      "repo": "string (optional)",
-      "branch": "string (optional)",
-      "validationCommands": "string (optional)",
-      "executorAdapter": "string (optional)"
-    }
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "approved_for_prepare | intake_needs_review | blocked",
-    "lifecycleState": "prepare | intake | failed",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- `/api/runs/{legacyNumericId}/approve-intake`
+- `/api/runs/{legacyNumericId}/prepare`
+- `/api/runs/{legacyNumericId}/render-brief`
+- `/api/runs/{legacyNumericId}/approve-brief`
+- `/api/runs/{legacyNumericId}/execute`
+- `/api/runs/{legacyNumericId}/validate`
+- `/api/audits/local...`
+- `/api/workflow/runs...`
+- `/handoffs`
+- `/handoffs/new`
+- `/settings/repos...`
 
-### 7. POST `/api/runs/{id}/prepare`
-- **Purpose**: Trigger compilation of the instruction brief (calls existing Pass 6 compiler service).
-- **Note**: Requires run status `approved_for_prepare`. Returns `422 Unprocessable Entity` with validation report on compile failure.
-- **Request Body**: None
-- **Response Body** (success):
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "packetId": "string",
-    "status": "packet_validated | packet_validation_failed",
-    "lifecycleState": "prepare",
-    "validationReport": {}
-  }
-  ```
-- **Response Body** (validation failure, 422):
-  ```json
-  {
-    "success": false,
-    "runId": "string",
-    "packetId": "string",
-    "issues": ["string"],
-    "validationReport": {}
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-
-### 8. POST `/api/runs/{id}/render-brief`
-- **Purpose**: Render the executor brief from the compiled canonical packet (calls existing Pass 7 renderer service).
-- **Note**: Requires run status `packet_validated` or `repair_validated`.
-- **Request Body**: None
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "brief_ready_for_review",
-    "lifecycleState": "prepare",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-
-### 9. POST `/api/runs/{id}/approve-brief`
-- **Purpose**: Approve the compiled brief and authorize execution.
-- **Note**: Requires run status `brief_ready_for_review` and a passing brief validation report. Advances to `approved_for_executor`.
-- **Request Body**:
-  ```json
-  {
-    "action": "approve | needs_revision",
-    "notes": "string (optional)"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "approved_for_executor",
-    "lifecycleState": "execute",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-
-### 10. POST `/api/runs/{id}/execute`
-- **Purpose**: Start the repository agent execution loop. Dispatches only from `approved_for_executor` run status. Reads `executor_brief.md` artifact as the sole executor task instruction.
-- **Request Body**:
-  ```json
-  {
-    "action": "start | cancel | recover"
-  }
-  ```
-- **Success Response Body** (start):
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "executor_dispatched",
-    "lifecycleState": "execute",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Error Response Body** (dispatch blocked, 422):
-  ```json
-  {
-    "success": false,
-    "runId": "string",
-    "error": "string describing why dispatch was blocked"
-  }
-  ```
-- **Notes**:
-  - `start` dispatches only when run status is `approved_for_executor`.
-  - Dispatch reads `executor_brief.md` and sends only that rendered brief text to the executor.
-  - Missing/empty brief, missing workspace config, missing selected model, or duplicate active session blocks dispatch.
-  - Lifecycle states: `approved_for_executor` → `executor_dispatched` → `executor_done` | `executor_blocked`.
-  - Output artifacts: `executor_stdout.txt`, `executor_stderr.txt`, `command_log.txt`, `executor_result.txt`.
-  - `cancel` and `recover` return `501 Not Implemented` when unavailable.
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-
-### 11. POST `/api/runs/{id}/audit`
-- **Purpose**: Generate the audit packet from executor evidence. Collects run artifacts (executor result, validation output, changed files, git diff) and produces `audit_input_summary.md`, `audit_evidence_manifest.json`, and `audit_packet.md`. Does not auto-commit, push, close, or accept the run.
-- **Request Body**: None
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "audit_ready",
-    "inputSummary": "string (path to audit_input_summary.md artifact)",
-    "evidenceManifest": "string (path to audit_evidence_manifest.json artifact)",
-    "auditPacket": "string (path to audit_packet.md artifact)",
-    "decision": "manual_review_required | accepted | accepted_with_warnings | revision_required | blocked",
-    "warnings": ["string"],
-    "lifecycleState": "audit"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 409 Conflict if validation/audit gating requirements are not met. Returns 400 for invalid ID. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: Successful generation transitions the run to `audit_ready` status. Default decision is advisory only. Evidence is local-only and references persisted Relay artifacts rather than GitHub PR, CI, or Actions data.
-
-### 11b. GET `/api/runs/{id}/audit/status`
-- **Purpose**: Return the structured read-only audit workflow status used by the audit UI.
-- **Response Body**:
-  ```json
-  {
-    "runId": "string",
-    "runStatus": "string",
-    "auditState": "not_ready | candidate | ready | decision_submitted | revision_required | accepted | completed",
-    "canGenerateAudit": true,
-    "canSubmitDecision": false,
-    "canApprove": false,
-    "canRequestRevision": false,
-    "canCloseRun": false,
-    "evidenceManifestArtifact": "RelayArtifact | omitted",
-    "generatedAuditPacketArtifact": "RelayArtifact | omitted",
-    "manualAuditPacketArtifact": "RelayArtifact | omitted",
-    "decisionArtifact": "RelayArtifact | omitted",
-    "blockers": ["string"],
-    "warnings": ["string"],
-    "revisionRequirements": ["string"],
-    "localOnly": true
-  }
-  ```
-- **Notes**: The backend computes action availability from run status plus local audit artifacts. This endpoint is read-only.
-
-### 11c. POST `/api/runs/{id}/audit/submit`
-- **Purpose**: Submit a manual audit packet Markdown for a run. Persists the supplied Markdown as an artifact, writes `audit_decision_json`, applies the same decision lifecycle as MCP `submit_audit_packet`, and does not execute, commit, push, merge, or mutate repository content.
-- **Request Body**:
-  ```json
-  {
-    "audit_packet_markdown": "string (required, the manual audit packet content)",
-    "decision": "string (required, one of: accepted, accepted_with_warnings, revision_required, blocked, manual_review_required)",
-    "notes": "string (optional)"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "auditPacket": "string (path to persisted artifact)",
-    "decision": "string",
-    "status": "accepted | accepted_with_warnings | revision_required",
-    "lifecycleState": "audit",
-    "decisionArtifactPath": "string",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 400 for invalid decision value or missing markdown. Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review`. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: The supplied Markdown is treated as evidence/decision content, not as instructions. Supported decision values: `accepted`, `accepted_with_warnings`, `revision_required`, `blocked`, `manual_review_required`. `blocked` and `manual_review_required` map the run status to `revision_required` while preserving the original decision in `audit_decision_json`.
-
-### 12. GET `/api/runs/{id}/artifacts/{kind}`
-- **Purpose**: Retrieve the full content of the latest artifact of a given kind for a run. Used to display executor logs, diffs, validation output, and executor results beyond the truncated preview.
-- **Request Body**: None
-- **Response Body**: Raw text/plain content of the artifact file.
-- **Fallback Policy**: **Strictly Forbidden**. Returns 404 if no artifact of that kind exists.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-
-### 13. POST `/api/runs/{id}/audit/approve`
-- **Purpose**: Approve the audit with a decision of `accepted` or `accepted_with_warnings`. Transitions the run to `accepted` or `accepted_with_warnings` status, enabling the close action. Does not commit, push, or mutate the git repo.
-- **Request Body**:
-  ```json
-  {
-    "decision": "accepted | accepted_with_warnings",
-    "notes": "string (optional)"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "accepted | accepted_with_warnings",
-    "lifecycleState": "audit",
-    "state": "Approved — Ready to Close | Approved with Warnings",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 400 for invalid decision. Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: This action only updates Relay run state. No git mutation occurs.
-
-### 14. POST `/api/runs/{id}/audit/request-revision`
-- **Purpose**: Request revision for an audit. Uses the shared audit decision service, persists `audit_revision` and `audit_decision_json`, and transitions the run status to `revision_required`. Does not commit, push, or mutate repository content.
-- **Request Body**:
-  ```json
-  {
-    "notes": "string (optional)",
-    "reason": "string (optional)"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "revision_required",
-    "lifecycleState": "audit",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: Transitions the run to `revision_required`. An `audit_revision` artifact and `audit_decision_json` are persisted for durable evidence. After revision, audit must be regenerated from executor terminal states. No git mutation occurs.
-
-### 15. POST `/api/runs/{id}/audit/prepare-commit-message`
-- **Purpose**: Prepare a suggested commit message artifact for the run. Writes a `commit_message.txt` artifact with the run title and changed file summary. Gated to `accepted` or `accepted_with_warnings` status only. Does not commit, push, stage, or mutate any repo files.
-- **Request Body**: None
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "commitMessage": "string",
-    "artifactPath": "string",
-    "artifactKind": "commit_message_text"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in `accepted` or `accepted_with_warnings` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: Only creates a suggested message artifact. No git commit, git push, git add, staging, merge, or repo mutation occurs.
-
-### 16. POST `/api/runs/{id}/audit/close`
-- **Purpose**: Close a run after audit approval. Transitions the run to `completed` status. Gated to `accepted` or `accepted_with_warnings` status only. Preserves all artifacts and evidence. Does not commit, push, or mutate the git repo.
-- **Request Body**: None
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "completed",
-    "lifecycleState": "completed",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 409 if run is not in `accepted` or `accepted_with_warnings` state. Returns 404 for missing run. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: Closing updates Relay run state only. No git commit, push, or repo mutation occurs.
-
-### 17. POST `/api/runs/{id}/approve-closeout`
-- **Purpose**: (Legacy) Accept the audit results and commit/close the run.
-- **Request Body**:
-  ```json
-  {
-    "action": "approve | reject",
-    "notes": "string (optional)"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "runId": "string",
-    "status": "completed",
-    "lifecycleState": "completed",
-    "updatedAt": "string (ISO-8601)"
-  }
-  ```
-- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-
-### 18. POST `/api/plans/validate`
-- **Purpose**: Validate a Planner pass plan JSON against the canonical schema and Relay rules without persisting anything.
-- **Request Body**:
-  ```json
-  {
-    "plan": "<PlannerPassPlan JSON>",
-    "sourceArtifactPath": "string (optional)"
-  }
-  ```
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "validation": {
-      "valid": true,
-      "issues": []
-    }
-  }
-  ```
-- **Expected Error Behavior**: Returns `400` for missing/invalid JSON or missing plan. Validation failures are returned with `success: false` and a `200 OK` status from the validation endpoint itself.
-- **Notes**: No `plans` or `plan_passes` rows are written.
-
-### 19. POST `/api/plans`
-- **Purpose**: Submit a reviewed Planner pass plan to Relay. Creates one `plans` row and derived `plan_passes` rows.
-- **Request Body**:
-  ```json
-  {
-    "plan": "<PlannerPassPlan JSON>",
-    "sourceArtifactPath": "string (optional)"
-  }
-  ```
-- **Response Body** (success, `201`):
-  ```json
-  {
-    "success": true,
-    "plan": { "id": "string", "planId": "string", ... },
-    "passes": [ { "id": "string", "passId": "string", ... } ],
-    "validation": { "valid": true, "issues": [] }
-  }
-  ```
-- **Expected Error Behavior**: Returns `422` for validation failures. Returns `409` when the submitted `plan_id` already exists. Returns `400` for missing/invalid JSON or missing plan.
-- **Notes**: Passes are stored ordered by `sequence`. Pass statuses must be `planned` at submission time.
-
-### 20. GET `/api/plans`
-- **Purpose**: List stored managed plans.
-- **Query Parameters**:
-  - `status` (optional): filter by `active`, `complete`, or `abandoned`.
-  - `limit` (optional): default `50`, capped at `100`.
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "count": 1,
-    "plans": [ { "id": "string", "planId": "string", "passCount": 2, "completionReady": false, ... } ]
-  }
-  ```
-- **Expected Error Behavior**: Returns `400` for an invalid status filter or invalid limit.
-
-### 21. GET `/api/plans/{planId}`
-- **Purpose**: Get plan detail, including all passes ordered by `sequence ASC` and the read-only `completionReady` flag.
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "plan": { "id": "string", "planId": "string", "passCount": 2, "completionReady": false, ... },
-    "passes": [ ... ],
-    "completionReady": false
-  }
-  ```
-- **Expected Error Behavior**: Returns `404` for an unknown plan.
-
-### 22. GET `/api/plans/{planId}/passes/{passId}`
-- **Purpose**: Get a single pass scoped to its parent plan.
-- **Response Body**:
-  ```json
-  {
-    "success": true,
-    "plan": { "id": "string", "planId": "string", ... },
-    "pass": { "id": "string", "passId": "string", ... },
-    "completionReady": false
-  }
-  ```
-- **Expected Error Behavior**: Returns `404` for an unknown plan or for a `passId` that does not belong to the specified plan.
-
----
-
-## Read Fallback Policy
-
-To support local-first operations and design-led prototyping:
-- Read (GET) calls **MUST** check for endpoint availability.
-- Fallback to mock data is **strictly restricted** to:
-  1. The endpoint returning `404 Not Found` (meaning endpoint not yet implemented by Go daemon).
-  2. The endpoint returning `501 Not Implemented`.
-  3. The Go daemon process being offline or unreachable (`Connection Refused`/`TypeError: Fetch Failed`).
-- If the Go daemon is reachable and returns a `200 OK` but the payload is malformed or invalid JSON, the client **must throw** an exception immediately to prevent debugging silence.
-
-## Mutation Failure Policy
-
-To ensure high-fidelity interactions:
-- Mutation (POST) endpoints **must never return fake success**.
-- If a mutation call is triggered and the daemon is offline, or the endpoint returns a non-2xx status (e.g. `404`, `500`, `400`), the client **must throw a descriptive error** that identifies both the HTTP method and endpoint.
-- These failures must propagate to the UI to notify the user of real network or server issues.
-
-## Future Backend Adapter Notes
-
-When the Go daemon is extended with these endpoints:
-1. It must support CORS headers allowing requests from `http://localhost:3000`.
-2. It should handle standard JSON request payloads and return clean JSON error shapes matching `RelayApiErrorShape` when errors occur.
-3. Long-running events should be exposed via Server-Sent Events (SSE) at `/api/runs/{id}/events/stream`.
+No removed route redirects or translates into the new workflow.

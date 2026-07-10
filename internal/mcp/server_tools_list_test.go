@@ -2,165 +2,85 @@ package mcp
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestToolsList_LocalOperatorSchemasAreValidAndBounded(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
-
-	list := collectAllTools(t, srv, ToolsListParams{})
-
-	seen := map[string]bool{}
-	for _, tool := range list.Tools {
-		if tool.Name == "" {
-			t.Error("tool has empty name")
-		}
-		if seen[tool.Name] {
-			t.Errorf("duplicate tool name: %q", tool.Name)
-		}
-		seen[tool.Name] = true
-
-		if len(tool.InputSchema) == 0 {
-			t.Errorf("tool %q has empty InputSchema", tool.Name)
-		}
-		if !json.Valid(tool.InputSchema) {
-			t.Errorf("tool %q InputSchema is not valid JSON: %s", tool.Name, string(tool.InputSchema))
-		}
-
-		var schema map[string]interface{}
-		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-			t.Errorf("tool %q InputSchema decode error: %v", tool.Name, err)
-			continue
-		}
-		if typ, ok := schema["type"]; !ok || typ != "object" {
-			t.Errorf("tool %q InputSchema top-level type must be object, got %v", tool.Name, typ)
-		}
+func TestToolsListCanonicalProfilesAreExactAndSchemasAreBounded(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile ToolProfile
+		want    []string
+	}{
+		{name: "planner", profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}},
+		{name: "auditor", profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
+		{name: "local operator", profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
 	}
-}
-
-func TestToolsList_LocalOperatorPagedDiscoveryIncludesPlannerAndAuditor(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
-	list := collectAllTools(t, srv, ToolsListParams{})
-
-	requiredTools := []string{
-		"submit_test_audit_packet",
-		"list_open_runs",
-		"get_run_status",
-		"submit_audit_packet",
-		"get_next_audit_work",
-		"create_local_audit",
-		"get_local_audit",
-		"list_project_local_audits",
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		toolCreatePlanAttemptWithIntent,
-		toolCreatePlanSeed,
-	}
-	registered := toolNames(list.Tools)
-	for _, required := range requiredTools {
-		found := false
-		for _, name := range registered {
-			if name == required {
-				found = true
-				break
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := NewServer(nil, &MCPDeps{ToolProfile: tt.profile})
+			list := collectAllTools(t, srv, ToolsListParams{})
+			if got := toolNames(list.Tools); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("tools = %v, want %v", got, tt.want)
 			}
-		}
-		if !found {
-			t.Errorf("required audit tool %q not found in tools/list", required)
-		}
-	}
-
-	firstPage := listToolsPage(t, srv, ToolsListParams{})
-	if len(firstPage.Tools) > toolsListPageSize {
-		t.Fatalf("first page returned %d tools, exceeds page size %d", len(firstPage.Tools), toolsListPageSize)
-	}
-	if firstPage.NextCursor == "" && len(list.Tools) > toolsListPageSize {
-		t.Fatal("expected next cursor for paged local-operator discovery")
+			for _, tool := range list.Tools {
+				if !json.Valid(tool.InputSchema) {
+					t.Fatalf("tool %q has invalid schema: %s", tool.Name, tool.InputSchema)
+				}
+				var schema map[string]any
+				if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+					t.Fatal(err)
+				}
+				if schema["type"] != "object" {
+					t.Fatalf("tool %q top-level schema type = %v", tool.Name, schema["type"])
+				}
+				if tool.Name == "validate_artifact" || tool.Name == "submit_plan" || tool.Name == "create_run" {
+					params, ok := tool.Meta["openai/fileParams"].([]any)
+					if !ok || !reflect.DeepEqual(params, []any{"artifact_file"}) {
+						t.Fatalf("tool %q file params = %#v", tool.Name, tool.Meta["openai/fileParams"])
+					}
+					props := schema["properties"].(map[string]any)
+					fileSchema := props["artifact_file"].(map[string]any)
+					if fileSchema["type"] != "object" || fileSchema["additionalProperties"] != false {
+						t.Fatalf("tool %q artifact_file schema is not bounded: %#v", tool.Name, fileSchema)
+					}
+				}
+			}
+		})
 	}
 }
 
-func TestToolsList_QueryFilteringDoesNotMutateRegistry(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+func TestToolsListQueryFilteringDoesNotMutateCanonicalRegistry(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfilePlanner})
 	allBefore := collectAllTools(t, srv, ToolsListParams{})
-	auditOnly := collectAllTools(t, srv, ToolsListParams{Query: "audit"})
-	if len(auditOnly.Tools) == 0 {
-		t.Fatal("expected audit query to return tools")
+	planOnly := collectAllTools(t, srv, ToolsListParams{Query: "plan"})
+	if len(planOnly.Tools) == 0 {
+		t.Fatal("expected plan query to return tools")
 	}
-	for _, tool := range auditOnly.Tools {
-		text := strings.ToLower(tool.Name + " " + tool.Description + " " + strings.Join(toolTagsByName(tool.Name), " "))
-		if !strings.Contains(text, "audit") {
-			t.Fatalf("query returned non-audit tool %q", tool.Name)
+	for _, tool := range planOnly.Tools {
+		text := strings.ToLower(tool.Name + " " + tool.Description)
+		if !strings.Contains(text, "plan") {
+			t.Fatalf("query returned non-plan tool %q", tool.Name)
 		}
 	}
 	allAfter := collectAllTools(t, srv, ToolsListParams{})
-	if strings.Join(toolNames(allBefore.Tools), "\n") != strings.Join(toolNames(allAfter.Tools), "\n") {
-		t.Fatal("filtered tools/list mutated registry order or contents")
+	if !reflect.DeepEqual(toolNames(allBefore.Tools), toolNames(allAfter.Tools)) {
+		t.Fatal("filtered tools/list mutated canonical registry")
 	}
 }
 
-func TestToolsList_InvalidCursor(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+func TestToolsListInvalidCursor(t *testing.T) {
+	srv := NewServer(nil)
 	params, _ := json.Marshal(ToolsListParams{Cursor: "not-a-cursor"})
-	req := Request{
+	resp := srv.handleLine(mustMarshal(t, Request{
 		JSONRPC: JSONRPCVersion,
 		ID:      json.RawMessage(`1`),
 		Method:  "tools/list",
 		Params:  params,
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error == nil {
-		t.Fatal("expected JSON-RPC error for invalid cursor")
-	}
-	if resp.Error.Code != CodeInvalidParams {
-		t.Errorf("expected CodeInvalidParams, got %d", resp.Error.Code)
-	}
-}
-
-func TestToolsCall_AuditProfileAliasUsesFullLocalOperatorRegistry(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
-
-	tests := []struct {
-		name string
-		args string
-	}{
-		{"get_run_status", `{}`},
-		{"get_local_audit", `{}`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			params, _ := json.Marshal(ToolCallParams{
-				Name:      tt.name,
-				Arguments: json.RawMessage(tt.args),
-			})
-			req := Request{
-				JSONRPC: JSONRPCVersion,
-				ID:      json.RawMessage(`1`),
-				Method:  "tools/call",
-				Params:  params,
-			}
-			resp := srv.handleLine(mustMarshal(t, req))
-
-			if resp.Error != nil {
-				t.Fatalf("unexpected JSON-RPC error for registered tool %q: %v", tt.name, resp.Error)
-			}
-
-			var result ToolCallResult
-			b, _ := json.Marshal(resp.Result)
-			if err := json.Unmarshal(b, &result); err != nil {
-				t.Fatalf("unmarshal result for %q: %v", tt.name, err)
-			}
-
-			if !result.IsError {
-				t.Fatalf("expected tool-level error for %q with empty args (no store wired), got success", tt.name)
-			}
-
-			text := result.Content[0].Text
-			if strings.Contains(text, "unknown tool") {
-				t.Errorf("tool %q should reach handler (DEPENDENCY_ERROR or VALIDATION_ERROR), not unknown tool: %s", tt.name, text)
-			}
-		})
+	}))
+	if resp.Error == nil || resp.Error.Code != CodeInvalidParams {
+		t.Fatalf("expected invalid params, got %+v", resp.Error)
 	}
 }
 
@@ -170,28 +90,26 @@ func listToolsPage(t *testing.T, srv *Server, params ToolsListParams) ToolsListR
 	if params.Cursor != "" || params.Query != "" || len(params.IncludeTags) > 0 {
 		rawParams = mustMarshal(t, params)
 	}
-	req := Request{
+	resp := srv.handleLine(mustMarshal(t, Request{
 		JSONRPC: JSONRPCVersion,
 		ID:      json.RawMessage(`1`),
 		Method:  "tools/list",
 		Params:  rawParams,
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
+	}))
 	if resp.Error != nil {
-		t.Fatalf("unexpected error: %v", resp.Error)
+		t.Fatalf("unexpected tools/list error: %v", resp.Error)
 	}
 	raw, err := json.Marshal(resp)
 	if err != nil {
-		t.Fatalf("marshal page response: %v", err)
+		t.Fatal(err)
 	}
-	const maxBytes = 256 * 1024
-	if len(raw) > maxBytes {
-		t.Errorf("response size %d exceeds cap %d", len(raw), maxBytes)
+	if len(raw) > 256*1024 {
+		t.Fatalf("tools/list response size = %d", len(raw))
 	}
 	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
+	body, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatal(err)
 	}
 	return list
 }
@@ -207,4 +125,12 @@ func collectAllTools(t *testing.T, srv *Server, params ToolsListParams) ToolsLis
 		}
 		params.Cursor = page.NextCursor
 	}
+}
+
+func toolNames(tools []ToolDefinition) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
 }
