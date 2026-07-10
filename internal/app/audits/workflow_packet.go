@@ -12,6 +12,7 @@ import (
 
 	"relay/internal/executor"
 	workflowrepos "relay/internal/repos/workflow"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -99,6 +100,11 @@ func buildWorkflowAuditPacket(
 	if err := json.Unmarshal(executionSpec, &executionSpecJSON); err != nil {
 		return nil, fmt.Errorf("decode canonical Execution Spec for audit packet: %w", err)
 	}
+	executionProjection, projectionDiagnostics := speccompiler.ProjectExecutionPayload(executionSpec)
+	if len(projectionDiagnostics) != 0 {
+		first := projectionDiagnostics[0]
+		return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
+	}
 	managedContext, err := workflowAuditManagedContext(planModel, matchedRepoTarget, selectedPass)
 	if err != nil {
 		return nil, err
@@ -149,7 +155,7 @@ func buildWorkflowAuditPacket(
 		},
 		ChangedFiles:        workflowAuditChangedFiles(commit),
 		RelevantSourcePaths: workflowAuditRelevantSourcePaths(commit, selectedPass),
-		Validation:          workflowAuditValidation(evidence, attempt),
+		Validation:          workflowAuditValidation(evidence, attempt, executionProjection.ValidationCommands),
 		Artifacts:           workflowAuditArtifacts(evidence, diffArtifact),
 	}
 	if run.RemediatesRunRowID.Valid {
@@ -223,26 +229,60 @@ func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {
 	return "Execution attempt completed with status recorded in Relay."
 }
 
-func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem, attempt workflowstore.ExecutionAttempt) []WorkflowAuditValidationResult {
-	out := make([]WorkflowAuditValidationResult, 0, len(evidence))
-	for _, item := range evidence {
+func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem, attempt workflowstore.ExecutionAttempt, commands []speccompiler.ProjectedValidationCommand) []WorkflowAuditValidationResult {
+	if len(commands) == 0 {
+		out := make([]WorkflowAuditValidationResult, 0, len(evidence))
+		for _, item := range evidence {
+			var exitCode *int
+			status := "not_run"
+			if attempt.Status == workflowstore.AttemptStatusSucceeded {
+				status = "passed"
+				zero := 0
+				exitCode = &zero
+			}
+			out = append(out, WorkflowAuditValidationResult{
+				Command:           item.Kind,
+				Expected:          "Command execution succeeds",
+				Status:            status,
+				ConciseResult:     "Evidence captured for audit.",
+				ExitCode:          exitCode,
+				ArtifactReference: item.ArtifactID,
+			})
+		}
+		return out
+	}
+
+	out := make([]WorkflowAuditValidationResult, 0, len(commands))
+	for _, command := range commands {
 		var exitCode *int
 		status := "not_run"
+		concise := "Validation command declared by canonical Execution Spec; no finalized validation evidence artifact was matched."
 		if attempt.Status == workflowstore.AttemptStatusSucceeded {
 			status = "passed"
 			zero := 0
 			exitCode = &zero
+			concise = "Execution attempt succeeded; validation command preserved in specification order."
 		}
 		out = append(out, WorkflowAuditValidationResult{
-			Command:           item.Kind,
-			Expected:          "Command execution succeeds",
-			Status:            status,
-			ConciseResult:     "Evidence captured for audit.",
-			ExitCode:          exitCode,
-			ArtifactReference: item.ArtifactID,
+			Command:          command.Command,
+			WorkingDirectory: command.WorkingDirectory,
+			Expected:         projectedAuditExpected(command),
+			Status:           status,
+			ConciseResult:    concise,
+			ExitCode:         exitCode,
 		})
 	}
 	return out
+}
+
+func projectedAuditExpected(command speccompiler.ProjectedValidationCommand) string {
+	if strings.TrimSpace(command.Expected) != "" {
+		return strings.TrimSpace(command.Expected)
+	}
+	if strings.TrimSpace(command.SuccessSignal) != "" {
+		return strings.TrimSpace(command.SuccessSignal)
+	}
+	return "Command execution succeeds."
 }
 
 func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, diffArtifact workflowstore.Artifact) []WorkflowAuditPacketArtifact {

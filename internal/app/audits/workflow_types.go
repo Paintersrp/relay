@@ -102,6 +102,7 @@ type WorkflowAuditChangedFile struct {
 
 type WorkflowAuditValidationResult struct {
 	Command           string `json:"command"`
+	WorkingDirectory  string `json:"working_directory,omitempty"`
 	Expected          string `json:"expected"`
 	Status            string `json:"status"`
 	ConciseResult     string `json:"concise_result"`

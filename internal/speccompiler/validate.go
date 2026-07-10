@@ -21,9 +21,9 @@ func (v *validator) add(code, path, message string) {
 	v.diagnostics = append(v.diagnostics, Diagnostic{Code: code, Path: path, Message: message})
 }
 
-func validateExecutionSpec(root *jsonNode, filenameSlug string) []Diagnostic {
+func validateExecutionSpec(root *jsonNode, filenameSlug string, rawJSON []byte) []Diagnostic {
 	v := &validator{}
-	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}, []string{"feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}) {
+	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "execution_payload", "steps", "validation", "completion_criteria"}, []string{"feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}) {
 		return v.diagnostics
 	}
 
@@ -37,6 +37,9 @@ func validateExecutionSpec(root *jsonNode, filenameSlug string) []Diagnostic {
 	v.stringMember(root, "context", "/context", stringMultiline)
 	if member, ok := root.objectMember("scope"); ok {
 		v.validateScope(member.value, "/scope")
+	}
+	if _, diagnostics := ProjectExecutionPayload(rawJSON); len(diagnostics) != 0 {
+		v.diagnostics = append(v.diagnostics, diagnostics...)
 	}
 
 	fileCount := 0

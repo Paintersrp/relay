@@ -81,7 +81,7 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 	var errors []Diagnostic
 	switch kind {
 	case ArtifactExecutionSpec:
-		errors = validateExecutionSpec(root, slug)
+		errors = validateExecutionSpec(root, slug, rawJSON)
 	case ArtifactPlan:
 		errors = validatePlan(root, slug)
 	default:

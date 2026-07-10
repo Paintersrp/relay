@@ -27,6 +27,9 @@
     "scope": {
       "$ref": "#/$defs/scope"
     },
+    "execution_payload": {
+      "$ref": "#/$defs/execution_payload"
+    },
     "steps": {
       "title": "Steps",
       "description": "Ordered executable steps.",
@@ -56,6 +59,181 @@
     "completion_criteria"
   ],
   "$defs": {
+    "execution_payload": {
+      "title": "Execution payload metadata",
+      "description": "Optional runtime projection metadata for deterministic-first execution and validation normalization.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deterministic_operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deterministic_operation"
+          }
+        },
+        "operation_groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation_group"
+          }
+        },
+        "changed_file_policy": {
+          "type": "object"
+        },
+        "source_guards": {
+          "type": "object"
+        },
+        "execution_mode": {
+          "$ref": "#/$defs/execution_mode"
+        },
+        "validation_contract": {
+          "$ref": "#/$defs/validation_contract"
+        },
+        "validation_commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/projected_validation_command"
+          }
+        }
+      }
+    },
+    "deterministic_operation": {
+      "title": "Deterministic operation metadata",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "kind": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "mode": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "guards": {
+          "type": "object"
+        },
+        "expected_occurrences": {
+          "$ref": "#/$defs/expected_occurrences"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/machine_string"
+          }
+        },
+        "group": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "on_failure": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    },
+    "operation_group": {
+      "title": "Deterministic operation group",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "atomic": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "execution_mode": {
+      "title": "Execution mode hint",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preferred_mode": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "fallback_mode": {
+          "$ref": "#/$defs/machine_string"
+        }
+      }
+    },
+    "validation_contract": {
+      "title": "Runtime validation contract",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "failure_policy": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/projected_validation_command"
+          }
+        }
+      }
+    },
+    "projected_validation_command": {
+      "title": "Projected validation command",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "command": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "working_directory": {
+          "$ref": "#/$defs/path"
+        },
+        "expected": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "purpose": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "success_signal": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "failure_handling": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "phase": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "severity": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "mutation_policy": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "worktree_policy": {
+          "$ref": "#/$defs/machine_string"
+        }
+      },
+      "required": [
+        "command"
+      ]
+    },
     "feature_slug": {
       "title": "Feature slug",
       "description": "Lowercase kebab-case feature slug.",

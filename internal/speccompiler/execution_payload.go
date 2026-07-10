@@ -1,5 +1,3 @@
-// Package speccompiler projects optional deterministic-first metadata from a
-// canonical Execution Spec or packet without changing execution behavior.
 package speccompiler
 
 import (
@@ -7,12 +5,6 @@ import (
 	"fmt"
 	"strings"
 )
-
-type Diagnostic struct {
-	Code    string `json:"code"`
-	Path    string `json:"path"`
-	Message string `json:"message"`
-}
 
 type ExecutionPayloadProjection struct {
 	ValidationCommands      []ProjectedValidationCommand
@@ -42,7 +34,18 @@ type ProjectedValidationCommand struct {
 }
 
 type projectedValidationCommandPresence struct {
-	ID, Command, WorkingDirectory, Expected, Required, Purpose, SuccessSignal, FailureHandling, Phase, Severity, MutationPolicy, WorktreePolicy bool
+	ID               bool
+	Command          bool
+	WorkingDirectory bool
+	Expected         bool
+	Required         bool
+	Purpose          bool
+	SuccessSignal    bool
+	FailureHandling  bool
+	Phase            bool
+	Severity         bool
+	MutationPolicy   bool
+	WorktreePolicy   bool
 }
 
 func (c *ProjectedValidationCommand) UnmarshalJSON(raw []byte) error {
@@ -63,42 +66,55 @@ func (c *ProjectedValidationCommand) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
+
 	*c = ProjectedValidationCommand{}
 	if fields.ID != nil {
-		c.ID, c.presence.ID = *fields.ID, true
+		c.ID = *fields.ID
+		c.presence.ID = true
 	}
 	if fields.Command != nil {
-		c.Command, c.presence.Command = *fields.Command, true
+		c.Command = *fields.Command
+		c.presence.Command = true
 	}
 	if fields.WorkingDirectory != nil {
-		c.WorkingDirectory, c.presence.WorkingDirectory = *fields.WorkingDirectory, true
+		c.WorkingDirectory = *fields.WorkingDirectory
+		c.presence.WorkingDirectory = true
 	}
 	if fields.Expected != nil {
-		c.Expected, c.presence.Expected = *fields.Expected, true
+		c.Expected = *fields.Expected
+		c.presence.Expected = true
 	}
 	if fields.Required != nil {
-		c.Required, c.presence.Required = *fields.Required, true
+		c.Required = *fields.Required
+		c.presence.Required = true
 	}
 	if fields.Purpose != nil {
-		c.Purpose, c.presence.Purpose = *fields.Purpose, true
+		c.Purpose = *fields.Purpose
+		c.presence.Purpose = true
 	}
 	if fields.SuccessSignal != nil {
-		c.SuccessSignal, c.presence.SuccessSignal = *fields.SuccessSignal, true
+		c.SuccessSignal = *fields.SuccessSignal
+		c.presence.SuccessSignal = true
 	}
 	if fields.FailureHandling != nil {
-		c.FailureHandling, c.presence.FailureHandling = *fields.FailureHandling, true
+		c.FailureHandling = *fields.FailureHandling
+		c.presence.FailureHandling = true
 	}
 	if fields.Phase != nil {
-		c.Phase, c.presence.Phase = *fields.Phase, true
+		c.Phase = *fields.Phase
+		c.presence.Phase = true
 	}
 	if fields.Severity != nil {
-		c.Severity, c.presence.Severity = *fields.Severity, true
+		c.Severity = *fields.Severity
+		c.presence.Severity = true
 	}
 	if fields.MutationPolicy != nil {
-		c.MutationPolicy, c.presence.MutationPolicy = *fields.MutationPolicy, true
+		c.MutationPolicy = *fields.MutationPolicy
+		c.presence.MutationPolicy = true
 	}
 	if fields.WorktreePolicy != nil {
-		c.WorktreePolicy, c.presence.WorktreePolicy = *fields.WorktreePolicy, true
+		c.WorktreePolicy = *fields.WorktreePolicy
+		c.presence.WorktreePolicy = true
 	}
 	return nil
 }
@@ -121,10 +137,12 @@ type ProjectedOperationGroup struct {
 	ID     string `json:"id,omitempty"`
 	Atomic bool   `json:"atomic,omitempty"`
 }
+
 type ProjectedExecutionMode struct {
 	PreferredMode string `json:"preferred_mode,omitempty"`
 	FallbackMode  string `json:"fallback_mode,omitempty"`
 }
+
 type ProjectedValidationContract struct {
 	Mode          string                       `json:"mode,omitempty"`
 	FailurePolicy string                       `json:"failure_policy,omitempty"`
@@ -132,27 +150,34 @@ type ProjectedValidationContract struct {
 }
 
 type executionPayloadDocument struct {
-	Validation struct {
-		Commands []ProjectedValidationCommand `json:"commands"`
-	} `json:"validation"`
-	ExecutionPayload struct {
-		DeterministicOperations []json.RawMessage            `json:"deterministic_operations"`
-		OperationGroups         []ProjectedOperationGroup    `json:"operation_groups"`
-		ChangedFilePolicy       json.RawMessage              `json:"changed_file_policy"`
-		SourceGuards            json.RawMessage              `json:"source_guards"`
-		ExecutionMode           ProjectedExecutionMode       `json:"execution_mode"`
-		ValidationContract      ProjectedValidationContract  `json:"validation_contract"`
-		ValidationCommands      []ProjectedValidationCommand `json:"validation_commands"`
-	} `json:"execution_payload"`
+	Validation       topLevelValidationEnvelope `json:"validation"`
+	ExecutionPayload executionPayloadEnvelope   `json:"execution_payload"`
 }
 
-// ProjectExecutionPayload returns deterministic metadata and normalized validation
-// commands. It never infers operations from prose or from unrelated packet fields.
+type topLevelValidationEnvelope struct {
+	Commands []ProjectedValidationCommand `json:"commands"`
+}
+
+type executionPayloadEnvelope struct {
+	DeterministicOperations []json.RawMessage            `json:"deterministic_operations"`
+	OperationGroups         []ProjectedOperationGroup    `json:"operation_groups"`
+	ChangedFilePolicy       json.RawMessage              `json:"changed_file_policy"`
+	SourceGuards            json.RawMessage              `json:"source_guards"`
+	ExecutionMode           ProjectedExecutionMode       `json:"execution_mode"`
+	ValidationContract      ProjectedValidationContract  `json:"validation_contract"`
+	ValidationCommands      []ProjectedValidationCommand `json:"validation_commands"`
+}
+
 func ProjectExecutionPayload(raw []byte) (ExecutionPayloadProjection, []Diagnostic) {
 	var document executionPayloadDocument
 	if err := json.Unmarshal(raw, &document); err != nil {
-		return ExecutionPayloadProjection{}, []Diagnostic{{Code: "invalid_json", Message: fmt.Sprintf("Decode execution payload projection: %v", err)}}
+		return ExecutionPayloadProjection{}, []Diagnostic{{
+			Code:    "invalid_json",
+			Path:    "",
+			Message: fmt.Sprintf("Decode execution payload projection: %v", err),
+		}}
 	}
+
 	projection := ExecutionPayloadProjection{
 		OperationGroups:   append([]ProjectedOperationGroup(nil), document.ExecutionPayload.OperationGroups...),
 		ChangedFilePolicy: append(json.RawMessage(nil), document.ExecutionPayload.ChangedFilePolicy...),
@@ -160,41 +185,62 @@ func ProjectExecutionPayload(raw []byte) (ExecutionPayloadProjection, []Diagnost
 		ExecutionMode:     document.ExecutionPayload.ExecutionMode,
 	}
 	var diagnostics []Diagnostic
+
 	for i, rawOperation := range document.ExecutionPayload.DeterministicOperations {
 		var operation ProjectedDeterministicOperation
-		if len(rawOperation) == 0 || rawOperation[0] != '{' || json.Unmarshal(rawOperation, &operation) != nil {
-			diagnostics = append(diagnostics, Diagnostic{Code: "invalid_deterministic_operation", Path: fmt.Sprintf("/execution_payload/deterministic_operations/%d", i), Message: "deterministic operation is not a valid object"})
+		if err := json.Unmarshal(rawOperation, &operation); err != nil {
+			diagnostics = append(diagnostics, Diagnostic{
+				Code:    "invalid_deterministic_operation",
+				Path:    fmt.Sprintf("/execution_payload/deterministic_operations/%d", i),
+				Message: fmt.Sprintf("deterministic operation is not a valid object: %v", err),
+			})
 			continue
 		}
 		operation.Raw = append(json.RawMessage(nil), rawOperation...)
 		projection.DeterministicOperations = append(projection.DeterministicOperations, operation)
 	}
 
-	topLevel := normalizeProjectedValidationCommands(document.Validation.Commands)
-	contract := normalizeProjectedValidationCommands(document.ExecutionPayload.ValidationContract.Commands)
-	legacy := normalizeProjectedValidationCommands(document.ExecutionPayload.ValidationCommands)
-	switch {
-	case len(contract) > 0:
-		projection.ValidationCommands, projection.ValidationCommandSource = contract, "execution_payload.validation_contract.commands"
-		if len(topLevel) > 0 && !sameValidationCommandSequence(contract, topLevel) {
-			diagnostics = append(diagnostics, validationConflict("/execution_payload/validation_contract/commands", "execution_payload.validation_contract.commands conflicts with validation.commands"))
-		}
-		if len(legacy) > 0 && !sameValidationCommandSequence(contract, legacy) {
-			diagnostics = append(diagnostics, validationConflict("/execution_payload/validation_commands", "execution_payload.validation_commands conflicts with validation_contract.commands"))
-		}
-	case len(topLevel) > 0:
-		projection.ValidationCommands, projection.ValidationCommandSource = topLevel, "validation.commands"
-		if len(legacy) > 0 && !sameValidationCommandSequence(topLevel, legacy) {
-			diagnostics = append(diagnostics, validationConflict("/execution_payload/validation_commands", "execution_payload.validation_commands conflicts with validation.commands"))
-		}
-	case len(legacy) > 0:
-		projection.ValidationCommands, projection.ValidationCommandSource = legacy, "execution_payload.validation_commands"
-	}
-	return projection, diagnostics
-}
+	topLevelCommands := normalizeProjectedValidationCommands(document.Validation.Commands)
+	contractCommands := normalizeProjectedValidationCommands(document.ExecutionPayload.ValidationContract.Commands)
+	legacyCommands := normalizeProjectedValidationCommands(document.ExecutionPayload.ValidationCommands)
 
-func validationConflict(path, message string) Diagnostic {
-	return Diagnostic{Code: "validation_command_conflict", Path: path, Message: message}
+	switch {
+	case len(contractCommands) > 0:
+		projection.ValidationCommands = contractCommands
+		projection.ValidationCommandSource = "execution_payload.validation_contract.commands"
+		if len(topLevelCommands) > 0 && !sameValidationCommandSequence(contractCommands, topLevelCommands) {
+			diagnostics = append(diagnostics, Diagnostic{
+				Code:    "validation_command_conflict",
+				Path:    "/execution_payload/validation_contract/commands",
+				Message: "execution_payload.validation_contract.commands conflicts with validation.commands; validation_contract.commands is canonical for projected runtime validation.",
+			})
+		}
+		if len(legacyCommands) > 0 && !sameValidationCommandSequence(contractCommands, legacyCommands) {
+			diagnostics = append(diagnostics, Diagnostic{
+				Code:    "validation_command_conflict",
+				Path:    "/execution_payload/validation_commands",
+				Message: "execution_payload.validation_commands conflicts with validation_contract.commands and is supported only as a legacy fallback.",
+			})
+		}
+	case len(topLevelCommands) > 0:
+		projection.ValidationCommands = topLevelCommands
+		projection.ValidationCommandSource = "validation.commands"
+		if len(legacyCommands) > 0 && !sameValidationCommandSequence(topLevelCommands, legacyCommands) {
+			diagnostics = append(diagnostics, Diagnostic{
+				Code:    "validation_command_conflict",
+				Path:    "/execution_payload/validation_commands",
+				Message: "execution_payload.validation_commands conflicts with validation.commands and is supported only when canonical commands are absent.",
+			})
+		}
+	case len(legacyCommands) > 0:
+		projection.ValidationCommands = legacyCommands
+		projection.ValidationCommandSource = "execution_payload.validation_commands"
+	default:
+		projection.ValidationCommands = nil
+		projection.ValidationCommandSource = ""
+	}
+
+	return projection, diagnostics
 }
 
 func normalizeProjectedValidationCommands(commands []ProjectedValidationCommand) []ProjectedValidationCommand {
@@ -232,33 +278,70 @@ func sameValidationCommandSequence(left, right []ProjectedValidationCommand) boo
 }
 
 func sameValidationCommand(left, right ProjectedValidationCommand) bool {
-	if left.Command != right.Command || !sameOptionalString(left.WorkingDirectory, left.presence.WorkingDirectory, right.WorkingDirectory, right.presence.WorkingDirectory) || !sameOptionalString(left.ID, left.presence.ID, right.ID, right.presence.ID) || (left.presence.Required && right.presence.Required && left.Required != right.Required) {
+	if left.Command != right.Command {
 		return false
 	}
-	if leftExpected, rightExpected := projectedExpected(left), projectedExpected(right); leftExpected != "" && rightExpected != "" && leftExpected != rightExpected {
+	if !sameValidationCommandWorkingDirectory(left, right) {
+		return false
+	}
+	if !sameProjectedString(left.ID, left.presence.ID, right.ID, right.presence.ID) {
+		return false
+	}
+	if !sameProjectedExpected(left, right) {
+		return false
+	}
+	if left.presence.Required && right.presence.Required && left.Required != right.Required {
 		return false
 	}
 	for _, field := range []struct {
-		leftValue, rightValue     string
-		leftPresent, rightPresent bool
+		leftValue    string
+		leftPresent  bool
+		rightValue   string
+		rightPresent bool
 	}{
-		{left.Purpose, right.Purpose, left.presence.Purpose, right.presence.Purpose},
-		{left.FailureHandling, right.FailureHandling, left.presence.FailureHandling, right.presence.FailureHandling},
-		{left.Phase, right.Phase, left.presence.Phase, right.presence.Phase},
-		{left.Severity, right.Severity, left.presence.Severity, right.presence.Severity},
-		{left.MutationPolicy, right.MutationPolicy, left.presence.MutationPolicy, right.presence.MutationPolicy},
-		{left.WorktreePolicy, right.WorktreePolicy, left.presence.WorktreePolicy, right.presence.WorktreePolicy},
+		{left.Purpose, left.presence.Purpose, right.Purpose, right.presence.Purpose},
+		{left.FailureHandling, left.presence.FailureHandling, right.FailureHandling, right.presence.FailureHandling},
+		{left.Phase, left.presence.Phase, right.Phase, right.presence.Phase},
+		{left.Severity, left.presence.Severity, right.Severity, right.presence.Severity},
+		{left.MutationPolicy, left.presence.MutationPolicy, right.MutationPolicy, right.presence.MutationPolicy},
+		{left.WorktreePolicy, left.presence.WorktreePolicy, right.WorktreePolicy, right.presence.WorktreePolicy},
 	} {
-		if !sameOptionalString(field.leftValue, field.leftPresent, field.rightValue, field.rightPresent) {
+		if !sameProjectedString(field.leftValue, field.leftPresent, field.rightValue, field.rightPresent) {
 			return false
 		}
 	}
 	return true
 }
 
-func sameOptionalString(left string, leftPresent bool, right string, rightPresent bool) bool {
-	return !leftPresent || !rightPresent || left == right
+func sameValidationCommandWorkingDirectory(left, right ProjectedValidationCommand) bool {
+	if left.WorkingDirectory == right.WorkingDirectory {
+		return true
+	}
+	if left.WorkingDirectory == "" && !left.presence.WorkingDirectory {
+		return right.WorkingDirectory == ""
+	}
+	if right.WorkingDirectory == "" && !right.presence.WorkingDirectory {
+		return left.WorkingDirectory == ""
+	}
+	return false
 }
+
+func sameProjectedString(left string, leftPresent bool, right string, rightPresent bool) bool {
+	if leftPresent && rightPresent {
+		return left == right
+	}
+	return true
+}
+
+func sameProjectedExpected(left, right ProjectedValidationCommand) bool {
+	leftExpected := projectedExpected(left)
+	rightExpected := projectedExpected(right)
+	if leftExpected == "" || rightExpected == "" {
+		return true
+	}
+	return leftExpected == rightExpected
+}
+
 func projectedExpected(command ProjectedValidationCommand) string {
 	if command.Expected != "" {
 		return command.Expected
