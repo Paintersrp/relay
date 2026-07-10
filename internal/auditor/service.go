@@ -9,6 +9,7 @@ import (
 	appplans "relay/internal/app/plans"
 	"relay/internal/artifacts"
 	"relay/internal/executor"
+	"relay/internal/speccompiler"
 	"relay/internal/store"
 	"relay/internal/validationrunner"
 )
@@ -27,27 +28,17 @@ func NewService(s *store.Store) *Service {
 	}
 }
 
-type packetCommandsCheck struct {
-	ExecutionPayload *struct {
-		ValidationCommands []struct {
-			Required bool `json:"required"`
-		} `json:"validation_commands"`
-	} `json:"execution_payload"`
-}
-
 func (svc *Service) requiredValidationCommandsExist(runID int64) (bool, error) {
 	data, err := artifacts.Read(runID, "canonical_packet", "canonical_packet.json")
 	if err != nil {
 		return false, nil
 	}
-	var pkt packetCommandsCheck
-	if err := json.Unmarshal(data, &pkt); err != nil {
-		return false, nil
+	projection, diagnostics := speccompiler.ProjectExecutionPayload(data)
+	if len(diagnostics) != 0 {
+		first := diagnostics[0]
+		return false, fmt.Errorf("project canonical packet validation commands: %s: %s", first.Code, first.Message)
 	}
-	if pkt.ExecutionPayload == nil {
-		return false, nil
-	}
-	for _, c := range pkt.ExecutionPayload.ValidationCommands {
+	for _, c := range projection.ValidationCommands {
 		if c.Required {
 			return true, nil
 		}
@@ -80,7 +71,10 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 		return nil, fmt.Errorf("get run: %w", err)
 	}
 
-	required, _ := svc.requiredValidationCommandsExist(runID)
+	required, err := svc.requiredValidationCommandsExist(runID)
+	if err != nil {
+		return nil, err
+	}
 
 	if run.Status == "validation_failed" {
 		return nil, fmt.Errorf("validation failed: rerun validation or accept failed validation with a reason before generating audit")

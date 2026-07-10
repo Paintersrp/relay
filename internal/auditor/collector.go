@@ -10,6 +10,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
+	"relay/internal/speccompiler"
 	"relay/internal/store"
 )
 
@@ -526,15 +527,25 @@ func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
 		meta.FileTargets = targets
 	}
 
-	// Parse validation commands
-	for _, vc := range ep.ValidationCommands {
+	projection, projectionDiagnostics := speccompiler.ProjectExecutionPayload(data)
+	if len(projectionDiagnostics) != 0 {
+		first := projectionDiagnostics[0]
+		ev.Warnings = append(ev.Warnings, EvidenceWarning{
+			Message:  fmt.Sprintf("canonical_packet.json validation command projection error: %s: %s", first.Code, first.Message),
+			Severity: SeverityBlocker,
+		})
+	}
+
+	// Projected commands centralize precedence for audit validation evidence.
+	for _, vc := range projection.ValidationCommands {
 		meta.ValidationCommands = append(meta.ValidationCommands, ValidationCommandSpec{
-			ID:              vc.ID,
-			Command:         vc.Command,
-			Required:        vc.Required,
-			Purpose:         vc.Purpose,
-			SuccessSignal:   vc.SuccessSignal,
-			FailureHandling: vc.FailureHandling,
+			ID:               vc.ID,
+			Command:          vc.Command,
+			WorkingDirectory: vc.WorkingDirectory,
+			Required:         vc.Required,
+			Purpose:          vc.Purpose,
+			SuccessSignal:    projectedAuditExpected(vc),
+			FailureHandling:  vc.FailureHandling,
 		})
 	}
 
@@ -560,6 +571,16 @@ func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
 	}
 
 	ev.Packet = meta
+}
+
+func projectedAuditExpected(command speccompiler.ProjectedValidationCommand) string {
+	if strings.TrimSpace(command.Expected) != "" {
+		return strings.TrimSpace(command.Expected)
+	}
+	if strings.TrimSpace(command.SuccessSignal) != "" {
+		return strings.TrimSpace(command.SuccessSignal)
+	}
+	return "Command execution succeeds."
 }
 
 func (c *Collector) collectExecutorResult(runID int64, ev *Evidence) {

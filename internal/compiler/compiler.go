@@ -11,6 +11,7 @@ import (
 
 	"relay/internal/app/plans"
 	"relay/internal/artifacts"
+	"relay/internal/speccompiler"
 	"relay/internal/store"
 	"relay/internal/validation"
 
@@ -142,6 +143,7 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 	if err != nil {
 		return nil, fmt.Errorf("failed to run packet validation: %w", err)
 	}
+	applyExecutionPayloadProjectionDiagnostics(report, packetBytes)
 
 	// Register canonical_packet in store
 	_ = c.store.DeleteArtifactsByRunKind(runID, "canonical_packet")
@@ -205,6 +207,19 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 	}
 
 	return result, nil
+}
+
+func applyExecutionPayloadProjectionDiagnostics(report *validation.ValidationReport, packetBytes []byte) {
+	_, diagnostics := speccompiler.ProjectExecutionPayload(packetBytes)
+	for _, diagnostic := range diagnostics {
+		report.Valid = false
+		report.Errors = append(report.Errors, validation.ValidationError{
+			Type:           "structural",
+			Code:           diagnostic.Code,
+			Message:        diagnostic.Message,
+			RepairEligible: false,
+		})
+	}
 }
 
 func (c *Compiler) writeReport(runID int64, report *validation.ValidationReport) error {
@@ -468,6 +483,7 @@ func (c *Compiler) parseHandoff(
 	validationFailurePolicy := "block"
 	var expectedBehavior []string
 	var completionContract map[string]interface{}
+	var executionPayloadMetadata map[string]interface{}
 	structuredParsed := false
 	executionSpecProjected := false
 
@@ -558,6 +574,7 @@ func (c *Compiler) parseHandoff(
 			validationFailurePolicy = projected.ValidationFailurePolicy
 			expectedBehavior = projected.ExpectedBehavior
 			completionContract = projected.CompletionContract
+			executionPayloadMetadata = projected.ExecutionPayloadMetadata
 			if selectedPass := strings.TrimPrefix(projected.SelectedPassID, "PASS-"); selectedPass != projected.SelectedPassID {
 				if passNum, err := strconv.Atoi(selectedPass); err == nil && passNum > 0 {
 					boundary["current_pass"] = passNum
@@ -820,6 +837,9 @@ func (c *Compiler) parseHandoff(
 		"completion_contract":            completionContract,
 		"executor_final_response_format": "DONE_or_BLOCKED_strict_text",
 	}
+	for key, value := range executionPayloadMetadata {
+		executionPayload[key] = value
+	}
 
 	// 4. Parse audit_seed (priorities, scope drift, risk checks)
 	prioritiesText, _ := getSection("audit_priorities", "audit priorities")
@@ -1036,27 +1056,34 @@ func parseFileTargets(text string) []string {
 }
 
 type ValidationCommand struct {
-	ID              string `json:"id"`
-	Command         string `json:"command"`
-	Required        bool   `json:"required"`
-	Purpose         string `json:"purpose"`
-	SuccessSignal   string `json:"success_signal"`
-	FailureHandling string `json:"failure_handling"`
+	ID               string `json:"id"`
+	Command          string `json:"command"`
+	WorkingDirectory string `json:"working_directory,omitempty"`
+	Expected         string `json:"expected,omitempty"`
+	Required         bool   `json:"required"`
+	Purpose          string `json:"purpose"`
+	SuccessSignal    string `json:"success_signal"`
+	FailureHandling  string `json:"failure_handling"`
+	Phase            string `json:"phase,omitempty"`
+	Severity         string `json:"severity,omitempty"`
+	MutationPolicy   string `json:"mutation_policy,omitempty"`
+	WorktreePolicy   string `json:"worktree_policy,omitempty"`
 }
 
 type structuredCompilerInputResult struct {
-	Goal                    string
-	Scope                   string
-	NonGoals                []string
-	FileTargets             []map[string]interface{}
-	ImplementationSteps     []map[string]interface{}
-	CodeRequirements        []map[string]interface{}
-	ValidationCommands      []ValidationCommand
-	ValidationMode          string
-	ValidationFailurePolicy string
-	ExpectedBehavior        []string
-	CompletionContract      map[string]interface{}
-	SelectedPassID          string
+	Goal                     string
+	Scope                    string
+	NonGoals                 []string
+	FileTargets              []map[string]interface{}
+	ImplementationSteps      []map[string]interface{}
+	CodeRequirements         []map[string]interface{}
+	ValidationCommands       []ValidationCommand
+	ValidationMode           string
+	ValidationFailurePolicy  string
+	ExpectedBehavior         []string
+	CompletionContract       map[string]interface{}
+	SelectedPassID           string
+	ExecutionPayloadMetadata map[string]interface{}
 }
 
 type structuredCompilerInputDocument struct {
@@ -1143,6 +1170,12 @@ type executionSpecCompatibilityDocument struct {
 		CodeRequirements            []structuredCodeRequirementYAML    `yaml:"code_requirements"`
 		ExpectedBehavior            interface{}                        `yaml:"expected_behavior"`
 		ValidationContract          executionSpecValidationYAML        `yaml:"validation_contract"`
+		DeterministicOperations     []map[string]interface{}           `yaml:"deterministic_operations"`
+		OperationGroups             []map[string]interface{}           `yaml:"operation_groups"`
+		ChangedFilePolicy           interface{}                        `yaml:"changed_file_policy"`
+		SourceGuards                interface{}                        `yaml:"source_guards"`
+		ExecutionMode               map[string]interface{}             `yaml:"execution_mode"`
+		ValidationCommands          []map[string]interface{}           `yaml:"validation_commands"`
 		CompletionContract          structuredCompletionContractYAML   `yaml:"completion_contract"`
 		ExecutorFinalResponseFormat string                             `yaml:"executor_final_response_format"`
 	} `yaml:"execution_payload"`
@@ -1169,13 +1202,19 @@ type executionSpecValidationYAML struct {
 }
 
 type executionSpecValidationCommandYAML struct {
-	ID              string `yaml:"id"`
-	Command         string `yaml:"command"`
-	CommandOrCheck  string `yaml:"command_or_check"`
-	Required        *bool  `yaml:"required"`
-	Purpose         string `yaml:"purpose"`
-	SuccessSignal   string `yaml:"success_signal"`
-	FailureHandling string `yaml:"failure_handling"`
+	ID               string `yaml:"id"`
+	Command          string `yaml:"command"`
+	CommandOrCheck   string `yaml:"command_or_check"`
+	WorkingDirectory string `yaml:"working_directory"`
+	Expected         string `yaml:"expected"`
+	Required         *bool  `yaml:"required"`
+	Purpose          string `yaml:"purpose"`
+	SuccessSignal    string `yaml:"success_signal"`
+	FailureHandling  string `yaml:"failure_handling"`
+	Phase            string `yaml:"phase"`
+	Severity         string `yaml:"severity"`
+	MutationPolicy   string `yaml:"mutation_policy"`
+	WorktreePolicy   string `yaml:"worktree_policy"`
 }
 
 func parseStructuredCompilerInput(text string) (*structuredCompilerInputResult, bool) {
@@ -1262,6 +1301,7 @@ func projectExecutionSpecCompatibility(content string) (*structuredCompilerInput
 	}
 	expectedBehavior := parseStructuredExpectedBehavior(spec.ExecutionPayload.ExpectedBehavior)
 	completionContract := mapStructuredCompletionContract(spec.ExecutionPayload.CompletionContract)
+	metadata := executionSpecPayloadMetadata(spec.ExecutionPayload)
 
 	if goal == "" {
 		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Execution Spec projection missing execution_payload.goal", RepairEligible: false})
@@ -1286,19 +1326,61 @@ func projectExecutionSpecCompatibility(content string) (*structuredCompilerInput
 	}
 
 	return &structuredCompilerInputResult{
-		Goal:                    goal,
-		Scope:                   scope,
-		NonGoals:                nonGoals,
-		FileTargets:             fileTargets,
-		ImplementationSteps:     implementationSteps,
-		CodeRequirements:        codeRequirements,
-		ValidationCommands:      validationCmds,
-		ValidationMode:          normalizeValidationMode(spec.ExecutionPayload.ValidationContract.Mode),
-		ValidationFailurePolicy: normalizeValidationFailurePolicy(spec.ExecutionPayload.ValidationContract.FailurePolicy),
-		ExpectedBehavior:        expectedBehavior,
-		CompletionContract:      completionContract,
-		SelectedPassID:          cleanParsedString(spec.SelectedPass.PassID),
+		Goal:                     goal,
+		Scope:                    scope,
+		NonGoals:                 nonGoals,
+		FileTargets:              fileTargets,
+		ImplementationSteps:      implementationSteps,
+		CodeRequirements:         codeRequirements,
+		ValidationCommands:       validationCmds,
+		ValidationMode:           normalizeValidationMode(spec.ExecutionPayload.ValidationContract.Mode),
+		ValidationFailurePolicy:  normalizeValidationFailurePolicy(spec.ExecutionPayload.ValidationContract.FailurePolicy),
+		ExpectedBehavior:         expectedBehavior,
+		CompletionContract:       completionContract,
+		SelectedPassID:           cleanParsedString(spec.SelectedPass.PassID),
+		ExecutionPayloadMetadata: metadata,
 	}, issues, true
+}
+
+func executionSpecPayloadMetadata(payload struct {
+	Goal                        string                             `yaml:"goal"`
+	Scope                       string                             `yaml:"scope"`
+	NonGoals                    []string                           `yaml:"non_goals"`
+	FileTargets                 []structuredFileTargetYAML         `yaml:"file_targets"`
+	TargetSymbols               []executionSpecTargetSymbolYAML    `yaml:"target_symbols"`
+	ImplementationSteps         []structuredImplementationStepYAML `yaml:"implementation_steps"`
+	CodeRequirements            []structuredCodeRequirementYAML    `yaml:"code_requirements"`
+	ExpectedBehavior            interface{}                        `yaml:"expected_behavior"`
+	ValidationContract          executionSpecValidationYAML        `yaml:"validation_contract"`
+	DeterministicOperations     []map[string]interface{}           `yaml:"deterministic_operations"`
+	OperationGroups             []map[string]interface{}           `yaml:"operation_groups"`
+	ChangedFilePolicy           interface{}                        `yaml:"changed_file_policy"`
+	SourceGuards                interface{}                        `yaml:"source_guards"`
+	ExecutionMode               map[string]interface{}             `yaml:"execution_mode"`
+	ValidationCommands          []map[string]interface{}           `yaml:"validation_commands"`
+	CompletionContract          structuredCompletionContractYAML   `yaml:"completion_contract"`
+	ExecutorFinalResponseFormat string                             `yaml:"executor_final_response_format"`
+}) map[string]interface{} {
+	metadata := make(map[string]interface{})
+	if len(payload.DeterministicOperations) > 0 {
+		metadata["deterministic_operations"] = payload.DeterministicOperations
+	}
+	if len(payload.OperationGroups) > 0 {
+		metadata["operation_groups"] = payload.OperationGroups
+	}
+	if payload.ChangedFilePolicy != nil {
+		metadata["changed_file_policy"] = payload.ChangedFilePolicy
+	}
+	if payload.SourceGuards != nil {
+		metadata["source_guards"] = payload.SourceGuards
+	}
+	if len(payload.ExecutionMode) > 0 {
+		metadata["execution_mode"] = payload.ExecutionMode
+	}
+	if len(payload.ValidationCommands) > 0 {
+		metadata["validation_commands"] = payload.ValidationCommands
+	}
+	return metadata
 }
 
 func extractExecutionSpecBlock(content string) (string, bool) {
@@ -1384,12 +1466,18 @@ func mapExecutionSpecValidationCommands(commands []executionSpecValidationComman
 			purpose = fmt.Sprintf("[%s] %s", originalID, purpose)
 		}
 		result = append(result, ValidationCommand{
-			ID:              fmt.Sprintf("V%d", i+1),
-			Command:         cmd,
-			Required:        required,
-			Purpose:         purpose,
-			SuccessSignal:   defaultString(command.SuccessSignal, "Command exits 0."),
-			FailureHandling: normalizeValidationFailureHandling(command.FailureHandling),
+			ID:               fmt.Sprintf("V%d", i+1),
+			Command:          cmd,
+			WorkingDirectory: cleanParsedString(command.WorkingDirectory),
+			Expected:         cleanParsedString(command.Expected),
+			Required:         required,
+			Purpose:          purpose,
+			SuccessSignal:    defaultString(command.SuccessSignal, "Command exits 0."),
+			FailureHandling:  normalizeValidationFailureHandling(command.FailureHandling),
+			Phase:            cleanParsedString(command.Phase),
+			Severity:         cleanParsedString(command.Severity),
+			MutationPolicy:   cleanParsedString(command.MutationPolicy),
+			WorktreePolicy:   cleanParsedString(command.WorktreePolicy),
 		})
 	}
 	return result

@@ -78,7 +78,7 @@ type PacketMetadata struct {
 	NonGoals string `json:"nonGoals"`
 	// FileTargets lists expected changed files from execution_payload.file_targets.
 	FileTargets []string `json:"fileTargets"`
-	// ValidationCommands holds per-command specs from execution_payload.validation_commands.
+	// ValidationCommands holds per-command specs from the normalized execution payload projection.
 	ValidationCommands []ValidationCommandSpec `json:"validationCommands"`
 	// AuditChecklist holds the checklist items from audit_seed.audit_checklist.
 	AuditChecklist []ChecklistItem `json:"auditChecklist"`
@@ -92,12 +92,13 @@ type PacketMetadata struct {
 
 // ValidationCommandSpec is a single validation command from the packet.
 type ValidationCommandSpec struct {
-	ID              string `json:"id"`
-	Command         string `json:"command"`
-	Required        bool   `json:"required"`
-	Purpose         string `json:"purpose"`
-	SuccessSignal   string `json:"successSignal"`
-	FailureHandling string `json:"failureHandling"`
+	ID               string `json:"id"`
+	Command          string `json:"command"`
+	WorkingDirectory string `json:"workingDirectory,omitempty"`
+	Required         bool   `json:"required"`
+	Purpose          string `json:"purpose"`
+	SuccessSignal    string `json:"successSignal"`
+	FailureHandling  string `json:"failureHandling"`
 }
 
 // ChecklistItem is one item from audit_seed.audit_checklist (supports old flat-string
