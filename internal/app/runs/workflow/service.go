@@ -364,6 +364,72 @@ func (s *Service) FinishExecutionAttempt(ctx context.Context, input FinishExecut
 	return result, err
 }
 
+func (s *Service) RecordApplierCompleted(ctx context.Context, runID string) (workflowstore.Run, error) {
+	return s.transitionRunAfterApplier(ctx, runID, workflowstore.RunStatusValidating)
+}
+
+func (s *Service) RecordApplierBlocked(ctx context.Context, runID string) (workflowstore.Run, error) {
+	return s.transitionRunAfterApplier(ctx, runID, workflowstore.RunStatusNeedsRevision)
+}
+
+func (s *Service) transitionRunAfterApplier(ctx context.Context, runID, nextStatus string) (workflowstore.Run, error) {
+	var updated workflowstore.Run
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		run, err := tx.GetRunByRunID(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("load run for applier result: %w", err)
+		}
+		switch run.Status {
+		case workflowstore.RunStatusSetupReady,
+			workflowstore.RunStatusExecutionFailed,
+			workflowstore.RunStatusCancelled:
+		default:
+			return fmt.Errorf("record applier result requires setup_ready, execution_failed, or cancelled run, got %q", run.Status)
+		}
+		transition := func(next string) error {
+			var transitionErr error
+			run, transitionErr = tx.TransitionRun(ctx, run.RunID, run.Status, next)
+			if transitionErr != nil {
+				return transitionErr
+			}
+			return nil
+		}
+		switch nextStatus {
+		case workflowstore.RunStatusValidating:
+			if run.Status == workflowstore.RunStatusSetupReady || run.Status == workflowstore.RunStatusCancelled {
+				if err := transition(workflowstore.RunStatusExecuting); err != nil {
+					return fmt.Errorf("record applier result: %w", err)
+				}
+			}
+		case workflowstore.RunStatusNeedsRevision:
+			if run.Status == workflowstore.RunStatusSetupReady || run.Status == workflowstore.RunStatusCancelled {
+				if err := transition(workflowstore.RunStatusExecuting); err != nil {
+					return fmt.Errorf("record applier result: %w", err)
+				}
+			}
+			if err := transition(workflowstore.RunStatusExecutionFailed); err != nil {
+				return fmt.Errorf("record applier result: %w", err)
+			}
+			if err := transition(workflowstore.RunStatusValidating); err != nil {
+				return fmt.Errorf("record applier result: %w", err)
+			}
+			if err := transition(workflowstore.RunStatusValidationFailed); err != nil {
+				return fmt.Errorf("record applier result: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported applier run status %q", nextStatus)
+		}
+		if run.Status != nextStatus {
+			if err := transition(nextStatus); err != nil {
+				return fmt.Errorf("record applier result: %w", err)
+			}
+		}
+		updated = run
+		return nil
+	})
+	return updated, err
+}
+
 func (s *Service) RecordValidationResult(ctx context.Context, runID string, passed bool) (workflowstore.Run, error) {
 	var updated workflowstore.Run
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {

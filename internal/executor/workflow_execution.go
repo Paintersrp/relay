@@ -35,6 +35,7 @@ type WorkflowStartResult struct {
 	Run       workflowstore.Run
 	Attempt   workflowstore.ExecutionAttempt
 	Preflight workflowrepos.ExecutionPreflightResult
+	Applier   *WorkflowApplierResult
 }
 
 type WorkflowCancelResult struct {
@@ -138,6 +139,7 @@ type WorkflowExecutionService struct {
 	preflight           func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult
 	invocationPreflight func(ExecutorInvocation) ExecutorPreflightResult
 	adapterFactory      func(string) (ExecutorAdapter, error)
+	applier             workflowApplierFunc
 	runner              WorkflowCommandRunner
 	launch              func(func())
 	mu                  sync.Mutex
@@ -156,6 +158,7 @@ func NewWorkflowExecutionService(store *workflowstore.Store, log *slog.Logger, o
 		preflight:           workflowrepos.VerifyExecutionPreflight,
 		invocationPreflight: ValidateInvocationPreflight,
 		adapterFactory:      NewAdapterFromID,
+		applier:             defaultWorkflowApplier(),
 		runner: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, controller pipeline.ProcessController) pipeline.AgentCommandRunResult {
 			return pipeline.RunLocalAgentCommandArgsStreamingWithController(ctx, workDir, binary, args, stdin, timeout, callbacks, controller)
 		},
@@ -192,6 +195,10 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	if err != nil {
 		return WorkflowStartResult{}, fmt.Errorf("resolve repository target: %w", err)
 	}
+	executionSpec, _, err := s.loadVerifiedExecutionSpec(ctx, run)
+	if err != nil {
+		return WorkflowStartResult{}, err
+	}
 	brief, briefArtifact, briefPath, err := s.loadVerifiedBrief(ctx, run)
 	if err != nil {
 		return WorkflowStartResult{}, err
@@ -201,6 +208,34 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		return WorkflowStartResult{Run: run, Preflight: preflight}, &WorkflowPreflightError{Result: preflight}
 	}
 
+	residualContext := ""
+	applierResult, err := s.applyDeterministicFirst(ctx, run, repository.LocalPath, executionSpec)
+	if err != nil {
+		return WorkflowStartResult{}, err
+	}
+	if applierResult != nil {
+		switch applierResult.Outcome {
+		case "completed":
+			updated, err := s.runs.RecordApplierCompleted(ctx, run.RunID)
+			if err != nil {
+				return WorkflowStartResult{}, err
+			}
+			return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, nil
+		case "blocked":
+			updated, err := s.runs.RecordApplierBlocked(ctx, run.RunID)
+			if err != nil {
+				return WorkflowStartResult{}, err
+			}
+			return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, nil
+		case "partial":
+			residualContext = applierResult.ResidualContext
+		case "not_attempted":
+		default:
+			return WorkflowStartResult{}, fmt.Errorf("unsupported deterministic applier outcome %q", applierResult.Outcome)
+		}
+	}
+	effectiveBrief := briefWithResidualContext(brief, residualContext)
+
 	adapter, err := s.adapterFactory(normalizedAdapter)
 	if err != nil {
 		return WorkflowStartResult{}, err
@@ -209,7 +244,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
 		RunID:         run.ID,
 		RepoPath:      repository.LocalPath,
-		BriefContent:  string(brief),
+		BriefContent:  string(effectiveBrief),
 		BriefPath:     briefPath,
 		ResultPath:    runtimeResultPath,
 		SelectedModel: input.Model,
@@ -218,7 +253,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	if err != nil {
 		return WorkflowStartResult{}, fmt.Errorf("build executor invocation: %w", err)
 	}
-	if err := verifyInvocationUsesBrief(invocation, brief, briefPath); err != nil {
+	if err := verifyInvocationUsesBrief(invocation, effectiveBrief, briefPath); err != nil {
 		return WorkflowStartResult{}, err
 	}
 	invocationPreflight := s.invocationPreflight(invocation)
@@ -241,7 +276,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		defer s.deleteRuntime(begun.Attempt.AttemptID)
 		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, briefArtifact, invocation, adapter, runtime)
 	})
-	return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight}, nil
+	return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
 }
 
 func (s *WorkflowExecutionService) Cancel(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
@@ -787,10 +822,11 @@ func (s *WorkflowExecutionService) loadVerifiedBrief(ctx context.Context, run wo
 
 func verifyInvocationUsesBrief(invocation ExecutorInvocation, brief []byte, briefPath string) error {
 	if invocation.Stdin != "" {
-		if !bytes.Equal([]byte(invocation.Stdin), brief) {
-			return fmt.Errorf("executor invocation changed the rendered Executor Brief bytes")
+		stdin := []byte(invocation.Stdin)
+		if bytes.Equal(stdin, brief) || bytes.HasPrefix(stdin, append(append([]byte(nil), brief...), []byte("\n\n---\n\n## Relay deterministic pre-application context\n\n")...)) {
+			return nil
 		}
-		return nil
+		return fmt.Errorf("executor invocation changed the rendered Executor Brief bytes")
 	}
 	for _, arg := range invocation.Args {
 		if arg == briefPath {

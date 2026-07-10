@@ -56,6 +56,11 @@ type workflowAttemptResponse struct {
 	LiveStderrBytes         int64                      `json:"liveStderrBytes"`
 }
 
+type workflowStartedRunResponse struct {
+	RunID  string `json:"runId"`
+	Status string `json:"status"`
+}
+
 type workflowArtifactResponse struct {
 	ArtifactID string `json:"artifactId"`
 	Kind       string `json:"kind"`
@@ -92,16 +97,30 @@ func (h *WorkflowExecutionHandler) StartAttempt(w http.ResponseWriter, r *http.R
 		writeWorkflowExecutionError(w, err)
 		return
 	}
+	response := map[string]any{
+		"success":   true,
+		"preflight": result.Preflight,
+	}
+	if result.Applier != nil {
+		response["applier"] = result.Applier
+	}
+	if result.Attempt.AttemptID == "" {
+		response["run"] = workflowStartedRunResponse{RunID: result.Run.RunID, Status: result.Run.Status}
+		status := http.StatusOK
+		if result.Applier != nil && result.Applier.Outcome == "blocked" {
+			response["success"] = false
+			status = http.StatusConflict
+		}
+		shared.JSON(w, status, response)
+		return
+	}
 	view, err := h.service.GetAttempt(r.Context(), runID, result.Attempt.AttemptID)
 	if err != nil {
 		writeWorkflowExecutionError(w, err)
 		return
 	}
-	shared.JSON(w, http.StatusAccepted, map[string]any{
-		"success":   true,
-		"preflight": result.Preflight,
-		"attempt":   workflowAttemptDTO(runID, view),
-	})
+	response["attempt"] = workflowAttemptDTO(runID, view)
+	shared.JSON(w, http.StatusAccepted, response)
 }
 
 func (h *WorkflowExecutionHandler) CancelAttempt(w http.ResponseWriter, r *http.Request) {
