@@ -72,13 +72,14 @@ type ExecutionAttemptSummary struct {
 }
 
 type AuditPacketSummary struct {
-	AuditPacketID string
-	AuditedCommit string
-	PacketSHA256  string
-	Status        string
-	StaleReason   string
-	CreatedAt     string
-	SupersededAt  string
+	AuditPacketID           string
+	ImplementationActorKind string
+	AuditedCommit           string
+	PacketSHA256            string
+	Status                  string
+	StaleReason             string
+	CreatedAt               string
+	SupersededAt            string
 }
 
 type AuditDecisionSummary struct {

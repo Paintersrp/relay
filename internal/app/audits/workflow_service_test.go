@@ -185,6 +185,91 @@ func stageAttemptEvidence(t *testing.T, store *workflowstore.Store, attempt work
 	}
 }
 
+func stageApplierEvidence(t *testing.T, store *workflowstore.Store, run workflowstore.Run, outcome string, residuals []string) {
+	t.Helper()
+	batch, err := store.ArtifactStore().Begin("applier-test/" + run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultBody, err := json.Marshal(map[string]any{
+		"outcome":             outcome,
+		"actor_kind":          "applier",
+		"changed_files":       []string{"internal/a.go"},
+		"residual_operations": residuals,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := batch.Stage("applier_result_json", "applier-result.json", "application/json", append(resultBody, '\n'))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := batch.Stage("applier_ledger_json", "applier-ledger.json", "application/json", []byte(`{"operations":[]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitArtifactBatch(context.Background(), batch, func(tx *workflowstore.Tx) error {
+		for _, staged := range []struct {
+			kind, path, media, sha string
+			size                   int64
+		}{
+			{result.Kind, result.RelativePath, result.MediaType, result.SHA256, result.SizeBytes},
+			{ledger.Kind, ledger.RelativePath, ledger.MediaType, ledger.SHA256, ledger.SizeBytes},
+		} {
+			if _, err := tx.CreateArtifact(context.Background(), workflowstore.CreateArtifactParams{
+				ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun,
+				RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: staged.kind,
+				RelativePath: staged.path, MediaType: staged.media, SHA256: staged.sha, SizeBytes: staged.size,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkflowAuditApplierOnlyPacketUsesRunEvidenceWithoutExecutorAttempt(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
+		FeatureSlug: "applier-only", RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch,
+		BaseCommit: fixture.run.BaseCommit, CanonicalJSON: []byte(`{"schema_version":"1.0","feature_slug":"applier-only"}`),
+		RenderedMarkdown: []byte("# Applier brief\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageApplierEvidence(t, fixture.store, created.Run, "completed", nil)
+	if _, err := fixture.runs.RecordApplierCompleted(context.Background(), created.Run.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.runs.RecordValidationResult(context.Background(), created.Run.RunID, true); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: created.Run.RunID, AuditedCommit: fixture.head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Packet.ImplementationActorKind != workflowstore.ImplementationActorApplier || prepared.Packet.ExecutionAttemptRowID.Valid {
+		t.Fatalf("packet = %+v", prepared.Packet)
+	}
+	var packet WorkflowAuditPacket
+	if err := json.Unmarshal(func() []byte {
+		current, err := fixture.service.GetCurrentPacket(context.Background(), created.Run.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return current.PacketBytes
+	}(), &packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.Execution.ActorKind != workflowstore.ImplementationActorApplier || packet.Execution.Applier == nil || packet.Execution.Executor != nil {
+		t.Fatalf("execution evidence = %+v", packet.Execution)
+	}
+}
+
 func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 	// 1. Managed run packet
 	fixtureManaged := newAuditFixture(t, true)
@@ -345,6 +430,7 @@ func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 			t.Fatal("execution is not a map")
 		}
 		expectedExecKeys := map[string]bool{
+			"actor_kind": true, "executor": true,
 			"status": true, "committed_sha": true, "completion_summary": true,
 			"blockers_or_incomplete_work": true, "reported_changed_files": true,
 		}

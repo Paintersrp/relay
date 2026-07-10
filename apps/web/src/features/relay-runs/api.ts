@@ -33,6 +33,7 @@ import type {
   WorkflowExecutionAttemptResult,
   WorkflowExecutionAttemptStatus,
   WorkflowExecutionAttemptSummary,
+  WorkflowImplementationActorKind,
   WorkflowTerminalExecutionAttemptStatus,
   WorkflowRunDetail,
   WorkflowRunListFilters,
@@ -71,6 +72,27 @@ const TERMINAL_ATTEMPT_STATUSES: readonly WorkflowTerminalExecutionAttemptStatus
   "cancelled",
   "timed_out",
 ];
+
+const IMPLEMENTATION_ACTOR_KINDS = ["applier", "executor", "hybrid"] as const;
+
+function parseImplementationActorKind(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowImplementationActorKind {
+  if (
+    typeof value === "string" &&
+    IMPLEMENTATION_ACTOR_KINDS.includes(value as WorkflowImplementationActorKind)
+  ) {
+    return value as WorkflowImplementationActorKind;
+  }
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context} is not a supported implementation actor kind`,
+  );
+}
 
 function parseAttemptStatus(
   value: unknown,
@@ -156,6 +178,19 @@ function parseRunStatus(
     path,
     `${context} is not a supported workflow Run status`,
   );
+}
+
+export function workflowImplementationActorLabel(actorKind: WorkflowImplementationActorKind): string {
+  switch (actorKind) {
+    case "applier":
+      return "Deterministic applier";
+    case "executor":
+      return "Executor";
+    case "hybrid":
+      return "Deterministic applier + Executor";
+    default:
+      throw new Error(`Unsupported implementation actor kind: ${String(actorKind)}`);
+  }
 }
 
 function parseStage(
@@ -380,6 +415,15 @@ function parsePacket(
       path,
       context,
     ),
+    implementationActorKind:
+      record.implementationActorKind === undefined
+        ? "executor"
+        : parseImplementationActorKind(
+            record.implementationActorKind,
+            method,
+            path,
+            `${context}.implementationActorKind`,
+          ),
     auditedCommit: requiredWorkflowString(
       record,
       "auditedCommit",

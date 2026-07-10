@@ -32,13 +32,14 @@ type prepareWorkflowAuditRequest struct {
 }
 
 type workflowAuditPacketResponse struct {
-	AuditPacketID string `json:"auditPacketId"`
-	AuditedCommit string `json:"auditedCommit"`
-	PacketSHA256  string `json:"packetSha256"`
-	Status        string `json:"status"`
-	StaleReason   string `json:"staleReason,omitempty"`
-	CreatedAt     string `json:"createdAt"`
-	SupersededAt  string `json:"supersededAt,omitempty"`
+	AuditPacketID           string `json:"auditPacketId"`
+	ImplementationActorKind string `json:"implementationActorKind"`
+	AuditedCommit           string `json:"auditedCommit"`
+	PacketSHA256            string `json:"packetSha256"`
+	Status                  string `json:"status"`
+	StaleReason             string `json:"staleReason,omitempty"`
+	CreatedAt               string `json:"createdAt"`
+	SupersededAt            string `json:"supersededAt,omitempty"`
 }
 
 func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
@@ -104,12 +105,13 @@ func (h *WorkflowHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 func workflowAuditPacketDTO(packet appaudits.AuditPacket) workflowAuditPacketResponse {
 	response := workflowAuditPacketResponse{
-		AuditPacketID: packet.AuditPacketID,
-		AuditedCommit: packet.AuditedCommit,
-		PacketSHA256:  packet.PacketSHA256,
-		Status:        packet.Status,
-		StaleReason:   packet.StaleReason,
-		CreatedAt:     packet.CreatedAt,
+		AuditPacketID:           packet.AuditPacketID,
+		ImplementationActorKind: packet.ImplementationActorKind,
+		AuditedCommit:           packet.AuditedCommit,
+		PacketSHA256:            packet.PacketSHA256,
+		Status:                  packet.Status,
+		StaleReason:             packet.StaleReason,
+		CreatedAt:               packet.CreatedAt,
 	}
 	if packet.SupersededAt.Valid {
 		response.SupersededAt = packet.SupersededAt.String

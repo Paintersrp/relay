@@ -3,6 +3,7 @@ package workflowstore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -407,11 +408,35 @@ func (tx *Tx) GetLatestSucceededExecutionAttempt(ctx context.Context, runRowID i
 	return getLatestSucceededExecutionAttempt(ctx, tx.tx, runRowID)
 }
 
+func (tx *Tx) GetLatestSucceededExecutionAttemptOptional(ctx context.Context, runRowID int64) (ExecutionAttempt, bool, error) {
+	attempt, err := getLatestSucceededExecutionAttempt(ctx, tx.tx, runRowID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExecutionAttempt{}, false, nil
+	}
+	if err != nil {
+		return ExecutionAttempt{}, false, err
+	}
+	return attempt, true, nil
+}
+
+func (tx *Tx) ListArtifactsByRun(ctx context.Context, runRowID int64) ([]Artifact, error) {
+	return listArtifacts(ctx, tx.tx, "run_row_id", runRowID)
+}
+
+func (tx *Tx) ListArtifactsByExecutionAttempt(ctx context.Context, attemptRowID int64) ([]Artifact, error) {
+	return listArtifacts(ctx, tx.tx, "execution_attempt_row_id", attemptRowID)
+}
+
 func (tx *Tx) CreateAuditPacket(ctx context.Context, params CreateAuditPacketParams) (AuditPacket, error) {
+	actorKind := params.ImplementationActorKind
+	if actorKind == "" && params.ExecutionAttemptRowID.Valid {
+		actorKind = ImplementationActorExecutor
+	}
 	return scanAuditPacket(tx.tx.QueryRowContext(ctx, `
 INSERT INTO audit_packets (
     audit_packet_id,
     run_row_id,
+    implementation_actor_kind,
     execution_attempt_row_id,
     artifact_row_id,
     base_commit,
@@ -419,12 +444,13 @@ INSERT INTO audit_packets (
     packet_sha256,
     status
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, 'current')
-RETURNING id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'current')
+RETURNING id, audit_packet_id, run_row_id, implementation_actor_kind, execution_attempt_row_id, artifact_row_id,
           base_commit, audited_commit, packet_sha256, status, stale_reason,
           created_at, superseded_at`,
 		params.AuditPacketID,
 		params.RunRowID,
+		actorKind,
 		params.ExecutionAttemptRowID,
 		params.ArtifactRowID,
 		params.BaseCommit,

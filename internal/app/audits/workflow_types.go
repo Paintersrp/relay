@@ -86,11 +86,35 @@ type WorkflowAuditManagedContext struct {
 }
 
 type WorkflowAuditExecution struct {
-	Status                   string   `json:"status"`
-	CommittedSHA             string   `json:"committed_sha"`
-	CompletionSummary        string   `json:"completion_summary"`
-	BlockersOrIncompleteWork []string `json:"blockers_or_incomplete_work"`
-	ReportedChangedFiles     []string `json:"reported_changed_files"`
+	ActorKind                string                         `json:"actor_kind"`
+	Status                   string                         `json:"status"`
+	CommittedSHA             string                         `json:"committed_sha"`
+	CompletionSummary        string                         `json:"completion_summary"`
+	BlockersOrIncompleteWork []string                       `json:"blockers_or_incomplete_work"`
+	ReportedChangedFiles     []string                       `json:"reported_changed_files"`
+	Applier                  *WorkflowAuditApplierEvidence  `json:"applier,omitempty"`
+	Executor                 *WorkflowAuditExecutorEvidence `json:"executor,omitempty"`
+}
+
+type WorkflowAuditApplierEvidence struct {
+	Outcome                               string   `json:"outcome"`
+	ImplementationResultArtifactReference string   `json:"implementation_result_artifact_reference"`
+	LedgerArtifactReference               string   `json:"ledger_artifact_reference"`
+	ChangedFiles                          []string `json:"changed_files"`
+	ResidualOperationIDs                  []string `json:"residual_operation_ids"`
+	FailureClass                          string   `json:"failure_class,omitempty"`
+	FailureReason                         string   `json:"failure_reason,omitempty"`
+}
+
+type WorkflowAuditExecutorEvidence struct {
+	AttemptID     string                     `json:"attempt_id"`
+	AttemptNumber int64                      `json:"attempt_number"`
+	Adapter       string                     `json:"adapter"`
+	Model         string                     `json:"model"`
+	Status        string                     `json:"status"`
+	Result        WorkflowAuditAttemptResult `json:"result"`
+	StartedAt     string                     `json:"started_at,omitempty"`
+	FinishedAt    string                     `json:"finished_at,omitempty"`
 }
 
 type WorkflowAuditChangedFile struct {

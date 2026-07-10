@@ -34,7 +34,7 @@ func buildWorkflowAuditPacket(
 	store *workflowstore.Store,
 	run workflowstore.Run,
 	packetID string,
-	attempt workflowstore.ExecutionAttempt,
+	implementation WorkflowImplementationEvidence,
 	commit workflowrepos.AuditCommitEvidence,
 	diffArtifact workflowstore.Artifact,
 ) ([]byte, error) {
@@ -83,15 +83,14 @@ func buildWorkflowAuditPacket(
 			userIntent = firstNonblankLine(string(executorBrief))
 		}
 	}
-	attemptArtifacts, err := store.ListArtifactsByExecutionAttempt(ctx, attempt.ID)
+	evidence, err := workflowAuditEvidence(store, implementation.Artifacts)
 	if err != nil {
 		return nil, err
 	}
-	evidence, err := workflowAuditEvidence(store, attemptArtifacts)
-	if err != nil {
-		return nil, err
+	auditResult := WorkflowAuditAttemptResult{}
+	if implementation.Executor != nil {
+		auditResult = workflowAuditAttemptResult(implementation.Executor.Attempt.ResultJSON)
 	}
-	auditResult := workflowAuditAttemptResult(attempt.ResultJSON)
 	blockers := workflowAuditBlockers(auditResult)
 	if blockers == nil {
 		blockers = []string{}
@@ -146,16 +145,10 @@ func buildWorkflowAuditPacket(
 			ExecutorBrief:  WorkflowAuditEmbeddedMarkdown{Filename: filepath.Base(executorBriefArtifact.RelativePath), SHA256: executorBriefArtifact.SHA256, Content: string(executorBrief)},
 			ManagedContext: managedContext,
 		},
-		Execution: WorkflowAuditExecution{
-			Status:                   attempt.Status,
-			CommittedSHA:             commit.AuditedCommit,
-			CompletionSummary:        workflowAuditCompletionSummary(auditResult),
-			BlockersOrIncompleteWork: blockers,
-			ReportedChangedFiles:     reportedFiles,
-		},
+		Execution:           workflowAuditExecution(implementation, commit.AuditedCommit, auditResult, blockers, reportedFiles),
 		ChangedFiles:        workflowAuditChangedFiles(commit),
 		RelevantSourcePaths: workflowAuditRelevantSourcePaths(commit, selectedPass),
-		Validation:          workflowAuditValidation(evidence, attempt, executionProjection.ValidationCommands),
+		Validation:          workflowAuditValidation(evidence, implementation, executionProjection.ValidationCommands),
 		Artifacts:           workflowAuditArtifacts(evidence, diffArtifact),
 	}
 	if run.RemediatesRunRowID.Valid {
@@ -220,6 +213,50 @@ func workflowAuditManagedContext(
 	}, nil
 }
 
+func workflowAuditExecution(implementation WorkflowImplementationEvidence, committedSHA string, auditResult WorkflowAuditAttemptResult, blockers []string, reportedFiles []string) WorkflowAuditExecution {
+	out := WorkflowAuditExecution{
+		ActorKind:                implementation.ActorKind,
+		Status:                   implementation.ActorKind,
+		CommittedSHA:             committedSHA,
+		CompletionSummary:        workflowAuditCompletionSummary(auditResult),
+		BlockersOrIncompleteWork: blockers,
+		ReportedChangedFiles:     reportedFiles,
+	}
+	if implementation.Applier != nil {
+		out.Applier = &WorkflowAuditApplierEvidence{
+			Outcome:                               implementation.Applier.Result.Outcome,
+			ImplementationResultArtifactReference: implementation.Applier.ImplementationResultArtifact.ArtifactID,
+			LedgerArtifactReference:               implementation.Applier.LedgerArtifact.ArtifactID,
+			ChangedFiles:                          implementation.Applier.Result.ChangedFiles,
+			ResidualOperationIDs:                  append(append([]string(nil), implementation.Applier.Result.ResidualOperationIDs...), implementation.Applier.Result.ResidualOperations...),
+			FailureClass:                          implementation.Applier.Result.FailureClass,
+			FailureReason:                         implementation.Applier.Result.FailureReason,
+		}
+		if out.CompletionSummary == "Execution attempt completed with status recorded in Relay." {
+			out.CompletionSummary = "Deterministic applier completed approved implementation evidence."
+		}
+	}
+	if implementation.Executor != nil {
+		executor := &WorkflowAuditExecutorEvidence{
+			AttemptID:     implementation.Executor.Attempt.AttemptID,
+			AttemptNumber: implementation.Executor.Attempt.AttemptNumber,
+			Adapter:       implementation.Executor.Attempt.Adapter,
+			Model:         implementation.Executor.Attempt.Model,
+			Status:        implementation.Executor.Attempt.Status,
+			Result:        auditResult,
+		}
+		if implementation.Executor.Attempt.StartedAt.Valid {
+			executor.StartedAt = implementation.Executor.Attempt.StartedAt.String
+		}
+		if implementation.Executor.Attempt.FinishedAt.Valid {
+			executor.FinishedAt = implementation.Executor.Attempt.FinishedAt.String
+		}
+		out.Executor = executor
+		out.Status = implementation.Executor.Attempt.Status
+	}
+	return out
+}
+
 func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {
 	for _, value := range []string{result.NormalizedStatus, result.BlockerText, result.Error} {
 		if strings.TrimSpace(value) != "" {
@@ -229,13 +266,13 @@ func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {
 	return "Execution attempt completed with status recorded in Relay."
 }
 
-func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem, attempt workflowstore.ExecutionAttempt, commands []speccompiler.ProjectedValidationCommand) []WorkflowAuditValidationResult {
+func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem, implementation WorkflowImplementationEvidence, commands []speccompiler.ProjectedValidationCommand) []WorkflowAuditValidationResult {
 	if len(commands) == 0 {
 		out := make([]WorkflowAuditValidationResult, 0, len(evidence))
 		for _, item := range evidence {
 			var exitCode *int
 			status := "not_run"
-			if attempt.Status == workflowstore.AttemptStatusSucceeded {
+			if implementation.ActorKind == workflowstore.ImplementationActorApplier || implementation.ActorKind == workflowstore.ImplementationActorHybrid || implementation.ActorKind == workflowstore.ImplementationActorExecutor {
 				status = "passed"
 				zero := 0
 				exitCode = &zero
@@ -257,7 +294,7 @@ func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem, attempt workf
 		var exitCode *int
 		status := "not_run"
 		concise := "Validation command declared by canonical Execution Spec; no finalized validation evidence artifact was matched."
-		if attempt.Status == workflowstore.AttemptStatusSucceeded {
+		if implementation.ActorKind == workflowstore.ImplementationActorApplier || implementation.ActorKind == workflowstore.ImplementationActorHybrid || implementation.ActorKind == workflowstore.ImplementationActorExecutor {
 			status = "passed"
 			zero := 0
 			exitCode = &zero

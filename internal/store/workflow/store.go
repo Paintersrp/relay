@@ -248,6 +248,17 @@ func (s *Store) GetLatestSucceededExecutionAttempt(ctx context.Context, runRowID
 	return getLatestSucceededExecutionAttempt(ctx, s.db, runRowID)
 }
 
+func (s *Store) GetLatestSucceededExecutionAttemptOptional(ctx context.Context, runRowID int64) (ExecutionAttempt, bool, error) {
+	attempt, err := getLatestSucceededExecutionAttempt(ctx, s.db, runRowID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExecutionAttempt{}, false, nil
+	}
+	if err != nil {
+		return ExecutionAttempt{}, false, err
+	}
+	return attempt, true, nil
+}
+
 func (s *Store) MarkCurrentAuditPacketsStale(ctx context.Context, runRowID int64, reason string) error {
 	return s.WithTx(ctx, func(tx *Tx) error {
 		return tx.MarkCurrentAuditPacketsStale(ctx, runRowID, reason)
@@ -478,7 +489,7 @@ LIMIT 1`, runRowID).Scan(
 
 func getAuditPacketByPacketID(ctx context.Context, queryer rowQueryer, packetID string) (AuditPacket, error) {
 	return scanAuditPacket(queryer.QueryRowContext(ctx, `
-SELECT id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+	SELECT id, audit_packet_id, run_row_id, implementation_actor_kind, execution_attempt_row_id, artifact_row_id,
        base_commit, audited_commit, packet_sha256, status, stale_reason,
        created_at, superseded_at
 FROM audit_packets
@@ -487,7 +498,7 @@ WHERE audit_packet_id = ?`, packetID))
 
 func getCurrentAuditPacketByRun(ctx context.Context, queryer rowQueryer, runRowID int64) (AuditPacket, error) {
 	return scanAuditPacket(queryer.QueryRowContext(ctx, `
-SELECT id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+	SELECT id, audit_packet_id, run_row_id, implementation_actor_kind, execution_attempt_row_id, artifact_row_id,
        base_commit, audited_commit, packet_sha256, status, stale_reason,
        created_at, superseded_at
 FROM audit_packets
@@ -497,7 +508,7 @@ LIMIT 1`, runRowID))
 
 func getLatestAuditPacketByRun(ctx context.Context, queryer rowQueryer, runRowID int64) (AuditPacket, error) {
 	return scanAuditPacket(queryer.QueryRowContext(ctx, `
-SELECT id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+	SELECT id, audit_packet_id, run_row_id, implementation_actor_kind, execution_attempt_row_id, artifact_row_id,
        base_commit, audited_commit, packet_sha256, status, stale_reason,
        created_at, superseded_at
 FROM audit_packets
@@ -604,6 +615,7 @@ func scanAuditPacket(row rowScanner) (AuditPacket, error) {
 		&value.ID,
 		&value.AuditPacketID,
 		&value.RunRowID,
+		&value.ImplementationActorKind,
 		&value.ExecutionAttemptRowID,
 		&value.ArtifactRowID,
 		&value.BaseCommit,

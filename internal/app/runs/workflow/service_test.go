@@ -547,7 +547,7 @@ func persistAuditPacket(t *testing.T, ctx context.Context, store *workflowstore.
 		_, createErr = tx.CreateAuditPacket(ctx, workflowstore.CreateAuditPacketParams{
 			AuditPacketID:         "packet-test",
 			RunRowID:              run.ID,
-			ExecutionAttemptRowID: attempt.ID,
+			ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true},
 			ArtifactRowID:         artifact.ID,
 			BaseCommit:            run.BaseCommit,
 			AuditedCommit:         strings.Repeat("b", 40),

@@ -50,9 +50,9 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 	if run.Status != workflowstore.RunStatusValidating && run.Status != workflowstore.RunStatusAuditReady {
 		return PrepareWorkflowAuditResult{}, ErrWorkflowAuditNotReady
 	}
-	attempt, err := s.store.GetLatestSucceededExecutionAttempt(ctx, run.ID)
+	implementation, err := resolveWorkflowImplementationEvidence(ctx, s.store, run)
 	if err != nil {
-		return PrepareWorkflowAuditResult{}, fmt.Errorf("load successful execution attempt: %w", err)
+		return PrepareWorkflowAuditResult{}, fmt.Errorf("resolve implementation evidence: %w", err)
 	}
 	repository, err := s.store.GetRepositoryTarget(ctx, run.RepoTarget)
 	if err != nil {
@@ -64,7 +64,8 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 	}
 	if current, currentErr := s.GetCurrentPacket(ctx, run.RunID); currentErr == nil &&
 		current.Packet.AuditedCommit == input.AuditedCommit &&
-		current.Packet.ExecutionAttemptRowID == attempt.ID {
+		current.Packet.ImplementationActorKind == implementation.ActorKind &&
+		current.Packet.ExecutionAttemptRowID == implementationExecutionAttemptRowID(implementation) {
 		return PrepareWorkflowAuditResult{Run: current.Run, Packet: current.Packet, Artifact: current.Artifact}, nil
 	}
 
@@ -79,8 +80,8 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		_ = batch.Rollback()
 		return PrepareWorkflowAuditResult{}, err
 	}
-	diffArtifact := workflowstore.Artifact{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}
-	packetBytes, err := buildWorkflowAuditPacket(ctx, s.store, run, packetID, attempt, commit, diffArtifact)
+	diffArtifact := workflowstore.Artifact{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}
+	packetBytes, err := buildWorkflowAuditPacket(ctx, s.store, run, packetID, implementation, commit, diffArtifact)
 	if err != nil {
 		_ = batch.Rollback()
 		return PrepareWorkflowAuditResult{}, err
@@ -100,11 +101,11 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		if currentRun.Status != workflowstore.RunStatusValidating && currentRun.Status != workflowstore.RunStatusAuditReady {
 			return ErrWorkflowAuditNotReady
 		}
-		currentAttempt, err := tx.GetLatestSucceededExecutionAttempt(ctx, currentRun.ID)
+		currentImplementation, err := resolveWorkflowImplementationEvidenceWithReader(ctx, s.store, tx, currentRun)
 		if err != nil {
 			return err
 		}
-		if currentAttempt.ID != attempt.ID {
+		if currentImplementation.ActorKind != implementation.ActorKind || implementationExecutionAttemptRowID(currentImplementation) != implementationExecutionAttemptRowID(implementation) {
 			return ErrWorkflowAuditPacketStale
 		}
 		currentRepo, err := tx.GetRepositoryTarget(ctx, currentRun.RepoTarget)
@@ -123,7 +124,7 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		if err := tx.MarkCurrentAuditPacketsStale(ctx, currentRun.ID, "superseded_by_new_packet"); err != nil {
 			return err
 		}
-		if _, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: currentAttempt.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}); err != nil {
+		if _, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: currentRun.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}); err != nil {
 			return err
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
@@ -140,13 +141,14 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 			return err
 		}
 		packet, err := tx.CreateAuditPacket(ctx, workflowstore.CreateAuditPacketParams{
-			AuditPacketID:         packetID,
-			RunRowID:              currentRun.ID,
-			ExecutionAttemptRowID: currentAttempt.ID,
-			ArtifactRowID:         artifact.ID,
-			BaseCommit:            currentRun.BaseCommit,
-			AuditedCommit:         input.AuditedCommit,
-			PacketSHA256:          staged.SHA256,
+			AuditPacketID:           packetID,
+			RunRowID:                currentRun.ID,
+			ImplementationActorKind: currentImplementation.ActorKind,
+			ExecutionAttemptRowID:   implementationExecutionAttemptRowID(currentImplementation),
+			ArtifactRowID:           artifact.ID,
+			BaseCommit:              currentRun.BaseCommit,
+			AuditedCommit:           input.AuditedCommit,
+			PacketSHA256:            staged.SHA256,
 		})
 		if err != nil {
 			return err
@@ -178,8 +180,8 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 		}
 		return GetWorkflowAuditPacketResult{}, err
 	}
-	attempt, err := s.store.GetLatestSucceededExecutionAttempt(ctx, run.ID)
-	if err != nil || attempt.ID != packet.ExecutionAttemptRowID {
+	implementation, err := resolveWorkflowImplementationEvidence(ctx, s.store, run)
+	if err != nil || implementation.ActorKind != packet.ImplementationActorKind || implementationExecutionAttemptRowID(implementation) != packet.ExecutionAttemptRowID {
 		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "later_execution_attempt")
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
@@ -302,9 +304,7 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 		}
 		return GetWorkflowAuditArtifactResult{}, err
 	}
-	if artifact.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt ||
-		!artifact.ExecutionAttemptRowID.Valid ||
-		artifact.ExecutionAttemptRowID.Int64 != current.Packet.ExecutionAttemptRowID {
+	if !workflowAuditArtifactOwnerAllowed(current.Packet, artifact) {
 		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactOwnership
 	}
 	if artifact.SHA256 != declared.SHA256 {
@@ -327,6 +327,16 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 		Content:   content,
 		Truncated: truncated,
 	}, nil
+}
+
+func workflowAuditArtifactOwnerAllowed(packet workflowstore.AuditPacket, artifact workflowstore.Artifact) bool {
+	if artifact.OwnerType == workflowstore.ArtifactOwnerRun && artifact.RunRowID.Valid && artifact.RunRowID.Int64 == packet.RunRowID {
+		return true
+	}
+	if artifact.OwnerType == workflowstore.ArtifactOwnerExecutionAttempt && packet.ExecutionAttemptRowID.Valid && artifact.ExecutionAttemptRowID.Valid {
+		return artifact.ExecutionAttemptRowID.Int64 == packet.ExecutionAttemptRowID.Int64
+	}
+	return false
 }
 
 func resolvePacketArtifact(artifacts []WorkflowAuditPacketArtifact, reference string) (WorkflowAuditPacketArtifact, error) {
@@ -454,11 +464,8 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 			packet.AuditedCommit != input.AuditedCommit {
 			return ErrWorkflowAuditPacketStale
 		}
-		attempt, err := tx.GetLatestSucceededExecutionAttempt(ctx, run.ID)
-		if err != nil {
-			return err
-		}
-		if attempt.ID != packet.ExecutionAttemptRowID {
+		currentImplementation, err := resolveWorkflowImplementationEvidenceWithReader(ctx, s.store, tx, run)
+		if err != nil || currentImplementation.ActorKind != packet.ImplementationActorKind || implementationExecutionAttemptRowID(currentImplementation) != packet.ExecutionAttemptRowID {
 			return ErrWorkflowAuditPacketStale
 		}
 		repository, err := tx.GetRepositoryTarget(ctx, run.RepoTarget)

@@ -36,6 +36,40 @@ export type WorkflowTerminalExecutionAttemptStatus = Exclude<
   "pending" | "running"
 >;
 
+export type WorkflowImplementationActorKind = "applier" | "executor" | "hybrid";
+
+export interface WorkflowAuditApplierEvidence {
+  outcome: string;
+  implementationResultArtifactReference: string;
+  ledgerArtifactReference: string;
+  changedFiles: string[];
+  residualOperationIds: string[];
+  failureClass?: string;
+  failureReason?: string;
+}
+
+export interface WorkflowAuditExecutorEvidence {
+  attemptId: string;
+  attemptNumber: number;
+  adapter: string;
+  model: string;
+  status: WorkflowExecutionAttemptStatus;
+  result: WorkflowExecutionAttemptResult;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface WorkflowAuditExecutionEvidence {
+  actorKind: WorkflowImplementationActorKind;
+  status: string;
+  committedSha: string;
+  completionSummary: string;
+  blockersOrIncompleteWork: string[];
+  reportedChangedFiles: string[];
+  applier?: WorkflowAuditApplierEvidence;
+  executor?: WorkflowAuditExecutorEvidence;
+}
+
 export interface WorkflowExecutionArtifact {
   artifactId: string;
   kind: string;
@@ -79,7 +113,8 @@ export interface WorkflowExecutionAttempt
 }
 
 export interface WorkflowAuditPacket {
-  auditPacketId: string;
+	auditPacketId: string;
+	implementationActorKind: WorkflowImplementationActorKind;
   auditedCommit: string;
   packetSha256: string;
   status: string;

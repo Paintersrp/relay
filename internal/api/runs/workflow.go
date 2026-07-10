@@ -81,13 +81,14 @@ type workflowArtifactLinkResponse struct {
 }
 
 type workflowAuditPacketLinkResponse struct {
-	AuditPacketID string `json:"auditPacketId"`
-	AuditedCommit string `json:"auditedCommit"`
-	PacketSHA256  string `json:"packetSha256"`
-	Status        string `json:"status"`
-	StaleReason   string `json:"staleReason,omitempty"`
-	CreatedAt     string `json:"createdAt"`
-	SupersededAt  string `json:"supersededAt,omitempty"`
+	AuditPacketID           string `json:"auditPacketId"`
+	ImplementationActorKind string `json:"implementationActorKind"`
+	AuditedCommit           string `json:"auditedCommit"`
+	PacketSHA256            string `json:"packetSha256"`
+	Status                  string `json:"status"`
+	StaleReason             string `json:"staleReason,omitempty"`
+	CreatedAt               string `json:"createdAt"`
+	SupersededAt            string `json:"supersededAt,omitempty"`
 }
 
 type workflowAuditDecisionResponse struct {
@@ -227,13 +228,14 @@ func workflowRunSummaryDTO(value workflowapp.RunSummary) workflowRunSummaryRespo
 	}
 	if value.CurrentPacket != nil {
 		packet := workflowAuditPacketLinkResponse{
-			AuditPacketID: value.CurrentPacket.AuditPacketID,
-			AuditedCommit: value.CurrentPacket.AuditedCommit,
-			PacketSHA256:  value.CurrentPacket.PacketSHA256,
-			Status:        value.CurrentPacket.Status,
-			StaleReason:   value.CurrentPacket.StaleReason,
-			CreatedAt:     value.CurrentPacket.CreatedAt,
-			SupersededAt:  value.CurrentPacket.SupersededAt,
+			AuditPacketID:           value.CurrentPacket.AuditPacketID,
+			ImplementationActorKind: value.CurrentPacket.ImplementationActorKind,
+			AuditedCommit:           value.CurrentPacket.AuditedCommit,
+			PacketSHA256:            value.CurrentPacket.PacketSHA256,
+			Status:                  value.CurrentPacket.Status,
+			StaleReason:             value.CurrentPacket.StaleReason,
+			CreatedAt:               value.CurrentPacket.CreatedAt,
+			SupersededAt:            value.CurrentPacket.SupersededAt,
 		}
 		response.CurrentPacket = &packet
 	}

@@ -531,12 +531,13 @@ func artifactMetadata(value workflowstore.Artifact) ArtifactMetadata {
 
 func auditPacketSummary(value workflowstore.AuditPacket) AuditPacketSummary {
 	out := AuditPacketSummary{
-		AuditPacketID: value.AuditPacketID,
-		AuditedCommit: value.AuditedCommit,
-		PacketSHA256:  value.PacketSHA256,
-		Status:        value.Status,
-		StaleReason:   value.StaleReason,
-		CreatedAt:     value.CreatedAt,
+		AuditPacketID:           value.AuditPacketID,
+		ImplementationActorKind: value.ImplementationActorKind,
+		AuditedCommit:           value.AuditedCommit,
+		PacketSHA256:            value.PacketSHA256,
+		Status:                  value.Status,
+		StaleReason:             value.StaleReason,
+		CreatedAt:               value.CreatedAt,
 	}
 	if value.SupersededAt.Valid {
 		out.SupersededAt = value.SupersededAt.String
