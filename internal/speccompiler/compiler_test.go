@@ -9,30 +9,27 @@ import (
 	"testing"
 )
 
-func TestCompileExecutionSpecMatchesGolden(t *testing.T) {
+func TestCompileExecutionSpecFilenameVariantsMatchOneGolden(t *testing.T) {
 	raw := readFixture(t, "valid.execution-spec.json")
 	golden := string(readFixture(t, "compiler-fixture.executor-brief.md"))
-	result := Compile("compiler-fixture.execution-spec.json", raw)
-	assertSuccess(t, result)
-	if result.OutputFilename == nil || *result.OutputFilename != "compiler-fixture.executor-brief.md" {
-		t.Fatalf("unexpected output filename: %#v", result.OutputFilename)
-	}
-	if result.Markdown == nil || *result.Markdown != golden {
-		t.Fatalf("rendered brief does not match golden\n--- got ---\n%s\n--- want ---\n%s", dereference(result.Markdown), golden)
-	}
-	assertOneFinalNewline(t, *result.Markdown)
-}
 
-func TestCompileQualifiedExecutionSpecMatchesGolden(t *testing.T) {
-	raw := readFixture(t, "valid.execution-spec.json")
-	golden := string(readFixture(t, "compiler-fixture.executor-brief.md"))
-	result := Compile("compiler-fixture.pass-12.execution-spec.json", raw)
-	assertSuccess(t, result)
-	if result.OutputFilename == nil || *result.OutputFilename != "compiler-fixture.pass-12.executor-brief.md" {
-		t.Fatalf("unexpected output filename: %#v", result.OutputFilename)
+	unqualified := Compile("compiler-fixture.execution-spec.json", raw)
+	assertSuccess(t, unqualified)
+	if unqualified.OutputFilename == nil || *unqualified.OutputFilename != "compiler-fixture.executor-brief.md" {
+		t.Fatalf("unexpected unqualified output filename: %#v", unqualified.OutputFilename)
 	}
-	if result.Markdown == nil || *result.Markdown != golden {
-		t.Fatalf("qualified rendered brief does not match golden")
+	if unqualified.Markdown == nil || *unqualified.Markdown != golden {
+		t.Fatalf("rendered brief does not match golden\n--- got ---\n%s\n--- want ---\n%s", dereference(unqualified.Markdown), golden)
+	}
+	assertOneFinalNewline(t, *unqualified.Markdown)
+
+	qualified := Compile("compiler-fixture.pass-12.execution-spec.json", raw)
+	assertSuccess(t, qualified)
+	if qualified.OutputFilename == nil || *qualified.OutputFilename != "compiler-fixture.pass-12.executor-brief.md" {
+		t.Fatalf("unexpected qualified output filename: %#v", qualified.OutputFilename)
+	}
+	if qualified.Markdown == nil || *qualified.Markdown != *unqualified.Markdown {
+		t.Fatalf("pass qualification changed rendered brief content")
 	}
 }
 

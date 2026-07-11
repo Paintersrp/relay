@@ -105,6 +105,10 @@ func NewService(store *workflowstore.Store) (*Service, error) {
 }
 
 func (s *Service) ValidateArtifact(_ context.Context, input ValidationInput) (ValidationResult, error) {
+	return validateArtifact(input), nil
+}
+
+func validateArtifact(input ValidationInput) ValidationResult {
 	compiled := speccompiler.Compile(input.DisplayName, input.CanonicalBytes)
 	kind := "unknown"
 	if identity, diagnostics := speccompiler.ParseFilename(input.DisplayName); len(diagnostics) == 0 {
@@ -121,7 +125,7 @@ func (s *Service) ValidateArtifact(_ context.Context, input ValidationInput) (Va
 	if !result.OK {
 		result.Status = "blocked"
 	}
-	return result, nil
+	return result
 }
 
 func (s *Service) SubmitPlan(ctx context.Context, input SubmitPlanInput) (SubmitPlanResult, error) {

@@ -1,6 +1,7 @@
 package submissions
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -70,61 +71,120 @@ func (f *submissionFixture) submitPlan(t *testing.T) SubmitPlanResult {
 	return result
 }
 
-func TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename(t *testing.T) {
-	fixture := newSubmissionFixture(t)
-	data := canonicalPlanBytes("relay")
-	valid, err := fixture.service.ValidateArtifact(context.Background(), ValidationInput{
+func TestValidateArtifactPreservesCanonicalIdentityWithoutWorkflowStorage(t *testing.T) {
+	validBytes := canonicalPlanBytes("relay")
+	valid := validateArtifact(ValidationInput{
 		DisplayName:    "canonical-service.plan.json",
-		CanonicalBytes: data,
+		CanonicalBytes: validBytes,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if !valid.OK ||
+		valid.Status != "valid" ||
+		valid.Kind != "plan" ||
+		valid.SHA256 != SHA256(validBytes) ||
+		len(valid.Diagnostics) != 0 ||
+		len(valid.Notices) != 0 {
+		t.Fatalf("valid result = %+v", valid)
 	}
-	if !valid.OK || valid.SHA256 != SHA256(data) || valid.Kind != "plan" {
-		t.Fatalf("validation = %+v", valid)
+
+	invalidBytes := []byte(`{"feature_slug":`)
+	invalidCompiled := speccompiler.Compile("canonical-service.plan.json", invalidBytes)
+	blocked := validateArtifact(ValidationInput{
+		DisplayName:    "canonical-service.plan.json",
+		CanonicalBytes: invalidBytes,
+	})
+	if blocked.OK ||
+		blocked.Status != "blocked" ||
+		blocked.Kind != "plan" ||
+		blocked.SHA256 != SHA256(invalidBytes) ||
+		len(blocked.Diagnostics) == 0 ||
+		blocked.Diagnostics[0].Code != "invalid_json" {
+		t.Fatalf("invalid content result = %+v", blocked)
 	}
-	if valid.Diagnostics == nil || len(valid.Diagnostics) != 0 {
-		t.Fatalf("validation diagnostics = %#v", valid.Diagnostics)
+	assertDiagnosticsMatch(t, "invalid diagnostics", blocked.Diagnostics, invalidCompiled.Errors)
+	assertDiagnosticsMatch(t, "invalid notices", blocked.Notices, invalidCompiled.Notices)
+
+	fallbackBytes := bytes.Replace(
+		validBytes,
+		[]byte("  \"schema_version\": \"1.0\",\n"),
+		nil,
+		1,
+	)
+	if bytes.Equal(fallbackBytes, validBytes) {
+		t.Fatal("schema_version line was not removed")
 	}
-	if valid.Notices == nil || len(valid.Notices) != 0 {
-		t.Fatalf("validation notices = %#v", valid.Notices)
+	fallbackCompiled := speccompiler.Compile("canonical-service.plan.json", fallbackBytes)
+	fallback := validateArtifact(ValidationInput{
+		DisplayName:    "canonical-service.plan.json",
+		CanonicalBytes: fallbackBytes,
+	})
+	if !fallback.OK ||
+		fallback.Status != "valid" ||
+		fallback.Kind != "plan" ||
+		fallback.SHA256 != SHA256(fallbackBytes) ||
+		len(fallback.Notices) != 1 ||
+		fallback.Notices[0].Code != "schema_version_fallback" {
+		t.Fatalf("fallback result = %+v", fallback)
 	}
-	blocked, err := fixture.service.ValidateArtifact(context.Background(), ValidationInput{
+	assertDiagnosticsMatch(t, "fallback diagnostics", fallback.Diagnostics, fallbackCompiled.Errors)
+	assertDiagnosticsMatch(t, "fallback notices", fallback.Notices, fallbackCompiled.Notices)
+
+	unnormalized := validateArtifact(ValidationInput{
 		DisplayName:    " canonical-service.plan.json",
-		CanonicalBytes: data,
+		CanonicalBytes: validBytes,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if blocked.OK || blocked.SHA256 != SHA256(data) || len(blocked.Diagnostics) == 0 {
-		t.Fatalf("whitespace filename validation = %+v", blocked)
+	if unnormalized.OK ||
+		unnormalized.Status != "blocked" ||
+		unnormalized.Kind != "unknown" ||
+		unnormalized.SHA256 != SHA256(validBytes) ||
+		len(unnormalized.Diagnostics) == 0 {
+		t.Fatalf("whitespace filename result = %+v", unnormalized)
 	}
 }
 
-func TestBoundedDiagnosticsReturnsConcreteBoundedCopy(t *testing.T) {
-	for _, values := range [][]speccompiler.Diagnostic{nil, {}} {
-		result := boundedDiagnostics(values)
-		if result == nil || len(result) != 0 {
-			t.Fatalf("boundedDiagnostics(%#v) = %#v", values, result)
+func assertDiagnosticsMatch(
+	t *testing.T,
+	label string,
+	got []speccompiler.Diagnostic,
+	want []speccompiler.Diagnostic,
+) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s length = %d, want %d: got=%+v want=%+v", label, len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("%s[%d] = %+v, want %+v", label, i, got[i], want[i])
 		}
 	}
+}
 
-	values := make([]speccompiler.Diagnostic, MaxDiagnostics+1)
-	for i := range values {
-		values[i].Code = fmt.Sprintf("diagnostic_%d", i)
+func TestBoundedDiagnosticsPreservesOrderAndLimit(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []speccompiler.Diagnostic
+		want   int
+	}{
+		{name: "nil", values: nil, want: 0},
+		{name: "empty", values: []speccompiler.Diagnostic{}, want: 0},
+		{name: "below limit", values: make([]speccompiler.Diagnostic, 3), want: 3},
+		{name: "exact limit", values: make([]speccompiler.Diagnostic, MaxDiagnostics), want: MaxDiagnostics},
+		{name: "over limit", values: make([]speccompiler.Diagnostic, MaxDiagnostics+1), want: MaxDiagnostics},
 	}
-	result := boundedDiagnostics(values)
-	if len(result) != MaxDiagnostics {
-		t.Fatalf("len(boundedDiagnostics(values)) = %d", len(result))
-	}
-	for i := range result {
-		if result[i].Code != values[i].Code {
-			t.Fatalf("diagnostic %d = %#v, want %#v", i, result[i], values[i])
-		}
-	}
-	result[0].Code = "changed"
-	if values[0].Code == result[0].Code {
-		t.Fatal("bounded diagnostics aliases input")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for i := range tt.values {
+				tt.values[i].Code = fmt.Sprintf("diagnostic_%d", i)
+			}
+			result := boundedDiagnostics(tt.values)
+			if len(result) != tt.want {
+				t.Fatalf("len(boundedDiagnostics(values)) = %d, want %d", len(result), tt.want)
+			}
+			for i := range result {
+				if result[i].Code != fmt.Sprintf("diagnostic_%d", i) {
+					t.Fatalf("diagnostic %d = %#v", i, result[i])
+				}
+			}
+		})
 	}
 }
 

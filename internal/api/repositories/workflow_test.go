@@ -10,10 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -361,6 +357,40 @@ func TestWorkflowRepositoryConfirmCreatedAndReusedResponses(t *testing.T) {
 	}
 }
 
+func TestWorkflowRepositoryMissingConfirmationHashUsesCreateEndpoint(t *testing.T) {
+	service := &fakeWorkflowRepositoryService{
+		err: errors.New("confirmation hash is required"),
+	}
+	response := httptest.NewRecorder()
+	workflowRepositoryRouter(service).ServeHTTP(
+		response,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/repositories",
+			strings.NewReader(`{"localPath":"/repo","remoteName":"origin","repoTargetOverride":"","expectedConfirmationHash":""}`),
+		),
+	)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "BAD_REQUEST" {
+		t.Fatalf("error = %#v, want BAD_REQUEST", body["error"])
+	}
+	if _, ok := body["details"]; ok {
+		t.Fatalf("missing confirmation response included confirmation-required details: %#v", body)
+	}
+	if service.confirmationInput.LocalPath != "/repo" ||
+		service.confirmationInput.RemoteName != "origin" ||
+		service.confirmationInput.RepoTargetOverride != "" ||
+		service.confirmationInput.ExpectedConfirmationHash != "" {
+		t.Fatalf("confirmation input = %+v", service.confirmationInput)
+	}
+}
+
 func TestWorkflowRepositoryConfirmationErrorsIncludeCurrentInspection(t *testing.T) {
 	inspection := workflowapp.RepositoryInspection{
 		State:                   workflowrepos.InspectionStateReady,
@@ -503,134 +533,6 @@ func TestWorkflowRepositoryUnexpectedFailureIsLoggedWithoutClientDisclosure(t *t
 		if !strings.Contains(logged, expected) {
 			t.Fatalf("structured log %q does not contain %q", logged, expected)
 		}
-	}
-}
-
-func openWorkflowRepositoryIntegrationRouter(t *testing.T) (http.Handler, string) {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git is unavailable: %v", err)
-	}
-
-	root := t.TempDir()
-	repositoryPath := filepath.Join(root, "repository")
-	if err := os.MkdirAll(repositoryPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{
-		{"init"},
-		{"config", "user.email", "relay@example.invalid"},
-		{"config", "user.name", "Relay Test"},
-		{"remote", "add", "origin", "git@github.com:Paintersrp/relay.git"},
-	} {
-		command := exec.Command("git", append([]string{"-C", repositoryPath}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, output)
-		}
-	}
-
-	store, err := workflowstore.Open(
-		filepath.Join(root, "workflow.sqlite"),
-		filepath.Join(root, "artifacts"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = store.Close()
-	})
-	service, err := workflowapp.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return workflowRepositoryRouter(service), repositoryPath
-}
-
-func inspectRepositoryThroughHandler(
-	t *testing.T,
-	router http.Handler,
-	repositoryPath string,
-) map[string]any {
-	t.Helper()
-	response := httptest.NewRecorder()
-	router.ServeHTTP(
-		response,
-		httptest.NewRequest(
-			http.MethodPost,
-			"/repositories/inspect",
-			strings.NewReader(`{"localPath":`+strconv.Quote(repositoryPath)+`,"remoteName":"","repoTargetOverride":""}`),
-		),
-	)
-	if response.Code != http.StatusOK {
-		t.Fatalf("inspection response = %d %s", response.Code, response.Body.String())
-	}
-	var body map[string]any
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	return body
-}
-
-func TestWorkflowRepositoryHandlerEnforcesMissingAndStaleConfirmationHashes(t *testing.T) {
-	router, repositoryPath := openWorkflowRepositoryIntegrationRouter(t)
-	inspection := inspectRepositoryThroughHandler(t, router, repositoryPath)
-	hash, ok := inspection["confirmationHash"].(string)
-	if !ok || hash == "" {
-		t.Fatalf("inspection confirmationHash = %#v", inspection["confirmationHash"])
-	}
-
-	tests := []struct {
-		name        string
-		hash        string
-		status      int
-		errorCode   string
-		wantDetails bool
-	}{
-		{
-			name:      "missing",
-			hash:      "",
-			status:    http.StatusBadRequest,
-			errorCode: "BAD_REQUEST",
-		},
-		{
-			name:        "stale",
-			hash:        strings.Repeat("f", 64),
-			status:      http.StatusConflict,
-			errorCode:   "CONFIRMATION_REQUIRED",
-			wantDetails: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			response := httptest.NewRecorder()
-			body := `{"localPath":` + strconv.Quote(repositoryPath) +
-				`,"remoteName":"origin","repoTargetOverride":"","expectedConfirmationHash":` +
-				strconv.Quote(tt.hash) + `}`
-			router.ServeHTTP(
-				response,
-				httptest.NewRequest(http.MethodPost, "/repositories", strings.NewReader(body)),
-			)
-			if response.Code != tt.status {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
-			}
-			var errorBody map[string]any
-			if err := json.Unmarshal(response.Body.Bytes(), &errorBody); err != nil {
-				t.Fatal(err)
-			}
-			if errorBody["error"] != tt.errorCode {
-				t.Fatalf("error = %#v, want %q", errorBody["error"], tt.errorCode)
-			}
-			details, hasDetails := errorBody["details"].(map[string]any)
-			if hasDetails != tt.wantDetails {
-				t.Fatalf("details present = %v, want %v: %#v", hasDetails, tt.wantDetails, errorBody)
-			}
-			if tt.wantDetails {
-				current, ok := details["inspection"].(map[string]any)
-				if !ok || current["confirmationHash"] != hash {
-					t.Fatalf("current inspection = %#v, want hash %q", current, hash)
-				}
-			}
-		})
 	}
 }
 
