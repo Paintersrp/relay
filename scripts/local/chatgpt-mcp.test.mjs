@@ -48,61 +48,132 @@ const expectedToolsByProfile = Object.freeze({
   ]),
 });
 
-function extractProfileTools(source, profile) {
-  const pattern = new RegExp(
-    `${profile}:\\s*Object\\.freeze\\(\\[([\\s\\S]*?)\\]\\)`,
+function profileInventoryBlock(source) {
+  const match = source.match(
+    /const TOOL_NAMES_BY_PROFILE\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\);/u,
   );
-  const match = source.match(pattern);
-  assert.ok(match, `missing ${profile} profile inventory`);
-  return [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
+  assert.ok(match, "missing TOOL_NAMES_BY_PROFILE inventory");
+  return match[1];
 }
 
-test("local MCP help uses executable direct Node entry points", async () => {
+function extractProfileTools(source, profile) {
+  const block = profileInventoryBlock(source);
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*${profile}\\s*:\\s*(?:Object\\.freeze\\(\\s*)?\\[([\\s\\S]*?)\\]\\s*\\)?\\s*,`,
+    "u",
+  );
+  const match = block.match(pattern);
+  assert.ok(match, `missing ${profile} profile inventory`);
+  return [...match[1].matchAll(/["']([^"']+)["']/gu)].map(
+    (entry) => entry[1],
+  );
+}
+
+function extractProfileNames(source) {
+  const block = profileInventoryBlock(source);
+  return [...block.matchAll(/^\s*([a-z_]+)\s*:/gmu)].map(
+    (entry) => entry[1],
+  );
+}
+
+function extractStringSet(source, constantName) {
+  const pattern = new RegExp(
+    `const ${constantName}\\s*=\\s*new Set\\(\\[([\\s\\S]*?)\\]\\);`,
+    "u",
+  );
+  const match = source.match(pattern);
+  assert.ok(match, `missing ${constantName}`);
+  return [...match[1].matchAll(/["']([^"']+)["']/gu)].map(
+    (entry) => entry[1],
+  );
+}
+
+const controlledHelpEnv = {
+  ...process.env,
+  TUNNEL_MCP_TRANSPORT: "stdio",
+  RELAY_MCP_PROFILE: "planner",
+  RELAY_MCP_URL: "http://127.0.0.1:8080/mcp",
+  TUNNEL_HEALTH_LISTEN_ADDR: "127.0.0.1:8082",
+};
+
+test("root package owns stable local MCP wrappers", () => {
+  assert.equal(
+    rootPackage.scripts?.["test:local-scripts"],
+    "node --test scripts/local/chatgpt-mcp.test.mjs",
+  );
+  assert.equal(
+    rootPackage.scripts?.["chatgpt-mcp:init"],
+    "node scripts/local/chatgpt-mcp.mjs init",
+  );
+  assert.equal(
+    rootPackage.scripts?.["chatgpt-mcp:start"],
+    "node scripts/local/chatgpt-mcp.mjs start",
+  );
+  assert.equal(
+    rootPackage.scripts?.["chatgpt-mcp:doctor"],
+    "node scripts/local/chatgpt-mcp.mjs doctor",
+  );
+  assert.equal(
+    rootPackage.scripts?.["chatgpt-mcp:help"],
+    "node scripts/local/chatgpt-mcp.mjs help",
+  );
+});
+
+test("local MCP help presents the stable package interface", async () => {
   const { stdout, stderr } = await execFileAsync(
     process.execPath,
     [chatgptScriptPath, "help"],
     {
       cwd: repositoryRoot,
-      env: { ...process.env },
+      env: controlledHelpEnv,
     },
   );
   const output = `${stdout}\n${stderr}`;
 
-  assert.match(output, /node scripts\/local\/chatgpt-mcp\.mjs init/);
-  assert.match(output, /node scripts\/local\/chatgpt-mcp\.mjs start/);
-  assert.doesNotMatch(output, /npm run chatgpt-mcp:(?:init|start|doctor)/);
-});
-
-test("root package owns the retained local-script test entry only", () => {
-  assert.equal(
-    rootPackage.scripts?.["test:local-scripts"],
-    "node --test scripts/local/chatgpt-mcp.test.mjs",
-  );
-  assert.equal(rootPackage.scripts?.["chatgpt-mcp:init"], undefined);
-  assert.equal(rootPackage.scripts?.["chatgpt-mcp:start"], undefined);
-  assert.equal(rootPackage.scripts?.["chatgpt-mcp:doctor"], undefined);
+  for (const command of [
+    "npm run chatgpt-mcp:init",
+    "npm run chatgpt-mcp:start",
+    "npm run chatgpt-mcp:doctor",
+    "npm run chatgpt-mcp:help",
+  ]) {
+    assert.match(output, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
+  }
+  assert.doesNotMatch(output, /node scripts\/local\/chatgpt-mcp\.mjs/u);
 });
 
 test("stdio verification inventories match the canonical ordered profiles", () => {
+  assert.deepEqual(extractProfileNames(stdioSource), [
+    "planner",
+    "auditor",
+    "local_operator",
+  ]);
   for (const [profile, expected] of Object.entries(expectedToolsByProfile)) {
     assert.deepEqual(extractProfileTools(stdioSource, profile), expected);
   }
 });
 
 test("local scripts retain canonical profile and transport guardrails", () => {
-  for (const profile of ["planner", "auditor", "local_operator"]) {
-    assert.match(chatgptSource, new RegExp(`["']${profile}["']`));
-    assert.match(stdioSource, new RegExp(`["']${profile}["']`));
-  }
-  for (const transport of ["stdio", "http"]) {
-    assert.match(chatgptSource, new RegExp(`["']${transport}["']`));
-  }
+  assert.deepEqual(
+    extractStringSet(chatgptSource, "ALLOWED_RELAY_MCP_PROFILES"),
+    ["planner", "auditor", "local_operator"],
+  );
+  assert.deepEqual(
+    extractStringSet(chatgptSource, "ALLOWED_TUNNEL_MCP_TRANSPORTS"),
+    ["stdio", "http"],
+  );
 
-  assert.match(chatgptSource, /127\.0\.0\.1:3000/);
-  assert.match(chatgptSource, /doctor/);
-  assert.match(chatgptSource, /TUNNEL_CONTROL_API_KEY/);
-  assert.match(chatgptSource, /redact/i);
-  assert.match(stdioSource, /defaulting to planner/i);
+  assert.match(
+    chatgptSource,
+    /const DEFAULT_RELAY_MCP_URL = "http:\/\/127\.0\.0\.1:8080\/mcp";/u,
+  );
+  assert.match(
+    chatgptSource,
+    /const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = "127\.0\.0\.1:8082";/u,
+  );
+  assert.match(chatgptSource, /process\.env\.CONTROL_PLANE_API_KEY/u);
+  assert.match(chatgptSource, /redactSecrets/u);
+  assert.match(chatgptSource, /defaulting to planner/iu);
+  assert.match(stdioSource, /defaulting to planner/iu);
 });
 
 test("stdio self-test retains protocol and file-parameter checks", () => {
@@ -112,11 +183,15 @@ test("stdio self-test retains protocol and file-parameter checks", () => {
     "ping",
     "tools/list",
     "artifact_file",
-    "openaiFileIdRefs",
+    "openai/fileParams",
+    "download_url",
+    "file_id",
+    "file_name",
   ]) {
-    assert.match(stdioSource, new RegExp(token.replace("/", "\\/")));
+    assert.match(stdioSource, new RegExp(token.replace("/", "\\/"), "u"));
   }
-  assert.match(stdioSource, /tool inventory mismatch/i);
+  assert.match(stdioSource, /JSON\.stringify\(actualToolNames\)/u);
+  assert.match(stdioSource, /JSON\.stringify\(expectedToolNames\)/u);
 });
 
 test("local inventory oracle contains no representative retired action", () => {
@@ -125,6 +200,8 @@ test("local inventory oracle contains no representative retired action", () => {
   );
   for (const retired of [
     "create_run_from_planner_handoff",
+    "validate_planner_handoff_for_compile",
+    "create_plan_attempt_with_intent",
     "create_plan_seed",
     "get_pass_context",
     "create_context_packet",

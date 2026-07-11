@@ -16,7 +16,7 @@ const ENV_LOCAL_PATH = join(REPO_ROOT, ".env.local");
 const ENV_FILE_PATHS = [ENV_PATH, ENV_LOCAL_PATH];
 const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
 const DEFAULT_PROFILE = "relay-mcp";
-const DEFAULT_RELAY_MCP_URL = "http://127.0.0.1:8081/mcp";
+const DEFAULT_RELAY_MCP_URL = "http://127.0.0.1:8080/mcp";
 const DEFAULT_TUNNEL_MCP_TRANSPORT = "stdio";
 const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = "127.0.0.1:8082";
 const DEFAULT_RELAY_MCP_PROFILE = "planner";
@@ -182,8 +182,8 @@ function printHelp(config) {
     `1. Copy ${config.envExamplePath} to ${config.envPath} or ${config.envLocalPath}.`,
   );
   console.log("2. Fill TUNNEL_ID and CONTROL_PLANE_API_KEY.");
-  console.log("3. Run node scripts/local/chatgpt-mcp.mjs init once.");
-  console.log("4. Run node scripts/local/chatgpt-mcp.mjs start for daily use.");
+  console.log("3. Run npm run chatgpt-mcp:init once.");
+  console.log("4. Run npm run chatgpt-mcp:start for daily use.");
   console.log(
     "5. Keep that single terminal open while ChatGPT uses the connector.",
   );
@@ -197,14 +197,13 @@ function printHelp(config) {
   );
   console.log("");
   console.log("Commands:");
-  console.log("  node scripts/local/chatgpt-mcp.mjs init [--skip-relay-check]");
+  console.log("  npm run chatgpt-mcp:init");
+  console.log("  npm run chatgpt-mcp:start");
+  console.log("  npm run chatgpt-mcp:doctor");
+  console.log("  npm run chatgpt-mcp:help");
   console.log(
-    "  node scripts/local/chatgpt-mcp.mjs start [--skip-relay-check]",
+    "  Add -- --skip-relay-check to init, start, or doctor only when intentionally bypassing the local MCP check.",
   );
-  console.log(
-    "  node scripts/local/chatgpt-mcp.mjs doctor [--skip-relay-check]",
-  );
-  console.log("  node scripts/local/chatgpt-mcp.mjs help");
 }
 
 async function runInit(config, options) {

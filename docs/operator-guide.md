@@ -1,458 +1,160 @@
 # Relay Operator Guide
 
-This guide provides a comprehensive setup, configuration, and workflow reference for a local Relay operator. Relay is a local-first handoff/run orchestration workbench. It helps turn reviewed Planner handoffs into executable Relay runs, run artifacts, validation evidence, and audit logs.
-
----
-
-## Audience and Scope
-
-This document is intended for local operators, planners, and auditors running Relay on a local machine.
-
-- **Planners** submit pass plans and handoffs to schedule work.
-- **Operators** configure repositories, manage tunnels, trigger local execution/validation, and review outputs.
-- **Auditors** inspect generated run artifacts, git diffs, and validation results to close out passes.
-
-All procedures in this guide are local-first. Relay does not require or rely on GitHub PRs, GitHub CI, GitHub Actions, or remote repository administration for its local audit workflows.
-
----
-
-## Local Process and Port Layout
-
-Relay consists of a Go backend, a React/TanStack Start frontend, a stdio/HTTP Model Context Protocol (MCP) server, and a ChatGPT local tunnel client.
-
-### Port Layout
-
-Ensure the following ports are free before starting local processes:
-
-- **Relay HTTP API Daemon (`cmd/relay`)**: Port `8080` (binds to `http://127.0.0.1:8080` by default). Can be overridden via the `PORT` environment variable.
-- **Relay MCP Server (HTTP Mode)**: Port `8081` (used when running the daemon in HTTP mode; default in the tunnel script is `http://127.0.0.1:8081/mcp`).
-- **ChatGPT Local Tunnel Health/Admin Listener**: Port `8082` (binds to `http://127.0.0.1:8082` by default). Can be overridden via the `TUNNEL_HEALTH_LISTEN_ADDR` environment variable.
-- **React Workbench Dev Server (`apps/web`)**: Served dynamically. The dev server uses the port reported by the startup output of `npm --prefix apps/web run dev` (typically port `3000` or `5173`). Configure your local environment if a fixed port is needed.
-
-### Default Filesystem Paths
-
-- **SQLite Database**: Defaults to `data/relay.sqlite` in the repository root. Can be overridden via `RELAY_DB_PATH`.
-- **Artifacts Directory**: Defaults to `data/artifacts` in the repository root. Can be overridden via `RELAY_ARTIFACTS_DIR`.
-
----
-
-## First-Time Setup: Ensure you have Go 1.25+, Node.js 18+, `sqlc`, `goose`, and `templ` installed.
-
-2.  **Install Dependencies**:
-    ```bash
-    npm install
-    cd apps/web && npm install && cd ../..
-    ```
-3.  **Configure Environment**: Copy `.env.example` to `.env` or `.env.local` in the repository root:
-    ```bash
-    cp .env.example .env.local
-    ```
-4.  **Run Migrations & Code Generation**:
-    ```bash
-    make db-migrate
-    make sqlc
-    make templ
-    ```
-5.  **Build and Run**:
-    - Start the backend (HTTP API daemon):
-      ```bash
-      go run ./cmd/relay
-      ```
-    - Start the React workbench (in a separate terminal):
-      ```bash
-      npm run dev:web
-      ```
-
----
-
-## Project and Repository Registration
-
-Relay manages code bases through **Projects** and **Project Repositories**. You do not need to perform manual database edits to register repositories.
-
-### Project and Repository Registry UI
-
-Open the React workbench and navigate to the Projects list (`/projects`). Here you can:
-
-- Create a new project by specifying its name and configuration.
-- Add a repository to the project, configuring its local filesystem path, git branch context, and role.
-- Manage repository configurations, toggling status or updating settings.
-
-### Project and Repository API Routes
-
-For custom scripting, the Go backend provides the following routes:
-
-- `GET /api/projects` — List registered projects.
-- `POST /api/projects` — Create a new project.
-- `GET /api/projects/{projectId}` — Get project detail.
-- `POST /api/projects/{projectId}/repositories` — Upsert project repository settings.
-- `POST /api/projects/{projectId}/repositories/{repoId}/update` — Update repository roles or options.
-- `POST /api/projects/{projectId}/repositories/{repoId}/set-enabled` — Enable/disable a repository within a project.
-
----
-
-## ChatGPT Local MCP Tunnel
-
-For the local ChatGPT tunnel workflow, the default transport is **stdio**, which executes local commands via `mcpserver`.
-
-> [!NOTE]
-> In stdio mode, you do not need to run the Go HTTP daemon (`go run ./cmd/relay`) separately. The tunnel spawns the stdio server directly.
-
-### Running the Tunnel
-
-1.  **Configure credentials**: Fill in `TUNNEL_ID` and `CONTROL_PLANE_API_KEY` in `.env.local`.
-2.  **Initialize the tunnel profile**:
-    ```bash
-    npm run chatgpt-mcp:init
-    ```
-3.  **Start the tunnel client**:
-    ```bash
-    npm run chatgpt-mcp:start
-    ```
-    Keep this terminal open while the tunnel is in use.
-4.  **Run diagnostics**:
-    ```bash
-    npm run chatgpt-mcp:doctor
-    ```
-
-### Advanced HTTP Mode
-
-If you explicitly set `TUNNEL_MCP_TRANSPORT=http` in your environment, the tunnel will connect via HTTP POST JSON-RPC. In this mode, you **must** have a separately running Relay HTTP daemon serving `/mcp` (e.g. `go run ./cmd/relay`).
-
----
-
-## MCP Profiles and Tool Surfaces
-
-Relay controls which tools are exposed to the MCP client using the `RELAY_MCP_PROFILE` environment variable.
-
-### Supported Profiles
-
-1.  **`local-operator` (Default)**:
-    Exposes the full MCP tool surface, including context broker tools, local audit tools, and project context memory tools.
-2.  **`restricted`**:
-    Hides all broker/retrieval tools and exposes only the base submission and debug surface.
-
-### Legacy Configuration Fallback
-
-If `RELAY_MCP_PROFILE` is unset, Relay falls back to checking the legacy `RELAY_MCP_CONTEXT_BROKER_ENABLED` environment variable:
-
-- `RELAY_MCP_CONTEXT_BROKER_ENABLED=true` maps to `local-operator`.
-- `RELAY_MCP_CONTEXT_BROKER_ENABLED=false` maps to `restricted`.
-
-### Registered Tool Surfaces
-
-| Profile                                  | Registered Tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Restricted** (Base Tools)              | `submit_test_audit_packet`, `create_run_from_planner_handoff`, `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, `submit_audit_packet`, `create_plan_attempt_with_intent`, `get_plan_intent_review_packet`, `submit_intent_drift_review`, `revise_plan_attempt`, `void_plan_attempt`, `approve_plan_attempt`, `submit_plan_attempt`                                                                                                                                                                                                                                     |
-| **Local Operator** (Adds Context Broker) | All base tools + `get_project`, `get_plan`, `get_pass`, `get_pass_context`, `create_source_snapshot`, `list_project_files`, `search_project_files`, `read_project_file`, `get_repository_git_status`, `get_repository_recent_commit`, `list_repository_changed_files`, `get_repository_diff`, `create_context_packet`, `get_context_packet`, `create_local_audit`, `get_local_audit`, `list_project_local_audits`, `search_project_context_memory`, `list_project_context_records`, `get_project_context_record`, `create_project_context_record`, `supersede_project_context_record` |
-
-_Note: Exposure of MCP tools as GPT-facing actions is configuration-dependent. By default, only the two submission tools are exposed._
-
----
-
-## Managed Plan and Selected-Pass Workflow
-
-Relay supports an optional managed plan orchestration layer where runs can be associated with specific plan passes:
-
-The staged planning flow separates upstream planning from pass-local execution. A Requirements Record captures what should change and why, including acceptance criteria and non-goals. A Design Record captures the selected design and visible rationale. A Plan of Passes sequences work when more than one reviewed step is needed. The selected-pass Execution Spec is the executable, pass-local instruction set used to create or prepare a run for that pass.
-
-Quick Spec is only for trivial pre-execution work with bounded files, clear authority, no blocking questions, and simple validation. Do not use Quick Spec for remediation after failed execution, audit revision routing, non-trivial or multi-pass work, upstream artifact revision, or unresolved semantic design decisions.
-
-1.  **Submit Plan**: A structured Plan of Passes JSON is submitted using the `submit_planner_pass_plan` tool or via the `POST /api/plans` endpoint. This creates plan/pass records in the database.
-2.  **Review Pass**: Operators or Planners inspect the plan detail (`/plans/{planId}`) and select a target pass.
-3.  **Associate Run**: A run is created and associated with the target pass by including its `plan_id` and `pass_id` in the handoff metadata or during `create_run_from_planner_handoff`.
-4.  **State Transitions**:
-    - Creating an associated run moves the pass from `planned` to `in_progress`.
-    - Accepting the run's audit moves the pass to `completed`.
-    - Requesting revision on the run's audit moves the pass to `revision_required`. This is a distinct blocker state: the orchestrator keeps the same pass and run selected for repair or follow-up and does **not** advance to a later pass until the pass is repaired and re-audited. (Older notes that described revision as merely returning the pass to `in_progress` predate the project-scoped orchestrator runtime.)
-
----
-
-## Intent Drift Review Workflow
-
-Relay incorporates an LLM-assisted workflow to review plan intent drift before final submission. This workflow ensures that the proposed plan matches original requirements and prevents unauthorized changes.
-
-For detailed configuration, model tiers, separate-chat audit, and cost/privacy controls, see [Intent Drift Review Guide](intent-drift-review.md).
-
----
-
-## Refactor Backlog Workflow
-
-Relay includes a project-scoped refactor backlog for capturing refactor ideas,
-developing them into pass-ready candidates, and feeding them into the normal
-managed plan/pass/run/audit lifecycle. See [`docs/refactor-backlog.md`](refactor-backlog.md)
-for the full concept overview, candidate lifecycle/status table, promotion and
-generated refactor-only plan workflows, and MCP safety boundaries.
-
-Key operator points:
-
-- A **discovery task** is a human-authored analysis prompt (a question to
-  investigate). A **refactor candidate** is a pass-ready proposal (an answer
-  ready to become a `pass_type: "refactor"` pass). They are distinct records.
-- **Promotion** slots a `ready` candidate into an existing active managed plan as
-  a normal refactor pass and marks the candidate `scheduled`. It never submits a
-  plan or creates a run.
-- **Generated refactor-only plans are reviewable artifacts only.** Generation
-  leaves selected candidates `ready` and never auto-submits; acting on the plan
-  still requires a separate, user-confirmed `submit_planner_pass_plan`.
-- **Candidate completion is audit-derived** from the scheduled managed pass:
-  `accepted` → `completed`, `accepted_with_warnings` → `completed_with_warnings`,
-  `revision_required` → `scheduled_revision_required` (same pass/run stays
-  selected), `skipped` → `deferred`. `blocked`/`manual_review_required`/`rejected`
-  never silently complete a candidate.
-- There are **no sidecars in v1** and **no autonomous repository analysis**.
-- The refactor MCP tools are local-operator-only and hidden under the restricted
-  profile.
-
-### Refactor Backlog Manual QA Checklist
-
-Component/browser UI testing dependencies are not installed in `apps/web` (only
-Vitest unit tests for the pure status/form helpers), so the end-to-end UI workflow
-is validated manually. With the backend daemon and React workbench running:
-
-1.  **Create a discovery task.** On the project's refactor backlog page, create a
-    discovery task with a title, analysis prompt, and target scope. Confirm it
-    appears as `Open` and offers edit/complete/close actions.
-2.  **Create a pass-ready candidate.** Create a candidate and confirm the form
-    rejects missing pass-ready fields (e.g. empty `target_files` or invalid
-    `risk_level`) with field-level validation messages, then succeeds once
-    complete and shows as `Ready`.
-3.  **Promote a candidate into an existing plan.** Use the placement
-    suggestion/promote control on a `Ready` candidate against an active plan.
-    Confirm the candidate becomes `Scheduled`, the schedule reference shows the
-    plan/pass, and no run was created.
-4.  **Generate a refactor-only plan.** Select one or more `Ready` candidates and
-    generate a refactor-only plan. Confirm the result shows JSON and Markdown
-    artifact paths and a `review_required_no_auto_submit` policy, that the
-    candidates remain `Ready`, and that no plan was submitted and no run created.
-5.  **Complete a scheduled refactor candidate via audit.** Take the scheduled
-    refactor pass's run through audit with an `accepted` decision and confirm the
-    candidate moves to `Completed` (or `Completed with warnings` for
-    `accepted_with_warnings`).
-6.  **Request revision and confirm same-pass selection.** On a scheduled refactor
-    pass's run, request revision and confirm the candidate shows `Revision
-required`, the pass is `revision_required`, and the orchestrator keeps the same
-    pass/run selected rather than advancing.
-7.  **Confirm restricted MCP profile hides refactor tools.** With
-    `RELAY_MCP_PROFILE=restricted`, confirm the refactor backlog tools are absent
-    from `tools/list` and that calling one returns an unknown-tool error.
-
----
-
-## Source Snapshots and Context Packets
-
-When the context broker is active (`local-operator` profile), the system supports advanced source-tracking services:
-
-- **Source Snapshot**: Creates a read-only metadata snapshot of a registered repository at a specific commit. No git history is mutated.
-- **Context Packet**: Compiles file inventory, search results, and bounded file contents into a pre-run `handoffs/context` artifact.
-- **Separation of Concerns**: Creating a context packet or source snapshot does **not** create a run, compile a canonical packet, or dispatch an executor. It is an evidence-gathering step.
-
----
-
-## Handoff and Run Submission Boundaries
-
-It is critical to distinguish the different submission tools available in the MCP surface:
-
-- **Plan Submission (`submit_planner_pass_plan`)**: Validates the plan format and writes metadata. It does **not** create runs or execute code.
-- **Run Submission (`create_run_from_planner_handoff`)**: Creates a run from reviewed Planner handoff markdown.
-  > [!IMPORTANT]
-  > Run submission requires explicit user confirmation in the chat before execution.
-- **Context Retrieval**: Tools like `get_pass_context` only gather context and do not perform any submissions or state changes.
-
----
-
-## Audit and Local Audit Workflows
-
-Relay's audit workflows are local-first and artifact-backed:
-
-- Audit generation writes local files (`audit_input_summary.md`, `audit_evidence_manifest.json`, and `audit_packet.md`).
-- Manual audit submissions and MCP-based submissions (`submit_audit_packet`) invoke the same backend decision service.
-- Decisions of `blocked` or `manual_review_required` map the run status to `revision_required` while retaining the original decision details in the database.
-- Audit acceptance does **not** implicitly close the run, commit code, or push branches.
-- After audit acceptance, operators use the explicit closeout workflow to run final validation, preserve Relay-managed closeout evidence, stage source changes and generated source artifacts by explicit path selection, commit, and push:
-  ```bash
-  make closeout MESSAGE="your commit message" SLUG="short-task-slug"
-  ```
-- For a no-commit/no-push rehearsal, use:
-  ```bash
-  make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
-  ```
-- Runtime evidence such as validation reports, dry-run output, audit artifacts, executor results, and closeout evidence remains Relay-managed and unstaged by default. Promote it into source control only with an explicit opt-in such as `--promote-runtime-evidence` or `RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE=1`.
-- Closeout dry-run writes validation and closeout evidence and reports would-stage source paths, but it does not mutate the git index, commit, or push.
-- Closeout validation failure is recorded as delivery evidence and does not by itself block staging, commit, or push. Mechanical failures such as evidence write, staging, commit, or push failures remain blocking.
-- Relay does not create branches, reset worktrees, create PRs, run GitHub Actions, or administer remote repository settings as part of local audit or closeout.
-
-### Local Audit Modes
-
-| Mode                    | Use when                                                                                       | Evidence gathered                                                                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `recent_commit`         | Reviewing the most recent commit in one registered repository.                                 | Head commit metadata, changed files, bounded/redacted recent-commit diff, and local-only audit artifacts.                                |
-| `selected_pass_changes` | Reviewing current local changes for a managed plan/pass before or after a pass-associated run. | Registered repository git status, worktree or staged changed files/diff evidence, plan/pass identifiers, and local-only audit artifacts. |
-| `feature_slice`         | Reviewing a bounded feature/system slice by repository-relative paths or search terms.         | Snapshot-backed file reads, fixed-string search evidence, selected file inventory, git status, and local-only audit artifacts.           |
-| `full_repository`       | Performing a broad local repository health/audit scan without remote evidence.                 | Source snapshot inventory, repository git status, bounded metadata summaries, blockers/warnings, and local-only audit artifacts.         |
-
-Local audit modes are read-only. They do not create PRs, run GitHub Actions, mutate git, run arbitrary shell commands, or replace the normal run audit/decision gates.
-
----
-
-## Executor Adapters
-
-Relay supports multiple executor adapters for dispatching agent runs. The following adapters are available:
-
-### Kiro CLI Adapter
-
-The Kiro CLI adapter (`kiro_cli`) invokes `kiro-cli chat` in non-interactive headless mode, passing the executor brief through stdin.
-
-**Prerequisites**: `kiro-cli` must be installed and authenticated outside Relay. Kiro MCP dependencies are not required by default.
-
-**Default command shape**:
-
-```
-kiro-cli chat --no-interactive --wrap never --model auto --effort high --trust-tools=fs_read,fs_write,grep,execute_cmd < executor_brief.md
-```
-
-**Environment variables**:
-
-| Variable                         | Default                             | Description                                                                                |
-| -------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------ |
-| `RELAY_KIRO_BIN`                 | `kiro-cli`                          | Path or name of the Kiro CLI binary                                                        |
-| `RELAY_KIRO_DEFAULT_MODEL`       | `auto`                              | Default model when the run does not select one                                             |
-| `RELAY_KIRO_EFFORT`              | `high`                              | Effort level passed via `--effort`                                                         |
-| `RELAY_KIRO_TRUST_TOOLS`         | `fs_read,fs_write,grep,execute_cmd` | Comma-separated trusted tool list                                                          |
-| `RELAY_KIRO_REQUIRE_MCP_STARTUP` | `false`                             | Set to `true` to require MCP startup before tool use                                       |
-| `RELAY_KIRO_AGENT`               | (empty)                             | Agent name passed via `--agent`                                                            |
-| `RELAY_KIRO_AGENT_ENGINE`        | (empty)                             | Agent engine passed via `--agent-engine`                                                   |
-| `RELAY_KIRO_MODEL`               | (empty)                             | Deprecated fallback only, used when no run model and no `RELAY_KIRO_DEFAULT_MODEL` are set |
-
-Model precedence is: selected run model, `RELAY_KIRO_DEFAULT_MODEL`, deprecated `RELAY_KIRO_MODEL`, then `auto`.
-
-Supported Kiro model IDs:
-
-- `auto`
-- `claude-opus-4.8`
-- `claude-opus-4.7`
-- `claude-opus-4.6`
-- `claude-sonnet-4.6`
-- `claude-opus-4.5`
-- `claude-sonnet-4.5`
-- `claude-sonnet-4`
-- `claude-haiku-4.5`
-- `deepseek-3.2`
-- `minimax-m2.5`
-- `minimax-m2.1`
-- `glm-5`
-- `qwen3-coder-next`
-
-**Safety defaults**:
-
-- `--trust-all-tools` is never enabled by default.
-- `--resume` / `--resume-id` / `--resume-picker` are never used by Relay.
-- `--require-mcp-startup` is opt-in only.
-- Relay sets `RequireZeroExit`, so nonzero exits produce a BLOCKED result.
-
-**Smoke test** (requires local Kiro installation and authentication):
+This guide covers the current local-first workflow. Relay operates on repositories and branches that the operator prepares in advance. It does not perform Git delivery.
+
+## Prerequisites
+
+- Go 1.25.7 or compatible;
+- Node.js and npm;
+- Bash and Make;
+- `sqlc`;
+- `templ`;
+- `goose` only for manual migration targets;
+- any executor CLI you intend to use, installed and authenticated separately.
+
+Install repository dependencies and generators:
 
 ```bash
-kiro-cli chat --no-interactive --wrap never --model auto --effort high --trust-tools=fs_read,fs_write,grep,execute_cmd "Say only MODEL_OK"
+npm --prefix apps/web install
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+go install github.com/pressly/goose/v3/cmd/goose@latest
+go install github.com/a-h/templ/cmd/templ@latest
+sqlc generate
+templ generate
 ```
 
-Expected: exit code 0, output contains `MODEL_OK`. Nonzero exits during Relay dispatch are converted to BLOCKED results.
+Copy selected values from `.env.example` into ignored `.env` or `.env.local`. Copy `apps/web/.env.example` to `apps/web/.env` when browser API configuration is needed.
 
----
+## Start Relay
 
-## Smoke Checks
-
-To verify the health of the entire local setup, run the smoke test suite:
+Run the API and web application in separate terminals:
 
 ```bash
-npm run smoke
+go run ./cmd/relay
+npm run dev:web
 ```
 
-### Release Verification
+Defaults:
 
-For final release-hardening verification, run the comprehensive release smoke script. This script verifies all Go tests, local script connector tests, React typecheck/vitest suites, React build bundles, root smoke suites, and validation reports:
+- web: `http://localhost:3000`;
+- API and HTTP MCP: `http://localhost:8080`;
+- workflow database: `data/workflow/relay-workflow.sqlite`;
+- workflow artifacts: `data/workflow/artifacts`.
+
+Override storage with `RELAY_WORKFLOW_DB_PATH` and `RELAY_WORKFLOW_ARTIFACTS_DIR`. Embedded migrations run automatically when Relay opens the store.
+
+## Register repositories and Projects
+
+1. Open `/projects`.
+2. Register each local repository with a stable `repo_target`, local path, and branch information.
+3. Create an active Project when the work should organize one or more Plans.
+4. Attach the relevant registered repositories to the Project.
+
+A Project is an organizational container. It does not alter canonical artifact bytes, approval identity, Run execution, or repository access.
+
+## Submit a Plan
+
+Use `/plans/new` or the Planner/`local_operator` MCP profile.
+
+A canonical Plan:
+
+- is named `<feature-slug>.plan.json`;
+- references registered `repo_target` values;
+- contains ordered passes and dependencies;
+- is approved outside Relay before submission.
+
+Submission validates the exact JSON, renders the Markdown Plan, persists Plan/pass records, and stores canonical and rendered artifacts. MCP submission additionally requires the exact approved SHA-256 and an externally selected active `project_id`.
+
+Inspect the Plan at `/plans/{planId}` and a pass at `/plans/{planId}/passes/{passId}`.
+
+## Create a Run
+
+Use `/runs/new` or `create_run`.
+
+- Managed Run: submit `<feature-slug>.pass-<number>.execution-spec.json` with matching `plan_id` and positive `pass_number`.
+- Standalone Run: submit `<feature-slug>.execution-spec.json` without a Plan/pass association.
+- Remediation Run: use the normal standalone Execution Spec family and `remediates_run_id` when current audit state permits it.
+
+Relay verifies the exact SHA-256, validates the Execution Spec, renders the Executor Brief, and creates a setup-ready Run. Run creation does not start execution.
+
+## Execute
+
+Open `/runs/{runId}/execute`.
+
+1. Select an executor adapter and model.
+2. Start execution.
+3. Monitor attempt state and captured stdout, stderr, command metadata, and artifacts.
+4. Cancel an active attempt when necessary.
+5. Retry only from an eligible failed or cancelled state.
+
+Relay applies deterministic operations first. A complete deterministic application skips model execution. A blocked deterministic application moves the Run to revision. A partial application supplies bounded residual context to the selected executor.
+
+The executor edits the existing worktree but does not stage, commit, push, create branches, create worktrees, or open pull requests.
+
+## Record validation
+
+The Execution Spec defines ordered validation commands. Relay supports validation state and evidence, but the current HTTP/web surface does not expose the validation-result transition. Operators must complete that transition through the currently available application path outside the workbench.
+
+Do not mark validation successful unless every required command was actually executed successfully.
+
+## Prepare and review an audit packet
+
+When the Run is audit-ready:
+
+1. Ensure the implementation is committed outside Relay.
+2. Open `/runs/{runId}/audit`.
+3. Prepare the packet against the full audited commit SHA.
+4. Inspect packet identity, SHA-256, audited commit, selected attempt, diff, validation evidence, and declared artifact references.
+5. Supply the packet and declared artifacts to the Auditor when direct MCP retrieval is unavailable.
+
+`get_audit_packet` and `get_run_artifact` revalidate freshness, ownership, size, and SHA-256 on readback.
+
+## Record an audit decision
+
+Audit decision submission is MCP-only.
+
+Use the `auditor` or `local_operator` profile and call `record_audit_decision` only after explicit operator confirmation. The request must bind to the exact current packet ID, packet SHA-256, audited commit, decision, and rationale.
+
+- `accepted` completes the Run and managed pass.
+- `needs_revision` returns the Run to revision.
+
+The web audit view does not record the decision.
+
+## Secure ChatGPT tunnel
+
+Use the stable package interface:
 
 ```bash
+npm run chatgpt-mcp:help
+npm run chatgpt-mcp:init
+npm run chatgpt-mcp:doctor
+npm run chatgpt-mcp:start
+```
+
+Stdio is the default transport and launches the canonical MCP server locally. Keep the start process open while ChatGPT uses the connector. See [chatgpt-mcp-local.md](chatgpt-mcp-local.md) for environment values, profiles, advanced HTTP mode, and troubleshooting.
+
+## Maintenance and validation
+
+```bash
+make workflow-db-status
+make workflow-db-migrate
+make mcp-test
+make mcp-smoke
+npm run test:local-scripts
 npm run release:smoke
 ```
 
-This root script wraps `scripts/release-smoke.sh`; you can also invoke the script directly:
+See [smoke.md](smoke.md) for focused checks.
 
-```bash
-bash scripts/release-smoke.sh
-```
+## Current limitations
 
-### Component Validation
+Relay does not currently:
 
-You can also run narrow validation checks:
-
-- **Go MCP Tests**: `go test ./internal/mcp`
-- **Go Router & Server Tests**: `go test ./internal/server`
-- **TypeScript Frontend Compilation**: `npm --prefix apps/web run typecheck`
-- **Frontend Unit Tests**: `npm --prefix apps/web test`
-
-### Repository Validation
-
-Run the broad repository validation target directly:
-
-```bash
-make validate
-```
-
-Focused validation remains the responsibility of the active Execution Spec. Use the exact commands appropriate to the work, such as the component checks listed above, in the order specified by that Execution Spec.
-
-### Explicit Closeout
-
-Use closeout only after the implementation has gone through Executor result intake and audit review.
-
-```bash
-make closeout MESSAGE="your commit message" SLUG="short-task-slug"
-```
-
-Closeout is the repo-owned final delivery workflow. It runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages source changes and generated source artifacts by explicit path selection, commits, and pushes. Runtime evidence is Relay-managed and unstaged by default unless the operator explicitly promotes it with `--promote-runtime-evidence` or `RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE=1`.
-
-To verify closeout evidence generation and would-stage behavior without mutating the git index, committing, or pushing:
-
-```bash
-make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
-```
-
-Hooks are not the primary delivery workflow. Do not rely on pre-push or pre-commit hooks to create artifacts for the commit being pushed.
-
----
-
-## Troubleshooting
-
-### Database is out of sync or locked
-
-If the HTTP API daemon or MCP server reports schema mismatches, run migrations manually:
-
-```bash
-goose -dir internal/db/migrations sqlite3 data/relay.sqlite up
-```
-
-### Tunnel doctor fails with missing `tunnel-client`
-
-Ensure `tunnel-client` (or `tunnel-client.exe` on Windows) is in your system's `PATH`. Alternatively, configure `TUNNEL_CLIENT_PATH` in `.env.local` to point to the absolute path of the binary.
-
-### Port conflicts (e.g. port 8080 already in use)
-
-If the Relay API daemon cannot bind to `8080`, change the port by setting `PORT` in `.env.local` (e.g. `PORT=8085`). Make sure to update `VITE_RELAY_API_BASE_URL` in `apps/web/.env` to point to the new port.
-
-### Stdio self-test missing tools
-
-If `chatgpt-mcp:doctor` complains that required tools are missing, ensure `RELAY_MCP_PROFILE` is set correctly, and the database has been initialized with the correct database migrations.
-
-### HTTP mode connection refused
-
-If you are running the ChatGPT tunnel in HTTP mode and get connection failures, verify that the Go daemon is running (`go run ./cmd/relay`) and that `RELAY_MCP_URL` in `.env.local` points to the correct address/port of the running server.
-
----
-
-## Safety Boundaries
-
-To maintain a secure local-first workflow, respect these safety limits:
-
-1.  **No Implicit Git Mutation**: Relay does not mutate git from run submission, validation, execution, or audit. The explicit closeout command is the repo-owned exception: when invoked by the operator, it may stage, commit, and push. Relay still does not create branches, reset worktrees, create PRs, run GitHub Actions, or administer remote repository settings.
-2.  **No Shell/Execution**: Relay does not support running arbitrary shell commands via MCP.
-3.  **No Secret Leaks**: Never commit `.env` or `.env.local` files, and never paste API keys, tunnel credentials, or private tokens into planner handoffs or MCP tool parameters.
-4.  **Local Isolation**: Ensure all database files (`relay.sqlite`) and artifacts (`data/artifacts/*`) are kept local. Do not attempt to sync these files to remote networks or push them to version control.
+- submit validation results through HTTP or the web UI;
+- submit audit decisions through HTTP or the web UI;
+- prepare repositories, branches, or worktrees;
+- stage, commit, push, or open pull requests;
+- run hosted CI;
+- automatically start the next Plan pass;
+- provide arbitrary MCP shell, filesystem, source-search, or Git tools;
+- operate removed handoff, context, seed, refactor, local-audit, or intent-drift workflows.

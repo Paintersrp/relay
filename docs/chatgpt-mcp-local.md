@@ -1,93 +1,153 @@
-# ChatGPT Local MCP Tunnel
+# Secure Local ChatGPT MCP Tunnel
 
-This document details the configuration and operations for running the ChatGPT local tunnel connector with Relay.
+Relay uses `scripts/local/chatgpt-mcp.mjs` to configure and run the supported tunnel client. Root package scripts are the stable operator interface; they delegate to that helper rather than implementing a second MCP server.
 
-For a broader overview of the local operator layout and setup, please refer to the [Relay Operator Guide](operator-guide.md). For detailed Model Context Protocol specifications and tool list, see the [MCP Specification](mcp.md).
+## Commands
 
----
+```bash
+npm run chatgpt-mcp:help
+npm run chatgpt-mcp:init
+npm run chatgpt-mcp:doctor
+npm run chatgpt-mcp:start
+```
 
-## Default Stdio Workflow
+- `init` writes or refreshes the selected tunnel-client profile and then runs tunnel-client diagnostics.
+- `start` runs the configured tunnel for daily use.
+- `doctor` checks local configuration, the local Relay MCP path, tunnel-client availability, and tunnel-client diagnostics.
+- `help` prints the current setup and command surface.
 
-The default ChatGPT local tunnel path uses Relay's stdio MCP server through `cmd/mcpserver`. 
+Add `-- --skip-relay-check` to `init`, `start`, or `doctor` only when intentionally bypassing the local MCP reachability/self-test check.
 
-> [!NOTE]
-> In stdio mode, you do not need to run the Go HTTP daemon (`go run ./cmd/relay`) separately. The tunnel client automatically spawns the stdio MCP server.
+## Environment
 
-To start the tunnel:
-1.  Configure credentials and environment settings in `.env.local` (see below).
-2.  Run the initialization script once:
-    ```bash
-    npm run chatgpt-mcp:init
-    ```
-3.  Start the tunnel client for daily use:
-    ```bash
-    npm run chatgpt-mcp:start
-    ```
-4.  Keep that terminal open while ChatGPT uses the connector.
+Copy the relevant section of `.env.example` to ignored `.env` or `.env.local`.
 
----
+Required for tunnel operation:
 
-## Environment Configuration
+```dotenv
+TUNNEL_PROFILE=relay-mcp
+TUNNEL_ID=tunnel_REPLACE_ME
+CONTROL_PLANE_API_KEY=sk-REPLACE_ME
+```
 
-Create or edit `.env.local` in the root of the repository. `.env` and `.env.local` files are ignored by git and must never be committed.
+Default transport and profile:
 
-### Required Values
+```dotenv
+TUNNEL_MCP_TRANSPORT=stdio
+RELAY_MCP_PROFILE=planner
+TUNNEL_HEALTH_LISTEN_ADDR=127.0.0.1:8082
+```
 
-*   `TUNNEL_PROFILE`: The tunnel profile name (defaults to `relay-mcp`).
-*   `TUNNEL_ID`: The unique tunnel identifier (e.g. `tunnel_xxxx...`).
-*   `CONTROL_PLANE_API_KEY`: The authorization key for the tunnel control plane.
+Optional when the tunnel client is not on `PATH`:
 
-### Optional Values
+```dotenv
+TUNNEL_CLIENT_PATH=C:\Tools\relay-mcp-tunnel\tunnel-client.exe
+```
 
-*   `TUNNEL_MCP_TRANSPORT`: MCP communication transport. Set to `stdio` (default) or `http`.
-*   `TUNNEL_HEALTH_LISTEN_ADDR`: Health and admin UI listener address (defaults to `127.0.0.1:8082` to prevent port collisions with Relay's default `8080`).
-*   `TUNNEL_CLIENT_PATH`: Path to the `tunnel-client` binary if it is not on your system's `PATH`.
-*   `RELAY_MCP_SERVER_BIN`: Prebuilt Relay MCP binary path (if you want the stdio launcher to use it instead of running `go run ./cmd/mcpserver`).
-*   `RELAY_MCP_STDIO_COMMAND`: Custom command to override the default node-spawn command.
-*   `RELAY_MCP_PROFILE`: The active tool profile. Defaults to `local-operator` (enables context broker). Set to `restricted` to hide broker tools.
-*   `RELAY_DB_PATH`: Custom path to the SQLite database (defaults to `data/relay.sqlite`).
-*   `RELAY_ARTIFACTS_DIR`: Custom path to the artifacts directory (defaults to `data/artifacts`).
+Process environment values take precedence over `.env` and `.env.local`. Never commit real tunnel IDs, control-plane keys, bearer tokens, or signed artifact URLs.
 
----
+## Profiles
 
-## Diagnostics (Doctor command)
+`RELAY_MCP_PROFILE` accepts exactly:
 
-To verify the tunnel configuration and check if the necessary tools are exposed:
+- `planner` — five Plan and Run preparation actions;
+- `auditor` — five validation, Run, packet, artifact, and decision actions;
+- `local_operator` — ordered eight-action union.
+
+Missing or invalid input fails closed to `planner` and prints an explicit fallback message.
+
+## Default stdio transport
+
+Stdio is the supported default:
+
+1. `chatgpt-mcp:init` supplies the tunnel client with the command for `scripts/local/relay-mcp-stdio.mjs`.
+2. The launcher starts `cmd/mcpserver` using the selected profile.
+3. JSON-RPC travels through stdin/stdout.
+4. The launcher proxies termination signals and keeps server stderr separate from protocol stdout.
+
+The launcher's `--self-test` mode verifies:
+
+- `initialize`;
+- `notifications/initialized`;
+- `ping`;
+- paginated `tools/list`;
+- exact ordered profile inventory;
+- `artifact_file` OpenAI file-parameter metadata and required fields.
+
+`doctor` runs this self-test in stdio mode unless `--skip-relay-check` is supplied.
+
+## Advanced HTTP transport
+
+HTTP mode is for advanced or development use:
+
+```dotenv
+TUNNEL_MCP_TRANSPORT=http
+RELAY_MCP_URL=http://127.0.0.1:8080/mcp
+```
+
+Start the Relay daemon separately:
+
+```bash
+go run ./cmd/relay
+```
+
+The helper checks `/mcp` with POST JSON-RPC `ping` before initialization, start, or diagnostics unless the check is skipped.
+
+When `RELAY_MCP_AUTH_TOKEN` is configured on the Relay daemon, `/mcp` requires a bearer token. The current helper reachability check does not attach an Authorization header, so the built-in HTTP tunnel workflow is intended for loopback-only tokenless connector proof. Prefer stdio. Do not expose an unauthenticated HTTP endpoint.
+
+## Health listener
+
+`TUNNEL_HEALTH_LISTEN_ADDR` belongs to tunnel-client, not Relay. Its default `127.0.0.1:8082` is independent of:
+
+- Relay API/MCP on `8080`;
+- Relay web on `3000`.
+
+The helper prints the local tunnel-client health/admin UI address when starting.
+
+## Diagnostics
+
+Run:
 
 ```bash
 npm run chatgpt-mcp:doctor
 ```
 
-In the default `stdio` mode, this:
-1.  Runs the local stdio launcher self-test to verify that `mcpserver` is working and registers the two default tools (`create_run_from_planner_handoff` and `submit_planner_pass_plan`).
-2.  Invokes `tunnel-client doctor` to check tunnel connectivity and status.
+The report includes:
 
----
+- presence of `.env` and `.env.local`;
+- tunnel ID configuration state;
+- control-plane key configuration state without printing the key;
+- resolved tunnel-client path;
+- selected MCP transport and profile;
+- stdio self-test or HTTP ping result;
+- tunnel health listener.
 
-## Optional HTTP Mode
+Tunnel-client stdout and stderr are passed through `CONTROL_PLANE_API_KEY` redaction before display.
 
-For advanced or local development use, you can configure the tunnel to use HTTP transport:
+## Troubleshooting
 
-```dotenv
-TUNNEL_MCP_TRANSPORT=http
-RELAY_MCP_URL=http://127.0.0.1:8081/mcp
+### Tunnel ID or key is reported missing
+
+Replace placeholder values in ignored local environment configuration. Do not edit `.env.example` with real values.
+
+### Tunnel client is not found
+
+Install `tunnel-client` on `PATH` or set `TUNNEL_CLIENT_PATH` to the executable.
+
+### Stdio self-test fails
+
+Run the launcher directly to obtain focused diagnostics:
+
+```bash
+RELAY_MCP_PROFILE=planner node scripts/local/relay-mcp-stdio.mjs --self-test
 ```
 
-When HTTP mode is selected:
-1.  You **must** separately run the Relay HTTP daemon:
-    ```bash
-    go run ./cmd/relay
-    ```
-2.  The tunnel client forwards requests via HTTP POST JSON-RPC. 
-    *   *Note: Accessing `/mcp` via GET is not supported by the protocol and returns HTTP 405.*
+Confirm Go is available and the workflow database/artifact paths are writable.
 
----
+### HTTP ping fails
 
-## Safety and Security
+Confirm `go run ./cmd/relay` is running and `RELAY_MCP_URL` points to `http://127.0.0.1:8080/mcp`. HTTP accepts POST only.
 
-*   **Never commit `.env` or `.env.local` files.** Keep all credentials out of source control.
-*   **Never commit tunnel IDs, control-plane keys, or other secrets.**
-*   **Do not paste secrets into Planner handoffs or Relay MCP tool arguments.** All arguments and payloads are written as plaintext artifacts in the `data/artifacts` folder.
-*   The current HTTP `/mcp` no-auth behavior is strictly for local validation/development use and is **not** production deployment guidance. Always enable authentication before exposing the daemon beyond local loops.
-*   The local stdio transport limits the tunnel client to communicating with the local `mcpserver` process spawned on your machine, preventing external callers from accessing arbitrary network services.
+### Wrong tool inventory
 
+Check `RELAY_MCP_PROFILE`. The server and launcher require exact profile membership and order; there is no compatibility or legacy profile.
