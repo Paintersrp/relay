@@ -267,9 +267,9 @@ func run() error {
 		"spec": {Bytes: specBytes},
 	}}
 	server := mcp.NewServer(slog.Default(), &mcp.MCPDeps{
-		WorkflowStore:        store,
-		ToolProfile:          mcp.ToolProfileLocalOperator,
-		ArtifactFileFetcher:  fetcher,
+		WorkflowStore:       store,
+		ToolProfile:         mcp.ToolProfileLocalOperator,
+		ArtifactFileFetcher: fetcher,
 	})
 
 	listed, err := call(server, 1, "tools/list", map[string]any{})
@@ -384,14 +384,20 @@ func run() error {
 		return err
 	}
 	packet, _ := packetResult["packet"].(map[string]any)
-	evidence, _ := packet["validation"].([]any)
-	if len(evidence) == 0 {
-		return fmt.Errorf("get_audit_packet returned no validation evidence")
+	artifacts, _ := packet["artifacts"].([]any)
+	artifactReference := ""
+	for _, rawArtifact := range artifacts {
+		artifact, _ := rawArtifact.(map[string]any)
+		if artifact["artifact_type"] != "execution_evidence" {
+			continue
+		}
+		if artifactReference != "" {
+			return fmt.Errorf("audit packet returned multiple execution evidence artifacts")
+		}
+		artifactReference, _ = artifact["artifact_reference"].(string)
 	}
-	evidenceItem, _ := evidence[0].(map[string]any)
-	artifactReference, _ := evidenceItem["artifact_reference"].(string)
 	if artifactReference == "" {
-		return fmt.Errorf("audit packet evidence omitted artifact_id")
+		return fmt.Errorf("audit packet omitted execution evidence artifact")
 	}
 
 	artifactResult, err := tool(server, 9, "get_run_artifact", map[string]any{
@@ -408,13 +414,13 @@ func run() error {
 	}
 
 	decisionResult, err := tool(server, 10, "record_audit_decision", map[string]any{
-		"run_id":              managedRunID,
-		"audit_packet_id":     prepared.Packet.AuditPacketID,
-		"packet_sha256":       prepared.Packet.PacketSHA256,
-		"audited_commit":      auditedCommit,
-		"decision":            workflowstore.AuditDecisionAccepted,
-		"rationale":           "canonical MCP smoke accepted",
-		"operator_confirmed":  true,
+		"run_id":             managedRunID,
+		"audit_packet_id":    prepared.Packet.AuditPacketID,
+		"packet_sha256":      prepared.Packet.PacketSHA256,
+		"audited_commit":     auditedCommit,
+		"decision":           workflowstore.AuditDecisionAccepted,
+		"rationale":          "canonical MCP smoke accepted",
+		"operator_confirmed": true,
 	})
 	if err != nil {
 		return err

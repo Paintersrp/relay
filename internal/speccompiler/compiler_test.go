@@ -138,7 +138,7 @@ func readFixture(t *testing.T, name string) []byte {
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
-	return raw
+	return bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 }
 
 func assertSuccess(t *testing.T, result Result) {
@@ -385,8 +385,6 @@ func withExecutionPayload(t *testing.T, raw []byte, payload string) []byte {
   },
   "execution_payload": ` + payload + `,
 `)
-	anchor = bytes.Replace(anchor, []byte("\n"), []byte("\r\n"), -1)
-	replacement = bytes.Replace(replacement, []byte("\n"), []byte("\r\n"), -1)
 	updated := bytes.Replace(raw, anchor, replacement, 1)
 	if bytes.Equal(updated, raw) {
 		t.Fatalf("failed to inject execution_payload fixture")

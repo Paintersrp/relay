@@ -1,0 +1,3 @@
+internal/speccompiler/schemas/*.json text eol=lf
+internal/speccompiler/testdata/*.json text eol=lf
+internal/speccompiler/testdata/*.md text eol=lf

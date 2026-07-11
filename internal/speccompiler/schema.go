@@ -1,6 +1,7 @@
 package speccompiler
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"strings"
@@ -23,6 +24,7 @@ func validateEmbeddedSchema(kind ArtifactKind, raw []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	schemaBytes = bytes.ReplaceAll(schemaBytes, []byte("\r\n"), []byte("\n"))
 	prepared, err := prepareSchemaForGoJSONSchema(schemaBytes)
 	if err != nil {
 		return false, err
