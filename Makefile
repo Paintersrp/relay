@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate validate-fast validate-broad validate-full validate-touched validate-changed closeout closeout-dry-run mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
+.PHONY: dev dev-server build assets install sqlc templ test fmt vet clean validate validate-fast validate-broad validate-full validate-touched validate-changed mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke
 
 MCP_BINARY := bin/relay-mcpserver
 ifeq ($(OS),Windows_NT)
@@ -16,9 +16,6 @@ sqlc:
 
 templ:
 	templ generate
-
-db-migrate:
-	goose -dir internal/db/migrations sqlite3 data/relay.sqlite up
 
 build: assets sqlc templ
 	go build -o bin/relay.exe ./cmd/relay
@@ -50,12 +47,6 @@ validate-touched:
 validate-changed:
 	RELAY_VALIDATE_SCOPE=changed bash scripts/validate.sh
 
-closeout:
-	go run ./cmd/relay-closeout --message "$(MESSAGE)" --slug "$(SLUG)"
-
-closeout-dry-run:
-	RELAY_CLOSEOUT_DRY_RUN=1 go run ./cmd/relay-closeout --message "$(MESSAGE)" --slug "$(SLUG)"
-
 fmt:
 	go fmt ./...
 
@@ -65,8 +56,6 @@ vet:
 clean:
 	rm -rf bin/ tmp/ web/static/app.css web/static/app.js web/static/app.css.map web/static/app.js.map
 
-## MCP targets
-
 mcp-build:
 	go build -o $(MCP_BINARY) ./cmd/mcpserver
 
@@ -75,12 +64,6 @@ mcp-test:
 
 mcp-smoke: mcp-build
 	RELAY_MCP_URL='' RELAY_MCP_AUTH_TOKEN='' RELAY_MCP_BINARY='$(MCP_BINARY)' go run ./cmd/mcp-smoke
-
-plan-api-smoke:
-	go run ./cmd/plan-api-smoke
-
-plan-seed-smoke:
-	go run ./cmd/plan-seed-smoke
 
 mcp-http-test:
 	go test ./internal/mcp/... ./internal/server/...
