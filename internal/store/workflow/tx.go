@@ -29,6 +29,10 @@ func (tx *Tx) GetRepositoryTarget(ctx context.Context, repoTarget string) (Repos
 	return getRepositoryTarget(ctx, tx.tx, repoTarget)
 }
 
+func (tx *Tx) GetRepositoryTargetByLocalPath(ctx context.Context, localPath string) (RepositoryTarget, error) {
+	return getRepositoryTargetByLocalPath(ctx, tx.tx, localPath)
+}
+
 func (tx *Tx) CreatePlan(ctx context.Context, params CreatePlanParams) (Plan, error) {
 	var value Plan
 	err := tx.tx.QueryRowContext(ctx, `

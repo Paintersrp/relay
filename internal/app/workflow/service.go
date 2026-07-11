@@ -67,6 +67,20 @@ func (s *Service) RegisterRepository(ctx context.Context, repoTarget, localPath 
 	return s.registry.Register(ctx, strings.TrimSpace(repoTarget), strings.TrimSpace(localPath))
 }
 
+func (s *Service) InspectRepository(
+	ctx context.Context,
+	input RepositoryInspectionInput,
+) (RepositoryInspection, error) {
+	return s.registry.Inspect(ctx, input)
+}
+
+func (s *Service) ConfirmRepository(
+	ctx context.Context,
+	input RepositoryConfirmationInput,
+) (RepositoryRegistrationResult, error) {
+	return s.registry.Confirm(ctx, input)
+}
+
 func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) ([]PlanSummary, error) {
 	input.Status = strings.TrimSpace(input.Status)
 	if err := workflowstore.ValidateWorkflowListStatus(

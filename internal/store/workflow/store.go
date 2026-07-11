@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
@@ -172,6 +173,10 @@ func (s *Store) GetRepositoryTarget(ctx context.Context, repoTarget string) (Rep
 	return getRepositoryTarget(ctx, s.db, repoTarget)
 }
 
+func (s *Store) GetRepositoryTargetByLocalPath(ctx context.Context, localPath string) (RepositoryTarget, error) {
+	return getRepositoryTargetByLocalPath(ctx, s.db, localPath)
+}
+
 func (s *Store) GetPlanByPlanID(ctx context.Context, planID string) (Plan, error) {
 	return getPlanByPlanID(ctx, s.db, planID)
 }
@@ -306,6 +311,28 @@ func getRepositoryTarget(ctx context.Context, queryer rowQueryer, repoTarget str
 SELECT repo_target, local_path, created_at, updated_at
 FROM repository_targets
 WHERE repo_target = ? COLLATE NOCASE`, repoTarget).Scan(
+		&value.RepoTarget,
+		&value.LocalPath,
+		&value.CreatedAt,
+		&value.UpdatedAt,
+	)
+	return value, err
+}
+
+func getRepositoryTargetByLocalPath(
+	ctx context.Context,
+	queryer rowQueryer,
+	localPath string,
+) (RepositoryTarget, error) {
+	query := `
+SELECT repo_target, local_path, created_at, updated_at
+FROM repository_targets
+WHERE local_path = ?`
+	if runtime.GOOS == "windows" {
+		query += " COLLATE NOCASE"
+	}
+	var value RepositoryTarget
+	err := queryer.QueryRowContext(ctx, query, localPath).Scan(
 		&value.RepoTarget,
 		&value.LocalPath,
 		&value.CreatedAt,

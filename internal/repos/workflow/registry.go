@@ -12,14 +12,23 @@ import (
 )
 
 type Registry struct {
-	store *workflowstore.Store
+	store        *workflowstore.Store
+	runner       GitRunner
+	beforeCreate func()
 }
 
 func NewRegistry(store *workflowstore.Store) (*Registry, error) {
+	return NewRegistryWithRunner(store, newExecGitRunner())
+}
+
+func NewRegistryWithRunner(store *workflowstore.Store, runner GitRunner) (*Registry, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	return &Registry{store: store}, nil
+	if runner == nil {
+		return nil, fmt.Errorf("Git runner is required")
+	}
+	return &Registry{store: store, runner: runner}, nil
 }
 
 func (r *Registry) Register(ctx context.Context, repoTarget, localPath string) (workflowstore.RepositoryTarget, error) {

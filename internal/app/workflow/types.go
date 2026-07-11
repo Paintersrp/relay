@@ -1,9 +1,19 @@
 package workflow
 
-import workflowstore "relay/internal/store/workflow"
+import (
+	workflowrepos "relay/internal/repos/workflow"
+	workflowstore "relay/internal/store/workflow"
+)
 
-// Type alias for API packages to use app-layer names instead of importing internal/store/workflow
-type RepositoryTarget = workflowstore.RepositoryTarget
+// Type aliases for API packages to use app-layer names instead of importing repository or store packages.
+type (
+	RepositoryTarget             = workflowstore.RepositoryTarget
+	RepositoryInspectionInput    = workflowrepos.InspectionInput
+	RepositoryConfirmationInput  = workflowrepos.ConfirmationInput
+	RepositoryInspection         = workflowrepos.Inspection
+	RepositoryRemoteCandidate    = workflowrepos.RemoteCandidate
+	RepositoryRegistrationResult = workflowrepos.RegistrationResult
+)
 
 const (
 	RunStageSpecification = "specification"

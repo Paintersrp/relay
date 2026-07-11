@@ -52,6 +52,24 @@ if (typeof window !== "undefined") {
     });
   }
 
+  // jsdom does not implement the Pointer Events capture APIs or
+  // `scrollIntoView`. Radix UI's Select (and other popover-based primitives)
+  // call these during pointer interaction; without a shim, user-event clicks
+  // on Select triggers/options throw inside jsdom. Provide permissive no-op
+  // implementations so these components can be exercised under jsdom.
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
+
   // Auto-unmount React trees rendered by @testing-library/react after each
   // test so DOM state never leaks between tests. Imported lazily so node-only
   // test runs never load the React Testing Library.

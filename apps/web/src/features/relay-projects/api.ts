@@ -1,7 +1,9 @@
 import { API_BASE_URL, RelayApiError, type RelayApiErrorShape } from "../workflow-api";
 import type {
+  ConfirmWorkflowRepositoryRequest,
   CreateWorkflowProjectNoteRequest,
   CreateWorkflowProjectRequest,
+  InspectWorkflowRepositoryRequest,
   UpdateWorkflowProjectNoteRequest,
   UpdateWorkflowProjectRequest,
   WorkflowProject,
@@ -14,8 +16,17 @@ import type {
   WorkflowProjectPlanSummary,
   WorkflowProjectRepositoryReference,
   WorkflowProjectStatus,
+  WorkflowRepositoryConflictKind,
+  WorkflowRepositoryInspection,
+  WorkflowRepositoryInspectionState,
+  WorkflowRepositoryRegistrationDisposition,
+  WorkflowRepositoryRegistrationOutcome,
+  WorkflowRepositoryRegistrationResult,
+  WorkflowRepositoryRemoteCandidate,
   WorkflowRepositoryTarget,
   WorkflowRepositoryTargetListResponse,
+  WorkflowRepositoryTargetOverrideReason,
+  WorkflowRepositoryTargetSource,
 } from "./types";
 
 type JsonRecord = Record<string, unknown>;
@@ -224,6 +235,371 @@ function normalizeRepositoryTarget(
   };
 }
 
+function repositoryInspectionState(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryInspectionState {
+  if (
+    value === "ready" ||
+    value === "needs_remote_selection" ||
+    value === "needs_target_override" ||
+    value === "conflict"
+  ) {
+    return value;
+  }
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.state has unsupported value ${String(value)}`,
+  );
+}
+
+function repositoryRegistrationDisposition(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryRegistrationDisposition {
+  if (value === "create" || value === "reuse") return value;
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.registrationDisposition has unsupported value ${String(value)}`,
+  );
+}
+
+function repositoryRegistrationOutcome(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryRegistrationOutcome {
+  if (value === "created" || value === "reused") return value;
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.outcome has unsupported value ${String(value)}`,
+  );
+}
+
+function repositoryTargetOverrideReason(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryTargetOverrideReason {
+  if (value === "no_usable_remote" || value === "unsupported_remote") {
+    return value;
+  }
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.targetOverrideReason has unsupported value ${String(value)}`,
+  );
+}
+
+function repositoryTargetSource(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryTargetSource {
+  if (value === "remote_basename" || value === "operator_override") return value;
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.repoTargetSource has unsupported value ${String(value)}`,
+  );
+}
+
+function repositoryConflictKind(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryConflictKind {
+  if (value === "target" || value === "path") return value;
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.conflictKind has unsupported value ${String(value)}`,
+  );
+}
+
+function optionalRepositoryString(
+  record: JsonRecord,
+  field: string,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): string | undefined {
+  if (!(field in record)) return undefined;
+  return requiredString(record, field, method, path, context);
+}
+
+function requireRepositoryFieldsAbsent(
+  record: JsonRecord,
+  fields: string[],
+  method: HttpMethod,
+  path: string,
+  context: string,
+): void {
+  for (const field of fields) {
+    if (field in record) {
+      return malformedWorkflowResponse(
+        method,
+        path,
+        `${context}.${field} must be absent for state ${String(record.state)}`,
+      );
+    }
+  }
+}
+
+function normalizeRepositoryRemote(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowRepositoryRemoteCandidate {
+  const record = requiredRecord(value, method, path, context);
+  return {
+    name: requiredString(record, "name", method, path, context),
+    url: requiredString(record, "url", method, path, context),
+    suggestedRepoTarget: optionalRepositoryString(
+      record,
+      "suggestedRepoTarget",
+      method,
+      path,
+      context,
+    ),
+  };
+}
+
+function normalizeRepositoryInspection(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context = "inspection",
+): WorkflowRepositoryInspection {
+  const record = requiredRecord(value, method, path, context);
+  const state = repositoryInspectionState(record.state, method, path, context);
+  const remotes = requiredArray(record, "remotes", method, path, context).map(
+    (remote, index) =>
+      normalizeRepositoryRemote(
+        remote,
+        method,
+        path,
+        `${context}.remotes[${index}]`,
+      ),
+  );
+  const notices = requiredArray(record, "notices", method, path, context).map(
+    (notice, index) => {
+      if (typeof notice !== "string") {
+        return malformedWorkflowResponse(
+          method,
+          path,
+          `${context}.notices[${index}] must be a string`,
+        );
+      }
+      return notice;
+    },
+  );
+  const base = {
+    selectedPath: requiredString(record, "selectedPath", method, path, context),
+    resolvedLocalPath: requiredString(
+      record,
+      "resolvedLocalPath",
+      method,
+      path,
+      context,
+    ),
+    remotes,
+    notices,
+  };
+  const selectedRemote =
+    "selectedRemote" in record
+      ? normalizeRepositoryRemote(
+          record.selectedRemote,
+          method,
+          path,
+          `${context}.selectedRemote`,
+        )
+      : undefined;
+  const suggestedRepoTarget = optionalRepositoryString(
+    record,
+    "suggestedRepoTarget",
+    method,
+    path,
+    context,
+  );
+
+  switch (state) {
+    case "ready": {
+      requireRepositoryFieldsAbsent(
+        record,
+        ["targetOverrideReason", "conflictKind"],
+        method,
+        path,
+        context,
+      );
+      const registrationDisposition = repositoryRegistrationDisposition(
+        record.registrationDisposition,
+        method,
+        path,
+        context,
+      );
+      const existingRepository =
+        "existingRepository" in record
+          ? normalizeRepositoryTarget(
+              record.existingRepository,
+              method,
+              path,
+              `${context}.existingRepository`,
+            )
+          : undefined;
+      if (registrationDisposition === "reuse" && !existingRepository) {
+        return malformedWorkflowResponse(
+          method,
+          path,
+          `${context}.existingRepository is required for reuse`,
+        );
+      }
+      if (registrationDisposition === "create" && existingRepository) {
+        return malformedWorkflowResponse(
+          method,
+          path,
+          `${context}.existingRepository must be absent for create`,
+        );
+      }
+      return {
+        ...base,
+        state,
+        selectedRemote,
+        suggestedRepoTarget,
+        repoTarget: requiredString(record, "repoTarget", method, path, context),
+        repoTargetSource: repositoryTargetSource(
+          record.repoTargetSource,
+          method,
+          path,
+          context,
+        ),
+        registrationDisposition,
+        existingRepository,
+        confirmationHash: requiredString(
+          record,
+          "confirmationHash",
+          method,
+          path,
+          context,
+        ),
+      };
+    }
+    case "needs_remote_selection":
+      requireRepositoryFieldsAbsent(
+        record,
+        [
+          "selectedRemote",
+          "suggestedRepoTarget",
+          "targetOverrideReason",
+          "repoTarget",
+          "repoTargetSource",
+          "registrationDisposition",
+          "existingRepository",
+          "conflictKind",
+          "confirmationHash",
+        ],
+        method,
+        path,
+        context,
+      );
+      return { ...base, state };
+    case "needs_target_override":
+      requireRepositoryFieldsAbsent(
+        record,
+        [
+          "repoTarget",
+          "repoTargetSource",
+          "registrationDisposition",
+          "existingRepository",
+          "conflictKind",
+          "confirmationHash",
+        ],
+        method,
+        path,
+        context,
+      );
+      return {
+        ...base,
+        state,
+        selectedRemote,
+        suggestedRepoTarget,
+        targetOverrideReason: repositoryTargetOverrideReason(
+          record.targetOverrideReason,
+          method,
+          path,
+          context,
+        ),
+      };
+    case "conflict":
+      requireRepositoryFieldsAbsent(
+        record,
+        ["targetOverrideReason", "registrationDisposition", "confirmationHash"],
+        method,
+        path,
+        context,
+      );
+      return {
+        ...base,
+        state,
+        selectedRemote,
+        suggestedRepoTarget,
+        repoTarget: requiredString(record, "repoTarget", method, path, context),
+        repoTargetSource: repositoryTargetSource(
+          record.repoTargetSource,
+          method,
+          path,
+          context,
+        ),
+        existingRepository: normalizeRepositoryTarget(
+          record.existingRepository,
+          method,
+          path,
+          `${context}.existingRepository`,
+        ),
+        conflictKind: repositoryConflictKind(
+          record.conflictKind,
+          method,
+          path,
+          context,
+        ),
+      };
+  }
+}
+
+function normalizeRepositoryRegistration(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+): WorkflowRepositoryRegistrationResult {
+  const record = requiredRecord(value, method, path, "registration");
+  return {
+    outcome: repositoryRegistrationOutcome(
+      record.outcome,
+      method,
+      path,
+      "registration",
+    ),
+    repository: normalizeRepositoryTarget(
+      record.repository,
+      method,
+      path,
+      "registration.repository",
+    ),
+  };
+}
+
 function parseErrorShape(text: string): RelayApiErrorShape | undefined {
   if (!text) return undefined;
   try {
@@ -428,6 +804,68 @@ export async function listWorkflowRepositoryTargets(): Promise<WorkflowRepositor
     repositories: items.map((item, index) =>
       normalizeRepositoryTarget(item, "GET", path, `items[${index}]`)),
   };
+}
+
+export class WorkflowRepositoryConfirmationError extends RelayApiError {
+  readonly inspection: WorkflowRepositoryInspection;
+
+  constructor(error: RelayApiError, inspection: WorkflowRepositoryInspection) {
+    super(
+      error.message,
+      error.status,
+      error.endpoint,
+      error.method,
+      error.errorShape,
+    );
+    this.name = "WorkflowRepositoryConfirmationError";
+    this.inspection = inspection;
+  }
+}
+
+export async function inspectWorkflowRepository(
+  request: InspectWorkflowRepositoryRequest,
+): Promise<WorkflowRepositoryInspection> {
+  const path = "/api/repositories/inspect";
+  const response = await requestWorkflowJson<unknown>("POST", path, {
+    localPath: request.localPath,
+    remoteName: request.remoteName ?? "",
+    repoTargetOverride: request.repoTargetOverride ?? "",
+  });
+  return normalizeRepositoryInspection(response, "POST", path);
+}
+
+export async function confirmWorkflowRepository(
+  request: ConfirmWorkflowRepositoryRequest,
+): Promise<WorkflowRepositoryRegistrationResult> {
+  const path = "/api/repositories";
+  try {
+    const response = await requestWorkflowJson<unknown>("POST", path, {
+      localPath: request.localPath,
+      remoteName: request.remoteName ?? "",
+      repoTargetOverride: request.repoTargetOverride ?? "",
+      expectedConfirmationHash: request.expectedConfirmationHash,
+    });
+    return normalizeRepositoryRegistration(response, "POST", path);
+  } catch (error) {
+    if (error instanceof RelayApiError) {
+      const details = error.errorShape?.details;
+      if (details && typeof details === "object" && !Array.isArray(details)) {
+        const inspection = (details as JsonRecord).inspection;
+        if (inspection !== undefined) {
+          throw new WorkflowRepositoryConfirmationError(
+            error,
+            normalizeRepositoryInspection(
+              inspection,
+              "POST",
+              path,
+              "confirmation.details.inspection",
+            ),
+          );
+        }
+      }
+    }
+    throw error;
+  }
 }
 
 export async function attachWorkflowProjectRepository(

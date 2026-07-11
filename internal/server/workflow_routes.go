@@ -58,7 +58,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	}
 	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID)
 
-	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService)
+	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
 	projectHandler := projectsapi.NewWorkflowHandler(projectService)
 	canonicalHandler := canonicalapi.NewWorkflowHandler(submissionService, planMutationService)
 	planHandler := plansapi.NewWorkflowHandler(readService)

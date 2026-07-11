@@ -1,7 +1,9 @@
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderGit2, Loader2, Plus, Trash2 } from "lucide-react";
 
+import { RelayRepositoryRegistrationDialog } from "@/components/relay/RelayRepositoryRegistrationDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +26,7 @@ import {
   workflowProjectKeys,
   workflowRepositoryTargetsQueryOptions,
   type WorkflowProjectRepositoryReference,
+  type WorkflowRepositoryRegistrationResult,
 } from "@/features/relay-projects";
 import { RelayApiError } from "@/features/relay-runs";
 
@@ -47,8 +50,12 @@ export function RelayProjectRepositoriesPanel({
   const queryClient = useQueryClient();
   const repositoryTargetsQuery = useQuery(workflowRepositoryTargetsQueryOptions());
   const [selectedTarget, setSelectedTarget] = React.useState("");
+  const [registrationOpen, setRegistrationOpen] = React.useState(false);
   const [detachTarget, setDetachTarget] = React.useState<string | null>(null);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [partialSuccessMessage, setPartialSuccessMessage] =
+    React.useState<string | null>(null);
 
   const invalidateProject = React.useCallback(() => {
     void queryClient.invalidateQueries({
@@ -62,20 +69,35 @@ export function RelayProjectRepositoriesPanel({
     onSuccess: () => {
       setSelectedTarget("");
       setErrorMessage(null);
+      setPartialSuccessMessage(null);
+      setStatusMessage(`Repository ${selectedTarget} was attached.`);
       invalidateProject();
     },
-    onError: (error) => setErrorMessage(repositoryErrorMessage(error)),
+    onError: (error) => {
+      setStatusMessage(null);
+      setPartialSuccessMessage(null);
+      setErrorMessage(repositoryErrorMessage(error));
+    },
   });
 
   const detachMutation = useMutation({
     mutationFn: (repoTarget: string) =>
       detachWorkflowProjectRepository(projectId, repoTarget),
     onSuccess: () => {
+      const detached = detachTarget;
       setDetachTarget(null);
       setErrorMessage(null);
+      setPartialSuccessMessage(null);
+      setStatusMessage(
+        detached ? `Repository ${detached} was detached.` : "Repository was detached.",
+      );
       invalidateProject();
     },
-    onError: (error) => setErrorMessage(repositoryErrorMessage(error)),
+    onError: (error) => {
+      setStatusMessage(null);
+      setPartialSuccessMessage(null);
+      setErrorMessage(repositoryErrorMessage(error));
+    },
   });
 
   const attachedTargets = React.useMemo(
@@ -99,12 +121,31 @@ export function RelayProjectRepositoriesPanel({
             Repository References
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Attach existing global repository targets without copying configuration.
+            Attach existing global repository targets or register a local Git worktree.
           </p>
         </div>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {repositories.length} attached
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/repositories">Manage repositories</Link>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setErrorMessage(null);
+              setStatusMessage(null);
+              setPartialSuccessMessage(null);
+              setRegistrationOpen(true);
+            }}
+          >
+            <Plus className="size-3.5" />
+            Register repository
+          </Button>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {repositories.length} attached
+          </span>
+        </div>
       </div>
 
       <div className="space-y-4 p-5">
@@ -114,6 +155,26 @@ export function RelayProjectRepositoriesPanel({
             className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
           >
             {errorMessage}
+          </div>
+        ) : null}
+
+        {statusMessage ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300"
+          >
+            {statusMessage}
+          </div>
+        ) : null}
+
+        {partialSuccessMessage ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200"
+          >
+            {partialSuccessMessage}
           </div>
         ) : null}
 
@@ -220,6 +281,30 @@ export function RelayProjectRepositoriesPanel({
           </div>
         )}
       </div>
+
+      <RelayRepositoryRegistrationDialog
+        open={registrationOpen}
+        onOpenChange={setRegistrationOpen}
+        projectId={projectId}
+        onCompleted={(result: WorkflowRepositoryRegistrationResult) => {
+          setRegistrationOpen(false);
+          setErrorMessage(null);
+          setPartialSuccessMessage(null);
+          setStatusMessage(
+            `Repository ${result.repository.repoTarget} was ${result.outcome} and attached to this Project.`,
+          );
+          invalidateProject();
+        }}
+        onPartialSuccess={(
+          _result: WorkflowRepositoryRegistrationResult,
+          message: string,
+        ) => {
+          setRegistrationOpen(false);
+          setErrorMessage(null);
+          setStatusMessage(null);
+          setPartialSuccessMessage(message);
+        }}
+      />
 
       <Dialog
         open={detachTarget !== null}
