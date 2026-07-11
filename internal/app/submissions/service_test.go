@@ -10,6 +10,7 @@ import (
 
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowrepos "relay/internal/repos/workflow"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -82,6 +83,12 @@ func TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename(t 
 	if !valid.OK || valid.SHA256 != SHA256(data) || valid.Kind != "plan" {
 		t.Fatalf("validation = %+v", valid)
 	}
+	if valid.Diagnostics == nil || len(valid.Diagnostics) != 0 {
+		t.Fatalf("validation diagnostics = %#v", valid.Diagnostics)
+	}
+	if valid.Notices == nil || len(valid.Notices) != 0 {
+		t.Fatalf("validation notices = %#v", valid.Notices)
+	}
 	blocked, err := fixture.service.ValidateArtifact(context.Background(), ValidationInput{
 		DisplayName:    " canonical-service.plan.json",
 		CanonicalBytes: data,
@@ -91,6 +98,33 @@ func TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename(t 
 	}
 	if blocked.OK || blocked.SHA256 != SHA256(data) || len(blocked.Diagnostics) == 0 {
 		t.Fatalf("whitespace filename validation = %+v", blocked)
+	}
+}
+
+func TestBoundedDiagnosticsReturnsConcreteBoundedCopy(t *testing.T) {
+	for _, values := range [][]speccompiler.Diagnostic{nil, {}} {
+		result := boundedDiagnostics(values)
+		if result == nil || len(result) != 0 {
+			t.Fatalf("boundedDiagnostics(%#v) = %#v", values, result)
+		}
+	}
+
+	values := make([]speccompiler.Diagnostic, MaxDiagnostics+1)
+	for i := range values {
+		values[i].Code = fmt.Sprintf("diagnostic_%d", i)
+	}
+	result := boundedDiagnostics(values)
+	if len(result) != MaxDiagnostics {
+		t.Fatalf("len(boundedDiagnostics(values)) = %d", len(result))
+	}
+	for i := range result {
+		if result[i].Code != values[i].Code {
+			t.Fatalf("diagnostic %d = %#v, want %#v", i, result[i], values[i])
+		}
+	}
+	result[0].Code = "changed"
+	if values[0].Code == result[0].Code {
+		t.Fatal("bounded diagnostics aliases input")
 	}
 }
 

@@ -9,7 +9,11 @@
     "typecheck:web": "npm --prefix apps/web run typecheck",
     "test:web": "npm --prefix apps/web run test",
     "test:local-scripts": "node --test scripts/local/chatgpt-mcp.test.mjs",
-    "release:smoke": "bash scripts/release-smoke.sh"
+    "release:smoke": "bash scripts/release-smoke.sh",
+    "chatgpt-mcp:init": "node scripts/local/chatgpt-mcp.mjs init",
+    "chatgpt-mcp:start": "node scripts/local/chatgpt-mcp.mjs start",
+    "chatgpt-mcp:doctor": "node scripts/local/chatgpt-mcp.mjs doctor",
+    "chatgpt-mcp:help": "node scripts/local/chatgpt-mcp.mjs help"
   },
   "devDependencies": {},
   "dependencies": {}

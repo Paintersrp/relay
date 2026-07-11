@@ -363,10 +363,9 @@ func boundedDiagnostics(values []speccompiler.Diagnostic) []speccompiler.Diagnos
 	if len(values) > MaxDiagnostics {
 		values = values[:MaxDiagnostics]
 	}
-	if values == nil {
-		return []speccompiler.Diagnostic{}
-	}
-	return append([]speccompiler.Diagnostic(nil), values...)
+	result := make([]speccompiler.Diagnostic, len(values))
+	copy(result, values)
+	return result
 }
 
 func planRepositories(model planArtifactModel) []workflowplans.RepositoryTargetInput {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
+	workflowsubmissions "relay/internal/app/submissions"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 
@@ -57,7 +57,14 @@ func canonicalRouter(service WorkflowCanonicalService, mover WorkflowPlanMover) 
 
 func TestCanonicalHTTPRoutesPreserveExactCanonicalIdentityInputs(t *testing.T) {
 	service := &fakeCanonicalService{
-		validation: workflowsubmissions.ValidationResult{OK: true, Status: "valid", Kind: "plan", SHA256: strings.Repeat("a", 64)},
+		validation: workflowsubmissions.ValidationResult{
+			OK:          true,
+			Status:      "valid",
+			Kind:        "plan",
+			SHA256:      strings.Repeat("a", 64),
+			Diagnostics: []speccompiler.Diagnostic{},
+			Notices:     []speccompiler.Diagnostic{},
+		},
 		plan: workflowsubmissions.SubmitPlanResult{
 			Project: workflowstore.Project{ProjectID: "project-test", Name: "Relay", Status: workflowstore.ProjectStatusActive},
 			Plan:    workflowstore.Plan{PlanID: "plan-test", FeatureSlug: "feature", Status: workflowstore.PlanStatusActive},
@@ -80,6 +87,12 @@ func TestCanonicalHTTPRoutesPreserveExactCanonicalIdentityInputs(t *testing.T) {
 	))
 	if response.Code != http.StatusOK || service.lastValidation.DisplayName != " feature.plan.json" {
 		t.Fatalf("validation response = %d %s; input = %+v", response.Code, response.Body.String(), service.lastValidation)
+	}
+	if !strings.Contains(response.Body.String(), `"diagnostics":[]`) ||
+		!strings.Contains(response.Body.String(), `"notices":[]`) ||
+		strings.Contains(response.Body.String(), `"diagnostics":null`) ||
+		strings.Contains(response.Body.String(), `"notices":null`) {
+		t.Fatalf("validation response collections = %s", response.Body.String())
 	}
 
 	response = httptest.NewRecorder()
