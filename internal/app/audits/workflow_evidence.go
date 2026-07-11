@@ -59,6 +59,7 @@ func resolveWorkflowImplementationEvidenceWithReader(ctx context.Context, artifa
 	if err != nil {
 		return WorkflowImplementationEvidence{}, err
 	}
+	applierArtifacts := workflowApplierImplementationArtifacts(runArtifacts)
 	attempt, hasAttempt, err := reader.GetLatestSucceededExecutionAttemptOptional(ctx, run.ID)
 	if err != nil {
 		return WorkflowImplementationEvidence{}, err
@@ -79,14 +80,30 @@ func resolveWorkflowImplementationEvidenceWithReader(ctx context.Context, artifa
 	}
 	switch {
 	case hasApplier && hasAttempt:
-		return WorkflowImplementationEvidence{ActorKind: workflowstore.ImplementationActorHybrid, Applier: applier, Executor: executor, Artifacts: append(runArtifacts, executor.Artifacts...)}, nil
+		artifacts := append(applierArtifacts, executor.Artifacts...)
+		return WorkflowImplementationEvidence{ActorKind: workflowstore.ImplementationActorHybrid, Applier: applier, Executor: executor, Artifacts: artifacts}, nil
 	case hasApplier:
-		return WorkflowImplementationEvidence{ActorKind: workflowstore.ImplementationActorApplier, Applier: applier, Artifacts: runArtifacts}, nil
+		return WorkflowImplementationEvidence{ActorKind: workflowstore.ImplementationActorApplier, Applier: applier, Artifacts: applierArtifacts}, nil
 	case hasAttempt:
 		return WorkflowImplementationEvidence{ActorKind: workflowstore.ImplementationActorExecutor, Executor: executor, Artifacts: executor.Artifacts}, nil
 	default:
 		return WorkflowImplementationEvidence{}, fmt.Errorf("no terminal implementation evidence is available for audit")
 	}
+}
+
+func workflowApplierImplementationArtifacts(artifacts []workflowstore.Artifact) []workflowstore.Artifact {
+	out := make([]workflowstore.Artifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		switch artifact.Kind {
+		case "applier_implementation_result_json",
+			"applier_result_json",
+			"applier_ledger_json",
+			"applier_changed_files_json",
+			"applier_failure_packet_json":
+			out = append(out, artifact)
+		}
+	}
+	return out
 }
 
 func resolveApplierImplementationEvidence(store *workflowstore.Store, artifacts []workflowstore.Artifact) (*WorkflowApplierImplementationEvidence, bool, error) {

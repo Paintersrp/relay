@@ -231,6 +231,31 @@ func stageApplierEvidence(t *testing.T, store *workflowstore.Store, run workflow
 	}
 }
 
+func stageUnrelatedRunArtifact(t *testing.T, store *workflowstore.Store, run workflowstore.Run) workflowstore.Artifact {
+	t.Helper()
+	batch, err := store.ArtifactStore().Begin("unrelated-run-test/" + run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, err := batch.Stage("unrelated_run_evidence", "unrelated-run-evidence.txt", "text/plain", []byte("not implementation evidence\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var artifact workflowstore.Artifact
+	if err := store.CommitArtifactBatch(context.Background(), batch, func(tx *workflowstore.Tx) error {
+		var err error
+		artifact, err = tx.CreateArtifact(context.Background(), workflowstore.CreateArtifactParams{
+			ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun,
+			RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: staged.Kind,
+			RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return artifact
+}
+
 func TestWorkflowAuditApplierOnlyPacketUsesRunEvidenceWithoutExecutorAttempt(t *testing.T) {
 	fixture := newAuditFixture(t, false)
 	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
@@ -267,6 +292,48 @@ func TestWorkflowAuditApplierOnlyPacketUsesRunEvidenceWithoutExecutorAttempt(t *
 	}
 	if packet.Execution.ActorKind != workflowstore.ImplementationActorApplier || packet.Execution.Applier == nil || packet.Execution.Executor != nil {
 		t.Fatalf("execution evidence = %+v", packet.Execution)
+	}
+}
+
+func TestWorkflowAuditApplierOnlyPacketExcludesUnrelatedRunArtifacts(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
+		FeatureSlug: "applier-only-filtered", RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch,
+		BaseCommit: fixture.run.BaseCommit, CanonicalJSON: []byte(`{"schema_version":"1.0","feature_slug":"applier-only-filtered"}`),
+		RenderedMarkdown: []byte("# Applier brief\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageApplierEvidence(t, fixture.store, created.Run, "completed", nil)
+	unrelated := stageUnrelatedRunArtifact(t, fixture.store, created.Run)
+	if _, err := fixture.runs.RecordApplierCompleted(context.Background(), created.Run.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.runs.RecordValidationResult(context.Background(), created.Run.RunID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: created.Run.RunID, AuditedCommit: fixture.head}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := fixture.service.GetCurrentPacket(context.Background(), created.Run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet WorkflowAuditPacket
+	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+		t.Fatal(err)
+	}
+	for _, declared := range packet.Artifacts {
+		if declared.ArtifactReference == unrelated.ArtifactID {
+			t.Fatalf("unrelated run artifact was declared in audit packet: %+v", declared)
+		}
+	}
+	_, err = fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+		RunID: created.Run.RunID, ArtifactReference: unrelated.ArtifactID, MaxBytes: 12000,
+	})
+	if !errors.Is(err, ErrWorkflowAuditArtifactReference) {
+		t.Fatalf("unrelated run artifact readback error = %v, want %v", err, ErrWorkflowAuditArtifactReference)
 	}
 }
 
