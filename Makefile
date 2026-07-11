@@ -96,12 +96,6 @@ mcp-http-smoke:
 mcp-clean:
 	rm -f bin/relay-mcpserver.exe bin/relay-mcpserver
 
-agentrefs-generate:
-	go run ./cmd/agentrefs generate
-
-agentrefs-check:
-	go run ./cmd/agentrefs check
-
 workflow-db-status:
 	goose -dir internal/db/workflow_migrations sqlite3 data/workflow/relay-workflow.sqlite status
 

@@ -6,6 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/xeipuuv/gojsonschema v1.2.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.49.1
 )
 

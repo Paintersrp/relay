@@ -36,18 +36,19 @@ type AuditDecision struct {
 }
 
 type AuditPacket struct {
-	ID                    int64          `json:"id"`
-	AuditPacketID         string         `json:"audit_packet_id"`
-	RunRowID              int64          `json:"run_row_id"`
-	ExecutionAttemptRowID int64          `json:"execution_attempt_row_id"`
-	ArtifactRowID         int64          `json:"artifact_row_id"`
-	BaseCommit            string         `json:"base_commit"`
-	AuditedCommit         string         `json:"audited_commit"`
-	PacketSha256          string         `json:"packet_sha256"`
-	Status                string         `json:"status"`
-	StaleReason           string         `json:"stale_reason"`
-	CreatedAt             string         `json:"created_at"`
-	SupersededAt          sql.NullString `json:"superseded_at"`
+	ID                      int64          `json:"id"`
+	AuditPacketID           string         `json:"audit_packet_id"`
+	RunRowID                int64          `json:"run_row_id"`
+	ImplementationActorKind string         `json:"implementation_actor_kind"`
+	ExecutionAttemptRowID   sql.NullInt64  `json:"execution_attempt_row_id"`
+	ArtifactRowID           int64          `json:"artifact_row_id"`
+	BaseCommit              string         `json:"base_commit"`
+	AuditedCommit           string         `json:"audited_commit"`
+	PacketSha256            string         `json:"packet_sha256"`
+	Status                  string         `json:"status"`
+	StaleReason             string         `json:"stale_reason"`
+	CreatedAt               string         `json:"created_at"`
+	SupersededAt            sql.NullString `json:"superseded_at"`
 }
 
 type ExecutionAttempt struct {
