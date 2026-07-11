@@ -127,7 +127,13 @@ func TestFilenameMustBeBasename(t *testing.T) {
 
 func TestSourceProvenanceIsPinned(t *testing.T) {
 	provenance := SourceProvenance()
-	if provenance.Repository != "Paintersrp/relay-specs" || provenance.Commit != "cc4cd6d8fc5a3cd4a3b14b0366033e187afa2d77" {
+	if provenance.Repository != RelaySpecsRepo ||
+		provenance.Commit != RelaySpecsCommit ||
+		provenance.PlanSchemaPath != "schemas/plan.schema.json" ||
+		provenance.ExecutionSchemaRepository != RelayRepo ||
+		provenance.ExecutionSchemaCommit != RelayExecutionSchemaCommit ||
+		provenance.ExecutionSchemaPath != "internal/speccompiler/schemas/execution-spec.schema.json" ||
+		provenance.CompilerContract != "contracts/compiler.md" {
 		t.Fatalf("unexpected provenance: %+v", provenance)
 	}
 }

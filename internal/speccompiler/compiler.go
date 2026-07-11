@@ -9,11 +9,15 @@ import (
 )
 
 const (
-	SchemaVersion       = "1.0"
-	RelaySpecsRepo      = "Paintersrp/relay-specs"
-	RelaySpecsCommit    = "cc4cd6d8fc5a3cd4a3b14b0366033e187afa2d77"
-	planSuffix          = ".plan.json"
-	executionSpecSuffix = ".execution-spec.json"
+	SchemaVersion = "1.0"
+
+	RelaySpecsRepo   = "Paintersrp/relay-specs"
+	RelaySpecsCommit = "cc4cd6d8fc5a3cd4a3b14b0366033e187afa2d77"
+
+	RelayRepo                  = "Paintersrp/relay"
+	RelayExecutionSchemaCommit = "040df75c2ff49306262f3069ac5bba39ee4ec36c"
+	planSuffix                 = ".plan.json"
+	executionSpecSuffix        = ".execution-spec.json"
 )
 
 type ArtifactKind string
@@ -45,20 +49,24 @@ type Result struct {
 }
 
 type Provenance struct {
-	Repository          string
-	Commit              string
-	PlanSchemaPath      string
-	ExecutionSchemaPath string
-	CompilerContract    string
+	Repository                string
+	Commit                    string
+	PlanSchemaPath            string
+	ExecutionSchemaRepository string
+	ExecutionSchemaCommit     string
+	ExecutionSchemaPath       string
+	CompilerContract          string
 }
 
 func SourceProvenance() Provenance {
 	return Provenance{
-		Repository:          RelaySpecsRepo,
-		Commit:              RelaySpecsCommit,
-		PlanSchemaPath:      "schemas/plan.schema.json",
-		ExecutionSchemaPath: "schemas/execution-spec.schema.json",
-		CompilerContract:    "contracts/compiler.md",
+		Repository:                RelaySpecsRepo,
+		Commit:                    RelaySpecsCommit,
+		PlanSchemaPath:            "schemas/plan.schema.json",
+		ExecutionSchemaRepository: RelayRepo,
+		ExecutionSchemaCommit:     RelayExecutionSchemaCommit,
+		ExecutionSchemaPath:       "internal/speccompiler/schemas/execution-spec.schema.json",
+		CompilerContract:          "contracts/compiler.md",
 	}
 }
 

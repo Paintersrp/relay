@@ -413,13 +413,13 @@ func TestAdditionalRendererBranches(t *testing.T) {
 	assertOneFinalNewline(t, *result.Markdown)
 }
 
-func TestEmbeddedSchemasMatchPinnedRelaySpecsBlobs(t *testing.T) {
+func TestEmbeddedSchemasMatchPinnedSourceBlobs(t *testing.T) {
 	cases := []struct {
 		path string
 		want string
 	}{
 		{path: "schemas/plan.schema.json", want: "2a2fb55b39d6be8d79ab1de124c017d85ea1d872"},
-		{path: "schemas/execution-spec.schema.json", want: "af6a5f0d8f546b5434dfe104c7b7f4159ff40cbe"},
+		{path: "schemas/execution-spec.schema.json", want: "f634e67b080c2280aec225483a2d7d198403c316"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
@@ -427,6 +427,7 @@ func TestEmbeddedSchemasMatchPinnedRelaySpecsBlobs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read embedded schema: %v", err)
 			}
+			raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 			if got := gitBlobSHA(raw); got != tc.want {
 				t.Fatalf("embedded schema blob mismatch: got %s want %s", got, tc.want)
 			}
