@@ -182,8 +182,8 @@ function printHelp(config) {
     `1. Copy ${config.envExamplePath} to ${config.envPath} or ${config.envLocalPath}.`,
   );
   console.log("2. Fill TUNNEL_ID and CONTROL_PLANE_API_KEY.");
-  console.log("3. Run npm run chatgpt-mcp:init once.");
-  console.log("4. Run npm run chatgpt-mcp:start for daily use.");
+  console.log("3. Run node scripts/local/chatgpt-mcp.mjs init once.");
+  console.log("4. Run node scripts/local/chatgpt-mcp.mjs start for daily use.");
   console.log(
     "5. Keep that single terminal open while ChatGPT uses the connector.",
   );

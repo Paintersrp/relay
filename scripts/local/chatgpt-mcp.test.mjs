@@ -1,68 +1,136 @@
-import { readFile } from "fs/promises";
-import { join } from "path";
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
-const scriptPath = join(process.cwd(), "scripts", "local", "chatgpt-mcp.mjs");
+const execFileAsync = promisify(execFile);
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = path.resolve(scriptDirectory, "..", "..");
 
-describe("chatgpt-mcp local script guardrails", () => {
-  it("keeps stdio transport and health listener defaults local", async () => {
-    const source = await readFile(scriptPath, "utf8");
+const chatgptScriptPath = path.join(scriptDirectory, "chatgpt-mcp.mjs");
+const stdioScriptPath = path.join(scriptDirectory, "relay-mcp-stdio.mjs");
+const packagePath = path.join(repositoryRoot, "package.json");
 
-    assert.match(
-      source,
-      /DEFAULT_TUNNEL_MCP_TRANSPORT\s*=\s*"stdio"/,
-    );
-    assert.match(
-      source,
-      /DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR\s*=\s*"127\.0\.0\.1:8082"/,
-    );
-  });
+const [chatgptSource, stdioSource, packageSource] = await Promise.all([
+  readFile(chatgptScriptPath, "utf8"),
+  readFile(stdioScriptPath, "utf8"),
+  readFile(packagePath, "utf8"),
+]);
+const rootPackage = JSON.parse(packageSource);
 
-  it("threads the configured health listener through start and doctor flows", async () => {
-    const source = await readFile(scriptPath, "utf8");
-    const healthFlagUses = source.match(/"--health\.listen-addr"/g) ?? [];
-    const healthConfigUses = source.match(/config\.tunnelHealthListenAddr/g) ?? [];
+const expectedToolsByProfile = Object.freeze({
+  planner: Object.freeze([
+    "validate_artifact",
+    "list_projects",
+    "submit_plan",
+    "get_plan",
+    "create_run",
+  ]),
+  auditor: Object.freeze([
+    "validate_artifact",
+    "create_run",
+    "get_audit_packet",
+    "get_run_artifact",
+    "record_audit_decision",
+  ]),
+  local_operator: Object.freeze([
+    "validate_artifact",
+    "list_projects",
+    "submit_plan",
+    "get_plan",
+    "create_run",
+    "get_audit_packet",
+    "get_run_artifact",
+    "record_audit_decision",
+  ]),
+});
 
-    assert.ok(healthFlagUses.length >= 3);
-    assert.ok(healthConfigUses.length >= 5);
-  });
+function extractProfileTools(source, profile) {
+  const pattern = new RegExp(
+    `${profile}:\\s*Object\\.freeze\\(\\[([\\s\\S]*?)\\]\\)`,
+  );
+  const match = source.match(pattern);
+  assert.ok(match, `missing ${profile} profile inventory`);
+  return [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
+}
 
-  it("keeps doctor local checks explicit and skippable", async () => {
-    const source = await readFile(scriptPath, "utf8");
+test("local MCP help uses executable direct Node entry points", async () => {
+  const { stdout, stderr } = await execFileAsync(
+    process.execPath,
+    [chatgptScriptPath, "help"],
+    {
+      cwd: repositoryRoot,
+      env: { ...process.env },
+    },
+  );
+  const output = `${stdout}\n${stderr}`;
 
-    assert.match(source, /--skip-relay-check/);
-    assert.match(source, /config\.tunnelMcpTransport === "stdio"[\s\S]*?runRelayMcpSelfTest\(config\)/);
-  });
+  assert.match(output, /node scripts\/local\/chatgpt-mcp\.mjs init/);
+  assert.match(output, /node scripts\/local\/chatgpt-mcp\.mjs start/);
+  assert.doesNotMatch(output, /npm run chatgpt-mcp:(?:init|start|doctor)/);
+});
 
-  it("defaults the canonical Relay MCP profile to planner", async () => {
-    const source = await readFile(scriptPath, "utf8");
+test("root package owns the retained local-script test entry only", () => {
+  assert.equal(
+    rootPackage.scripts?.["test:local-scripts"],
+    "node --test scripts/local/chatgpt-mcp.test.mjs",
+  );
+  assert.equal(rootPackage.scripts?.["chatgpt-mcp:init"], undefined);
+  assert.equal(rootPackage.scripts?.["chatgpt-mcp:start"], undefined);
+  assert.equal(rootPackage.scripts?.["chatgpt-mcp:doctor"], undefined);
+});
 
-    assert.match(source, /DEFAULT_RELAY_MCP_PROFILE\s*=\s*"planner"/);
-    assert.match(
-      source,
-      /process\.env\.RELAY_MCP_PROFILE\s*=\s*config\.relayMcpProfile/,
-    );
-  });
+test("stdio verification inventories match the canonical ordered profiles", () => {
+  for (const [profile, expected] of Object.entries(expectedToolsByProfile)) {
+    assert.deepEqual(extractProfileTools(stdioSource, profile), expected);
+  }
+});
 
-  it("recognizes only canonical Relay MCP profile names and fails closed", async () => {
-    const source = await readFile(scriptPath, "utf8");
+test("local scripts retain canonical profile and transport guardrails", () => {
+  for (const profile of ["planner", "auditor", "local_operator"]) {
+    assert.match(chatgptSource, new RegExp(`["']${profile}["']`));
+    assert.match(stdioSource, new RegExp(`["']${profile}["']`));
+  }
+  for (const transport of ["stdio", "http"]) {
+    assert.match(chatgptSource, new RegExp(`["']${transport}["']`));
+  }
 
-    assert.match(
-      source,
-      /ALLOWED_RELAY_MCP_PROFILES\s*=\s*new Set\(\["planner", "auditor", "local_operator"\]\)/,
-    );
-    assert.match(source, /normalizeRelayMcpProfile\(process\.env\.RELAY_MCP_PROFILE\)/);
-    assert.match(source, /defaulting to planner/);
-  });
+  assert.match(chatgptSource, /127\.0\.0\.1:3000/);
+  assert.match(chatgptSource, /doctor/);
+  assert.match(chatgptSource, /TUNNEL_CONTROL_API_KEY/);
+  assert.match(chatgptSource, /redact/i);
+  assert.match(stdioSource, /defaulting to planner/i);
+});
 
-  it("redacts the control-plane API key before echoing tunnel output", async () => {
-    const source = await readFile(scriptPath, "utf8");
+test("stdio self-test retains protocol and file-parameter checks", () => {
+  for (const token of [
+    "initialize",
+    "notifications/initialized",
+    "ping",
+    "tools/list",
+    "artifact_file",
+    "openaiFileIdRefs",
+  ]) {
+    assert.match(stdioSource, new RegExp(token.replace("/", "\\/")));
+  }
+  assert.match(stdioSource, /tool inventory mismatch/i);
+});
 
-    assert.match(
-      source,
-      /return text\.split\(controlPlaneApiKey\)\.join\("\[REDACTED\]"\)/,
-    );
-    assert.match(source, /redactSecrets\(String\(chunk\), controlPlaneApiKey\)/);
-  });
+test("local inventory oracle contains no representative retired action", () => {
+  const allTools = Object.keys(expectedToolsByProfile).flatMap((profile) =>
+    extractProfileTools(stdioSource, profile),
+  );
+  for (const retired of [
+    "create_run_from_planner_handoff",
+    "create_plan_seed",
+    "get_pass_context",
+    "create_context_packet",
+    "create_local_audit",
+    "list_refactor_candidates",
+  ]) {
+    assert.equal(allTools.includes(retired), false, retired);
+  }
 });

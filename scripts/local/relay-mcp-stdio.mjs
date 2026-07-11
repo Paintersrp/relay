@@ -12,19 +12,28 @@ const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..');
 const ENV_FILE_PATHS = [join(REPO_ROOT, '.env'), join(REPO_ROOT, '.env.local')];
 const DEFAULT_RELAY_MCP_PROFILE = 'planner';
 const TOOL_NAMES_BY_PROFILE = Object.freeze({
-  planner: ['validate_artifact', 'submit_plan', 'get_plan', 'create_run'],
+  planner: [
+    'validate_artifact',
+    'list_projects',
+    'submit_plan',
+    'get_plan',
+    'create_run',
+  ],
   auditor: [
     'validate_artifact',
     'create_run',
     'get_audit_packet',
+    'get_run_artifact',
     'record_audit_decision',
   ],
   local_operator: [
     'validate_artifact',
+    'list_projects',
     'submit_plan',
     'get_plan',
     'create_run',
     'get_audit_packet',
+    'get_run_artifact',
     'record_audit_decision',
   ],
 });
