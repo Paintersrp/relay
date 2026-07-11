@@ -27,8 +27,11 @@ import {
 } from "@/components/ui/select";
 import {
   cancelWorkflowAttempt,
+  deriveWorkflowAttemptControlState,
   getDefaultModelForAdapter,
   getModelOptionsForAdapter,
+  isNonterminalWorkflowAttemptStatus,
+  isTerminalWorkflowAttemptStatus,
   prepareWorkflowAudit,
   reconcileWorkflowAttempt,
   startWorkflowAttempt,
@@ -183,38 +186,6 @@ function SpecificationPanel({ runId }: { runId: string }) {
   );
 }
 
-const STARTABLE_RUN_STATUSES: ReadonlySet<WorkflowRunStatus> = new Set([
-  "setup_ready",
-  "execution_failed",
-  "cancelled",
-]);
-
-const NONTERMINAL_ATTEMPT_STATUSES: ReadonlySet<WorkflowExecutionAttemptStatus> =
-  new Set(["pending", "running"]);
-
-function isNonterminalAttemptStatus(
-  status: WorkflowExecutionAttemptStatus | undefined,
-): boolean {
-  return status !== undefined && NONTERMINAL_ATTEMPT_STATUSES.has(status);
-}
-
-function isTerminalAttempt(
-  status: WorkflowExecutionAttemptStatus | undefined,
-): boolean {
-  return status !== undefined && !NONTERMINAL_ATTEMPT_STATUSES.has(status);
-}
-
-function isCleanupPendingAttempt(
-  attempt: WorkflowExecutionAttempt | WorkflowExecutionAttemptSummary | null,
-): attempt is WorkflowExecutionAttempt {
-  return (
-    attempt !== null &&
-    "result" in attempt &&
-    isNonterminalAttemptStatus(attempt.status) &&
-    attempt.result.cleanup_pending === true
-  );
-}
-
 export const ACTIVE_ATTEMPT_REFRESH_MS = 2_000;
 
 function ExecutePanel({
@@ -252,7 +223,8 @@ function ExecutePanel({
   const cachedAttempt = queryClient.getQueryData<WorkflowExecutionAttempt>(
     workflowRunKeys.attempt(runId, selectedAttemptId ?? ""),
   );
-  const isCachedTerminal = cachedAttempt && isTerminalAttempt(cachedAttempt.status);
+  const isCachedTerminal =
+    cachedAttempt && isTerminalWorkflowAttemptStatus(cachedAttempt.status);
 
   const attemptQuery = useQuery({
     ...workflowAttemptQueryOptions(runId, selectedAttemptId ?? ""),
@@ -260,7 +232,9 @@ function ExecutePanel({
     refetchInterval: (query) => {
       const detailed = query.state.data as WorkflowExecutionAttempt | undefined;
       const status = detailed?.status ?? selectedSummary?.status;
-      return isNonterminalAttemptStatus(status) ? ACTIVE_ATTEMPT_REFRESH_MS : false;
+      return isNonterminalWorkflowAttemptStatus(status)
+        ? ACTIVE_ATTEMPT_REFRESH_MS
+        : false;
     },
     refetchIntervalInBackground: true,
   });
@@ -276,7 +250,11 @@ function ExecutePanel({
 
   React.useEffect(() => {
     if (attemptStatus) {
-      if (lastStatus && isNonterminalAttemptStatus(lastStatus) && !isNonterminalAttemptStatus(attemptStatus)) {
+      if (
+        lastStatus &&
+        isNonterminalWorkflowAttemptStatus(lastStatus) &&
+        !isNonterminalWorkflowAttemptStatus(attemptStatus)
+      ) {
         refreshRun();
       }
       setLastStatus(attemptStatus);
@@ -316,22 +294,15 @@ function ExecutePanel({
 
   const selectedAttempt = attemptQuery.data ?? selectedSummary;
   const output = attemptQuery.data ? attemptOutput(attemptQuery.data) : "";
-  const selectedAttemptIsNonterminal = isNonterminalAttemptStatus(
+  const selectedAttemptIsNonterminal = isNonterminalWorkflowAttemptStatus(
     selectedAttempt?.status,
   );
-  const hasNonterminalAttempt =
-    attempts.some((attempt) => isNonterminalAttemptStatus(attempt.status)) ||
-    (attemptQuery.data !== undefined &&
-      isNonterminalAttemptStatus(attemptQuery.data.status));
-  const canStart =
-    STARTABLE_RUN_STATUSES.has(runStatus) && !hasNonterminalAttempt;
-  const canCancel =
-    runStatus === "executing" &&
-    selectedAttemptIsNonterminal &&
-    selectedAttempt?.cancellationRequestedAt === undefined;
-  const canReconcile =
-    runStatus === "executing" &&
-    isCleanupPendingAttempt(attemptQuery.data ?? null);
+  const { canStart, canCancel, canReconcile } =
+    deriveWorkflowAttemptControlState(
+      runStatus,
+      attempts,
+      selectedAttempt,
+    );
   const pending =
     startMutation.isPending ||
     cancelMutation.isPending ||

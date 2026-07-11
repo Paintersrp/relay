@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./api";
 export * from "./queries";
+export * from "./attemptPolicy";
 export { API_BASE_URL, RelayApiError } from "../workflow-api";
 export type { RelayApiErrorShape } from "../workflow-api";
 export {

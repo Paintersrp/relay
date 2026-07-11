@@ -43,52 +43,62 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-vi.mock("@/features/relay-runs", () => ({
-  workflowRunDetailQueryOptions: (runId: string) => ({
-    queryKey: ["workflow-runs", "detail", runId],
-    queryFn: mocks.getRun,
-    retry: false,
-  }),
-  workflowSpecificationQueryOptions: (runId: string) => ({
-    queryKey: ["workflow-runs", "detail", runId, "specification"],
-    queryFn: mocks.getSpecification,
-    retry: false,
-  }),
-  workflowAttemptQueryOptions: (runId: string, attemptId: string) => ({
-    queryKey: ["workflow-runs", "detail", runId, "attempt", attemptId],
-    queryFn: mocks.getAttempt,
-    retry: false,
-  }),
-  workflowAuditStatusQueryOptions: (runId: string) => ({
-    queryKey: ["workflow-runs", "detail", runId, "audit"],
-    queryFn: mocks.getAuditStatus,
-    retry: false,
-  }),
-  startWorkflowAttempt: mocks.startAttempt,
-  cancelWorkflowAttempt: mocks.cancelAttempt,
-  reconcileWorkflowAttempt: mocks.reconcileAttempt,
-  prepareWorkflowAudit: mocks.prepareAudit,
-  workflowApiUrl: (path: string) => `http://localhost:8080${path}`,
-  workflowRunKeys: {
-    detail: (runId: string) => ["workflow-runs", "detail", runId],
-    attempt: (runId: string, attemptId: string) => [
-      "workflow-runs",
-      "detail",
-      runId,
-      "attempt",
-      attemptId,
+vi.mock("@/features/relay-runs", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/features/relay-runs")>();
+  return {
+    ...actual,
+    workflowRunDetailQueryOptions: (runId: string) => ({
+      queryKey: ["workflow-runs", "detail", runId],
+      queryFn: mocks.getRun,
+      retry: false,
+    }),
+    workflowSpecificationQueryOptions: (runId: string) => ({
+      queryKey: ["workflow-runs", "detail", runId, "specification"],
+      queryFn: mocks.getSpecification,
+      retry: false,
+    }),
+    workflowAttemptQueryOptions: (runId: string, attemptId: string) => ({
+      queryKey: ["workflow-runs", "detail", runId, "attempt", attemptId],
+      queryFn: mocks.getAttempt,
+      retry: false,
+    }),
+    workflowAuditStatusQueryOptions: (runId: string) => ({
+      queryKey: ["workflow-runs", "detail", runId, "audit"],
+      queryFn: mocks.getAuditStatus,
+      retry: false,
+    }),
+    startWorkflowAttempt: mocks.startAttempt,
+    cancelWorkflowAttempt: mocks.cancelAttempt,
+    reconcileWorkflowAttempt: mocks.reconcileAttempt,
+    prepareWorkflowAudit: mocks.prepareAudit,
+    workflowApiUrl: (path: string) => `http://localhost:8080${path}`,
+    workflowRunKeys: {
+      detail: (runId: string) => ["workflow-runs", "detail", runId],
+      attempt: (runId: string, attemptId: string) => [
+        "workflow-runs",
+        "detail",
+        runId,
+        "attempt",
+        attemptId,
+      ],
+      audit: (runId: string) => [
+        "workflow-runs",
+        "detail",
+        runId,
+        "audit",
+      ],
+    },
+    workflowRunStageRoute: (stage: string) => `/runs/$runId/${stage}`,
+    EXECUTOR_ADAPTER_OPTIONS: [
+      { value: "codex", label: "Codex", description: "Codex" },
     ],
-    audit: (runId: string) => ["workflow-runs", "detail", runId, "audit"],
-  },
-  workflowRunStageRoute: (stage: string) => `/runs/$runId/${stage}`,
-  EXECUTOR_ADAPTER_OPTIONS: [
-    { value: "codex", label: "Codex", description: "Codex" },
-  ],
-  getDefaultModelForAdapter: () => "gpt-5.5",
-  getModelOptionsForAdapter: () => [
-    { value: "gpt-5.5", label: "GPT 5.5" },
-  ],
-}));
+    getDefaultModelForAdapter: () => "gpt-5.5",
+    getModelOptionsForAdapter: () => [
+      { value: "gpt-5.5", label: "GPT 5.5" },
+    ],
+  };
+});
 
 type RunStage = "specification" | "execute" | "audit";
 type RunStatus =
@@ -220,44 +230,31 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     vi.useRealTimers();
   });
 
-  it.each([
-    ["setup_ready", "specification"],
-    ["execution_failed", "execute"],
-    ["cancelled", "execute"],
-  ] as const)(
-    "enables Start only for the backend-supported %s lifecycle",
-    async (status, durableStage) => {
-      mocks.getRun.mockResolvedValue(
-        makeDetail(makeRun(status, durableStage)),
-      );
+  it("enables Start for a setup-ready Run without an active attempt", async () => {
+    mocks.getRun.mockResolvedValue(
+      makeDetail(makeRun("setup_ready", "specification")),
+    );
 
-      renderWorkbench("execute");
+    renderWorkbench("execute");
 
-      expect(
-        await screen.findByRole("button", { name: "Start attempt" }),
-      ).toBeEnabled();
-    },
-  );
+    expect(
+      await screen.findByRole("button", { name: "Start attempt" }),
+    ).toBeEnabled();
+  });
 
-  it.each([
-    ["executing", "execute"],
-    ["validating", "audit"],
-    ["audit_ready", "audit"],
-    ["completed", "audit"],
-  ] as const)(
-    "disables Start for the ineligible %s lifecycle",
-    async (status, durableStage) => {
-      mocks.getRun.mockResolvedValue(
-        makeDetail(makeRun(status, durableStage)),
-      );
+  it("disables Start while execution is active", async () => {
+    const summary = makeSummary("running");
+    mocks.getRun.mockResolvedValue(
+      makeDetail(makeRun("executing", "execute"), [summary]),
+    );
+    mocks.getAttempt.mockResolvedValue(makeDetailedAttempt("running"));
 
-      renderWorkbench("execute");
+    renderWorkbench("execute");
 
-      expect(
-        await screen.findByRole("button", { name: "Start attempt" }),
-      ).toBeDisabled();
-    },
-  );
+    expect(
+      await screen.findByRole("button", { name: "Start attempt" }),
+    ).toBeDisabled();
+  });
 
   it("disables Start for the created lifecycle at specification stage", async () => {
     mocks.getRun.mockResolvedValue(
