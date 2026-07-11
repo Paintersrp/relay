@@ -125,7 +125,7 @@ make test           # all Go tests
 make mcp-build      # stdio MCP binary
 make mcp-test       # MCP and MCP command tests
 make mcp-smoke      # build and exercise the stdio MCP workflow
-make validate-full  # complete repository validation tier
+make validate       # broad repository validation
 ```
 
 ## Architecture map
@@ -148,7 +148,6 @@ internal/store/workflowgenerated/  sqlc-generated query layer
 internal/db/workflow_migrations/   embedded Goose schema migrations
 internal/db/workflow_queries/      sqlc query inputs
 internal/artifacts/workflow/       filesystem artifact batches
-scripts/validate.sh                tiered repository validation
 ```
 
 ## Current boundaries

@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ test fmt vet clean validate validate-fast validate-broad validate-full validate-touched validate-changed mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke
+.PHONY: dev dev-server build assets install sqlc templ test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke
 
 MCP_BINARY := bin/relay-mcpserver
 ifeq ($(OS),Windows_NT)
@@ -30,22 +30,10 @@ test:
 	go test ./...
 
 validate:
-	bash scripts/validate.sh
-
-validate-fast:
-	RELAY_VALIDATE_TIER=fast bash scripts/validate.sh
-
-validate-broad:
-	RELAY_VALIDATE_TIER=broad bash scripts/validate.sh
-
-validate-full:
-	RELAY_VALIDATE_TIER=full bash scripts/validate.sh
-
-validate-touched:
-	RELAY_VALIDATE_SCOPE=touched PATHS="$(PATHS)" bash scripts/validate.sh
-
-validate-changed:
-	RELAY_VALIDATE_SCOPE=changed bash scripts/validate.sh
+	go test ./...
+	cd apps/web && npm run typecheck
+	cd apps/web && npm run test
+	cd apps/web && npm run build
 
 fmt:
 	go fmt ./...
