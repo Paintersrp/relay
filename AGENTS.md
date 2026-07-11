@@ -1,3 +1,9 @@
+# Repository Testing Standard
+
+- Each test must protect a plausible regression in current supported behavior. Keep one authoritative owner and use the smallest surface that proves the contract completely.
+- Retain real SQLite, filesystem, Git, subprocess, transport, lifecycle, canonical-output, and composition tests only when that boundary is the behavior under test.
+- Remove behavior-free, historical, duplicated, implementation-detail, timing-dependent, and unnecessarily heavy coverage. Ordinary tests must not use sleeps, polling, external services, network access, or installed binaries when a deterministic pure or fake boundary proves the same contract.
+
 <!-- BEGIN RELAY EXECUTOR INSTRUCTIONS -->
 
 ## Relay Executor Instructions

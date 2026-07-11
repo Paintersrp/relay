@@ -269,11 +269,20 @@ func TestWorkflowTimeoutAndCancellationAreTerminal(t *testing.T) {
 
 	t.Run("cancel", func(t *testing.T) {
 		fixture := newWorkflowFixture(t)
-		fixture.service.launch = func(fn func()) { go fn() }
 		startedSignal := make(chan struct{})
+		startFailed := make(chan error, 1)
+		executionComplete := make(chan struct{})
+		fixture.service.launch = func(fn func()) {
+			go func() {
+				defer close(executionComplete)
+				fn()
+			}()
+		}
 		fixture.service.runner = func(ctx context.Context, _ string, _ string, _ []string, _ string, _ time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, _ pipeline.ProcessController) pipeline.AgentCommandRunResult {
-			if callbacks.OnProcessStarted != nil {
-				_ = callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 104, StartedAt: "1", Platform: "linux"})
+			if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 104, StartedAt: "1", Platform: "linux"}); err != nil {
+				startFailed <- err
+				now := time.Now()
+				return pipeline.AgentCommandRunResult{ExitCode: -1, Error: err.Error(), StartedAt: now, FinishedAt: now, TerminationVerified: true}
 			}
 			close(startedSignal)
 			<-ctx.Done()
@@ -283,27 +292,38 @@ func TestWorkflowTimeoutAndCancellationAreTerminal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		<-startedSignal
+		select {
+		case <-startedSignal:
+		case startErr := <-startFailed:
+			t.Fatalf("persist executor process start: %v", startErr)
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for executor process start")
+		}
 		if _, err := fixture.service.Cancel(context.Background(), fixture.run.RunID, started.Attempt.AttemptID); err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), started.Attempt.AttemptID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if attempt.Status == workflowstore.AttemptStatusCancelled {
-				var result map[string]any
-				if err := json.Unmarshal([]byte(attempt.ResultJSON), &result); err != nil {
-					t.Fatal(err)
-				}
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("attempt did not cancel: %+v", attempt)
-			}
-			time.Sleep(10 * time.Millisecond)
+		select {
+		case <-executionComplete:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for cancelled execution to finish")
+		}
+		attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), started.Attempt.AttemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if attempt.Status != workflowstore.AttemptStatusCancelled {
+			t.Fatalf("attempt status = %q, want cancelled", attempt.Status)
+		}
+		var result map[string]any
+		if err := json.Unmarshal([]byte(attempt.ResultJSON), &result); err != nil {
+			t.Fatal(err)
+		}
+		current, err := fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Status != workflowstore.RunStatusCancelled {
+			t.Fatalf("Run status = %q, want cancelled", current.Status)
 		}
 	})
 }

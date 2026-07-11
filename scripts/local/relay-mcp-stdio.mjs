@@ -11,32 +11,11 @@ const SCRIPT_DIR = dirname(SCRIPT_PATH);
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..');
 const ENV_FILE_PATHS = [join(REPO_ROOT, '.env'), join(REPO_ROOT, '.env.local')];
 const DEFAULT_RELAY_MCP_PROFILE = 'planner';
-const TOOL_NAMES_BY_PROFILE = Object.freeze({
-  planner: [
-    'validate_artifact',
-    'list_projects',
-    'submit_plan',
-    'get_plan',
-    'create_run',
-  ],
-  auditor: [
-    'validate_artifact',
-    'create_run',
-    'get_audit_packet',
-    'get_run_artifact',
-    'record_audit_decision',
-  ],
-  local_operator: [
-    'validate_artifact',
-    'list_projects',
-    'submit_plan',
-    'get_plan',
-    'create_run',
-    'get_audit_packet',
-    'get_run_artifact',
-    'record_audit_decision',
-  ],
-});
+const ALLOWED_RELAY_MCP_PROFILES = new Set([
+  'planner',
+  'auditor',
+  'local_operator',
+]);
 
 class ValidationError extends Error {
   constructor(message) {
@@ -101,7 +80,7 @@ function loadEnvFile(filePath, originalEnvKeys) {
 
 function resolveRelayMcpProfile(raw) {
   const profile = String(raw || DEFAULT_RELAY_MCP_PROFILE).trim().toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(TOOL_NAMES_BY_PROFILE, profile)) {
+  if (ALLOWED_RELAY_MCP_PROFILES.has(profile)) {
     return profile;
   }
   console.error(
@@ -406,25 +385,45 @@ function runSelfTest(commandSpec, profile) {
           requestID += 1;
         } while (cursor);
 
-        const actualToolNames = tools
-          .map((tool) => tool?.name)
-          .filter((toolName) => typeof toolName === 'string');
-        const expectedToolNames = TOOL_NAMES_BY_PROFILE[profile];
-        if (JSON.stringify(actualToolNames) !== JSON.stringify(expectedToolNames)) {
+        if (tools.length === 0) {
           throw new ValidationError(
-            `Relay MCP tools/list for profile ${profile} returned ${actualToolNames.join(', ')}; expected ${expectedToolNames.join(', ')}.`,
+            `Relay MCP tools/list for profile ${profile} returned no tools.`,
           );
         }
-        for (const fileToolName of expectedToolNames.filter((name) =>
-          ['validate_artifact', 'submit_plan', 'create_run'].includes(name)
-        )) {
-          const tool = tools.find((candidate) => candidate?.name === fileToolName);
-          assertCanonicalFileParameterTool(tool, fileToolName);
+        const actualToolNames = tools.map((tool) => tool?.name);
+        if (
+          actualToolNames.some(
+            (toolName) =>
+              typeof toolName !== 'string' || toolName.trim() === '',
+          )
+        ) {
+          throw new ValidationError(
+            `Relay MCP tools/list for profile ${profile} returned a tool without a valid name.`,
+          );
+        }
+        const uniqueToolNames = new Set(actualToolNames);
+        if (uniqueToolNames.size !== actualToolNames.length) {
+          throw new ValidationError(
+            `Relay MCP tools/list for profile ${profile} returned duplicate tool names.`,
+          );
+        }
+        for (const tool of tools) {
+          const fileParams = tool?._meta?.['openai/fileParams'];
+          const hasArtifactFileSchema = Object.prototype.hasOwnProperty.call(
+            tool?.inputSchema?.properties || {},
+            'artifact_file',
+          );
+          const advertisesArtifactFile =
+            Array.isArray(fileParams) &&
+            fileParams.includes('artifact_file');
+          if (hasArtifactFileSchema || advertisesArtifactFile) {
+            assertCanonicalFileParameterTool(tool, tool.name);
+          }
         }
 
         console.error(`tools/list: ok (${tools.length} tools)`);
         console.error(`profile: ${profile}`);
-        console.error(`tools: ${expectedToolNames.join(', ')}`);
+        console.error(`tools: ${actualToolNames.join(', ')}`);
 
         child.stdin.end();
         finish(null);

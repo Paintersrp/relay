@@ -773,4 +773,8 @@ function handleError(error) {
   process.exitCode = 1;
 }
 
-main();
+export { assertRelayReachable, normalizeRelayMcpProfile, redactSecrets };
+
+if (process.argv[1] && resolve(process.argv[1]) === SCRIPT_PATH) {
+  main();
+}
