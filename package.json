@@ -9,8 +9,6 @@
     "typecheck:web": "npm --prefix apps/web run typecheck",
     "test:web": "npm --prefix apps/web run test",
     "test:local-scripts": "node --test scripts/local/chatgpt-mcp.test.mjs",
-    "agentrefs:generate": "go run ./cmd/agentrefs generate",
-    "agentrefs:check": "go run ./cmd/agentrefs check",
     "release:smoke": "bash scripts/release-smoke.sh"
   },
   "devDependencies": {},

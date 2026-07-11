@@ -12,9 +12,8 @@ else
   exit 1
 fi
 
-go test ./internal/speccompiler ./internal/store/workflow ./internal/repos/workflow ./internal/artifacts/workflow ./internal/app/submissions ./internal/app/projects/workflow ./internal/app/plans/workflow ./internal/app/runs/workflow ./internal/app/audits ./internal/executor ./internal/api/... ./internal/server ./internal/mcp ./cmd/mcp-smoke ./cmd/agentrefs
+go test ./internal/speccompiler ./internal/store/workflow ./internal/repos/workflow ./internal/artifacts/workflow ./internal/app/submissions ./internal/app/projects/workflow ./internal/app/plans/workflow ./internal/app/runs/workflow ./internal/app/audits ./internal/executor ./internal/api/... ./internal/server ./internal/mcp ./cmd/mcp-smoke
 go run ./cmd/mcp-smoke
-go run ./cmd/agentrefs check
 npm --prefix apps/web run typecheck
 npm --prefix apps/web run test -- --run
 npm --prefix apps/web run build
