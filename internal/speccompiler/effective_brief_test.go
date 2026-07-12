@@ -64,17 +64,16 @@ func TestRenderEffectiveExecutorBriefRejectsAtomicSplit(t *testing.T) {
 
 func TestRenderEffectiveExecutorBriefRejectsInvalidSelection(t *testing.T) {
 	document := &ExecutionDocument{
-		SchemaVersion: "2.0",
-		FeatureSlug:   "effective-brief",
-		RepoTarget:    "relay",
-		Branch:        "main",
-		BaseCommit:    strings.Repeat("a", 40),
-		Goal:          "Render one residual declaration.",
-		Context:       "Selection validation.",
-		Scope:         scopeModel{InScope: []string{"One file."}, OutOfScope: []string{"Nothing else."}},
-		Steps:         []ExecutionStep{{Number: 1, Goal: "One step.", Substeps: []ExecutionSubstep{{Number: 1, Instruction: "Create one file.", Files: []ExecutionFile{{Path: "a.txt", Operation: "create", Purpose: "Create it.", Implementation: ExecutionFileImplementation{Content: "a\n"}}}, Completion: []string{"Created."}}}, Completion: []string{"Complete."}}},
-		Validation:    ExecutionValidation{Commands: []ExecutionValidationCommand{{Command: "go test ./internal/example", Expected: "Tests pass."}}},
-		Completion:    []string{"Complete."},
+		FeatureSlug: "effective-brief",
+		RepoTarget:  "relay",
+		Branch:      "main",
+		BaseCommit:  strings.Repeat("a", 40),
+		Goal:        "Render one residual declaration.",
+		Context:     "Selection validation.",
+		Scope:       scopeModel{InScope: []string{"One file."}, OutOfScope: []string{"Nothing else."}},
+		Steps:       []ExecutionStep{{Number: 1, Goal: "One step.", Substeps: []ExecutionSubstep{{Number: 1, Instruction: "Create one file.", Files: []ExecutionFile{{Path: "a.txt", Operation: "create", Purpose: "Create it.", Implementation: ExecutionFileImplementation{Content: "a\n"}}}, Completion: []string{"Created."}}}, Completion: []string{"Complete."}}},
+		Validation:  ExecutionValidation{Commands: []ExecutionValidationCommand{{Command: "go test ./internal/example", Expected: "Tests pass."}}},
+		Completion:  []string{"Complete."},
 	}
 	cases := []EffectiveBriefSelection{
 		{Mode: EffectiveBriefFull, ResidualFileWorkRefs: []string{"1.1.file.1"}},
@@ -130,14 +129,13 @@ func effectiveBriefDocument(atomic, sharedPath bool) *ExecutionDocument {
 		substeps = append(substeps, secondSubstep)
 	}
 	return &ExecutionDocument{
-		SchemaVersion: "2.0",
-		FeatureSlug:   "effective-brief",
-		RepoTarget:    "relay",
-		Branch:        "main",
-		BaseCommit:    strings.Repeat("a", 40),
-		Goal:          "Apply deterministic work and execute only the residual work.",
-		Context:       "Residual rendering test context.",
-		Scope:         scopeModel{InScope: []string{"Implement the declared work."}, OutOfScope: []string{"No unrelated changes."}},
+		FeatureSlug: "effective-brief",
+		RepoTarget:  "relay",
+		Branch:      "main",
+		BaseCommit:  strings.Repeat("a", 40),
+		Goal:        "Apply deterministic work and execute only the residual work.",
+		Context:     "Residual rendering test context.",
+		Scope:       scopeModel{InScope: []string{"Implement the declared work."}, OutOfScope: []string{"No unrelated changes."}},
 		Steps: []ExecutionStep{{
 			Number:     1,
 			Goal:       "Complete both declarations.",

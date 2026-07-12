@@ -1,0 +1,909 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Audit Packet v2.0",
+  "description": "Structural schema for the canonical Relay Audit Packet v2.0 artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {},
+    "run": {
+      "$ref": "#/$defs/run"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "authority": {
+      "$ref": "#/$defs/authority"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/changed_file"
+      }
+    },
+    "relevant_source_paths": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/path"
+      }
+    },
+    "validation": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/validation_result"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "contains": {
+        "$ref": "#/$defs/unified_diff_artifact"
+      },
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "remediation_context": {
+      "$ref": "#/$defs/remediation_context"
+    }
+  },
+  "required": [
+    "run",
+    "repository",
+    "authority",
+    "execution",
+    "changed_files",
+    "relevant_source_paths",
+    "validation",
+    "artifacts"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "run": {
+            "required": [
+              "plan_id",
+              "pass_id"
+            ]
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "then": {
+        "properties": {
+          "authority": {
+            "required": [
+              "managed_context"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "authority": {
+            "not": {
+              "required": [
+                "managed_context"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "run": {
+            "required": [
+              "remediates_run_id"
+            ]
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "then": {
+        "required": [
+          "remediation_context"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "remediation_context"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "single_line_prose": {
+      "title": "Single-line prose",
+      "description": "Nonblank human prose without line breaks.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!\\s*$)[^\\r\\n]*\\S[^\\r\\n]*$"
+    },
+    "multiline_prose": {
+      "title": "Markdown-capable prose",
+      "description": "Nonblank prose that may contain Markdown and line breaks.",
+      "type": "string",
+      "pattern": "^[\\s\\S]*\\S[\\s\\S]*$"
+    },
+    "machine_string": {
+      "title": "Machine string",
+      "description": "Nonblank single-line value without outer whitespace or control characters.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!\\s*$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "path": {
+      "title": "Repository-relative path",
+      "description": "Basic POSIX-style repository-relative path.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$"
+    },
+    "commit_sha": {
+      "title": "Commit SHA",
+      "description": "Lowercase full 40-character Git commit SHA.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "title": "SHA-256",
+      "description": "Lowercase 64-character SHA-256 digest.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[0-9a-f]{64}$"
+    },
+    "positive_integer_id": {
+      "title": "Positive integer identifier",
+      "type": "integer",
+      "minimum": 1
+    },
+    "nonnegative_integer": {
+      "title": "Nonnegative integer count",
+      "type": "integer",
+      "minimum": 0
+    },
+    "run": {
+      "title": "Run authority",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unassociated_run"
+        },
+        {
+          "$ref": "#/$defs/managed_run"
+        }
+      ]
+    },
+    "unassociated_run": {
+      "title": "Unassociated run authority",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "feature_slug": {
+          "$ref": "#/$defs/feature_slug"
+        },
+        "repo_target": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "branch": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "base_commit": {
+          "$ref": "#/$defs/commit_sha"
+        },
+        "canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "remediates_run_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "user_intent": {
+          "$ref": "#/$defs/multiline_prose"
+        }
+      },
+      "required": [
+        "run_id",
+        "feature_slug",
+        "repo_target",
+        "branch",
+        "base_commit",
+        "canonical_sha256"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "required": [
+                "remediates_run_id"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "user_intent"
+            ]
+          }
+        }
+      ]
+    },
+    "managed_run": {
+      "title": "Managed run authority",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "feature_slug": {
+          "$ref": "#/$defs/feature_slug"
+        },
+        "repo_target": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "branch": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "base_commit": {
+          "$ref": "#/$defs/commit_sha"
+        },
+        "canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "pass_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "pass_number": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "remediates_run_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        }
+      },
+      "required": [
+        "run_id",
+        "feature_slug",
+        "repo_target",
+        "branch",
+        "base_commit",
+        "canonical_sha256",
+        "plan_id",
+        "pass_id",
+        "pass_number"
+      ]
+    },
+    "repository": {
+      "title": "Repository",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo_target": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "branch": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "base_commit": {
+          "$ref": "#/$defs/commit_sha"
+        },
+        "audited_commit": {
+          "$ref": "#/$defs/commit_sha"
+        }
+      },
+      "required": [
+        "repo_target",
+        "branch",
+        "base_commit",
+        "audited_commit"
+      ]
+    },
+    "authority": {
+      "title": "Authority",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution_spec": {
+          "$ref": "#/$defs/embedded_execution_spec"
+        },
+        "executor_brief": {
+          "$ref": "#/$defs/embedded_executor_brief"
+        },
+        "managed_context": {
+          "$ref": "#/$defs/managed_context"
+        }
+      },
+      "required": [
+        "execution_spec",
+        "executor_brief"
+      ]
+    },
+    "embedded_execution_spec": {
+      "title": "Embedded Execution Spec",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "type": "string",
+          "pattern": "^(?!.*[\\r\\n])(?!\\s*$).+\\.execution-spec\\.json$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "content": {
+          "$ref": "execution-spec.schema.json"
+        }
+      },
+      "required": [
+        "filename",
+        "sha256",
+        "content"
+      ]
+    },
+    "embedded_executor_brief": {
+      "title": "Embedded Executor Brief",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "type": "string",
+          "pattern": "^(?!.*[\\r\\n])(?!\\s*$).+\\.executor-brief\\.md$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "content": {
+          "$ref": "#/$defs/multiline_prose"
+        }
+      },
+      "required": [
+        "filename",
+        "sha256",
+        "content"
+      ]
+    },
+    "managed_context": {
+      "title": "Managed context",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "plan_goal": {
+          "$ref": "plan.schema.json#/$defs/single_line_prose"
+        },
+        "plan_context": {
+          "$ref": "plan.schema.json#/$defs/multiline_prose"
+        },
+        "plan_scope": {
+          "$ref": "plan.schema.json#/$defs/scope"
+        },
+        "repository_target": {
+          "$ref": "plan.schema.json#/$defs/repository_target"
+        },
+        "selected_pass": {
+          "$ref": "plan.schema.json#/$defs/pass"
+        },
+        "plan_completion_criteria": {
+          "$ref": "plan.schema.json#/$defs/criteria_array"
+        }
+      },
+      "required": [
+        "plan_goal",
+        "plan_context",
+        "plan_scope",
+        "repository_target",
+        "selected_pass",
+        "plan_completion_criteria"
+      ]
+    },
+    "execution": {
+      "title": "Execution evidence",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/applier_execution"
+        },
+        {
+          "$ref": "#/$defs/executor_execution"
+        },
+        {
+          "$ref": "#/$defs/hybrid_execution"
+        }
+      ]
+    },
+    "changed_file": {
+      "title": "Changed file",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "previous_path": {
+          "$ref": "#/$defs/path"
+        },
+        "change_type": {
+          "enum": [
+            "added",
+            "modified",
+            "deleted",
+            "renamed",
+            "copied",
+            "type_changed"
+          ]
+        },
+        "additions": {
+          "$ref": "#/$defs/nonnegative_integer"
+        },
+        "deletions": {
+          "$ref": "#/$defs/nonnegative_integer"
+        }
+      },
+      "required": [
+        "path",
+        "change_type",
+        "additions",
+        "deletions"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "change_type": {
+                "enum": [
+                  "renamed",
+                  "copied"
+                ]
+              }
+            },
+            "required": [
+              "change_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "previous_path"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "previous_path"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "validation_result": {
+      "title": "Validation result",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "working_directory": {
+          "$ref": "#/$defs/path"
+        },
+        "expected": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_run"
+          ]
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "concise_result": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "artifact_reference": {
+          "$ref": "#/$defs/machine_string"
+        }
+      },
+      "required": [
+        "command",
+        "expected",
+        "status",
+        "concise_result"
+      ]
+    },
+    "artifact": {
+      "title": "Referenced artifact",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_reference": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "artifact_type": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "description": {
+          "$ref": "#/$defs/single_line_prose"
+        }
+      },
+      "required": [
+        "artifact_reference",
+        "artifact_type",
+        "sha256",
+        "description"
+      ]
+    },
+    "unified_diff_artifact": {
+      "title": "Unified diff artifact",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_reference": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "artifact_type": {
+          "const": "unified_diff"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "description": {
+          "$ref": "#/$defs/single_line_prose"
+        }
+      },
+      "required": [
+        "artifact_reference",
+        "artifact_type",
+        "sha256",
+        "description"
+      ]
+    },
+    "remediation_context": {
+      "title": "Remediation context",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "remediated_run_id": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "material_findings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/material_finding"
+          }
+        }
+      },
+      "required": [
+        "remediated_run_id",
+        "material_findings"
+      ]
+    },
+    "material_finding": {
+      "title": "Material finding",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "executor_implementation",
+            "execution_spec",
+            "both"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "evidence": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "required_remediation": {
+          "$ref": "#/$defs/multiline_prose"
+        }
+      },
+      "required": [
+        "source",
+        "summary",
+        "evidence",
+        "required_remediation"
+      ]
+    },
+    "feature_slug": {
+      "title": "Feature slug",
+      "description": "Lowercase kebab-case feature slug.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "attempt_result": {
+      "title": "Executor attempt result",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "termination_verified": {
+          "type": "boolean"
+        },
+        "cleanup_pending": {
+          "type": "boolean"
+        },
+        "pending_terminal_status": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "error": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "normalized_status": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "blocker_text": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "stdout_truncated": {
+          "type": "boolean"
+        },
+        "stderr_truncated": {
+          "type": "boolean"
+        },
+        "stdout_bytes": {
+          "$ref": "#/$defs/nonnegative_integer"
+        },
+        "stderr_bytes": {
+          "$ref": "#/$defs/nonnegative_integer"
+        }
+      },
+      "required": [
+        "exit_code",
+        "timed_out",
+        "termination_verified"
+      ]
+    },
+    "applier_evidence": {
+      "title": "Deterministic applier evidence",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "implementation_result_artifact_reference": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "ledger_artifact_reference": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "changed_files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "residual_operation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/machine_string"
+          }
+        },
+        "failure_class": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "failure_reason": {
+          "$ref": "#/$defs/multiline_prose"
+        }
+      },
+      "required": [
+        "outcome",
+        "implementation_result_artifact_reference",
+        "ledger_artifact_reference",
+        "changed_files",
+        "residual_operation_ids"
+      ]
+    },
+    "executor_evidence": {
+      "title": "Executor evidence",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "attempt_number": {
+          "$ref": "#/$defs/positive_integer_id"
+        },
+        "adapter": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "model": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "status": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "effective_brief_artifact_reference": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "effective_brief_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "effective_brief_mode": {
+          "enum": [
+            "full",
+            "residual"
+          ]
+        },
+        "result": {
+          "$ref": "#/$defs/attempt_result"
+        },
+        "started_at": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "finished_at": {
+          "$ref": "#/$defs/machine_string"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "attempt_number",
+        "adapter",
+        "model",
+        "status",
+        "effective_brief_artifact_reference",
+        "effective_brief_sha256",
+        "effective_brief_mode",
+        "result"
+      ]
+    },
+    "applier_execution": {
+      "title": "Applier-only execution evidence",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actor_kind": {
+          "const": "applier"
+        },
+        "status": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "committed_sha": {
+          "$ref": "#/$defs/commit_sha"
+        },
+        "completion_summary": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "blockers_or_incomplete_work": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/single_line_prose"
+          }
+        },
+        "reported_changed_files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "applier": {
+          "$ref": "#/$defs/applier_evidence"
+        }
+      },
+      "required": [
+        "actor_kind",
+        "status",
+        "committed_sha",
+        "completion_summary",
+        "blockers_or_incomplete_work",
+        "reported_changed_files",
+        "applier"
+      ]
+    },
+    "executor_execution": {
+      "title": "Executor-only execution evidence",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actor_kind": {
+          "const": "executor"
+        },
+        "status": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "committed_sha": {
+          "$ref": "#/$defs/commit_sha"
+        },
+        "completion_summary": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "blockers_or_incomplete_work": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/single_line_prose"
+          }
+        },
+        "reported_changed_files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "executor": {
+          "$ref": "#/$defs/executor_evidence"
+        }
+      },
+      "required": [
+        "actor_kind",
+        "status",
+        "committed_sha",
+        "completion_summary",
+        "blockers_or_incomplete_work",
+        "reported_changed_files",
+        "executor"
+      ]
+    },
+    "hybrid_execution": {
+      "title": "Hybrid execution evidence",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actor_kind": {
+          "const": "hybrid"
+        },
+        "status": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "committed_sha": {
+          "$ref": "#/$defs/commit_sha"
+        },
+        "completion_summary": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "blockers_or_incomplete_work": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/single_line_prose"
+          }
+        },
+        "reported_changed_files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "applier": {
+          "$ref": "#/$defs/applier_evidence"
+        },
+        "executor": {
+          "$ref": "#/$defs/executor_evidence"
+        }
+      },
+      "required": [
+        "actor_kind",
+        "status",
+        "committed_sha",
+        "completion_summary",
+        "blockers_or_incomplete_work",
+        "reported_changed_files",
+        "applier",
+        "executor"
+      ]
+    }
+  }
+}

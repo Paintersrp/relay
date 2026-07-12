@@ -13,14 +13,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"relay/internal/artifactschema"
 	"relay/internal/executor"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
 type WorkflowAuditService struct {
-	store     *workflowstore.Store
-	inspector WorkflowAuditInspector
+	store           *workflowstore.Store
+	inspector       WorkflowAuditInspector
+	packetValidator func([]byte) (bool, error)
 }
 
 func NewWorkflowAuditService(store *workflowstore.Store) (*WorkflowAuditService, error) {
@@ -34,7 +36,12 @@ func NewWorkflowAuditServiceWithInspector(store *workflowstore.Store, inspector 
 	if inspector == nil {
 		return nil, fmt.Errorf("workflow audit inspector is required")
 	}
-	return &WorkflowAuditService{store: store, inspector: inspector}, nil
+	return &WorkflowAuditService{
+		store: store, inspector: inspector,
+		packetValidator: func(raw []byte) (bool, error) {
+			return artifactschema.Validate(artifactschema.KindAuditPacket, raw)
+		},
+	}, nil
 }
 
 func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflowAuditInput) (PrepareWorkflowAuditResult, error) {
@@ -85,6 +92,15 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 	if err != nil {
 		_ = batch.Rollback()
 		return PrepareWorkflowAuditResult{}, err
+	}
+	validPacket, err := s.packetValidator(packetBytes)
+	if err != nil {
+		_ = batch.Rollback()
+		return PrepareWorkflowAuditResult{}, fmt.Errorf("validate generated workflow audit packet: %w", err)
+	}
+	if !validPacket {
+		_ = batch.Rollback()
+		return PrepareWorkflowAuditResult{}, ErrWorkflowAuditPacketSchemaInvalid
 	}
 	staged, err := batch.Stage("audit_packet", "audit-packet.json", "application/json", packetBytes)
 	if err != nil {

@@ -19,8 +19,10 @@ import (
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
+	"relay/internal/artifactschema"
 	"relay/internal/mcp"
 	workflowrepos "relay/internal/repos/workflow"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -468,8 +470,28 @@ func run() error {
 		return err
 	}
 	packet, _ := packetResult["packet"].(map[string]any)
+	if packet["schema_version"] != "2.0" {
+		return fmt.Errorf("audit packet schema_version = %v, want 2.0", packet["schema_version"])
+	}
+	packetBytes, err := json.Marshal(packet)
+	if err != nil {
+		return err
+	}
+	if valid, validationErr := artifactschema.Validate(artifactschema.KindAuditPacket, packetBytes); validationErr != nil || !valid {
+		return fmt.Errorf("generated audit packet schema validation: valid=%v err=%v", valid, validationErr)
+	}
+	provenance := speccompiler.SourceProvenance()
+	if provenance.Commit != artifactschema.AuthorityCommit || len(provenance.Schemas) != 2 {
+		return fmt.Errorf("compiler provenance = %+v", provenance)
+	}
 	execution, _ := packet["execution"].(map[string]any)
 	executorEvidence, _ := execution["executor"].(map[string]any)
+	result, _ := executorEvidence["result"].(map[string]any)
+	for _, forbidden := range []string{"effective_brief_artifact_id", "effective_brief_sha256", "effective_brief_mode"} {
+		if _, exists := result[forbidden]; exists {
+			return fmt.Errorf("audit packet nested result contains %s: %v", forbidden, result)
+		}
+	}
 	if executorEvidence["effective_brief_artifact_reference"] != effectiveBrief.ArtifactID || executorEvidence["effective_brief_sha256"] != effectiveBrief.SHA256 || executorEvidence["effective_brief_mode"] != "full" {
 		return fmt.Errorf("audit packet effective brief identity = %v", executorEvidence)
 	}

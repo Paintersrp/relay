@@ -2,15 +2,16 @@ package speccompiler
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"relay/internal/artifactschema"
 )
 
 const (
-	RelaySpecsRepo   = "Paintersrp/relay-specs"
-	RelaySpecsCommit = "4f34d2163f703b64a92f60a0295573d15fcbb68e"
+	RelaySpecsRepo   = artifactschema.AuthorityRepository
+	RelaySpecsCommit = artifactschema.AuthorityCommit
 
 	planSuffix          = ".plan.json"
 	executionSpecSuffix = ".execution-spec.json"
@@ -25,69 +26,28 @@ const (
 
 type ReplaySemantics string
 
-const (
-	ReplayImmutableBase     ReplaySemantics = "immutable_base"
-	ReplayEvolvingPathChain ReplaySemantics = "evolving_path_chain"
-)
+const ReplayEvolvingPathChain ReplaySemantics = "evolving_path_chain"
 
-type validationProfile string
-
-type renderingProfile string
-
-const (
-	validatePlanV1      validationProfile = "plan_v1"
-	validateExecutionV1 validationProfile = "execution_v1"
-	validateExecutionV2 validationProfile = "execution_v2"
-
-	renderPlanV1      renderingProfile = "plan_v1"
-	renderExecutionV1 renderingProfile = "execution_v1"
-	renderExecutionV2 renderingProfile = "execution_v2"
-)
-
-type versionRegistration struct {
+type currentArtifactDefinition struct {
 	Kind             ArtifactKind
-	Version          string
-	SchemaPath       string
+	ProducerVersion  string
+	SchemaKind       artifactschema.Kind
 	CanonicalSubstep []string
-	Validation       validationProfile
-	Rendering        renderingProfile
-	Replay           ReplaySemantics
 }
 
-var versionRegistry = []versionRegistration{
-	{
-		Kind:       ArtifactPlan,
-		Version:    "1.0",
-		SchemaPath: "schemas/plan.schema.json",
-		Validation: validatePlanV1,
-		Rendering:  renderPlanV1,
-	},
-	{
-		Kind:             ArtifactExecutionSpec,
-		Version:          "1.0",
-		SchemaPath:       "schemas/execution-spec-v1.0.schema.json",
-		CanonicalSubstep: []string{"number", "instruction", "files", "completion_criteria"},
-		Validation:       validateExecutionV1,
-		Rendering:        renderExecutionV1,
-		Replay:           ReplayImmutableBase,
-	},
-	{
-		Kind:             ArtifactExecutionSpec,
-		Version:          "2.0",
-		SchemaPath:       "schemas/execution-spec.schema.json",
-		CanonicalSubstep: []string{"number", "instruction", "depends_on", "atomic", "files", "completion_criteria"},
-		Validation:       validateExecutionV2,
-		Rendering:        renderExecutionV2,
-		Replay:           ReplayEvolvingPathChain,
-	},
+func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
+	switch kind {
+	case ArtifactPlan:
+		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindPlan}, true
+	case ArtifactExecutionSpec:
+		return currentArtifactDefinition{
+			Kind: kind, ProducerVersion: "2.0", SchemaKind: artifactschema.KindExecutionSpec,
+			CanonicalSubstep: []string{"number", "instruction", "depends_on", "atomic", "files", "completion_criteria"},
+		}, true
+	default:
+		return currentArtifactDefinition{}, false
+	}
 }
-
-var latestVersionByKind = map[ArtifactKind]string{
-	ArtifactPlan:          "1.0",
-	ArtifactExecutionSpec: "2.0",
-}
-
-var schemaVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
 
 type FilenameInfo struct {
 	Kind             ArtifactKind
@@ -124,20 +84,13 @@ type Provenance struct {
 }
 
 func SourceProvenance() Provenance {
-	schemas := make([]SchemaProvenance, 0, len(versionRegistry))
-	for _, registration := range versionRegistry {
-		schemas = append(schemas, SchemaProvenance{
-			ArtifactKind: registration.Kind,
-			Version:      registration.Version,
-			Path:         registration.SchemaPath,
-		})
+	schemas := make([]SchemaProvenance, 0, 2)
+	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactExecutionSpec} {
+		definition, _ := currentDefinition(kind)
+		shared, _ := artifactschema.Current(definition.SchemaKind)
+		schemas = append(schemas, SchemaProvenance{ArtifactKind: kind, Version: definition.ProducerVersion, Path: shared.AuthorityPath})
 	}
-	return Provenance{
-		Repository:       RelaySpecsRepo,
-		Commit:           RelaySpecsCommit,
-		CompilerContract: "contracts/compiler.md",
-		Schemas:          schemas,
-	}
+	return Provenance{Repository: RelaySpecsRepo, Commit: RelaySpecsCommit, CompilerContract: "contracts/compiler.md", Schemas: schemas}
 }
 
 func Compile(filenameBasename string, rawJSON []byte) Result {
@@ -169,39 +122,30 @@ func CompileExecutionSpec(filenameBasename string, rawJSON []byte) (Result, *Exe
 }
 
 func compileExecutionDocument(filename FilenameInfo, root *jsonNode, rawJSON []byte) (Result, *ExecutionDocument) {
-	registration, notices, versionErrors := selectVersion(filename.Kind, root)
-	if len(versionErrors) != 0 {
-		return failed(normalizeDiagnostics(versionErrors), normalizeDiagnostics(notices)), nil
-	}
-
-	schemaValid, schemaErr := validateEmbeddedSchema(registration, rawJSON)
-	errors := validateExecutionSpec(root, filename.FeatureSlug, registration)
+	definition, _ := currentDefinition(filename.Kind)
+	notices := schemaVersionNotice(root, definition)
+	schemaValid, schemaErr := artifactschema.Validate(definition.SchemaKind, rawJSON)
+	errors := validateExecutionSpec(root, filename.FeatureSlug, definition)
 	if schemaErr != nil {
-		errors = append(errors, Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Embedded %s %s schema validation failed: %v", registration.Kind, registration.Version, schemaErr)})
+		errors = append(errors, Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Embedded current %s schema validation failed: %v", definition.Kind, schemaErr)})
 	} else if !schemaValid && len(errors) == 0 {
-		errors = append(errors, Diagnostic{Code: "invalid_value_type", Path: "", Message: fmt.Sprintf("Artifact does not satisfy the embedded %s %s JSON Schema.", registration.Kind, registration.Version)})
+		errors = append(errors, Diagnostic{Code: "invalid_value_type", Path: "", Message: fmt.Sprintf("Artifact does not satisfy the embedded current %s JSON Schema.", definition.Kind)})
 	}
 	errors = normalizeDiagnostics(errors)
 	notices = normalizeDiagnostics(notices)
 	if len(errors) != 0 {
 		return failed(errors, notices), nil
 	}
-
-	document, err := decodeExecutionDocument(rawJSON, registration)
+	document, err := decodeExecutionDocument(rawJSON)
 	if err != nil {
-		return failed([]Diagnostic{Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Execution Spec: %v", err)}}, notices), nil
+		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Execution Spec: %v", err)}}, notices), nil
 	}
-	markdown, err := renderExecutionSpec(document, registration.Rendering)
+	markdown, err := renderExecutionSpec(document)
 	if err != nil {
-		return failed([]Diagnostic{Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Render validated Execution Spec: %v", err)}}, notices), nil
+		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Render validated Execution Spec: %v", err)}}, notices), nil
 	}
 	output := filename.OutputStem + ".executor-brief.md"
-	return Result{
-		OutputFilename: &output,
-		Markdown:       &markdown,
-		Errors:         []Diagnostic{},
-		Notices:        notices,
-	}, document
+	return Result{OutputFilename: &output, Markdown: &markdown, Errors: []Diagnostic{}, Notices: notices}, document
 }
 
 func compilePlan(filename FilenameInfo, rawJSON []byte) Result {
@@ -209,16 +153,14 @@ func compilePlan(filename FilenameInfo, rawJSON []byte) Result {
 	if len(lexicalErrors) != 0 {
 		return failed(lexicalErrors, nil)
 	}
-	registration, notices, versionErrors := selectVersion(filename.Kind, root)
-	if len(versionErrors) != 0 {
-		return failed(normalizeDiagnostics(versionErrors), normalizeDiagnostics(notices))
-	}
-	schemaValid, schemaErr := validateEmbeddedSchema(registration, rawJSON)
+	definition, _ := currentDefinition(filename.Kind)
+	notices := schemaVersionNotice(root, definition)
+	schemaValid, schemaErr := artifactschema.Validate(definition.SchemaKind, rawJSON)
 	errors := validatePlan(root, filename.FeatureSlug)
 	if schemaErr != nil {
-		errors = append(errors, Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Embedded %s %s schema validation failed: %v", registration.Kind, registration.Version, schemaErr)})
+		errors = append(errors, Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Embedded current %s schema validation failed: %v", definition.Kind, schemaErr)})
 	} else if !schemaValid && len(errors) == 0 {
-		errors = append(errors, Diagnostic{Code: "invalid_value_type", Path: "", Message: fmt.Sprintf("Artifact does not satisfy the embedded %s %s JSON Schema.", registration.Kind, registration.Version)})
+		errors = append(errors, Diagnostic{Code: "invalid_value_type", Path: "", Message: fmt.Sprintf("Artifact does not satisfy the embedded current %s JSON Schema.", definition.Kind)})
 	}
 	errors = normalizeDiagnostics(errors)
 	notices = normalizeDiagnostics(notices)
@@ -227,57 +169,23 @@ func compilePlan(filename FilenameInfo, rawJSON []byte) Result {
 	}
 	markdown, err := renderPlan(rawJSON)
 	if err != nil {
-		return failed([]Diagnostic{Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Plan for rendering: %v", err)}}, notices)
+		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Plan for rendering: %v", err)}}, notices)
 	}
 	output := filename.OutputStem + ".plan.md"
 	return Result{OutputFilename: &output, Markdown: &markdown, Errors: []Diagnostic{}, Notices: notices}
 }
 
-func selectVersion(kind ArtifactKind, root *jsonNode) (versionRegistration, []Diagnostic, []Diagnostic) {
-	latest, ok := latestVersion(kind)
-	if !ok {
-		return versionRegistration{}, nil, []Diagnostic{Diagnostic{Code: "unsupported_artifact_filename", Path: "", Message: "Unsupported artifact kind."}}
-	}
+func schemaVersionNotice(root *jsonNode, definition currentArtifactDefinition) []Diagnostic {
 	supplied := "absent"
 	if root != nil && root.kind == nodeObject {
 		if member, present := root.objectMember("schema_version"); present {
 			supplied = member.value.describe()
-			if member.value.kind == nodeString {
-				if registration, supported := registeredVersion(kind, member.value.text); supported {
-					return registration, nil, nil
-				}
-				if schemaVersionPattern.MatchString(member.value.text) {
-					return versionRegistration{}, nil, []Diagnostic{Diagnostic{
-						Code:    "unsupported_schema_version",
-						Path:    "/schema_version",
-						Message: fmt.Sprintf("schema_version %q is not supported for %s artifacts.", member.value.text, kind),
-					}}
-				}
+			if member.value.kind == nodeString && member.value.text == definition.ProducerVersion {
+				return nil
 			}
 		}
 	}
-	return latest, []Diagnostic{Diagnostic{
-		Code:    "schema_version_fallback",
-		Path:    "/schema_version",
-		Message: fmt.Sprintf("schema_version is %s; using latest supported %s version %s.", supplied, kind, latest.Version),
-	}}, nil
-}
-
-func registeredVersion(kind ArtifactKind, version string) (versionRegistration, bool) {
-	for _, registration := range versionRegistry {
-		if registration.Kind == kind && registration.Version == version {
-			return registration, true
-		}
-	}
-	return versionRegistration{}, false
-}
-
-func latestVersion(kind ArtifactKind) (versionRegistration, bool) {
-	version, ok := latestVersionByKind[kind]
-	if !ok {
-		return versionRegistration{}, false
-	}
-	return registeredVersion(kind, version)
+	return []Diagnostic{{Code: "schema_version_anomaly", Path: "/schema_version", Message: fmt.Sprintf("schema_version is %s; current %s producers emit %q, but artifact content is validated with the sole current definition.", supplied, definition.Kind, definition.ProducerVersion)}}
 }
 
 func ParseFilename(filename string) (FilenameInfo, []Diagnostic) {

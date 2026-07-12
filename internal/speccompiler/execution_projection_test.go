@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-func TestProjectExecutionSpecPreservesV1ImmutableBaseSemantics(t *testing.T) {
+func TestProjectExecutionSpecUsesCurrentEvolvingPathChainSemanticsForStaleMetadata(t *testing.T) {
 	result, document := CompileExecutionSpec("compiler-fixture.execution-spec.json", readFixture(t, "valid.execution-spec.json"))
 	assertSuccess(t, result)
 	projection, diagnostics := ProjectExecutionSpec(document)
 	if len(diagnostics) != 0 {
 		t.Fatalf("projection diagnostics = %+v", diagnostics)
 	}
-	if projection.SchemaVersion != "1.0" || projection.Replay != ReplayImmutableBase {
+	if projection.Replay != ReplayEvolvingPathChain {
 		t.Fatalf("projection identity = %+v", projection)
 	}
 	if len(projection.FileWork) != 4 || len(projection.PathChains) != 4 {
@@ -28,10 +28,11 @@ func TestProjectExecutionSpecPreservesV1ImmutableBaseSemantics(t *testing.T) {
 	if modify.PathChainRef != "chain.1.1.file.1" || len(modify.Directives) != 3 {
 		t.Fatalf("modify projection = %+v", modify)
 	}
-	for _, directive := range modify.Directives {
-		if directive.Grounding == nil || !directive.Grounding.BaseRequired || directive.Grounding.ProducerDirectiveRef != "" || directive.Grounding.Replay != ReplayImmutableBase {
-			t.Fatalf("v1 grounding = %+v", directive.Grounding)
-		}
+	if modify.Directives[0].Grounding == nil || !modify.Directives[0].Grounding.BaseRequired {
+		t.Fatalf("first grounding = %+v", modify.Directives[0].Grounding)
+	}
+	if modify.Directives[1].Grounding == nil || modify.Directives[1].Grounding.BaseRequired || modify.Directives[1].Grounding.ProducerDirectiveRef != "1.1.file.1.change.1" {
+		t.Fatalf("evolving grounding = %+v", modify.Directives[1].Grounding)
 	}
 	renameChain := projection.PathChains[3]
 	if !reflect.DeepEqual(renameChain.PathEndpoints, []string{"internal/example/name.go", "internal/example/new_name.go"}) {
@@ -42,7 +43,7 @@ func TestProjectExecutionSpecPreservesV1ImmutableBaseSemantics(t *testing.T) {
 	}
 }
 
-func TestProjectExecutionSpecBuildsV2DependenciesAndGrounding(t *testing.T) {
+func TestProjectExecutionSpecBuildsCurrentDependenciesAndGrounding(t *testing.T) {
 	result, document := CompileExecutionSpec("compiler-v2-fixture.execution-spec.json", readFixture(t, "valid-v2.execution-spec.json"))
 	assertSuccess(t, result)
 	projection, diagnostics := ProjectExecutionSpec(document)

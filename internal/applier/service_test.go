@@ -35,38 +35,6 @@ func TestApplyReplaySemantics(t *testing.T) {
 		}
 	})
 
-	t.Run("v1 immutable base ordered replay succeeds", func(t *testing.T) {
-		root := t.TempDir()
-		mustWrite(t, filepath.Join(root, "a.txt"), "a b\n")
-		projection := oneFileProjection(speccompiler.ReplayImmutableBase, modifyWork("1.1.file.1", "1.1", "chain.a", "a.txt",
-			directive("1.1.file.1.change.1", "replace", "a", "x", 1),
-			directive("1.1.file.1.change.2", "replace", "b", "y", 1),
-		))
-		result, err := NewService().Apply(context.Background(), Input{WorkspaceRoot: root, Projection: projection})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.Outcome != OutcomeCompleted || string(mustRead(t, filepath.Join(root, "a.txt"))) != "x y\n" {
-			t.Fatalf("result = %+v", result)
-		}
-	})
-
-	t.Run("v1 replay contradiction blocks before mutation", func(t *testing.T) {
-		root := t.TempDir()
-		mustWrite(t, filepath.Join(root, "a.txt"), "a b\n")
-		projection := oneFileProjection(speccompiler.ReplayImmutableBase, modifyWork("1.1.file.1", "1.1", "chain.a", "a.txt",
-			directive("1.1.file.1.change.1", "replace", "a", "b", 1),
-			directive("1.1.file.1.change.2", "replace", "b", "c", 1),
-		))
-		result, err := NewService().Apply(context.Background(), Input{WorkspaceRoot: root, Projection: projection})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.Outcome != OutcomeBlocked || string(mustRead(t, filepath.Join(root, "a.txt"))) != "a b\n" {
-			t.Fatalf("result = %+v", result)
-		}
-	})
-
 	t.Run("v2 selector cannot use another or later chain producer", func(t *testing.T) {
 		root := t.TempDir()
 		mustWrite(t, filepath.Join(root, "consumer.txt"), "base\n")

@@ -8,17 +8,16 @@ type scopeModel struct {
 }
 
 type ExecutionDocument struct {
-	SchemaVersion string              `json:"-"`
-	FeatureSlug   string              `json:"feature_slug"`
-	RepoTarget    string              `json:"repo_target"`
-	Branch        string              `json:"branch"`
-	BaseCommit    string              `json:"base_commit"`
-	Goal          string              `json:"goal"`
-	Context       string              `json:"context"`
-	Scope         scopeModel          `json:"scope"`
-	Steps         []ExecutionStep     `json:"steps"`
-	Validation    ExecutionValidation `json:"validation"`
-	Completion    []string            `json:"completion_criteria"`
+	FeatureSlug string              `json:"feature_slug"`
+	RepoTarget  string              `json:"repo_target"`
+	Branch      string              `json:"branch"`
+	BaseCommit  string              `json:"base_commit"`
+	Goal        string              `json:"goal"`
+	Context     string              `json:"context"`
+	Scope       scopeModel          `json:"scope"`
+	Steps       []ExecutionStep     `json:"steps"`
+	Validation  ExecutionValidation `json:"validation"`
+	Completion  []string            `json:"completion_criteria"`
 }
 
 type ExecutionStep struct {
@@ -86,12 +85,11 @@ type EffectiveBriefSelection struct {
 	ProtectedPaths        []string
 }
 
-func decodeExecutionDocument(raw []byte, registration versionRegistration) (*ExecutionDocument, error) {
+func decodeExecutionDocument(raw []byte) (*ExecutionDocument, error) {
 	var document ExecutionDocument
 	if err := json.Unmarshal(raw, &document); err != nil {
 		return nil, err
 	}
-	document.SchemaVersion = registration.Version
 	return &document, nil
 }
 

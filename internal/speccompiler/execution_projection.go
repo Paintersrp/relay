@@ -7,7 +7,6 @@ import (
 )
 
 type ExecutionProjection struct {
-	SchemaVersion      string
 	Replay             ReplaySemantics
 	Substeps           []ProjectedSubstep
 	PathChains         []ProjectedPathChain
@@ -87,12 +86,7 @@ func ProjectExecutionSpec(document *ExecutionDocument) (ExecutionProjection, []D
 	if document == nil {
 		return ExecutionProjection{}, []Diagnostic{Diagnostic{Code: "projection_invariant", Path: "", Message: "Execution document is required."}}
 	}
-	registration, ok := registeredVersion(ArtifactExecutionSpec, document.SchemaVersion)
-	if !ok {
-		return ExecutionProjection{}, []Diagnostic{Diagnostic{Code: "unsupported_schema_version", Path: "/schema_version", Message: fmt.Sprintf("Execution Spec version %q is not registered.", document.SchemaVersion)}}
-	}
-
-	projection := ExecutionProjection{SchemaVersion: document.SchemaVersion, Replay: registration.Replay}
+	projection := ExecutionProjection{Replay: ReplayEvolvingPathChain}
 	substepOrder := map[string]int{}
 	fileIndexByRef := map[string]int{}
 	directiveOrder := 0
@@ -144,7 +138,7 @@ func ProjectExecutionSpec(document *ExecutionDocument) (ExecutionProjection, []D
 		}
 	}
 
-	projection.PathChains = buildPathChains(projection.FileWork, registration.Replay)
+	projection.PathChains = buildPathChains(projection.FileWork, ReplayEvolvingPathChain)
 	for chainIndex := range projection.PathChains {
 		chain := &projection.PathChains[chainIndex]
 		for _, fileRef := range chain.FileWorkRefs {
@@ -303,15 +297,13 @@ func applySelectorGrounding(projection *ExecutionProjection, fileIndexByRef map[
 				Replay:              projection.Replay,
 				BaseRequired:        true,
 			}
-			if projection.Replay == ReplayEvolvingPathChain {
-				for earlier := position - 1; earlier >= 0; earlier-- {
-					candidateLocation := locations[earlier]
-					candidate := projection.FileWork[candidateLocation.fileIndex].Directives[candidateLocation.directiveIndex]
-					if content := directiveTargetContent(candidate); content != "" && strings.Contains(content, selector) {
-						grounding.BaseRequired = false
-						grounding.ProducerDirectiveRef = candidate.Ref
-						break
-					}
+			for earlier := position - 1; earlier >= 0; earlier-- {
+				candidateLocation := locations[earlier]
+				candidate := projection.FileWork[candidateLocation.fileIndex].Directives[candidateLocation.directiveIndex]
+				if content := directiveTargetContent(candidate); content != "" && strings.Contains(content, selector) {
+					grounding.BaseRequired = false
+					grounding.ProducerDirectiveRef = candidate.Ref
+					break
 				}
 			}
 			directive.Grounding = grounding

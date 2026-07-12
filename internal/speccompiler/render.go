@@ -9,7 +9,7 @@ import (
 
 const derivedNotice = "> Derived from canonical JSON. Do not edit this Markdown independently."
 
-func renderExecutionSpec(spec *ExecutionDocument, profile renderingProfile) (string, error) {
+func renderExecutionSpec(spec *ExecutionDocument) (string, error) {
 	var b strings.Builder
 	b.WriteString("# Executor Brief\n\n")
 	b.WriteString(derivedNotice)
@@ -19,7 +19,7 @@ func renderExecutionSpec(spec *ExecutionDocument, profile renderingProfile) (str
 	writeTextSection(&b, "## Goal", spec.Goal)
 	writeTextSection(&b, "## Context", spec.Context)
 	writeExecutionScope(&b, spec)
-	writeExecutionImplementation(&b, spec, profile, nil)
+	writeExecutionImplementation(&b, spec, nil)
 	writeExecutionValidation(&b, spec)
 	writeBulletSection(&b, "## Completion Criteria", spec.Completion)
 	writeFullExecutionInstructions(&b)
@@ -32,10 +32,6 @@ func RenderEffectiveExecutorBrief(spec *ExecutionDocument, selection EffectiveBr
 	}
 	if selection.Mode != EffectiveBriefResidual {
 		return "", fmt.Errorf("effective brief renderer requires residual mode")
-	}
-	registration, ok := registeredVersion(ArtifactExecutionSpec, spec.SchemaVersion)
-	if !ok {
-		return "", fmt.Errorf("execution spec version %q is not registered", spec.SchemaVersion)
 	}
 	selected, err := validateEffectiveBriefSelection(spec, selection)
 	if err != nil {
@@ -51,7 +47,7 @@ func RenderEffectiveExecutorBrief(spec *ExecutionDocument, selection EffectiveBr
 	writeTextSection(&b, "## Context", spec.Context)
 	writeExecutionScope(&b, spec)
 	writeResidualDetails(&b, selection)
-	writeExecutionImplementation(&b, spec, registration.Rendering, selected)
+	writeExecutionImplementation(&b, spec, selected)
 	writeExecutionValidation(&b, spec)
 	writeBulletSection(&b, "## Completion Criteria", spec.Completion)
 	writeResidualExecutionInstructions(&b)
@@ -204,7 +200,7 @@ func writeExecutionScope(b *strings.Builder, spec *ExecutionDocument) {
 	writeBulletSection(b, "### Out of Scope", spec.Scope.OutOfScope)
 }
 
-func writeExecutionImplementation(b *strings.Builder, spec *ExecutionDocument, profile renderingProfile, selected map[string]struct{}) {
+func writeExecutionImplementation(b *strings.Builder, spec *ExecutionDocument, selected map[string]struct{}) {
 	b.WriteString("## Implementation\n\n")
 	for _, step := range spec.Steps {
 		includedSubsteps := make([]ExecutionSubstep, 0, len(step.Substeps))
@@ -232,13 +228,13 @@ func writeExecutionImplementation(b *strings.Builder, spec *ExecutionDocument, p
 		}
 		fmt.Fprintf(b, "### Step %d: %s\n\n", step.Number, trimHuman(step.Goal))
 		for _, substep := range includedSubsteps {
-			writeExecutionSubstep(b, step.Number, substep, profile)
+			writeExecutionSubstep(b, step.Number, substep)
 		}
 		writeBulletSection(b, "#### Step Completion Criteria", step.Completion)
 	}
 }
 
-func writeExecutionSubstep(b *strings.Builder, stepNumber int, substep ExecutionSubstep, profile renderingProfile) {
+func writeExecutionSubstep(b *strings.Builder, stepNumber int, substep ExecutionSubstep) {
 	fmt.Fprintf(b, "#### Substep %d.%d\n\n", stepNumber, substep.Number)
 	b.WriteString("##### Files\n\n")
 	for _, file := range substep.Files {
@@ -251,7 +247,7 @@ func writeExecutionSubstep(b *strings.Builder, stepNumber int, substep Execution
 	b.WriteString("\n##### Instruction\n\n")
 	b.WriteString(trimHuman(substep.Instruction))
 	b.WriteString("\n\n")
-	if profile == renderExecutionV2 && (substep.DependsOn != nil || substep.Atomic != nil) {
+	if substep.DependsOn != nil || substep.Atomic != nil {
 		b.WriteString("##### Execution Constraints\n\n")
 		if substep.DependsOn != nil {
 			b.WriteString("- Depends on: ")

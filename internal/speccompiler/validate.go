@@ -35,7 +35,7 @@ type executionSubstepRecord struct {
 
 var substepReferencePattern = regexp.MustCompile(`^[1-9][0-9]*\.[1-9][0-9]*$`)
 
-func validateExecutionSpec(root *jsonNode, filenameSlug string, registration versionRegistration) []Diagnostic {
+func validateExecutionSpec(root *jsonNode, filenameSlug string, definition currentArtifactDefinition) []Diagnostic {
 	v := &validator{}
 	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}, []string{"feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}) {
 		return v.diagnostics
@@ -65,16 +65,14 @@ func validateExecutionSpec(root *jsonNode, filenameSlug string, registration ver
 		} else {
 			for i, step := range member.value.array {
 				stepPath := joinPointer("/steps", strconv.Itoa(i))
-				v.validateExecutionStep(step, stepPath, i+1, registration, &fileCount, operations, destinations, &substeps)
+				v.validateExecutionStep(step, stepPath, i+1, definition, &fileCount, operations, destinations, &substeps)
 			}
 		}
 	}
 	if fileCount == 0 {
 		v.add("missing_file_declaration", "/steps", "At least one file declaration is required.")
 	}
-	if registration.Validation == validateExecutionV2 {
-		v.validateExecutionDependencies(substeps)
-	}
+	v.validateExecutionDependencies(substeps)
 
 	if member, ok := root.objectMember("validation"); ok {
 		v.validateValidation(member.value, "/validation")
@@ -85,7 +83,7 @@ func validateExecutionSpec(root *jsonNode, filenameSlug string, registration ver
 	return v.diagnostics
 }
 
-func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedNumber int, registration versionRegistration, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
+func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedNumber int, definition currentArtifactDefinition, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
 	if !v.objectShape(node, path, []string{"number", "goal", "substeps", "completion_criteria"}, []string{"number", "goal", "substeps", "completion_criteria"}) {
 		return
 	}
@@ -105,7 +103,7 @@ func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedN
 		} else {
 			for i, substep := range member.value.array {
 				subPath := joinPointer(path+"/substeps", strconv.Itoa(i))
-				v.validateExecutionSubstep(substep, subPath, stepNumber, i+1, registration, fileCount, operations, destinations, records)
+				v.validateExecutionSubstep(substep, subPath, stepNumber, i+1, definition, fileCount, operations, destinations, records)
 			}
 		}
 	}
@@ -114,8 +112,8 @@ func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedN
 	}
 }
 
-func (v *validator) validateExecutionSubstep(node *jsonNode, path string, stepNumber, expectedNumber int, registration versionRegistration, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
-	if !v.objectShape(node, path, registration.CanonicalSubstep, []string{"number", "instruction", "files", "completion_criteria"}) {
+func (v *validator) validateExecutionSubstep(node *jsonNode, path string, stepNumber, expectedNumber int, definition currentArtifactDefinition, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
+	if !v.objectShape(node, path, definition.CanonicalSubstep, []string{"number", "instruction", "files", "completion_criteria"}) {
 		return
 	}
 	substepNumber := expectedNumber
@@ -132,21 +130,19 @@ func (v *validator) validateExecutionSubstep(node *jsonNode, path string, stepNu
 		Path:  path,
 		Order: len(*records),
 	}
-	if registration.Validation == validateExecutionV2 {
-		if member, ok := node.objectMember("depends_on"); ok {
-			if member.value.kind != nodeArray {
-				v.add("invalid_value_type", path+"/depends_on", "depends_on must be an array.")
-			} else if len(member.value.array) == 0 {
-				v.add("empty_required_value", path+"/depends_on", "depends_on must not be empty when authored.")
-			} else {
-				for i, dependency := range member.value.array {
-					dependencyPath := joinPointer(path+"/depends_on", strconv.Itoa(i))
-					if dependency.kind != nodeString {
-						v.add("invalid_substep_reference", dependencyPath, "Substep references must use <step>.<substep> form.")
-						continue
-					}
-					record.DependsOn = append(record.DependsOn, executionDependencyRecord{Ref: dependency.text, Path: dependencyPath})
+	if member, ok := node.objectMember("depends_on"); ok {
+		if member.value.kind != nodeArray {
+			v.add("invalid_value_type", path+"/depends_on", "depends_on must be an array.")
+		} else if len(member.value.array) == 0 {
+			v.add("empty_required_value", path+"/depends_on", "depends_on must not be empty when authored.")
+		} else {
+			for i, dependency := range member.value.array {
+				dependencyPath := joinPointer(path+"/depends_on", strconv.Itoa(i))
+				if dependency.kind != nodeString {
+					v.add("invalid_substep_reference", dependencyPath, "Substep references must use <step>.<substep> form.")
+					continue
 				}
+				record.DependsOn = append(record.DependsOn, executionDependencyRecord{Ref: dependency.text, Path: dependencyPath})
 			}
 		}
 	}

@@ -2,8 +2,6 @@ package speccompiler
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -23,42 +21,6 @@ func TestLexicalDiagnosticsPreserveDuplicateBeforeMalformedJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected combined lexical diagnostics\ngot:  %v\nwant: %v", got, want)
-	}
-}
-
-func TestSchemaVersionFallbackForms(t *testing.T) {
-	base := readFixture(t, "valid.plan.json")
-	cases := []struct {
-		name string
-		raw  []byte
-	}{
-		{name: "missing", raw: replaceOnce(t, base, []byte("  \"schema_version\": \"1.0\",\n"), nil)},
-		{name: "null", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": null`))},
-		{name: "number", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": 1`))},
-		{name: "boolean", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": true`))},
-		{name: "array", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": []`))},
-		{name: "object", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": {}`))},
-		{name: "malformed string", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "current"`))},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := Compile("compiler-plan-fixture.plan.json", tc.raw)
-			assertSuccess(t, result)
-			if len(result.Notices) != 1 || result.Notices[0].Code != "schema_version_fallback" || result.Notices[0].Path != "/schema_version" {
-				t.Fatalf("expected one schema fallback notice, got %+v", result.Notices)
-			}
-		})
-	}
-
-	for _, version := range []string{"0.9", "2.0"} {
-		t.Run("unsupported "+version, func(t *testing.T) {
-			raw := replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "`+version+`"`))
-			result := Compile("compiler-plan-fixture.plan.json", raw)
-			assertFailureCode(t, result, "unsupported_schema_version")
-			if len(result.Notices) != 0 {
-				t.Fatalf("unsupported version returned fallback notice: %+v", result.Notices)
-			}
-		})
 	}
 }
 
@@ -423,29 +385,6 @@ func TestAdditionalRendererBranches(t *testing.T) {
 	assertOneFinalNewline(t, *result.Markdown)
 }
 
-func TestEmbeddedSchemasMatchPinnedSourceBlobs(t *testing.T) {
-	cases := []struct {
-		path string
-		want string
-	}{
-		{path: "schemas/plan.schema.json", want: "2a2fb55b39d6be8d79ab1de124c017d85ea1d872"},
-		{path: "schemas/execution-spec-v1.0.schema.json", want: "5541ee79b414b6044c71cf33a856d1c49cf09018"},
-		{path: "schemas/execution-spec.schema.json", want: "b00b1e2ec95b2ccdaf5215174805232745a6869a"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.path, func(t *testing.T) {
-			raw, err := schemaFS.ReadFile(tc.path)
-			if err != nil {
-				t.Fatalf("read embedded schema: %v", err)
-			}
-			raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
-			if got := gitBlobSHA(raw); got != tc.want {
-				t.Fatalf("embedded schema blob mismatch: got %s want %s", got, tc.want)
-			}
-		})
-	}
-}
-
 func executionDocument(files string, stepNumber, substepNumber int, includeCommands bool) []byte {
 	commands := "[]"
 	if includeCommands {
@@ -528,11 +467,4 @@ func diagnosticKeys(diagnostics []Diagnostic) []string {
 		keys[i] = diagnostic.Path + "|" + diagnostic.Code
 	}
 	return keys
-}
-
-func gitBlobSHA(raw []byte) string {
-	hash := sha1.New()
-	_, _ = fmt.Fprintf(hash, "blob %d%c", len(raw), byte(0))
-	_, _ = hash.Write(raw)
-	return hex.EncodeToString(hash.Sum(nil))
 }

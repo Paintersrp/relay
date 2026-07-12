@@ -16,7 +16,7 @@ type (
 )
 
 const (
-	WorkflowAuditPacketSchemaVersion = "1.0"
+	WorkflowAuditPacketSchemaVersion = "2.0"
 	MaxWorkflowAuditPacketBytes      = 2 * 1024 * 1024
 	MaxWorkflowAuditSourceBytes      = 512 * 1024
 	MaxWorkflowAuditEvidenceBytes    = 128 * 1024
@@ -30,6 +30,7 @@ var (
 	ErrWorkflowAuditDecisionRecorded    = errors.New("workflow audit decision has already been recorded")
 	ErrWorkflowAuditConfirmation        = errors.New("operator confirmation is required")
 	ErrWorkflowAuditPacketTooLarge      = errors.New("workflow audit packet exceeds the configured bound")
+	ErrWorkflowAuditPacketSchemaInvalid = errors.New("workflow audit packet does not satisfy the current schema")
 	ErrWorkflowAuditArtifactReference   = errors.New("workflow audit artifact reference is not declared by the current packet")
 	ErrWorkflowAuditArtifactOwnership   = errors.New("workflow audit artifact does not belong to the packet execution attempt")
 	ErrWorkflowAuditArtifactIntegrity   = errors.New("workflow audit artifact failed integrity verification")
@@ -107,17 +108,17 @@ type WorkflowAuditApplierEvidence struct {
 }
 
 type WorkflowAuditExecutorEvidence struct {
-	AttemptID                       string                     `json:"attempt_id"`
-	AttemptNumber                   int64                      `json:"attempt_number"`
-	Adapter                         string                     `json:"adapter"`
-	Model                           string                     `json:"model"`
-	Status                          string                     `json:"status"`
-	Result                          WorkflowAuditAttemptResult `json:"result"`
-	EffectiveBriefArtifactReference string                     `json:"effective_brief_artifact_reference"`
-	EffectiveBriefSHA256            string                     `json:"effective_brief_sha256"`
-	EffectiveBriefMode              string                     `json:"effective_brief_mode"`
-	StartedAt                       string                     `json:"started_at,omitempty"`
-	FinishedAt                      string                     `json:"finished_at,omitempty"`
+	AttemptID                       string                           `json:"attempt_id"`
+	AttemptNumber                   int64                            `json:"attempt_number"`
+	Adapter                         string                           `json:"adapter"`
+	Model                           string                           `json:"model"`
+	Status                          string                           `json:"status"`
+	Result                          WorkflowAuditPacketAttemptResult `json:"result"`
+	EffectiveBriefArtifactReference string                           `json:"effective_brief_artifact_reference"`
+	EffectiveBriefSHA256            string                           `json:"effective_brief_sha256"`
+	EffectiveBriefMode              string                           `json:"effective_brief_mode"`
+	StartedAt                       string                           `json:"started_at,omitempty"`
+	FinishedAt                      string                           `json:"finished_at,omitempty"`
 }
 
 type WorkflowAuditChangedFile struct {
@@ -188,6 +189,21 @@ type WorkflowAuditAttemptAuthority struct {
 	Result        WorkflowAuditAttemptResult `json:"result"`
 	StartedAt     string                     `json:"started_at,omitempty"`
 	FinishedAt    string                     `json:"finished_at,omitempty"`
+}
+
+type WorkflowAuditPacketAttemptResult struct {
+	ExitCode              int    `json:"exit_code"`
+	TimedOut              bool   `json:"timed_out"`
+	TerminationVerified   bool   `json:"termination_verified"`
+	CleanupPending        bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus string `json:"pending_terminal_status,omitempty"`
+	Error                 string `json:"error,omitempty"`
+	NormalizedStatus      string `json:"normalized_status,omitempty"`
+	BlockerText           string `json:"blocker_text,omitempty"`
+	StdoutTruncated       bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated       bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes           int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes           int64  `json:"stderr_bytes,omitempty"`
 }
 
 type WorkflowAuditAttemptResult struct {

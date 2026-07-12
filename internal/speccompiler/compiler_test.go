@@ -69,14 +69,120 @@ func TestNoncanonicalOrderBlocksRendering(t *testing.T) {
 	assertFailureCode(t, result, "noncanonical_property_order")
 }
 
-func TestSchemaVersionFallbackIsNonblocking(t *testing.T) {
-	result := Compile("fallback-plan.plan.json", readFixture(t, "fallback.plan.json"))
-	assertSuccess(t, result)
-	if len(result.Notices) != 1 || result.Notices[0].Code != "schema_version_fallback" {
-		t.Fatalf("expected one fallback notice, got %+v", result.Notices)
+func TestSchemaVersionAnomalyIsNonblockingAndOutputNeutral(t *testing.T) {
+	tests := []struct {
+		name         string
+		filename     string
+		fixture      string
+		currentToken []byte
+		metadataLine []byte
+		slugToken    []byte
+		project      bool
+	}{
+		{
+			name:         "plan",
+			filename:     "compiler-plan-fixture.plan.json",
+			fixture:      "valid.plan.json",
+			currentToken: []byte(`"1.0"`),
+			metadataLine: []byte("  \"schema_version\": \"1.0\",\n"),
+			slugToken:    []byte(`"feature_slug": "compiler-plan-fixture"`),
+		},
+		{
+			name:         "execution_spec",
+			filename:     "compiler-fixture.execution-spec.json",
+			fixture:      "valid.execution-spec.json",
+			currentToken: []byte(`"2.0"`),
+			metadataLine: []byte("  \"schema_version\": \"2.0\",\n"),
+			slugToken:    []byte(`"feature_slug": "compiler-fixture"`),
+			project:      true,
+		},
 	}
-	if strings.Contains(dereference(result.Markdown), "schema_version_fallback") {
-		t.Fatalf("fallback notice leaked into rendered Markdown")
+	variants := []struct {
+		name        string
+		replacement []byte
+		absent      bool
+	}{
+		{name: "absent", absent: true},
+		{name: "null", replacement: []byte(`null`)},
+		{name: "boolean", replacement: []byte(`true`)},
+		{name: "number", replacement: []byte(`7`)},
+		{name: "object", replacement: []byte(`{"version":"2.0"}`)},
+		{name: "array", replacement: []byte(`["2.0"]`)},
+		{name: "malformed_string", replacement: []byte(`"not-a-version"`)},
+		{name: "stale", replacement: []byte(`"0.1"`)},
+		{name: "unsupported", replacement: []byte(`"3.7"`)},
+		{name: "future", replacement: []byte(`"999.0"`)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current := readFixture(t, test.fixture)
+			baseline := Compile(test.filename, current)
+			assertSuccess(t, baseline)
+			if len(baseline.Notices) != 0 {
+				t.Fatalf("current metadata notices = %+v", baseline.Notices)
+			}
+
+			var baselineProjection ExecutionProjection
+			if test.project {
+				compiled, document := CompileExecutionSpec(test.filename, current)
+				assertSuccess(t, compiled)
+				if document == nil {
+					t.Fatal("current Execution Spec omitted its document")
+				}
+				var diagnostics []Diagnostic
+				baselineProjection, diagnostics = ProjectExecutionSpec(document)
+				if len(diagnostics) != 0 {
+					t.Fatalf("current projection diagnostics = %+v", diagnostics)
+				}
+			}
+
+			for _, variant := range variants {
+				t.Run(variant.name, func(t *testing.T) {
+					raw := append([]byte(nil), current...)
+					if variant.absent {
+						raw = bytes.Replace(raw, test.metadataLine, nil, 1)
+					} else {
+						raw = bytes.Replace(raw, test.currentToken, variant.replacement, 1)
+					}
+					result := Compile(test.filename, raw)
+					assertSuccess(t, result)
+					if len(result.Notices) != 1 || result.Notices[0].Code != "schema_version_anomaly" {
+						t.Fatalf("notices = %+v", result.Notices)
+					}
+					if dereference(result.Markdown) != dereference(baseline.Markdown) {
+						t.Fatal("schema_version metadata changed rendered output")
+					}
+
+					if test.project {
+						compiled, document := CompileExecutionSpec(test.filename, raw)
+						assertSuccess(t, compiled)
+						if document == nil {
+							t.Fatal("metadata variant omitted its Execution Spec document")
+						}
+						projection, diagnostics := ProjectExecutionSpec(document)
+						if len(diagnostics) != 0 {
+							t.Fatalf("projection diagnostics = %+v", diagnostics)
+						}
+						if !reflect.DeepEqual(projection, baselineProjection) {
+							t.Fatalf("schema_version metadata changed projection\ngot:  %+v\nwant: %+v", projection, baselineProjection)
+						}
+					}
+				})
+			}
+
+			t.Run("anomaly_does_not_mask_current_content_error", func(t *testing.T) {
+				raw := bytes.Replace(current, test.currentToken, []byte(`null`), 1)
+				raw = bytes.Replace(raw, test.slugToken, []byte(`"feature_slug": "Invalid Slug"`), 1)
+				result := Compile(test.filename, raw)
+				if len(result.Notices) != 1 || result.Notices[0].Code != "schema_version_anomaly" {
+					t.Fatalf("notices = %+v", result.Notices)
+				}
+				if len(result.Errors) == 0 || result.Markdown != nil || result.OutputFilename != nil {
+					t.Fatalf("metadata anomaly masked current-content failure: %+v", result)
+				}
+			})
+		})
 	}
 }
 
@@ -128,11 +234,10 @@ func TestFilenameMustBeBasename(t *testing.T) {
 func TestSourceProvenanceIsPinned(t *testing.T) {
 	want := Provenance{
 		Repository:       "Paintersrp/relay-specs",
-		Commit:           "4f34d2163f703b64a92f60a0295573d15fcbb68e",
+		Commit:           "7bd061c3ad989260345da5c5b2f42b3833561242",
 		CompilerContract: "contracts/compiler.md",
 		Schemas: []SchemaProvenance{
 			{ArtifactKind: ArtifactPlan, Version: "1.0", Path: "schemas/plan.schema.json"},
-			{ArtifactKind: ArtifactExecutionSpec, Version: "1.0", Path: "schemas/execution-spec-v1.0.schema.json"},
 			{ArtifactKind: ArtifactExecutionSpec, Version: "2.0", Path: "schemas/execution-spec.schema.json"},
 		},
 	}

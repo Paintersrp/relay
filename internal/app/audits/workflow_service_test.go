@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
+	"relay/internal/artifactschema"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -30,6 +32,37 @@ type auditFixture struct {
 	inspectHook  func(int)
 }
 
+func auditFixtureExecutionSpec(featureSlug, branch, baseCommit string) []byte {
+	return []byte(fmt.Sprintf(`{"schema_version":"2.0","feature_slug":%q,"repo_target":"relay","branch":%q,"base_commit":%q,"goal":"Exercise the audit packet workflow.","context":"Audit packet test fixture.","scope":{"in_scope":["Exercise audit packet generation."],"out_of_scope":["No unrelated behavior."]},"steps":[{"number":1,"goal":"Apply one representative source change.","substeps":[{"number":1,"instruction":"Apply the representative source change.","files":[{"path":"internal/a.go","operation":"modify","purpose":"Provide representative changed source.","implementation":{"changes":[{"kind":"replace","old_text":"before\n","new_text":"after\n","expected_occurrences":1}]}}],"completion_criteria":["The representative source change is declared."]}],"completion_criteria":["The representative step is complete."]}],"validation":{"commands":[{"command":"go test ./internal/audits","expected":"The focused audit tests pass."}]},"completion_criteria":["The audit packet fixture is complete."]}`, featureSlug, branch, baseCommit))
+}
+
+func cloneAuditPacket(t *testing.T, packet map[string]any) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clone map[string]any
+	if err := json.Unmarshal(raw, &clone); err != nil {
+		t.Fatal(err)
+	}
+	return clone
+}
+
+func requireAuditPacketValidity(t *testing.T, packet map[string]any, want bool) {
+	t.Helper()
+	raw, err := json.Marshal(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := artifactschema.Validate(artifactschema.KindAuditPacket, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid != want {
+		t.Fatalf("packet validity = %v, want %v: %s", valid, want, raw)
+	}
+}
 func newAuditFixture(t *testing.T, managed bool) *auditFixture {
 	t.Helper()
 	root := t.TempDir()
@@ -132,7 +165,7 @@ func newAuditFixture(t *testing.T, managed bool) *auditFixture {
 		RepoTarget:       "relay",
 		Branch:           "feat/simplification",
 		BaseCommit:       strings.Repeat("a", 40),
-		CanonicalJSON:    []byte(`{"schema_version":"1.0","feature_slug":"audit-test"}`),
+		CanonicalJSON:    auditFixtureExecutionSpec("audit-test", "feat/simplification", strings.Repeat("a", 40)),
 		RenderedMarkdown: []byte("# Executor Brief\n\nExact task.\n"),
 		PlanID:           planID,
 		PassNumber:       passNumber,
@@ -305,7 +338,7 @@ func TestWorkflowAuditApplierOnlyPacketUsesRunEvidenceWithoutExecutorAttempt(t *
 	fixture := newAuditFixture(t, false)
 	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
 		FeatureSlug: "applier-only", RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch,
-		BaseCommit: fixture.run.BaseCommit, CanonicalJSON: []byte(`{"schema_version":"1.0","feature_slug":"applier-only"}`),
+		BaseCommit: fixture.run.BaseCommit, CanonicalJSON: auditFixtureExecutionSpec("applier-only", fixture.run.Branch, fixture.run.BaseCommit),
 		RenderedMarkdown: []byte("# Applier brief\n"),
 	})
 	if err != nil {
@@ -338,13 +371,16 @@ func TestWorkflowAuditApplierOnlyPacketUsesRunEvidenceWithoutExecutorAttempt(t *
 	if packet.Execution.ActorKind != workflowstore.ImplementationActorApplier || packet.Execution.Applier == nil || packet.Execution.Executor != nil {
 		t.Fatalf("execution evidence = %+v", packet.Execution)
 	}
+	if packet.SchemaVersion != "2.0" {
+		t.Fatalf("schema_version = %q", packet.SchemaVersion)
+	}
 }
 
 func TestWorkflowAuditApplierOnlyPacketExcludesUnrelatedRunArtifacts(t *testing.T) {
 	fixture := newAuditFixture(t, false)
 	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
 		FeatureSlug: "applier-only-filtered", RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch,
-		BaseCommit: fixture.run.BaseCommit, CanonicalJSON: []byte(`{"schema_version":"1.0","feature_slug":"applier-only-filtered"}`),
+		BaseCommit: fixture.run.BaseCommit, CanonicalJSON: auditFixtureExecutionSpec("applier-only-filtered", fixture.run.Branch, fixture.run.BaseCommit),
 		RenderedMarkdown: []byte("# Applier brief\n"),
 	})
 	if err != nil {
@@ -419,6 +455,9 @@ func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 
 	// Assert root keys for both
 	for _, p := range []map[string]any{packetManaged, packetUnassociated} {
+		if p["schema_version"] != "2.0" {
+			t.Fatalf("schema_version = %v", p["schema_version"])
+		}
 		for _, requiredKey := range []string{
 			"schema_version", "run", "repository", "authority", "execution",
 			"changed_files", "relevant_source_paths", "validation", "artifacts",
@@ -558,6 +597,22 @@ func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 
 	// Check validation entries
 	for _, p := range []map[string]any{packetManaged, packetUnassociated} {
+		execution := p["execution"].(map[string]any)
+		executor := execution["executor"].(map[string]any)
+		result := executor["result"].(map[string]any)
+		for _, forbidden := range []string{"effective_brief_artifact_id", "effective_brief_sha256", "effective_brief_mode"} {
+			if _, exists := result[forbidden]; exists {
+				t.Fatalf("nested result contains %s: %v", forbidden, result)
+			}
+		}
+		for _, required := range []string{"effective_brief_artifact_reference", "effective_brief_sha256", "effective_brief_mode"} {
+			if _, exists := executor[required]; !exists {
+				t.Fatalf("outer executor evidence omitted %s: %v", required, executor)
+			}
+		}
+	}
+
+	for _, p := range []map[string]any{packetManaged, packetUnassociated} {
 		vals, ok := p["validation"].([]any)
 		if !ok {
 			t.Fatal("validation is not an array")
@@ -657,7 +712,7 @@ func TestWorkflowAuditRemediationPacketConformsToSchemaContract(t *testing.T) {
 		RepoTarget:       fixture.run.RepoTarget,
 		Branch:           fixture.run.Branch,
 		BaseCommit:       fixture.run.BaseCommit,
-		CanonicalJSON:    []byte(`{"schema_version":"1.0","feature_slug":"remediation-run"}`),
+		CanonicalJSON:    auditFixtureExecutionSpec("remediation-run", fixture.run.Branch, fixture.run.BaseCommit),
 		RenderedMarkdown: []byte("# Remediation brief\n"),
 		RemediatesRunID:  fixture.run.RunID,
 	})
@@ -759,6 +814,184 @@ func TestWorkflowAuditRemediationPacketConformsToSchemaContract(t *testing.T) {
 	remRunID, ok := runObj["remediates_run_id"].(float64)
 	if !ok || int64(remRunID) != fixture.run.ID {
 		t.Fatalf("run.remediates_run_id is invalid: %v", runObj["remediates_run_id"])
+	}
+}
+
+func TestWorkflowAuditHybridPacketConformsToCurrentSchema(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	stageApplierEvidence(t, fixture.store, fixture.run, "completed", []string{"1.1.file.1.change.1"})
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet WorkflowAuditPacket
+	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if packet.SchemaVersion != "2.0" ||
+		packet.Execution.ActorKind != workflowstore.ImplementationActorHybrid ||
+		packet.Execution.Applier == nil ||
+		packet.Execution.Executor == nil {
+		t.Fatalf("hybrid packet = %+v", packet)
+	}
+}
+
+func TestWorkflowAuditPacketValidatorEnforcesClosedCurrentAuthority(t *testing.T) {
+	fixture := newAuditFixture(t, true)
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet map[string]any
+	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+		t.Fatal(err)
+	}
+	requireAuditPacketValidity(t, packet, true)
+
+	metadataVariants := []struct {
+		name   string
+		value  any
+		absent bool
+	}{
+		{name: "absent", absent: true},
+		{name: "null", value: nil},
+		{name: "boolean", value: true},
+		{name: "number", value: 7},
+		{name: "object", value: map[string]any{"version": "2.0"}},
+		{name: "array", value: []any{"2.0"}},
+		{name: "malformed_string", value: "not-a-version"},
+		{name: "stale", value: "1.0"},
+		{name: "unsupported", value: "3.7"},
+		{name: "future", value: "999.0"},
+	}
+	for _, variant := range metadataVariants {
+		t.Run("metadata_"+variant.name, func(t *testing.T) {
+			clone := cloneAuditPacket(t, packet)
+			if variant.absent {
+				delete(clone, "schema_version")
+			} else {
+				clone["schema_version"] = variant.value
+			}
+			requireAuditPacketValidity(t, clone, true)
+		})
+	}
+
+	t.Run("nested_effective_brief_duplication", func(t *testing.T) {
+		clone := cloneAuditPacket(t, packet)
+		execution := clone["execution"].(map[string]any)
+		executor := execution["executor"].(map[string]any)
+		result := executor["result"].(map[string]any)
+		result["effective_brief_mode"] = "full"
+		requireAuditPacketValidity(t, clone, false)
+	})
+
+	t.Run("lexically_invalid_machine_string", func(t *testing.T) {
+		clone := cloneAuditPacket(t, packet)
+		clone["repository"].(map[string]any)["branch"] = " main"
+		requireAuditPacketValidity(t, clone, false)
+	})
+
+	t.Run("historical_packet_shape_relabelled_current", func(t *testing.T) {
+		clone := cloneAuditPacket(t, packet)
+		clone["schema_version"] = "2.0"
+		clone["execution"] = map[string]any{
+			"status":                      "succeeded",
+			"committed_sha":               fixture.head,
+			"completion_summary":          "Execution completed.",
+			"blockers_or_incomplete_work": []any{},
+			"reported_changed_files":      []any{"internal/a.go"},
+		}
+		requireAuditPacketValidity(t, clone, false)
+	})
+}
+
+func TestWorkflowAuditPacketSchemaFailureRollsBackAndPreservesCurrentPacket(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	first, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newHead := strings.Repeat("c", 40)
+	fixture.service.inspector = func(_ context.Context, _ string, branch, base, audited string) (workflowrepos.AuditCommitEvidence, error) {
+		return workflowrepos.AuditCommitEvidence{
+			Branch:        branch,
+			BaseCommit:    base,
+			AuditedCommit: audited,
+			ChangedFiles:  []string{"internal/a.go"},
+			NameStatus:    "M\tinternal/a.go",
+			DiffStat:      "1 file changed",
+			CommitLog:     audited + "\tDev\t2026-07-06T00:00:00Z\tchange",
+			Diff:          "diff --git a/internal/a.go b/internal/a.go\n+change\n",
+		}, nil
+	}
+	validatorCalls := 0
+	fixture.service.packetValidator = func([]byte) (bool, error) {
+		validatorCalls++
+		return false, nil
+	}
+	_, err = fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: newHead,
+	})
+	if !errors.Is(err, ErrWorkflowAuditPacketSchemaInvalid) {
+		t.Fatalf("error = %v", err)
+	}
+	if validatorCalls != 1 {
+		t.Fatalf("packet validator calls = %d, want 1", validatorCalls)
+	}
+
+	var currentCount int
+	if err := fixture.store.DB().QueryRow(
+		`SELECT COUNT(*) FROM audit_packets WHERE run_row_id = ? AND status = ? AND audit_packet_id = ?`,
+		fixture.run.ID,
+		workflowstore.AuditPacketStatusCurrent,
+		first.Packet.AuditPacketID,
+	).Scan(&currentCount); err != nil {
+		t.Fatal(err)
+	}
+	if currentCount != 1 {
+		t.Fatalf("current packet count = %d, want 1", currentCount)
+	}
+	var packetRows int
+	if err := fixture.store.DB().QueryRow(
+		`SELECT COUNT(*) FROM audit_packets WHERE run_row_id = ?`,
+		fixture.run.ID,
+	).Scan(&packetRows); err != nil {
+		t.Fatal(err)
+	}
+	if packetRows != 1 {
+		t.Fatalf("packet row count = %d, want original row only", packetRows)
+	}
+
+	var packetArtifacts int
+	if err := fixture.store.DB().QueryRow(
+		`SELECT COUNT(*) FROM artifacts WHERE run_row_id = ? AND kind IN ('audit_packet', 'unified_diff')`,
+		fixture.run.ID,
+	).Scan(&packetArtifacts); err != nil {
+		t.Fatal(err)
+	}
+	if packetArtifacts != 2 {
+		t.Fatalf("packet artifact count = %d, want original pair only", packetArtifacts)
+	}
+
+	run, err := fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != workflowstore.RunStatusAuditReady {
+		t.Fatalf("run status = %q, want audit_ready", run.Status)
 	}
 }
 

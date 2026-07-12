@@ -229,15 +229,6 @@ func preflightPathChain(root string, replay speccompiler.ReplaySemantics, works 
 func replayDirectives(replay speccompiler.ReplaySemantics, path, content string, base virtualFile, directives []speccompiler.ProjectedDirective) (string, error) {
 	current := content
 	for _, directive := range directives {
-		selector := directiveSelector(directive)
-		if replay == speccompiler.ReplayImmutableBase && selector != "" {
-			if !base.exists {
-				return "", fmt.Errorf("v1.0 immutable-base selector has no base file for %s: %s", path, directive.Ref)
-			}
-			if count := strings.Count(base.content, selector); count != directive.ExpectedOccurrences {
-				return "", fmt.Errorf("v1.0 immutable-base selector for %s expected %d occurrence(s), found %d: %s", path, directive.ExpectedOccurrences, count, directive.Ref)
-			}
-		}
 		switch directive.Kind {
 		case "replace":
 			if count := strings.Count(current, directive.OldText); count != directive.ExpectedOccurrences {

@@ -248,7 +248,7 @@ func workflowAuditExecution(implementation WorkflowImplementationEvidence, commi
 			ImplementationResultArtifactReference: implementation.Applier.ImplementationResultArtifact.ArtifactID,
 			LedgerArtifactReference:               implementation.Applier.LedgerArtifact.ArtifactID,
 			ChangedFiles:                          implementation.Applier.Result.ChangedFiles,
-			ResidualOperationIDs:                  append(append([]string(nil), implementation.Applier.Result.ResidualOperationIDs...), implementation.Applier.Result.ResidualOperations...),
+			ResidualOperationIDs:                  append(append([]string{}, implementation.Applier.Result.ResidualOperationIDs...), implementation.Applier.Result.ResidualOperations...),
 			FailureClass:                          implementation.Applier.Result.FailureClass,
 			FailureReason:                         implementation.Applier.Result.FailureReason,
 		}
@@ -263,7 +263,7 @@ func workflowAuditExecution(implementation WorkflowImplementationEvidence, commi
 			Adapter:                         implementation.Executor.Attempt.Adapter,
 			Model:                           implementation.Executor.Attempt.Model,
 			Status:                          implementation.Executor.Attempt.Status,
-			Result:                          auditResult,
+			Result:                          workflowAuditPacketAttemptResult(auditResult),
 			EffectiveBriefArtifactReference: implementation.Executor.EffectiveBriefArtifact.ArtifactID,
 			EffectiveBriefSHA256:            implementation.Executor.EffectiveBriefArtifact.SHA256,
 			EffectiveBriefMode:              implementation.Executor.ExecutionEvidence.EffectiveBriefMode,
@@ -278,6 +278,16 @@ func workflowAuditExecution(implementation WorkflowImplementationEvidence, commi
 		out.Status = implementation.Executor.Attempt.Status
 	}
 	return out
+}
+
+func workflowAuditPacketAttemptResult(result WorkflowAuditAttemptResult) WorkflowAuditPacketAttemptResult {
+	return WorkflowAuditPacketAttemptResult{
+		ExitCode: result.ExitCode, TimedOut: result.TimedOut, TerminationVerified: result.TerminationVerified,
+		CleanupPending: result.CleanupPending, PendingTerminalStatus: result.PendingTerminalStatus,
+		Error: result.Error, NormalizedStatus: result.NormalizedStatus, BlockerText: result.BlockerText,
+		StdoutTruncated: result.StdoutTruncated, StderrTruncated: result.StderrTruncated,
+		StdoutBytes: result.StdoutBytes, StderrBytes: result.StderrBytes,
+	}
 }
 
 func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {

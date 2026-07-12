@@ -112,21 +112,21 @@ func TestValidateArtifactPreservesCanonicalIdentityWithoutWorkflowStorage(t *tes
 	if bytes.Equal(fallbackBytes, validBytes) {
 		t.Fatal("schema_version line was not removed")
 	}
-	fallbackCompiled := speccompiler.Compile("canonical-service.plan.json", fallbackBytes)
-	fallback := validateArtifact(ValidationInput{
+	anomalousCompiled := speccompiler.Compile("canonical-service.plan.json", fallbackBytes)
+	anomalous := validateArtifact(ValidationInput{
 		DisplayName:    "canonical-service.plan.json",
 		CanonicalBytes: fallbackBytes,
 	})
-	if !fallback.OK ||
-		fallback.Status != "valid" ||
-		fallback.Kind != "plan" ||
-		fallback.SHA256 != SHA256(fallbackBytes) ||
-		len(fallback.Notices) != 1 ||
-		fallback.Notices[0].Code != "schema_version_fallback" {
-		t.Fatalf("fallback result = %+v", fallback)
+	if !anomalous.OK ||
+		anomalous.Status != "valid" ||
+		anomalous.Kind != "plan" ||
+		anomalous.SHA256 != SHA256(fallbackBytes) ||
+		len(anomalous.Notices) != 1 ||
+		anomalous.Notices[0].Code != "schema_version_anomaly" {
+		t.Fatalf("anomalous result = %+v", anomalous)
 	}
-	assertDiagnosticsMatch(t, "fallback diagnostics", fallback.Diagnostics, fallbackCompiled.Errors)
-	assertDiagnosticsMatch(t, "fallback notices", fallback.Notices, fallbackCompiled.Notices)
+	assertDiagnosticsMatch(t, "anomalous diagnostics", anomalous.Diagnostics, anomalousCompiled.Errors)
+	assertDiagnosticsMatch(t, "anomalous notices", anomalous.Notices, anomalousCompiled.Notices)
 
 	unnormalized := validateArtifact(ValidationInput{
 		DisplayName:    " canonical-service.plan.json",
@@ -152,19 +152,19 @@ func TestExecutionVersionResultsPropagateThroughValidationAndRunCreation(t *test
 	assertDiagnosticsMatch(t, "v2 diagnostics", validatedV2.Diagnostics, compiledV2.Errors)
 	assertDiagnosticsMatch(t, "v2 notices", validatedV2.Notices, compiledV2.Notices)
 
-	fallback := bytes.Replace(v2, []byte("  \"schema_version\": \"2.0\",\n"), nil, 1)
-	compiledFallback := speccompiler.Compile("canonical-service.execution-spec.json", fallback)
-	validatedFallback := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: fallback})
-	if !validatedFallback.OK || len(validatedFallback.Notices) != 1 || validatedFallback.Notices[0].Code != "schema_version_fallback" {
-		t.Fatalf("v2 fallback validation result = %+v", validatedFallback)
+	anomalous := bytes.Replace(v2, []byte("  \"schema_version\": \"2.0\",\n"), nil, 1)
+	compiledAnomalous := speccompiler.Compile("canonical-service.execution-spec.json", anomalous)
+	validatedAnomalous := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: anomalous})
+	if !validatedAnomalous.OK || len(validatedAnomalous.Notices) != 1 || validatedAnomalous.Notices[0].Code != "schema_version_anomaly" {
+		t.Fatalf("anomalous validation result = %+v", validatedAnomalous)
 	}
-	assertDiagnosticsMatch(t, "v2 fallback diagnostics", validatedFallback.Diagnostics, compiledFallback.Errors)
-	assertDiagnosticsMatch(t, "v2 fallback notices", validatedFallback.Notices, compiledFallback.Notices)
+	assertDiagnosticsMatch(t, "anomalous diagnostics", validatedAnomalous.Diagnostics, compiledAnomalous.Errors)
+	assertDiagnosticsMatch(t, "anomalous notices", validatedAnomalous.Notices, compiledAnomalous.Notices)
 
 	unsupported := bytes.Replace(v2, []byte(`"schema_version": "2.0"`), []byte(`"schema_version": "3.0"`), 1)
 	compiledUnsupported := speccompiler.Compile("canonical-service.execution-spec.json", unsupported)
 	validatedUnsupported := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: unsupported})
-	if validatedUnsupported.OK || validatedUnsupported.Status != "blocked" || len(validatedUnsupported.Notices) != 0 {
+	if !validatedUnsupported.OK || validatedUnsupported.Status != "valid" || len(validatedUnsupported.Notices) != 1 || validatedUnsupported.Notices[0].Code != "schema_version_anomaly" {
 		t.Fatalf("unsupported validation result = %+v", validatedUnsupported)
 	}
 	assertDiagnosticsMatch(t, "unsupported diagnostics", validatedUnsupported.Diagnostics, compiledUnsupported.Errors)
