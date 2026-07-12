@@ -19,6 +19,7 @@ import (
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/pipeline"
 	workflowrepos "relay/internal/repos/workflow"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -231,6 +232,11 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		}
 	}
 
+	var validationCommands []speccompiler.ProjectedValidationCommand
+	if applierResult != nil {
+		validationCommands = append(validationCommands, applierResult.Projection.ValidationCommands...)
+	}
+
 	if applierResult != nil && applierResult.Outcome == "partial" {
 		begun, err := s.runs.BeginExecutionAttempt(ctx, workflowruns.BeginExecutionAttemptInput{
 			RunID:   run.RunID,
@@ -276,7 +282,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		s.putRuntime(begun.Attempt.AttemptID, runtime)
 		s.launch(func() {
 			defer s.deleteRuntime(begun.Attempt.AttemptID)
-			s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, invocation, adapter, runtime)
+			s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, validationCommands, invocation, adapter, runtime)
 		})
 		return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
 	}
@@ -319,7 +325,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	s.putRuntime(begun.Attempt.AttemptID, runtime)
 	s.launch(func() {
 		defer s.deleteRuntime(begun.Attempt.AttemptID)
-		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, invocation, adapter, runtime)
+		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, validationCommands, invocation, adapter, runtime)
 	})
 	return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
 }
@@ -552,6 +558,54 @@ type workflowAttemptRuntime struct {
 	StderrBytes              int64  `json:"stderr_bytes,omitempty"`
 }
 
+type workflowExecutionEvidence struct {
+	OwnerInstanceID          string                     `json:"owner_instance_id,omitempty"`
+	CommandPreview           string                     `json:"command_preview,omitempty"`
+	ProcessIdentity          string                     `json:"process_identity,omitempty"`
+	LaunchDisposition        string                     `json:"launch_disposition,omitempty"`
+	ExitCode                 int                        `json:"exit_code"`
+	TimedOut                 bool                       `json:"timed_out"`
+	TerminationVerified      bool                       `json:"termination_verified"`
+	CleanupPending           bool                       `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus    string                     `json:"pending_terminal_status,omitempty"`
+	Error                    string                     `json:"error,omitempty"`
+	NormalizedStatus         string                     `json:"normalized_status,omitempty"`
+	BlockerText              string                     `json:"blocker_text,omitempty"`
+	EffectiveBriefArtifactID string                     `json:"effective_brief_artifact_id,omitempty"`
+	EffectiveBriefSHA256     string                     `json:"effective_brief_sha256,omitempty"`
+	EffectiveBriefMode       string                     `json:"effective_brief_mode,omitempty"`
+	StdoutTruncated          bool                       `json:"stdout_truncated,omitempty"`
+	StderrTruncated          bool                       `json:"stderr_truncated,omitempty"`
+	StdoutBytes              int64                      `json:"stdout_bytes,omitempty"`
+	StderrBytes              int64                      `json:"stderr_bytes,omitempty"`
+	ValidationResults        []workflowValidationResult `json:"validation_results,omitempty"`
+}
+
+func buildWorkflowExecutionEvidence(state workflowAttemptRuntime, parsed workflowValidationParseResult) workflowExecutionEvidence {
+	return workflowExecutionEvidence{
+		OwnerInstanceID:          state.OwnerInstanceID,
+		CommandPreview:           state.CommandPreview,
+		ProcessIdentity:          state.ProcessIdentity,
+		LaunchDisposition:        state.LaunchDisposition,
+		ExitCode:                 state.ExitCode,
+		TimedOut:                 state.TimedOut,
+		TerminationVerified:      state.TerminationVerified,
+		CleanupPending:           state.CleanupPending,
+		PendingTerminalStatus:    state.PendingTerminalStatus,
+		Error:                    state.Error,
+		NormalizedStatus:         state.NormalizedStatus,
+		BlockerText:              state.BlockerText,
+		EffectiveBriefArtifactID: state.EffectiveBriefArtifactID,
+		EffectiveBriefSHA256:     state.EffectiveBriefSHA256,
+		EffectiveBriefMode:       state.EffectiveBriefMode,
+		StdoutTruncated:          state.StdoutTruncated,
+		StderrTruncated:          state.StderrTruncated,
+		StdoutBytes:              state.StdoutBytes,
+		StderrBytes:              state.StderrBytes,
+		ValidationResults:        append([]workflowValidationResult(nil), parsed.Results...),
+	}
+}
+
 func (s *WorkflowExecutionService) recordEffectiveBriefIdentity(ctx context.Context, attempt workflowstore.ExecutionAttempt, selected effectiveBriefInput) error {
 	state := workflowAttemptRuntime{
 		EffectiveBriefArtifactID: selected.Artifact.ArtifactID,
@@ -574,6 +628,7 @@ func (s *WorkflowExecutionService) execute(
 	attempt workflowstore.ExecutionAttempt,
 	repository workflowstore.RepositoryTarget,
 	selected effectiveBriefInput,
+	validationCommands []speccompiler.ProjectedValidationCommand,
 	invocation ExecutorInvocation,
 	adapter ExecutorAdapter,
 	runtime *workflowRuntime,
@@ -711,7 +766,9 @@ func (s *WorkflowExecutionService) execute(
 		state.CleanupPending = true
 		state.PendingTerminalStatus = status
 	}
+	parsedValidation := parseWorkflowValidationReport(normalized.ExecutorResultText, validationCommands)
 	resultJSON, _ := json.Marshal(state)
+	evidence := buildWorkflowExecutionEvidence(state, parsedValidation)
 	if err := s.persistAttemptEvidence(
 		attempt,
 		invocation,
@@ -719,7 +776,7 @@ func (s *WorkflowExecutionService) execute(
 		stderrCapture.Path(),
 		redactSensitive(normalized.ExecutorResultText),
 		redactedResultPath,
-		resultJSON,
+		evidence,
 	); err != nil {
 		status = workflowstore.AttemptStatusFailed
 		state.Error = appendWorkflowError(state.Error, "persist attempt evidence: "+redactSensitive(err.Error()))
@@ -769,8 +826,12 @@ func (s *WorkflowExecutionService) persistAttemptEvidence(
 	attempt workflowstore.ExecutionAttempt,
 	invocation ExecutorInvocation,
 	stdoutPath, stderrPath, normalized, resultFilePath string,
-	resultJSON []byte,
+	evidence workflowExecutionEvidence,
 ) error {
+	evidenceJSON, err := json.Marshal(evidence)
+	if err != nil {
+		return fmt.Errorf("encode execution evidence: %w", err)
+	}
 	batch, err := s.store.ArtifactStore().Begin("attempts/" + attempt.AttemptID)
 	if err != nil {
 		return err
@@ -832,7 +893,7 @@ func (s *WorkflowExecutionService) persistAttemptEvidence(
 		_ = batch.Rollback()
 		return err
 	}
-	if err := stage("execution_evidence", "execution-evidence.json", "application/json", resultJSON); err != nil {
+	if err := stage("execution_evidence", "execution-evidence.json", "application/json", evidenceJSON); err != nil {
 		_ = batch.Rollback()
 		return err
 	}

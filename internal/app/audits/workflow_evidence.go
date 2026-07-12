@@ -36,8 +36,12 @@ type WorkflowApplierImplementationResult struct {
 }
 
 type WorkflowExecutorImplementationEvidence struct {
-	Attempt   workflowstore.ExecutionAttempt
-	Artifacts []workflowstore.Artifact
+	Attempt                   workflowstore.ExecutionAttempt
+	Artifacts                 []workflowstore.Artifact
+	ExecutionEvidenceArtifact workflowstore.Artifact
+	ExecutionEvidence         workflowExecutionEvidencePayload
+	EffectiveBriefArtifact    workflowstore.Artifact
+	AttemptResult             WorkflowAuditAttemptResult
 }
 
 type workflowImplementationEvidenceReader interface {
@@ -70,7 +74,18 @@ func resolveWorkflowImplementationEvidenceWithReader(ctx context.Context, artifa
 		if err != nil {
 			return WorkflowImplementationEvidence{}, err
 		}
-		executor = &WorkflowExecutorImplementationEvidence{Attempt: attempt, Artifacts: attemptArtifacts}
+		evidenceArtifact, executionEvidence, effectiveBrief, attemptResult, err := resolveWorkflowExecutionEvidence(artifactStore, run, attempt, runArtifacts, attemptArtifacts)
+		if err != nil {
+			return WorkflowImplementationEvidence{}, err
+		}
+		executor = &WorkflowExecutorImplementationEvidence{
+			Attempt:                   attempt,
+			Artifacts:                 attemptArtifacts,
+			ExecutionEvidenceArtifact: evidenceArtifact,
+			ExecutionEvidence:         executionEvidence,
+			EffectiveBriefArtifact:    effectiveBrief,
+			AttemptResult:             attemptResult,
+		}
 	}
 	if hasApplier && applier.Result.Outcome == "blocked" {
 		return WorkflowImplementationEvidence{}, fmt.Errorf("applier evidence is blocked and cannot be audited as implementation success")

@@ -18,6 +18,7 @@ import (
 	appaudits "relay/internal/app/audits"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
+	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/mcp"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
@@ -167,34 +168,78 @@ func rewriteExecutionSpec(spec []byte, branch, baseCommit string) ([]byte, error
 	return rewritten, nil
 }
 
-func stageSmokeEvidence(ctx context.Context, store *workflowstore.Store, attempt workflowstore.ExecutionAttempt) error {
+func stageSmokeEvidence(ctx context.Context, store *workflowstore.Store, attempt workflowstore.ExecutionAttempt, effectiveBrief workflowstore.Artifact, command, expected string) (workflowstore.Artifact, error) {
 	batch, err := store.ArtifactStore().Begin("attempt-smoke/" + attempt.AttemptID)
 	if err != nil {
-		return err
+		return workflowstore.Artifact{}, err
 	}
-	staged, err := batch.Stage(
+	payload, err := json.Marshal(map[string]any{
+		"normalized_status":           "done",
+		"termination_verified":        true,
+		"effective_brief_artifact_id": effectiveBrief.ArtifactID,
+		"effective_brief_sha256":      effectiveBrief.SHA256,
+		"effective_brief_mode":        "full",
+		"validation_results": []map[string]any{
+			{
+				"command":        command,
+				"expected":       expected,
+				"status":         "passed",
+				"concise_result": "Validation command passed.",
+			},
+		},
+	})
+	if err != nil {
+		return workflowstore.Artifact{}, err
+	}
+	executionStaged, err := batch.Stage(
 		"execution_evidence",
 		"execution-evidence.json",
 		"application/json",
-		[]byte(`{"validated":true,"source":"mcp-smoke"}`),
+		payload,
 	)
 	if err != nil {
 		_ = batch.Rollback()
-		return err
+		return workflowstore.Artifact{}, err
 	}
-	return store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
-		_, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
-			ArtifactID:            workflowstore.NewArtifactID(),
-			OwnerType:             workflowstore.ArtifactOwnerExecutionAttempt,
-			ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true},
-			Kind:                  staged.Kind,
-			RelativePath:          staged.RelativePath,
-			MediaType:             staged.MediaType,
-			SHA256:                staged.SHA256,
-			SizeBytes:             staged.SizeBytes,
-		})
-		return err
+	rawStaged, err := batch.Stage(
+		"executor_result",
+		"executor-result.txt",
+		"text/plain",
+		[]byte("STATUS: DONE\n\n## Validation\n\n- `"+command+"` - passed\n"),
+	)
+	if err != nil {
+		_ = batch.Rollback()
+		return workflowstore.Artifact{}, err
+	}
+	var created workflowstore.Artifact
+	err = store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		for _, staged := range []struct {
+			file     workflowartifacts.File
+			evidence bool
+		}{
+			{file: executionStaged, evidence: true},
+			{file: rawStaged},
+		} {
+			artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
+				ArtifactID:            workflowstore.NewArtifactID(),
+				OwnerType:             workflowstore.ArtifactOwnerExecutionAttempt,
+				ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true},
+				Kind:                  staged.file.Kind,
+				RelativePath:          staged.file.RelativePath,
+				MediaType:             staged.file.MediaType,
+				SHA256:                staged.file.SHA256,
+				SizeBytes:             staged.file.SizeBytes,
+			})
+			if err != nil {
+				return err
+			}
+			if staged.evidence {
+				created = artifact
+			}
+		}
+		return nil
 	})
+	return created, err
 }
 
 func main() {
@@ -261,6 +306,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	var smokeSpec struct {
+		Validation struct {
+			Commands []struct {
+				Command  string `json:"command"`
+				Expected string `json:"expected"`
+			} `json:"commands"`
+		} `json:"validation"`
+	}
+	if err := json.Unmarshal(specBytes, &smokeSpec); err != nil {
+		return fmt.Errorf("decode smoke validation command: %w", err)
+	}
+	if len(smokeSpec.Validation.Commands) != 1 {
+		return fmt.Errorf("smoke validation command count = %d, want 1", len(smokeSpec.Validation.Commands))
+	}
+	smokeCommand := smokeSpec.Validation.Commands[0]
 
 	fetcher := memoryFetcher{files: map[string]mcp.FileParameterContent{
 		"plan": {Bytes: planBytes},
@@ -347,18 +407,42 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if _, err := runs.MarkExecutionAttemptRunning(ctx, begun.Attempt.AttemptID, `{"ok":true}`); err != nil {
+	runArtifacts, err := store.ListArtifactsByRun(ctx, begun.Run.ID)
+	if err != nil {
+		return err
+	}
+	var effectiveBrief workflowstore.Artifact
+	for _, artifact := range runArtifacts {
+		if artifact.Kind == "executor_brief" {
+			effectiveBrief = artifact
+		}
+	}
+	if effectiveBrief.ArtifactID == "" {
+		return fmt.Errorf("smoke Run executor brief is missing")
+	}
+	runtimeJSON, err := json.Marshal(map[string]any{
+		"normalized_status":           "done",
+		"termination_verified":        true,
+		"effective_brief_artifact_id": effectiveBrief.ArtifactID,
+		"effective_brief_sha256":      effectiveBrief.SHA256,
+		"effective_brief_mode":        "full",
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := runs.MarkExecutionAttemptRunning(ctx, begun.Attempt.AttemptID, string(runtimeJSON)); err != nil {
 		return err
 	}
 	finished, err := runs.FinishExecutionAttempt(ctx, workflowruns.FinishExecutionAttemptInput{
 		AttemptID:  begun.Attempt.AttemptID,
 		Status:     workflowstore.AttemptStatusSucceeded,
-		ResultJSON: `{"normalized_status":"done","completion_summary":"smoke complete"}`,
+		ResultJSON: string(runtimeJSON),
 	})
 	if err != nil {
 		return err
 	}
-	if err := stageSmokeEvidence(ctx, store, finished.Attempt); err != nil {
+	executionEvidence, err := stageSmokeEvidence(ctx, store, finished.Attempt, effectiveBrief, smokeCommand.Command, smokeCommand.Expected)
+	if err != nil {
 		return err
 	}
 	auditedCommit, err := commitSmokeChange(repoDir)
@@ -384,10 +468,30 @@ func run() error {
 		return err
 	}
 	packet, _ := packetResult["packet"].(map[string]any)
+	execution, _ := packet["execution"].(map[string]any)
+	executorEvidence, _ := execution["executor"].(map[string]any)
+	if executorEvidence["effective_brief_artifact_reference"] != effectiveBrief.ArtifactID || executorEvidence["effective_brief_sha256"] != effectiveBrief.SHA256 || executorEvidence["effective_brief_mode"] != "full" {
+		return fmt.Errorf("audit packet effective brief identity = %v", executorEvidence)
+	}
+	validation, _ := packet["validation"].([]any)
+	if len(validation) != 1 {
+		return fmt.Errorf("audit packet validation count = %d, want 1", len(validation))
+	}
+	validationResult, _ := validation[0].(map[string]any)
+	if validationResult["command"] != smokeCommand.Command || validationResult["expected"] != smokeCommand.Expected || validationResult["status"] != "passed" || validationResult["artifact_reference"] != executionEvidence.ArtifactID {
+		return fmt.Errorf("audit packet validation = %v", validationResult)
+	}
+	if _, hasExitCode := validationResult["exit_code"]; hasExitCode {
+		return fmt.Errorf("audit packet invented validation exit code: %v", validationResult)
+	}
 	artifacts, _ := packet["artifacts"].([]any)
 	artifactReference := ""
+	effectiveBriefCount := 0
 	for _, rawArtifact := range artifacts {
 		artifact, _ := rawArtifact.(map[string]any)
+		if artifact["artifact_reference"] == effectiveBrief.ArtifactID {
+			effectiveBriefCount++
+		}
 		if artifact["artifact_type"] != "execution_evidence" {
 			continue
 		}
@@ -395,6 +499,9 @@ func run() error {
 			return fmt.Errorf("audit packet returned multiple execution evidence artifacts")
 		}
 		artifactReference, _ = artifact["artifact_reference"].(string)
+	}
+	if effectiveBriefCount != 1 {
+		return fmt.Errorf("audit packet effective brief declaration count = %d, want 1", effectiveBriefCount)
 	}
 	if artifactReference == "" {
 		return fmt.Errorf("audit packet omitted execution evidence artifact")
@@ -408,8 +515,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	content := fmt.Sprint(artifactResult["content"])
 	if artifactResult["artifact_reference"] != artifactReference ||
-		!strings.Contains(fmt.Sprint(artifactResult["content"]), `"validated":true`) {
+		!strings.Contains(content, `"validation_results"`) ||
+		!strings.Contains(content, effectiveBrief.ArtifactID) {
 		return fmt.Errorf("get_run_artifact returned unexpected evidence: %v", artifactResult)
 	}
 

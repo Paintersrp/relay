@@ -12,6 +12,7 @@ import (
 
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
+	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -139,47 +140,91 @@ func newAuditFixture(t *testing.T, managed bool) *auditFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runArtifacts, err := store.ListArtifactsByRun(context.Background(), createdRun.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var effectiveBrief workflowstore.Artifact
+	for _, artifact := range runArtifacts {
+		if artifact.Kind == "executor_brief" {
+			effectiveBrief = artifact
+		}
+	}
+	if effectiveBrief.ArtifactID == "" {
+		t.Fatal("executor brief artifact is missing")
+	}
+	runtimeJSON, err := json.Marshal(map[string]any{
+		"normalized_status":           "done",
+		"termination_verified":        true,
+		"effective_brief_artifact_id": effectiveBrief.ArtifactID,
+		"effective_brief_sha256":      effectiveBrief.SHA256,
+		"effective_brief_mode":        "full",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	begun, err := runs.BeginExecutionAttempt(context.Background(), workflowruns.BeginExecutionAttemptInput{
 		RunID: createdRun.Run.RunID, Adapter: "codex", Model: "test-model",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runs.MarkExecutionAttemptRunning(context.Background(), begun.Attempt.AttemptID, `{"ok":true}`); err != nil {
+	if _, err := runs.MarkExecutionAttemptRunning(context.Background(), begun.Attempt.AttemptID, string(runtimeJSON)); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{
 		AttemptID:  begun.Attempt.AttemptID,
 		Status:     workflowstore.AttemptStatusSucceeded,
-		ResultJSON: `{"normalized_status":"done"}`,
+		ResultJSON: string(runtimeJSON),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fixture.run = finished.Run
-	stageAttemptEvidence(t, store, finished.Attempt)
+	stageAttemptEvidence(t, store, finished.Attempt, effectiveBrief)
 	return fixture
 }
 
-func stageAttemptEvidence(t *testing.T, store *workflowstore.Store, attempt workflowstore.ExecutionAttempt) {
+func stageAttemptEvidence(t *testing.T, store *workflowstore.Store, attempt workflowstore.ExecutionAttempt, effectiveBrief workflowstore.Artifact) {
 	t.Helper()
 	batch, err := store.ArtifactStore().Begin("attempt-test/" + attempt.AttemptID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	staged, err := batch.Stage("execution_evidence", "execution-evidence.json", "application/json", []byte(`{"validated":true}`))
+	payload, err := json.Marshal(map[string]any{
+		"normalized_status":           "done",
+		"termination_verified":        true,
+		"effective_brief_artifact_id": effectiveBrief.ArtifactID,
+		"effective_brief_sha256":      effectiveBrief.SHA256,
+		"effective_brief_mode":        "full",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executionEvidence, err := batch.Stage("execution_evidence", "execution-evidence.json", "application/json", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executorResult, err := batch.Stage("executor_result", "executor-result.txt", "text/plain", []byte("STATUS: DONE\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CommitArtifactBatch(context.Background(), batch, func(tx *workflowstore.Tx) error {
-		_, err := tx.CreateArtifact(context.Background(), workflowstore.CreateArtifactParams{
-			ArtifactID:            workflowstore.NewArtifactID(),
-			OwnerType:             workflowstore.ArtifactOwnerExecutionAttempt,
-			ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true},
-			Kind:                  staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType,
-			SHA256: staged.SHA256, SizeBytes: staged.SizeBytes,
-		})
-		return err
+		for _, staged := range []workflowartifacts.File{executionEvidence, executorResult} {
+			if _, err := tx.CreateArtifact(context.Background(), workflowstore.CreateArtifactParams{
+				ArtifactID:            workflowstore.NewArtifactID(),
+				OwnerType:             workflowstore.ArtifactOwnerExecutionAttempt,
+				ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true},
+				Kind:                  staged.Kind,
+				RelativePath:          staged.RelativePath,
+				MediaType:             staged.MediaType,
+				SHA256:                staged.SHA256,
+				SizeBytes:             staged.SizeBytes,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -531,18 +576,8 @@ func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 			if status != "passed" && status != "failed" && status != "not_run" {
 				t.Fatalf("invalid validation status: %s", status)
 			}
-			exitCode, hasExitCode := entry["exit_code"]
-			if status == "passed" || status == "failed" {
-				if !hasExitCode {
-					t.Fatal("passed/failed validation entry lacks exit_code")
-				}
-				if _, ok := exitCode.(float64); !ok {
-					t.Fatalf("exit_code is not a number: %v", exitCode)
-				}
-			} else {
-				if hasExitCode {
-					t.Fatal("not_run validation entry contains exit_code")
-				}
+			if _, hasExitCode := entry["exit_code"]; hasExitCode {
+				t.Fatalf("validation entry contains invented exit_code: %v", entry)
 			}
 			if artRef, exists := entry["artifact_reference"]; exists {
 				artRefStr, _ := artRef.(string)
@@ -629,24 +664,47 @@ func TestWorkflowAuditRemediationPacketConformsToSchemaContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runArtifacts, err := fixture.store.ListArtifactsByRun(context.Background(), remediationRun.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var effectiveBrief workflowstore.Artifact
+	for _, artifact := range runArtifacts {
+		if artifact.Kind == "executor_brief" {
+			effectiveBrief = artifact
+		}
+	}
+	if effectiveBrief.ArtifactID == "" {
+		t.Fatal("remediation executor brief artifact is missing")
+	}
+	runtimeJSON, err := json.Marshal(map[string]any{
+		"normalized_status":           "done",
+		"termination_verified":        true,
+		"effective_brief_artifact_id": effectiveBrief.ArtifactID,
+		"effective_brief_sha256":      effectiveBrief.SHA256,
+		"effective_brief_mode":        "full",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	begun, err := runs.BeginExecutionAttempt(context.Background(), workflowruns.BeginExecutionAttemptInput{
 		RunID: remediationRun.Run.RunID, Adapter: "codex", Model: "test-model",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runs.MarkExecutionAttemptRunning(context.Background(), begun.Attempt.AttemptID, `{"ok":true}`); err != nil {
+	if _, err := runs.MarkExecutionAttemptRunning(context.Background(), begun.Attempt.AttemptID, string(runtimeJSON)); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{
 		AttemptID:  begun.Attempt.AttemptID,
 		Status:     workflowstore.AttemptStatusSucceeded,
-		ResultJSON: `{"normalized_status":"done"}`,
+		ResultJSON: string(runtimeJSON),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stageAttemptEvidence(t, fixture.store, finished.Attempt)
+	stageAttemptEvidence(t, fixture.store, finished.Attempt, effectiveBrief)
 
 	_, err = fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
 		RunID: finished.Run.RunID, AuditedCommit: fixture.head,
@@ -808,30 +866,52 @@ func TestWorkflowAuditPacketExcludesRuntimeAndEvidenceBodies(t *testing.T) {
 	fixture := newAuditFixture(t, false)
 	secret := "audit-packet-secret"
 	t.Setenv("OPENAI_API_KEY", secret)
-	unsafeResult := `{
-		"owner_instance_id":"owner-private",
-		"process_identity":"pid-private",
-		"command_preview":"C:\\Users\\operator\\relay ` + secret + `",
-		"exit_code":0,
-		"termination_verified":true,
-		"normalized_status":"done",
-		"error":"safe ` + secret + `",
-		"blocker_text":""
-	}`
+	attempt, found, err := fixture.store.GetLatestSucceededExecutionAttemptOptional(context.Background(), fixture.run.ID)
+	if err != nil || !found {
+		t.Fatalf("selected attempt = %+v, found = %v, err = %v", attempt, found, err)
+	}
+	var currentResult WorkflowAuditAttemptResult
+	if err := json.Unmarshal([]byte(attempt.ResultJSON), &currentResult); err != nil {
+		t.Fatal(err)
+	}
+	unsafeResult, err := json.Marshal(map[string]any{
+		"owner_instance_id":           "owner-private",
+		"process_identity":            "pid-private",
+		"command_preview":             `C:\Users\operator\relay ` + secret,
+		"exit_code":                   0,
+		"termination_verified":        true,
+		"normalized_status":           "done",
+		"error":                       "safe " + secret,
+		"blocker_text":                "",
+		"effective_brief_artifact_id": currentResult.EffectiveBriefArtifactID,
+		"effective_brief_sha256":      currentResult.EffectiveBriefSHA256,
+		"effective_brief_mode":        currentResult.EffectiveBriefMode,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.store.DB().Exec(
 		`UPDATE execution_attempts SET result_json = ? WHERE run_row_id = ?`,
-		unsafeResult,
+		string(unsafeResult),
 		fixture.run.ID,
 	); err != nil {
 		t.Fatal(err)
 	}
-	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), fixture.run.ID)
-	if err == nil && len(artifacts) > 0 {
-		path, pathErr := workflowArtifactPath(fixture.store, artifacts[0])
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), attempt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.Kind != "executor_result" {
+			continue
+		}
+		path, pathErr := workflowArtifactPath(fixture.store, artifact)
 		if pathErr != nil {
 			t.Fatal(pathErr)
 		}
-		_ = os.WriteFile(path, []byte(`C:\\Users\\operator\\relay /home/operator/relay https://example.invalid/file?token=signed-value`), 0o600)
+		if err := os.WriteFile(path, []byte(`C:\Users\operator\relay /home/operator/relay https://example.invalid/file?token=signed-value`), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
@@ -1006,16 +1086,16 @@ func workflowAuditEvidenceReference(t *testing.T, fixture *auditFixture) (workfl
 	if len(packet.Artifacts) == 0 {
 		t.Fatal("packet has no artifact references")
 	}
-	// Find a non-unified_diff artifact (evidence) to use for readback tests.
+	// Use non-authoritative raw Executor output for bounded readback mutation tests.
 	var ref WorkflowAuditPacketArtifact
-	for _, a := range packet.Artifacts {
-		if a.ArtifactType != "unified_diff" {
-			ref = a
+	for _, artifact := range packet.Artifacts {
+		if artifact.ArtifactType == "executor_result" {
+			ref = artifact
 			break
 		}
 	}
 	if ref.ArtifactReference == "" {
-		t.Fatal("packet has no non-unified_diff evidence reference")
+		t.Fatal("packet has no executor_result evidence reference")
 	}
 	artifact, err := fixture.store.GetArtifactByArtifactID(
 		context.Background(),

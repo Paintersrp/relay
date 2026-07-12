@@ -107,14 +107,17 @@ type WorkflowAuditApplierEvidence struct {
 }
 
 type WorkflowAuditExecutorEvidence struct {
-	AttemptID     string                     `json:"attempt_id"`
-	AttemptNumber int64                      `json:"attempt_number"`
-	Adapter       string                     `json:"adapter"`
-	Model         string                     `json:"model"`
-	Status        string                     `json:"status"`
-	Result        WorkflowAuditAttemptResult `json:"result"`
-	StartedAt     string                     `json:"started_at,omitempty"`
-	FinishedAt    string                     `json:"finished_at,omitempty"`
+	AttemptID                       string                     `json:"attempt_id"`
+	AttemptNumber                   int64                      `json:"attempt_number"`
+	Adapter                         string                     `json:"adapter"`
+	Model                           string                     `json:"model"`
+	Status                          string                     `json:"status"`
+	Result                          WorkflowAuditAttemptResult `json:"result"`
+	EffectiveBriefArtifactReference string                     `json:"effective_brief_artifact_reference"`
+	EffectiveBriefSHA256            string                     `json:"effective_brief_sha256"`
+	EffectiveBriefMode              string                     `json:"effective_brief_mode"`
+	StartedAt                       string                     `json:"started_at,omitempty"`
+	FinishedAt                      string                     `json:"finished_at,omitempty"`
 }
 
 type WorkflowAuditChangedFile struct {
@@ -188,20 +191,21 @@ type WorkflowAuditAttemptAuthority struct {
 }
 
 type WorkflowAuditAttemptResult struct {
-	ExitCode              int    `json:"exit_code"`
-	TimedOut              bool   `json:"timed_out"`
-	TerminationVerified   bool   `json:"termination_verified"`
-	CleanupPending        bool   `json:"cleanup_pending,omitempty"`
-	PendingTerminalStatus string `json:"pending_terminal_status,omitempty"`
-	Error                 string `json:"error,omitempty"`
-	NormalizedStatus      string `json:"normalized_status,omitempty"`
-	BlockerText           string `json:"blocker_text,omitempty"`
-	BriefArtifactID       string `json:"brief_artifact_id,omitempty"`
-	BriefSHA256           string `json:"brief_sha256,omitempty"`
-	StdoutTruncated       bool   `json:"stdout_truncated,omitempty"`
-	StderrTruncated       bool   `json:"stderr_truncated,omitempty"`
-	StdoutBytes           int64  `json:"stdout_bytes,omitempty"`
-	StderrBytes           int64  `json:"stderr_bytes,omitempty"`
+	ExitCode                 int    `json:"exit_code"`
+	TimedOut                 bool   `json:"timed_out"`
+	TerminationVerified      bool   `json:"termination_verified"`
+	CleanupPending           bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus    string `json:"pending_terminal_status,omitempty"`
+	Error                    string `json:"error,omitempty"`
+	NormalizedStatus         string `json:"normalized_status,omitempty"`
+	BlockerText              string `json:"blocker_text,omitempty"`
+	EffectiveBriefArtifactID string `json:"effective_brief_artifact_id,omitempty"`
+	EffectiveBriefSHA256     string `json:"effective_brief_sha256,omitempty"`
+	EffectiveBriefMode       string `json:"effective_brief_mode,omitempty"`
+	StdoutTruncated          bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated          bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes              int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes              int64  `json:"stderr_bytes,omitempty"`
 }
 
 type WorkflowAuditEvidenceItem struct {

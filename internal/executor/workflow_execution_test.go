@@ -162,12 +162,13 @@ func successfulRunner(_ context.Context, _ string, _ string, _ []string, stdin s
 	if callbacks.OnProcessStarted != nil {
 		_ = callbacks.OnProcessStarted(identity)
 	}
+	output := "STATUS: DONE\n\n## Validation\n\n- `go test ./internal/executor` - passed\n"
 	if callbacks.OnStdout != nil {
-		callbacks.OnStdout([]byte("STATUS: DONE\n"))
+		callbacks.OnStdout([]byte(output))
 	}
 	return pipeline.AgentCommandRunResult{
 		ExitCode:            0,
-		Stdout:              "STATUS: DONE\n",
+		Stdout:              output,
 		StartedAt:           time.Now(),
 		FinishedAt:          time.Now(),
 		LaunchDisposition:   pipeline.AgentLaunchOwned,
@@ -255,6 +256,82 @@ func TestWorkflowStartUsesExactBriefAndPersistsAttemptEvidence(t *testing.T) {
 	if len(artifacts) < 3 {
 		t.Fatalf("attempt artifacts = %d, want at least 3", len(artifacts))
 	}
+	var executionEvidence workflowstore.Artifact
+	var executorResult workflowstore.Artifact
+	for _, artifact := range artifacts {
+		switch artifact.Kind {
+		case "execution_evidence":
+			executionEvidence = artifact
+		case "executor_result":
+			executorResult = artifact
+		}
+	}
+	if executionEvidence.ArtifactID == "" || executorResult.ArtifactID == "" {
+		t.Fatalf("attempt artifacts = %+v", artifacts)
+	}
+	evidenceBytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(executionEvidence.RelativePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidence workflowExecutionEvidence
+	if err := json.Unmarshal(evidenceBytes, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence.EffectiveBriefMode != "full" || evidence.EffectiveBriefArtifactID == "" || evidence.EffectiveBriefSHA256 == "" || len(evidence.ValidationResults) != 1 {
+		t.Fatalf("execution evidence = %+v", evidence)
+	}
+	validation := evidence.ValidationResults[0]
+	if validation.Command != "go test ./internal/executor" || validation.Status != workflowValidationPassed || validation.WorkingDirectory != "" || validation.Expected != "The focused executor tests pass." {
+		t.Fatalf("validation evidence = %+v", validation)
+	}
+	rawBytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(executorResult.RelativePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rawBytes), "## Validation") {
+		t.Fatalf("raw executor result = %q", rawBytes)
+	}
+}
+
+func TestWorkflowExecutionEvidenceOmitsUntrustworthyValidationResults(t *testing.T) {
+	fixture := newWorkflowFixture(t)
+	fixture.service.runner = func(_ context.Context, _ string, _ string, _ []string, _ string, _ time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, _ pipeline.ProcessController) pipeline.AgentCommandRunResult {
+		identity := pipeline.ProcessIdentity{PID: 105, StartedAt: "1", Platform: "linux"}
+		if callbacks.OnProcessStarted != nil {
+			_ = callbacks.OnProcessStarted(identity)
+		}
+		output := "STATUS: DONE\n\n## Validation\n\n- `go test ./internal/executor` - failed:\n"
+		if callbacks.OnStdout != nil {
+			callbacks.OnStdout([]byte(output))
+		}
+		return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: output, StartedAt: time.Now(), FinishedAt: time.Now(), LaunchDisposition: pipeline.AgentLaunchOwned, ProcessIdentity: identity, IdentityAvailable: true, TerminationVerified: true}
+	}
+	result, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: fixture.run.RunID, Adapter: "opencode_go", Model: "attempt-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), result.Attempt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.Kind != "execution_evidence" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var root map[string]json.RawMessage
+		if err := json.Unmarshal(data, &root); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := root["validation_results"]; present {
+			t.Fatalf("untrustworthy validation_results were persisted: %s", data)
+		}
+		return
+	}
+	t.Fatal("execution_evidence artifact is missing")
 }
 
 func TestWorkflowOperationalRetryStaysOnSameRun(t *testing.T) {

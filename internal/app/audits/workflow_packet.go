@@ -89,7 +89,7 @@ func buildWorkflowAuditPacket(
 	}
 	auditResult := WorkflowAuditAttemptResult{}
 	if implementation.Executor != nil {
-		auditResult = workflowAuditAttemptResult(implementation.Executor.Attempt.ResultJSON)
+		auditResult = implementation.Executor.AttemptResult
 	}
 	blockers := workflowAuditBlockers(auditResult)
 	if blockers == nil {
@@ -119,6 +119,10 @@ func buildWorkflowAuditPacket(
 			first := projectionDiagnostics[0]
 			return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
 		}
+	}
+	validation, err := mapWorkflowAuditValidation(implementation, executionProjection.ValidationCommands)
+	if err != nil {
+		return nil, err
 	}
 	managedContext, err := workflowAuditManagedContext(planModel, matchedRepoTarget, selectedPass)
 	if err != nil {
@@ -164,8 +168,8 @@ func buildWorkflowAuditPacket(
 		Execution:           workflowAuditExecution(implementation, commit.AuditedCommit, auditResult, blockers, reportedFiles),
 		ChangedFiles:        workflowAuditChangedFiles(commit),
 		RelevantSourcePaths: workflowAuditRelevantSourcePaths(commit, selectedPass),
-		Validation:          workflowAuditValidation(evidence, implementation, executionProjection.ValidationCommands),
-		Artifacts:           workflowAuditArtifacts(evidence, diffArtifact),
+		Validation:          validation,
+		Artifacts:           workflowAuditArtifacts(evidence, implementation, diffArtifact),
 	}
 	if run.RemediatesRunRowID.Valid {
 		var specFindings struct {
@@ -254,12 +258,15 @@ func workflowAuditExecution(implementation WorkflowImplementationEvidence, commi
 	}
 	if implementation.Executor != nil {
 		executor := &WorkflowAuditExecutorEvidence{
-			AttemptID:     implementation.Executor.Attempt.AttemptID,
-			AttemptNumber: implementation.Executor.Attempt.AttemptNumber,
-			Adapter:       implementation.Executor.Attempt.Adapter,
-			Model:         implementation.Executor.Attempt.Model,
-			Status:        implementation.Executor.Attempt.Status,
-			Result:        auditResult,
+			AttemptID:                       implementation.Executor.Attempt.AttemptID,
+			AttemptNumber:                   implementation.Executor.Attempt.AttemptNumber,
+			Adapter:                         implementation.Executor.Attempt.Adapter,
+			Model:                           implementation.Executor.Attempt.Model,
+			Status:                          implementation.Executor.Attempt.Status,
+			Result:                          auditResult,
+			EffectiveBriefArtifactReference: implementation.Executor.EffectiveBriefArtifact.ArtifactID,
+			EffectiveBriefSHA256:            implementation.Executor.EffectiveBriefArtifact.SHA256,
+			EffectiveBriefMode:              implementation.Executor.ExecutionEvidence.EffectiveBriefMode,
 		}
 		if implementation.Executor.Attempt.StartedAt.Valid {
 			executor.StartedAt = implementation.Executor.Attempt.StartedAt.String
@@ -282,77 +289,38 @@ func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {
 	return "Execution attempt completed with status recorded in Relay."
 }
 
-func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem, implementation WorkflowImplementationEvidence, commands []speccompiler.ProjectedValidationCommand) []WorkflowAuditValidationResult {
-	if len(commands) == 0 {
-		out := make([]WorkflowAuditValidationResult, 0, len(evidence))
-		for _, item := range evidence {
-			var exitCode *int
-			status := "not_run"
-			if implementation.ActorKind == workflowstore.ImplementationActorApplier || implementation.ActorKind == workflowstore.ImplementationActorHybrid || implementation.ActorKind == workflowstore.ImplementationActorExecutor {
-				status = "passed"
-				zero := 0
-				exitCode = &zero
-			}
-			out = append(out, WorkflowAuditValidationResult{
-				Command:           item.Kind,
-				Expected:          "Command execution succeeds",
-				Status:            status,
-				ConciseResult:     "Evidence captured for audit.",
-				ExitCode:          exitCode,
-				ArtifactReference: item.ArtifactID,
-			})
-		}
-		return out
-	}
-
-	out := make([]WorkflowAuditValidationResult, 0, len(commands))
-	for _, command := range commands {
-		var exitCode *int
-		status := "not_run"
-		concise := "Validation command declared by canonical Execution Spec; no finalized validation evidence artifact was matched."
-		if implementation.ActorKind == workflowstore.ImplementationActorApplier || implementation.ActorKind == workflowstore.ImplementationActorHybrid || implementation.ActorKind == workflowstore.ImplementationActorExecutor {
-			status = "passed"
-			zero := 0
-			exitCode = &zero
-			concise = "Execution attempt succeeded; validation command preserved in specification order."
-		}
-		out = append(out, WorkflowAuditValidationResult{
-			Command:          command.Command,
-			WorkingDirectory: command.WorkingDirectory,
-			Expected:         projectedAuditExpected(command),
-			Status:           status,
-			ConciseResult:    concise,
-			ExitCode:         exitCode,
-		})
-	}
-	return out
-}
-
-func projectedAuditExpected(command speccompiler.ProjectedValidationCommand) string {
-	if strings.TrimSpace(command.Expected) != "" {
-		return strings.TrimSpace(command.Expected)
-	}
-	if strings.TrimSpace(command.SuccessSignal) != "" {
-		return strings.TrimSpace(command.SuccessSignal)
-	}
-	return "Command execution succeeds."
-}
-
-func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, diffArtifact workflowstore.Artifact) []WorkflowAuditPacketArtifact {
-	out := make([]WorkflowAuditPacketArtifact, 0, len(evidence)+1)
+func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, implementation WorkflowImplementationEvidence, diffArtifact workflowstore.Artifact) []WorkflowAuditPacketArtifact {
+	out := make([]WorkflowAuditPacketArtifact, 0, len(evidence)+2)
 	out = append(out, WorkflowAuditPacketArtifact{
 		ArtifactReference: diffArtifact.ArtifactID,
 		ArtifactType:      "unified_diff",
 		SHA256:            diffArtifact.SHA256,
 		Description:       "Complete unified diff for the audited commit range.",
 	})
+	seen := make(map[string]struct{}, len(evidence)+1)
+	seen[diffArtifact.ArtifactID] = struct{}{}
 	for _, item := range evidence {
+		if _, duplicate := seen[item.ArtifactID]; duplicate {
+			continue
+		}
+		seen[item.ArtifactID] = struct{}{}
 		out = append(out, WorkflowAuditPacketArtifact{
 			ArtifactReference: item.ArtifactID,
 			ArtifactType:      item.Kind,
 			SHA256:            item.SHA256,
 			Description:       "Execution evidence captured by Relay.",
 		})
+	}
+	if implementation.Executor != nil {
+		effective := implementation.Executor.EffectiveBriefArtifact
+		if _, duplicate := seen[effective.ArtifactID]; !duplicate {
+			out = append(out, WorkflowAuditPacketArtifact{
+				ArtifactReference: effective.ArtifactID,
+				ArtifactType:      effective.Kind,
+				SHA256:            effective.SHA256,
+				Description:       "Exact effective Executor Brief used by the selected model attempt.",
+			})
+		}
 	}
 	return out
 }
@@ -488,39 +456,41 @@ func workflowAuditEvidence(_ *workflowstore.Store, artifacts []workflowstore.Art
 
 func workflowAuditAttemptResult(raw string) WorkflowAuditAttemptResult {
 	var source struct {
-		ExitCode              int    `json:"exit_code"`
-		TimedOut              bool   `json:"timed_out"`
-		TerminationVerified   bool   `json:"termination_verified"`
-		CleanupPending        bool   `json:"cleanup_pending"`
-		PendingTerminalStatus string `json:"pending_terminal_status"`
-		Error                 string `json:"error"`
-		NormalizedStatus      string `json:"normalized_status"`
-		BlockerText           string `json:"blocker_text"`
-		BriefArtifactID       string `json:"brief_artifact_id"`
-		BriefSHA256           string `json:"brief_sha256"`
-		StdoutTruncated       bool   `json:"stdout_truncated"`
-		StderrTruncated       bool   `json:"stderr_truncated"`
-		StdoutBytes           int64  `json:"stdout_bytes"`
-		StderrBytes           int64  `json:"stderr_bytes"`
+		ExitCode                 int    `json:"exit_code"`
+		TimedOut                 bool   `json:"timed_out"`
+		TerminationVerified      bool   `json:"termination_verified"`
+		CleanupPending           bool   `json:"cleanup_pending"`
+		PendingTerminalStatus    string `json:"pending_terminal_status"`
+		Error                    string `json:"error"`
+		NormalizedStatus         string `json:"normalized_status"`
+		BlockerText              string `json:"blocker_text"`
+		EffectiveBriefArtifactID string `json:"effective_brief_artifact_id"`
+		EffectiveBriefSHA256     string `json:"effective_brief_sha256"`
+		EffectiveBriefMode       string `json:"effective_brief_mode"`
+		StdoutTruncated          bool   `json:"stdout_truncated"`
+		StderrTruncated          bool   `json:"stderr_truncated"`
+		StdoutBytes              int64  `json:"stdout_bytes"`
+		StderrBytes              int64  `json:"stderr_bytes"`
 	}
 	if json.Unmarshal([]byte(raw), &source) != nil {
 		return WorkflowAuditAttemptResult{}
 	}
 	return WorkflowAuditAttemptResult{
-		ExitCode:              source.ExitCode,
-		TimedOut:              source.TimedOut,
-		TerminationVerified:   source.TerminationVerified,
-		CleanupPending:        source.CleanupPending,
-		PendingTerminalStatus: source.PendingTerminalStatus,
-		Error:                 executor.RedactSensitiveText(source.Error),
-		NormalizedStatus:      source.NormalizedStatus,
-		BlockerText:           executor.RedactSensitiveText(source.BlockerText),
-		BriefArtifactID:       source.BriefArtifactID,
-		BriefSHA256:           source.BriefSHA256,
-		StdoutTruncated:       source.StdoutTruncated,
-		StderrTruncated:       source.StderrTruncated,
-		StdoutBytes:           source.StdoutBytes,
-		StderrBytes:           source.StderrBytes,
+		ExitCode:                 source.ExitCode,
+		TimedOut:                 source.TimedOut,
+		TerminationVerified:      source.TerminationVerified,
+		CleanupPending:           source.CleanupPending,
+		PendingTerminalStatus:    source.PendingTerminalStatus,
+		Error:                    executor.RedactSensitiveText(source.Error),
+		NormalizedStatus:         source.NormalizedStatus,
+		BlockerText:              executor.RedactSensitiveText(source.BlockerText),
+		EffectiveBriefArtifactID: source.EffectiveBriefArtifactID,
+		EffectiveBriefSHA256:     source.EffectiveBriefSHA256,
+		EffectiveBriefMode:       source.EffectiveBriefMode,
+		StdoutTruncated:          source.StdoutTruncated,
+		StderrTruncated:          source.StderrTruncated,
+		StdoutBytes:              source.StdoutBytes,
+		StderrBytes:              source.StderrBytes,
 	}
 }
 

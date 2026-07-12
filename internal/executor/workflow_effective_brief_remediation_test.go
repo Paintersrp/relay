@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -204,4 +205,51 @@ func hybridPartialApplier(context.Context, applier.Input) (applier.Result, error
 			ModelExecutorRequired: true,
 		},
 	}, nil
+}
+
+func TestWorkflowHybridEvidencePreservesResidualIdentityAndValidation(t *testing.T) {
+	fixture := newWorkflowFixture(t)
+	run := createRunWithCanonicalProjectionSpec(t, fixture, "hybrid-evidence")
+	fixture.service.applier = hybridPartialApplier
+	fixture.service.runner = successfulRunner
+
+	result, err := fixture.service.Start(context.Background(), WorkflowStartInput{
+		RunID:   run.RunID,
+		Adapter: "opencode_go",
+		Model:   "attempt-model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), result.Attempt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var residual workflowstore.Artifact
+	var evidenceArtifact workflowstore.Artifact
+	for _, artifact := range artifacts {
+		switch artifact.Kind {
+		case "executor_residual_brief":
+			residual = artifact
+		case "execution_evidence":
+			evidenceArtifact = artifact
+		}
+	}
+	if residual.ArtifactID == "" || evidenceArtifact.ArtifactID == "" {
+		t.Fatalf("attempt artifacts = %+v", artifacts)
+	}
+	data, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(evidenceArtifact.RelativePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidence workflowExecutionEvidence
+	if err := json.Unmarshal(data, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence.EffectiveBriefMode != "residual" || evidence.EffectiveBriefArtifactID != residual.ArtifactID || evidence.EffectiveBriefSHA256 != residual.SHA256 {
+		t.Fatalf("execution evidence identity = %+v, residual = %+v", evidence, residual)
+	}
+	if len(evidence.ValidationResults) != 1 || evidence.ValidationResults[0].Command != "go test ./internal/executor" || evidence.ValidationResults[0].Status != workflowValidationPassed {
+		t.Fatalf("validation evidence = %+v", evidence.ValidationResults)
+	}
 }
