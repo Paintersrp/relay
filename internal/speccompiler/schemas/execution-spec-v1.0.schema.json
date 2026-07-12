@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Execution Spec v2.0",
+  "title": "Execution Spec v1.0",
   "description": "Structural schema for the canonical Execution Spec artifact.",
   "type": "object",
   "additionalProperties": false,
@@ -124,12 +124,6 @@
         "$ref": "#/$defs/single_line_prose"
       }
     },
-    "substep_reference": {
-      "title": "Substep reference",
-      "description": "Positive step and substep coordinates in <step>.<substep> form.",
-      "type": "string",
-      "pattern": "^[1-9][0-9]*\\.[1-9][0-9]*$"
-    },
     "step": {
       "title": "Step",
       "description": "One numbered executable step.",
@@ -173,17 +167,6 @@
         },
         "instruction": {
           "$ref": "#/$defs/single_line_prose"
-        },
-        "depends_on": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/substep_reference"
-          }
-        },
-        "atomic": {
-          "type": "boolean"
         },
         "files": {
           "type": "array",

@@ -8,11 +8,7 @@ import (
 
 const derivedNotice = "> Derived from canonical JSON. Do not edit this Markdown independently."
 
-func renderExecutionSpec(raw []byte) (string, error) {
-	var spec executionSpecModel
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		return "", err
-	}
+func renderExecutionSpec(spec *ExecutionDocument, profile renderingProfile) (string, error) {
 	var b strings.Builder
 	b.WriteString("# Executor Brief\n\n")
 	b.WriteString(derivedNotice)
@@ -44,11 +40,31 @@ func renderExecutionSpec(raw []byte) (string, error) {
 			}
 			b.WriteString("\n##### Instruction\n\n")
 			b.WriteString(trimHuman(substep.Instruction))
-			b.WriteString("\n\n##### Implementation\n\n")
-			for _, file := range substep.Files {
-				if err := renderFileImplementation(&b, file); err != nil {
-					return "", err
+			b.WriteString("\n\n")
+			if profile == renderExecutionV2 && (substep.DependsOn != nil || substep.Atomic != nil) {
+				b.WriteString("##### Execution Constraints\n\n")
+				if substep.DependsOn != nil {
+					b.WriteString("- Depends on: ")
+					for i, dependency := range substep.DependsOn {
+						if i != 0 {
+							b.WriteString(", ")
+						}
+						fmt.Fprintf(&b, "`%s`", dependency)
+					}
+					b.WriteString("\n")
 				}
+				if substep.Atomic != nil {
+					value := "not required"
+					if *substep.Atomic {
+						value = "required"
+					}
+					fmt.Fprintf(&b, "- Atomic deterministic preflight: %s\n", value)
+				}
+				b.WriteString("\n")
+			}
+			b.WriteString("##### Implementation\n\n")
+			for _, file := range substep.Files {
+				renderFileImplementation(&b, file)
 			}
 			writeBulletSection(&b, "##### Completion Criteria", substep.Completion)
 		}
@@ -72,28 +88,23 @@ func renderExecutionSpec(raw []byte) (string, error) {
 	writeBulletSection(&b, "## Completion Criteria", spec.Completion)
 
 	b.WriteString("## Execution Instructions\n\n")
-	b.WriteString("- Treat this Executor Brief as the implementation authority for the assigned execution.\n")
-	b.WriteString("- Complete the stated goal, implementation work, completion criteria, and validation.\n")
-	b.WriteString("- Make any repository changes necessary to complete the specification.\n")
-	b.WriteString("- Keep changes relevant to the specification and avoid unrelated cleanup or refactoring.\n")
-	b.WriteString("- Preserve unrelated local changes. Do not reset, discard, or overwrite them.\n")
-	b.WriteString("- Run the specified validation and report the results.\n")
-	b.WriteString("- Report validation results, any incomplete work, and any technical blocker that prevents completion.\n")
+	b.WriteString("- Treat this effective brief as the sole implementation authority for this attempt.\n")
+	b.WriteString("- This canonical brief is full mode; every declared implementation directive remains required.\n")
+	b.WriteString("- Apply the declared implementation exactly, using only necessary source-compatible adaptation that preserves behavior, architecture, scope, and material code shape.\n")
+	b.WriteString("- Preserve unrelated work and avoid unrelated cleanup or refactoring.\n")
+	b.WriteString("- Run the specified validation and report exact results, blockers, or incomplete work.\n")
 	return oneFinalNewline(b.String()), nil
 }
 
-func renderFileImplementation(b *strings.Builder, file fileModel) error {
+func renderFileImplementation(b *strings.Builder, file ExecutionFile) {
 	if file.Operation == "rename" {
 		fmt.Fprintf(b, "###### `%s` `%s` -> `%s`\n\n", file.Operation, file.Path, file.DestinationPath)
 	} else {
 		fmt.Fprintf(b, "###### `%s` `%s`\n\n", file.Operation, file.Path)
 	}
+	implementation := file.Implementation
 	switch file.Operation {
 	case "modify":
-		var implementation modifyImplementationModel
-		if err := json.Unmarshal(file.Implementation, &implementation); err != nil {
-			return err
-		}
 		for _, change := range implementation.Changes {
 			switch change.Kind {
 			case "replace":
@@ -123,24 +134,12 @@ func renderFileImplementation(b *strings.Builder, file fileModel) error {
 			}
 		}
 	case "create":
-		var implementation createImplementationModel
-		if err := json.Unmarshal(file.Implementation, &implementation); err != nil {
-			return err
-		}
 		b.WriteString("Content:\n\n")
 		writeFence(b, "", implementation.Content)
 		b.WriteString("\n")
 	case "delete":
-		var implementation deleteImplementationModel
-		if err := json.Unmarshal(file.Implementation, &implementation); err != nil {
-			return err
-		}
 		fmt.Fprintf(b, "Delete file: %t\n\n", implementation.DeleteFile)
 	case "rename":
-		var implementation renameImplementationModel
-		if err := json.Unmarshal(file.Implementation, &implementation); err != nil {
-			return err
-		}
 		if implementation.PreserveContent {
 			b.WriteString("Preserve content: true\n\n")
 		} else {
@@ -149,7 +148,6 @@ func renderFileImplementation(b *strings.Builder, file fileModel) error {
 			b.WriteString("\n")
 		}
 	}
-	return nil
 }
 
 func renderPlan(raw []byte) (string, error) {

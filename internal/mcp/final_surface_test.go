@@ -61,6 +61,26 @@ func TestFinalCanonicalProfileIsolation(t *testing.T) {
 	}
 }
 
+func TestFinalPlannerCompilerActionsRemainAdvertised(t *testing.T) {
+	definitions := workflowToolDefinitions(ToolProfilePlanner)
+	for _, name := range []string{"validate_artifact", "submit_plan"} {
+		found := false
+		for _, definition := range definitions {
+			if definition.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("planner tool %q is not advertised", name)
+		}
+		response := finalToolCallResponse(t, NewServer(nil, &MCPDeps{ToolProfile: ToolProfilePlanner}), name)
+		if response.Error != nil && response.Error.Code == CodeMethodNotFound {
+			t.Fatalf("planner tool %q does not reach dispatcher: %+v", name, response.Error)
+		}
+	}
+}
+
 func TestFinalServerRejectsUnknownTool(t *testing.T) {
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
 	response := finalToolCallResponse(t, server, "not_a_relay_tool")

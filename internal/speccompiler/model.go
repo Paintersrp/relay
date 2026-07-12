@@ -7,47 +7,52 @@ type scopeModel struct {
 	OutOfScope []string `json:"out_of_scope"`
 }
 
-type executionSpecModel struct {
-	SchemaVersion json.RawMessage `json:"schema_version"`
-	FeatureSlug   string          `json:"feature_slug"`
-	RepoTarget    string          `json:"repo_target"`
-	Branch        string          `json:"branch"`
-	BaseCommit    string          `json:"base_commit"`
-	Goal          string          `json:"goal"`
-	Context       string          `json:"context"`
-	Scope         scopeModel      `json:"scope"`
-	Steps         []stepModel     `json:"steps"`
-	Validation    validationModel `json:"validation"`
-	Completion    []string        `json:"completion_criteria"`
+type ExecutionDocument struct {
+	SchemaVersion string              `json:"-"`
+	FeatureSlug   string              `json:"feature_slug"`
+	RepoTarget    string              `json:"repo_target"`
+	Branch        string              `json:"branch"`
+	BaseCommit    string              `json:"base_commit"`
+	Goal          string              `json:"goal"`
+	Context       string              `json:"context"`
+	Scope         scopeModel          `json:"scope"`
+	Steps         []ExecutionStep     `json:"steps"`
+	Validation    ExecutionValidation `json:"validation"`
+	Completion    []string            `json:"completion_criteria"`
 }
 
-type stepModel struct {
-	Number     int            `json:"number"`
-	Goal       string         `json:"goal"`
-	Substeps   []substepModel `json:"substeps"`
-	Completion []string       `json:"completion_criteria"`
+type ExecutionStep struct {
+	Number     int                `json:"number"`
+	Goal       string             `json:"goal"`
+	Substeps   []ExecutionSubstep `json:"substeps"`
+	Completion []string           `json:"completion_criteria"`
 }
 
-type substepModel struct {
-	Number      int         `json:"number"`
-	Instruction string      `json:"instruction"`
-	Files       []fileModel `json:"files"`
-	Completion  []string    `json:"completion_criteria"`
+type ExecutionSubstep struct {
+	Number      int             `json:"number"`
+	Instruction string          `json:"instruction"`
+	DependsOn   []string        `json:"depends_on"`
+	Atomic      *bool           `json:"atomic"`
+	Files       []ExecutionFile `json:"files"`
+	Completion  []string        `json:"completion_criteria"`
 }
 
-type fileModel struct {
-	Path            string          `json:"path"`
-	DestinationPath string          `json:"destination_path"`
-	Operation       string          `json:"operation"`
-	Purpose         string          `json:"purpose"`
-	Implementation  json.RawMessage `json:"implementation"`
+type ExecutionFile struct {
+	Path            string                      `json:"path"`
+	DestinationPath string                      `json:"destination_path"`
+	Operation       string                      `json:"operation"`
+	Purpose         string                      `json:"purpose"`
+	Implementation  ExecutionFileImplementation `json:"implementation"`
 }
 
-type modifyImplementationModel struct {
-	Changes []modifyChangeModel `json:"changes"`
+type ExecutionFileImplementation struct {
+	Changes         []ExecutionDirective `json:"changes"`
+	Content         string               `json:"content"`
+	DeleteFile      bool                 `json:"delete_file"`
+	PreserveContent bool                 `json:"preserve_content"`
 }
 
-type modifyChangeModel struct {
+type ExecutionDirective struct {
 	Kind                string `json:"kind"`
 	OldText             string `json:"old_text"`
 	NewText             string `json:"new_text"`
@@ -56,28 +61,24 @@ type modifyChangeModel struct {
 	ExpectedOccurrences int    `json:"expected_occurrences"`
 }
 
-type createImplementationModel struct {
-	Content string `json:"content"`
+type ExecutionValidation struct {
+	Commands       []ExecutionValidationCommand `json:"commands"`
+	ExecutorChecks []string                     `json:"executor_checks"`
 }
 
-type deleteImplementationModel struct {
-	DeleteFile bool `json:"delete_file"`
-}
-
-type renameImplementationModel struct {
-	PreserveContent bool   `json:"preserve_content"`
-	Content         string `json:"content"`
-}
-
-type validationModel struct {
-	Commands       []validationCommandModel `json:"commands"`
-	ExecutorChecks []string                 `json:"executor_checks"`
-}
-
-type validationCommandModel struct {
+type ExecutionValidationCommand struct {
 	Command          string `json:"command"`
 	WorkingDirectory string `json:"working_directory"`
 	Expected         string `json:"expected"`
+}
+
+func decodeExecutionDocument(raw []byte, registration versionRegistration) (*ExecutionDocument, error) {
+	var document ExecutionDocument
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	document.SchemaVersion = registration.Version
+	return &document, nil
 }
 
 type planModel struct {

@@ -126,15 +126,18 @@ func TestFilenameMustBeBasename(t *testing.T) {
 }
 
 func TestSourceProvenanceIsPinned(t *testing.T) {
-	provenance := SourceProvenance()
-	if provenance.Repository != RelaySpecsRepo ||
-		provenance.Commit != RelaySpecsCommit ||
-		provenance.PlanSchemaPath != "schemas/plan.schema.json" ||
-		provenance.ExecutionSchemaRepository != RelayRepo ||
-		provenance.ExecutionSchemaCommit != RelayExecutionSchemaCommit ||
-		provenance.ExecutionSchemaPath != "internal/speccompiler/schemas/execution-spec.schema.json" ||
-		provenance.CompilerContract != "contracts/compiler.md" {
-		t.Fatalf("unexpected provenance: %+v", provenance)
+	want := Provenance{
+		Repository:       "Paintersrp/relay-specs",
+		Commit:           "4f34d2163f703b64a92f60a0295573d15fcbb68e",
+		CompilerContract: "contracts/compiler.md",
+		Schemas: []SchemaProvenance{
+			{ArtifactKind: ArtifactPlan, Version: "1.0", Path: "schemas/plan.schema.json"},
+			{ArtifactKind: ArtifactExecutionSpec, Version: "1.0", Path: "schemas/execution-spec-v1.0.schema.json"},
+			{ArtifactKind: ArtifactExecutionSpec, Version: "2.0", Path: "schemas/execution-spec.schema.json"},
+		},
+	}
+	if got := SourceProvenance(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected provenance: got=%+v want=%+v", got, want)
 	}
 }
 
@@ -228,174 +231,11 @@ func TestUnresolvedTemplateMarkerBlocksRendering(t *testing.T) {
 	assertFailureCode(t, result, "unresolved_template_marker")
 }
 
-func TestExecutionPayloadProjectionPrefersValidationContractCommands(t *testing.T) {
-	raw := withExecutionPayload(t, readFixture(t, "valid.execution-spec.json"), `{
-    "deterministic_operations": [
-      {
-        "id": "op-1",
-        "kind": "replace",
-        "mode": "exact",
-        "paths": [
-          "internal/example/config.go"
-        ],
-        "expected_occurrences": 1,
-        "depends_on": [],
-        "group": "group-1",
-        "on_failure": "residual"
-      }
-    ],
-    "operation_groups": [
-      {
-        "id": "group-1",
-        "atomic": true
-      }
-    ],
-    "execution_mode": {
-      "preferred_mode": "deterministic_packet",
-      "fallback_mode": "executor"
-    },
-    "validation_contract": {
-      "commands": [
-        {
-          "id": "vc-1",
-          "command": "go test ./internal/speccompiler",
-          "expected": "The focused compiler tests pass.",
-          "required": true,
-          "phase": "post_apply",
-          "severity": "hard",
-          "mutation_policy": "read_only",
-          "worktree_policy": "allow_tracked_changes"
-        }
-      ]
-    }
-  }`)
-	result := Compile("compiler-fixture.execution-spec.json", raw)
-	assertSuccess(t, result)
-
-	projection, diagnostics := ProjectExecutionPayload(raw)
-	if len(diagnostics) != 0 {
-		t.Fatalf("unexpected projection diagnostics: %+v", diagnostics)
-	}
-	if projection.ValidationCommandSource != "execution_payload.validation_contract.commands" {
-		t.Fatalf("unexpected validation source: %q", projection.ValidationCommandSource)
-	}
-	if len(projection.ValidationCommands) != 1 || projection.ValidationCommands[0].ID != "vc-1" {
-		t.Fatalf("validation contract was not projected: %+v", projection.ValidationCommands)
-	}
-	if len(projection.DeterministicOperations) != 1 || projection.DeterministicOperations[0].ID != "op-1" {
-		t.Fatalf("deterministic operation metadata was not projected: %+v", projection.DeterministicOperations)
-	}
-}
-
-func TestExecutionPayloadValidationCommandConflictBlocksRendering(t *testing.T) {
-	raw := withExecutionPayload(t, readFixture(t, "valid.execution-spec.json"), `{
-    "validation_contract": {
-      "commands": [
-        {
-          "id": "vc-1",
-          "command": "go test ./internal/other",
-          "expected": "The other focused tests pass."
-        }
-      ]
-    }
-  }`)
-	result := Compile("compiler-fixture.execution-spec.json", raw)
-	assertFailureCode(t, result, "validation_command_conflict")
-}
-
-func TestExecutionPayloadValidationRequiredConflictBlocksRendering(t *testing.T) {
-	raw := withExecutionPayload(t, readFixture(t, "valid.execution-spec.json"), `{
-    "validation_contract": {
-      "commands": [
-        {
-          "id": "vc-1",
-          "command": "go test ./internal/speccompiler",
-          "expected": "The focused compiler tests pass.",
-          "required": true
-        }
-      ]
-    },
-    "validation_commands": [
-      {
-        "id": "vc-1",
-        "command": "go test ./internal/speccompiler",
-        "expected": "The focused compiler tests pass.",
-        "required": false
-      }
-    ]
-  }`)
-	result := Compile("compiler-fixture.execution-spec.json", raw)
-	assertFailureCode(t, result, "validation_command_conflict")
-}
-
-func TestExecutionPayloadValidationPolicyConflictBlocksRendering(t *testing.T) {
-	raw := withExecutionPayload(t, readFixture(t, "valid.execution-spec.json"), `{
-    "validation_contract": {
-      "commands": [
-        {
-          "id": "vc-1",
-          "command": "go test ./internal/speccompiler",
-          "expected": "The focused compiler tests pass.",
-          "required": true,
-          "failure_handling": "block",
-          "phase": "post_apply",
-          "severity": "hard",
-          "mutation_policy": "read_only",
-          "worktree_policy": "allow_tracked_changes"
-        }
-      ]
-    },
-    "validation_commands": [
-      {
-        "id": "vc-1",
-        "command": "go test ./internal/speccompiler",
-        "expected": "The focused compiler tests pass.",
-        "required": true,
-        "failure_handling": "advisory",
-        "phase": "post_executor",
-        "severity": "advisory",
-        "mutation_policy": "mutating_allowed",
-        "worktree_policy": "clean_required"
-      }
-    ]
-  }`)
-	result := Compile("compiler-fixture.execution-spec.json", raw)
-	assertFailureCode(t, result, "validation_command_conflict")
-}
-
 func TestMissingValidationCommandBlocksRendering(t *testing.T) {
 	raw := readFixture(t, "valid.execution-spec.json")
 	raw = bytes.Replace(raw, []byte("\"commands\": [\n      {\n        \"command\": \"go test ./internal/speccompiler\",\n        \"expected\": \"The focused compiler tests pass.\"\n      }\n    ]"), []byte("\"commands\": []"), 1)
 	result := Compile("compiler-fixture.execution-spec.json", raw)
 	assertFailureCode(t, result, "missing_validation_command")
-}
-
-func withExecutionPayload(t *testing.T, raw []byte, payload string) []byte {
-	t.Helper()
-	anchor := []byte(`  "scope": {
-    "in_scope": [
-      "Exercise every supported file operation."
-    ],
-    "out_of_scope": [
-      "Do not perform repository mutation."
-    ]
-  },
-`)
-	replacement := []byte(`  "scope": {
-    "in_scope": [
-      "Exercise every supported file operation."
-    ],
-    "out_of_scope": [
-      "Do not perform repository mutation."
-    ]
-  },
-  "execution_payload": ` + payload + `,
-`)
-	updated := bytes.Replace(raw, anchor, replacement, 1)
-	if bytes.Equal(updated, raw) {
-		t.Fatalf("failed to inject execution_payload fixture")
-	}
-	return updated
 }
 
 func TestDynamicFenceLength(t *testing.T) {

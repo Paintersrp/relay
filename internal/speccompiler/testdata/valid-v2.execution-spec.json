@@ -1,0 +1,147 @@
+{
+  "schema_version": "2.0",
+  "feature_slug": "compiler-v2-fixture",
+  "repo_target": "relay",
+  "branch": "main",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "goal": "Compile a representative Execution Spec v2.0 fixture.",
+  "context": "Exercise versioned rendering and evolving path-chain projection.",
+  "scope": {
+    "in_scope": [
+      "Exercise every v2.0 metadata form and same-path-chain replay."
+    ],
+    "out_of_scope": [
+      "Do not mutate a repository."
+    ]
+  },
+  "steps": [
+    {
+      "number": 1,
+      "goal": "Render and project versioned substeps.",
+      "substeps": [
+        {
+          "number": 1,
+          "instruction": "Establish the first intermediate selector without metadata.",
+          "files": [
+            {
+              "path": "internal/example/config.go",
+              "operation": "modify",
+              "purpose": "Exercise metadata-free v2.0 rendering.",
+              "implementation": {
+                "changes": [
+                  {
+                    "kind": "replace",
+                    "old_text": "const enabled = false\n",
+                    "new_text": "const enabled = true\n",
+                    "expected_occurrences": 1
+                  }
+                ]
+              }
+            }
+          ],
+          "completion_criteria": [
+            "The metadata-free substep renders without an execution-constraints section."
+          ]
+        },
+        {
+          "number": 2,
+          "instruction": "Consume the first selector with dependency-only metadata.",
+          "depends_on": [
+            "1.1"
+          ],
+          "files": [
+            {
+              "path": "internal/example/config.go",
+              "operation": "modify",
+              "purpose": "Exercise dependency-only rendering and projection.",
+              "implementation": {
+                "changes": [
+                  {
+                    "kind": "insert_after",
+                    "anchor": "const enabled = true\n",
+                    "content": "const mode = `strict`\n",
+                    "expected_occurrences": 1
+                  }
+                ]
+              }
+            }
+          ],
+          "completion_criteria": [
+            "The dependency-only constraint is preserved in authored order."
+          ]
+        },
+        {
+          "number": 3,
+          "instruction": "Consume the next selector with atomic-only metadata.",
+          "atomic": false,
+          "files": [
+            {
+              "path": "internal/example/config.go",
+              "operation": "modify",
+              "purpose": "Exercise explicit atomic false rendering.",
+              "implementation": {
+                "changes": [
+                  {
+                    "kind": "replace",
+                    "old_text": "const mode = `strict`\n",
+                    "new_text": "const mode = `reviewed`\n",
+                    "expected_occurrences": 1
+                  }
+                ]
+              }
+            }
+          ],
+          "completion_criteria": [
+            "Explicit atomic false renders as not required."
+          ]
+        },
+        {
+          "number": 4,
+          "instruction": "Consume the final selector with combined metadata.",
+          "depends_on": [
+            "1.3"
+          ],
+          "atomic": true,
+          "files": [
+            {
+              "path": "internal/example/config.go",
+              "operation": "modify",
+              "purpose": "Exercise combined explicit and implicit dependency merging.",
+              "implementation": {
+                "changes": [
+                  {
+                    "kind": "replace",
+                    "old_text": "const mode = `reviewed`\n",
+                    "new_text": "const mode = `safe`\n",
+                    "expected_occurrences": 1
+                  }
+                ]
+              }
+            }
+          ],
+          "completion_criteria": [
+            "Combined dependency and atomic metadata render in canonical order."
+          ]
+        }
+      ],
+      "completion_criteria": [
+        "Versioned rendering and projection remain deterministic."
+      ]
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "go test ./internal/speccompiler",
+        "expected": "The focused compiler tests pass."
+      }
+    ],
+    "executor_checks": [
+      "Verify v2.0 constraints render only where metadata is authored."
+    ]
+  },
+  "completion_criteria": [
+    "The v2.0 fixture compiles without errors.",
+    "The rendered brief matches the v2.0 golden file."
+  ]
+}

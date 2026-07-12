@@ -21,9 +21,23 @@ func (v *validator) add(code, path, message string) {
 	v.diagnostics = append(v.diagnostics, Diagnostic{Code: code, Path: path, Message: message})
 }
 
-func validateExecutionSpec(root *jsonNode, filenameSlug string, rawJSON []byte) []Diagnostic {
+type executionDependencyRecord struct {
+	Ref  string
+	Path string
+}
+
+type executionSubstepRecord struct {
+	Ref       string
+	Path      string
+	Order     int
+	DependsOn []executionDependencyRecord
+}
+
+var substepReferencePattern = regexp.MustCompile(`^[1-9][0-9]*\.[1-9][0-9]*$`)
+
+func validateExecutionSpec(root *jsonNode, filenameSlug string, registration versionRegistration) []Diagnostic {
 	v := &validator{}
-	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "execution_payload", "steps", "validation", "completion_criteria"}, []string{"feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}) {
+	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}, []string{"feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}) {
 		return v.diagnostics
 	}
 
@@ -38,13 +52,11 @@ func validateExecutionSpec(root *jsonNode, filenameSlug string, rawJSON []byte) 
 	if member, ok := root.objectMember("scope"); ok {
 		v.validateScope(member.value, "/scope")
 	}
-	if _, diagnostics := ProjectExecutionPayload(rawJSON); len(diagnostics) != 0 {
-		v.diagnostics = append(v.diagnostics, diagnostics...)
-	}
 
 	fileCount := 0
 	operations := map[string]string{}
 	destinations := map[string]string{}
+	var substeps []executionSubstepRecord
 	if member, ok := root.objectMember("steps"); ok {
 		if member.value.kind != nodeArray {
 			v.add("invalid_value_type", "/steps", "steps must be an array.")
@@ -53,12 +65,15 @@ func validateExecutionSpec(root *jsonNode, filenameSlug string, rawJSON []byte) 
 		} else {
 			for i, step := range member.value.array {
 				stepPath := joinPointer("/steps", strconv.Itoa(i))
-				v.validateExecutionStep(step, stepPath, i+1, &fileCount, operations, destinations)
+				v.validateExecutionStep(step, stepPath, i+1, registration, &fileCount, operations, destinations, &substeps)
 			}
 		}
 	}
 	if fileCount == 0 {
 		v.add("missing_file_declaration", "/steps", "At least one file declaration is required.")
+	}
+	if registration.Validation == validateExecutionV2 {
+		v.validateExecutionDependencies(substeps)
 	}
 
 	if member, ok := root.objectMember("validation"); ok {
@@ -70,12 +85,16 @@ func validateExecutionSpec(root *jsonNode, filenameSlug string, rawJSON []byte) 
 	return v.diagnostics
 }
 
-func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedNumber int, fileCount *int, operations, destinations map[string]string) {
+func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedNumber int, registration versionRegistration, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
 	if !v.objectShape(node, path, []string{"number", "goal", "substeps", "completion_criteria"}, []string{"number", "goal", "substeps", "completion_criteria"}) {
 		return
 	}
-	if number, ok := v.integerMember(node, "number", path+"/number", 1); ok && number != expectedNumber {
-		v.add("nonsequential_step_number", path+"/number", fmt.Sprintf("Step number must be %d.", expectedNumber))
+	stepNumber := expectedNumber
+	if number, ok := v.integerMember(node, "number", path+"/number", 1); ok {
+		stepNumber = number
+		if number != expectedNumber {
+			v.add("nonsequential_step_number", path+"/number", fmt.Sprintf("Step number must be %d.", expectedNumber))
+		}
 	}
 	v.stringMember(node, "goal", path+"/goal", stringSingleLine)
 	if member, ok := node.objectMember("substeps"); ok {
@@ -86,7 +105,7 @@ func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedN
 		} else {
 			for i, substep := range member.value.array {
 				subPath := joinPointer(path+"/substeps", strconv.Itoa(i))
-				v.validateExecutionSubstep(substep, subPath, i+1, fileCount, operations, destinations)
+				v.validateExecutionSubstep(substep, subPath, stepNumber, i+1, registration, fileCount, operations, destinations, records)
 			}
 		}
 	}
@@ -95,14 +114,44 @@ func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedN
 	}
 }
 
-func (v *validator) validateExecutionSubstep(node *jsonNode, path string, expectedNumber int, fileCount *int, operations, destinations map[string]string) {
-	if !v.objectShape(node, path, []string{"number", "instruction", "files", "completion_criteria"}, []string{"number", "instruction", "files", "completion_criteria"}) {
+func (v *validator) validateExecutionSubstep(node *jsonNode, path string, stepNumber, expectedNumber int, registration versionRegistration, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
+	if !v.objectShape(node, path, registration.CanonicalSubstep, []string{"number", "instruction", "files", "completion_criteria"}) {
 		return
 	}
-	if number, ok := v.integerMember(node, "number", path+"/number", 1); ok && number != expectedNumber {
-		v.add("nonsequential_substep_number", path+"/number", fmt.Sprintf("Substep number must be %d.", expectedNumber))
+	substepNumber := expectedNumber
+	if number, ok := v.integerMember(node, "number", path+"/number", 1); ok {
+		substepNumber = number
+		if number != expectedNumber {
+			v.add("nonsequential_substep_number", path+"/number", fmt.Sprintf("Substep number must be %d.", expectedNumber))
+		}
 	}
 	v.stringMember(node, "instruction", path+"/instruction", stringSingleLine)
+
+	record := executionSubstepRecord{
+		Ref:   fmt.Sprintf("%d.%d", stepNumber, substepNumber),
+		Path:  path,
+		Order: len(*records),
+	}
+	if registration.Validation == validateExecutionV2 {
+		if member, ok := node.objectMember("depends_on"); ok {
+			if member.value.kind != nodeArray {
+				v.add("invalid_value_type", path+"/depends_on", "depends_on must be an array.")
+			} else if len(member.value.array) == 0 {
+				v.add("empty_required_value", path+"/depends_on", "depends_on must not be empty when authored.")
+			} else {
+				for i, dependency := range member.value.array {
+					dependencyPath := joinPointer(path+"/depends_on", strconv.Itoa(i))
+					if dependency.kind != nodeString {
+						v.add("invalid_substep_reference", dependencyPath, "Substep references must use <step>.<substep> form.")
+						continue
+					}
+					record.DependsOn = append(record.DependsOn, executionDependencyRecord{Ref: dependency.text, Path: dependencyPath})
+				}
+			}
+		}
+	}
+	*records = append(*records, record)
+
 	if member, ok := node.objectMember("files"); ok {
 		if member.value.kind != nodeArray {
 			v.add("invalid_value_type", path+"/files", "files must be an array.")
@@ -119,6 +168,70 @@ func (v *validator) validateExecutionSubstep(node *jsonNode, path string, expect
 	if member, ok := node.objectMember("completion_criteria"); ok {
 		v.validateStringArray(member.value, path+"/completion_criteria", false)
 	}
+}
+
+func (v *validator) validateExecutionDependencies(records []executionSubstepRecord) {
+	byRef := make(map[string]executionSubstepRecord, len(records))
+	for _, record := range records {
+		byRef[record.Ref] = record
+	}
+	graph := make(map[string][]string, len(records))
+	for _, record := range records {
+		for _, dependency := range record.DependsOn {
+			if substepReferencePattern.MatchString(dependency.Ref) {
+				if _, ok := byRef[dependency.Ref]; ok {
+					graph[record.Ref] = append(graph[record.Ref], dependency.Ref)
+				}
+			}
+		}
+	}
+
+	for _, record := range records {
+		seen := map[string]struct{}{}
+		for _, dependency := range record.DependsOn {
+			if !substepReferencePattern.MatchString(dependency.Ref) {
+				v.add("invalid_substep_reference", dependency.Path, "Substep references must use <step>.<substep> form.")
+				continue
+			}
+			if _, duplicate := seen[dependency.Ref]; duplicate {
+				v.add("duplicate_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q is duplicated.", dependency.Ref))
+				continue
+			}
+			seen[dependency.Ref] = struct{}{}
+			if dependency.Ref == record.Ref {
+				v.add("self_dependency", dependency.Path, "A substep cannot depend on itself.")
+				continue
+			}
+			target, exists := byRef[dependency.Ref]
+			if !exists {
+				v.add("unknown_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q does not exist.", dependency.Ref))
+				continue
+			}
+			if target.Order > record.Order {
+				v.add("forward_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q must reference an earlier substep.", dependency.Ref))
+			}
+			if dependencyReaches(graph, dependency.Ref, record.Ref, map[string]bool{}) {
+				v.add("circular_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q participates in a cycle.", dependency.Ref))
+			}
+		}
+	}
+}
+
+func dependencyReaches(graph map[string][]string, current, target string, visiting map[string]bool) bool {
+	if current == target {
+		return true
+	}
+	if visiting[current] {
+		return false
+	}
+	visiting[current] = true
+	defer delete(visiting, current)
+	for _, next := range graph[current] {
+		if dependencyReaches(graph, next, target, visiting) {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *validator) validateFile(node *jsonNode, path string, operations, destinations map[string]string) {

@@ -138,10 +138,8 @@ Preserve content: true
 
 ## Execution Instructions
 
-- Treat this Executor Brief as the implementation authority for the assigned execution.
-- Complete the stated goal, implementation work, completion criteria, and validation.
-- Make any repository changes necessary to complete the specification.
-- Keep changes relevant to the specification and avoid unrelated cleanup or refactoring.
-- Preserve unrelated local changes. Do not reset, discard, or overwrite them.
-- Run the specified validation and report the results.
-- Report validation results, any incomplete work, and any technical blocker that prevents completion.
+- Treat this effective brief as the sole implementation authority for this attempt.
+- This canonical brief is full mode; every declared implementation directive remains required.
+- Apply the declared implementation exactly, using only necessary source-compatible adaptation that preserves behavior, architecture, scope, and material code shape.
+- Preserve unrelated work and avoid unrelated cleanup or refactoring.
+- Run the specified validation and report exact results, blockers, or incomplete work.

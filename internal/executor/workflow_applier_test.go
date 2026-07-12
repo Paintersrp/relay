@@ -14,7 +14,7 @@ import (
 
 func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 	fixture := newWorkflowFixture(t)
-	run := createRunWithDeterministicPayload(t, fixture, "deterministic-applier-complete")
+	run := createRunWithCanonicalDeterministicSpec(t, fixture, "deterministic-applier-complete")
 	fixture.service.runner = func(context.Context, string, string, []string, string, time.Duration, pipeline.AgentCommandStreamCallbacks, pipeline.ProcessController) pipeline.AgentCommandRunResult {
 		t.Fatal("model runner must not be called after completed applier outcome")
 		return pipeline.AgentCommandRunResult{}
@@ -22,10 +22,12 @@ func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 	fixture.service.applier = func(ctx context.Context, input applier.Input) (applier.Result, error) {
 		artifact := writeFakeApplierEvidence(t, ctx, input.EvidenceWriter)
 		return applier.Result{
-			Outcome:              applier.OutcomeCompleted,
-			ActorKind:            applier.ActorKindApplier,
-			ChangedFiles:         []string{"internal/example/config.go"},
-			Ledger:               applier.Ledger{Entries: []applier.LedgerEntry{{OperationID: "op-replace", Outcome: applier.OperationApplied, ChangedFiles: []string{"internal/example/config.go"}}}},
+			Outcome:      applier.OutcomeCompleted,
+			ActorKind:    applier.ActorKindApplier,
+			ChangedFiles: []string{"internal/example/config.go"},
+			Ledger: applier.Ledger{Entries: []applier.LedgerEntry{
+				{OperationID: "op-replace", Outcome: applier.OperationApplied, ChangedFiles: []string{"internal/example/config.go"}},
+			}},
 			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomeCompleted, ActorKind: applier.ActorKindApplier, CompletedOperations: []string{"op-replace"}, ChangedFiles: []string{"internal/example/config.go"}},
 			Evidence:             []applier.EvidenceArtifact{artifact},
 		}, nil
@@ -59,7 +61,7 @@ func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 
 func TestWorkflowStartPartialApplierAddsResidualContextToOrdinaryAttempt(t *testing.T) {
 	fixture := newWorkflowFixture(t)
-	run := createRunWithDeterministicPayload(t, fixture, "deterministic-applier-partial")
+	run := createRunWithCanonicalDeterministicSpec(t, fixture, "deterministic-applier-partial")
 	fixture.service.runner = successfulRunner
 	fixture.service.applier = func(ctx context.Context, input applier.Input) (applier.Result, error) {
 		artifact := writeFakeApplierEvidence(t, ctx, input.EvidenceWriter)
@@ -100,7 +102,7 @@ func TestWorkflowStartPartialApplierAddsResidualContextToOrdinaryAttempt(t *test
 
 func TestWorkflowStartBlockedApplierPreventsModelDispatch(t *testing.T) {
 	fixture := newWorkflowFixture(t)
-	run := createRunWithDeterministicPayload(t, fixture, "deterministic-applier-blocked")
+	run := createRunWithCanonicalDeterministicSpec(t, fixture, "deterministic-applier-blocked")
 	fixture.service.runner = func(context.Context, string, string, []string, string, time.Duration, pipeline.AgentCommandStreamCallbacks, pipeline.ProcessController) pipeline.AgentCommandRunResult {
 		t.Fatal("model runner must not be called after blocked applier outcome")
 		return pipeline.AgentCommandRunResult{}
@@ -109,10 +111,12 @@ func TestWorkflowStartBlockedApplierPreventsModelDispatch(t *testing.T) {
 		artifact := writeFakeApplierEvidence(t, ctx, input.EvidenceWriter)
 		failure := &applier.FailurePacket{FailureClass: applier.FailureClassUnsafeSource, Summary: "source guard failed", BlockedOperations: []string{"op-blocked"}}
 		return applier.Result{
-			Outcome:              applier.OutcomeBlocked,
-			ActorKind:            applier.ActorKindApplier,
-			FailurePacket:        failure,
-			Ledger:               applier.Ledger{Entries: []applier.LedgerEntry{{OperationID: "op-blocked", Outcome: applier.OperationBlocked, Failure: applier.FailureClassUnsafeSource, Reason: "source guard failed"}}},
+			Outcome:       applier.OutcomeBlocked,
+			ActorKind:     applier.ActorKindApplier,
+			FailurePacket: failure,
+			Ledger: applier.Ledger{Entries: []applier.LedgerEntry{
+				{OperationID: "op-blocked", Outcome: applier.OperationBlocked, Failure: applier.FailureClassUnsafeSource, Reason: "source guard failed"},
+			}},
 			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomeBlocked, ActorKind: applier.ActorKindApplier, BlockedOperations: []string{"op-blocked"}, FailureClass: applier.FailureClassUnsafeSource, FailureReason: "source guard failed"},
 			Evidence:             []applier.EvidenceArtifact{artifact},
 		}, nil
@@ -163,9 +167,72 @@ func TestWorkflowStartWithoutDeterministicOperationsSkipsApplier(t *testing.T) {
 	}
 }
 
-func createRunWithDeterministicPayload(t *testing.T, fixture *workflowFixture, slug string) workflowstore.Run {
+func createRunWithCanonicalDeterministicSpec(t *testing.T, fixture *workflowFixture, slug string) workflowstore.Run {
 	t.Helper()
-	canonical := []byte(`{"execution_payload":{"deterministic_operations":[{"id":"op-replace","kind":"replace","mode":"exact","paths":["internal/example/config.go"],"payload":{"old_text":"const enabled = false\\n","new_text":"const enabled = true\\n"},"on_failure":"residual"}]}}`)
+	canonical := []byte(`{
+  "schema_version": "1.0",
+  "feature_slug": "` + slug + `",
+  "repo_target": "relay",
+  "branch": "feat/simplification",
+  "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "goal": "Exercise deterministic-first workflow behavior.",
+  "context": "Canonical v1.0 workflow fixture derived through the temporary applier bridge.",
+  "scope": {
+    "in_scope": [
+      "Exercise one canonical deterministic operation."
+    ],
+    "out_of_scope": [
+      "Do not test deprecated authored payload compatibility."
+    ]
+  },
+  "steps": [
+    {
+      "number": 1,
+      "goal": "Provide one deterministic operation for workflow tests.",
+      "substeps": [
+        {
+          "number": 1,
+          "instruction": "Replace the exact example configuration value.",
+          "files": [
+            {
+              "path": "internal/example/config.go",
+              "operation": "modify",
+              "purpose": "Provide the deterministic operation consumed by workflow tests.",
+              "implementation": {
+                "changes": [
+                  {
+                    "kind": "replace",
+                    "old_text": "const enabled = false\n",
+                    "new_text": "const enabled = true\n",
+                    "expected_occurrences": 1
+                  }
+                ]
+              }
+            }
+          ],
+          "completion_criteria": [
+            "The canonical file work projects to one legacy applier operation."
+          ]
+        }
+      ],
+      "completion_criteria": [
+        "The workflow fixture contains one deterministic operation."
+      ]
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "go test ./internal/executor",
+        "expected": "The focused executor tests pass."
+      }
+    ]
+  },
+  "completion_criteria": [
+    "The canonical v1.0 fixture reaches deterministic workflow pre-application without authored payload metadata."
+  ]
+}
+`)
 	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
 		FeatureSlug:      slug,
 		RepoTarget:       "relay",

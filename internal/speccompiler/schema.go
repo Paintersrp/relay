@@ -12,15 +12,8 @@ import (
 //go:embed schemas/*.json
 var schemaFS embed.FS
 
-func validateEmbeddedSchema(kind ArtifactKind, raw []byte) (bool, error) {
-	path := ""
-	switch kind {
-	case ArtifactPlan:
-		path = "schemas/plan.schema.json"
-	case ArtifactExecutionSpec:
-		path = "schemas/execution-spec.schema.json"
-	}
-	schemaBytes, err := schemaFS.ReadFile(path)
+func validateEmbeddedSchema(registration versionRegistration, raw []byte) (bool, error) {
+	schemaBytes, err := schemaFS.ReadFile(registration.SchemaPath)
 	if err != nil {
 		return false, err
 	}

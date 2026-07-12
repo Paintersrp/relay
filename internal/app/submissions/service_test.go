@@ -141,6 +141,48 @@ func TestValidateArtifactPreservesCanonicalIdentityWithoutWorkflowStorage(t *tes
 	}
 }
 
+func TestExecutionVersionResultsPropagateThroughValidationAndRunCreation(t *testing.T) {
+	v1 := canonicalExecutionSpecBytes("relay")
+	v2 := bytes.Replace(v1, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "2.0"`), 1)
+	compiledV2 := speccompiler.Compile("canonical-service.execution-spec.json", v2)
+	validatedV2 := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: v2})
+	if !validatedV2.OK || validatedV2.Status != "valid" || validatedV2.Kind != "execution_spec" || validatedV2.SHA256 != SHA256(v2) {
+		t.Fatalf("v2 validation result = %+v", validatedV2)
+	}
+	assertDiagnosticsMatch(t, "v2 diagnostics", validatedV2.Diagnostics, compiledV2.Errors)
+	assertDiagnosticsMatch(t, "v2 notices", validatedV2.Notices, compiledV2.Notices)
+
+	fallback := bytes.Replace(v2, []byte("  \"schema_version\": \"2.0\",\n"), nil, 1)
+	compiledFallback := speccompiler.Compile("canonical-service.execution-spec.json", fallback)
+	validatedFallback := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: fallback})
+	if !validatedFallback.OK || len(validatedFallback.Notices) != 1 || validatedFallback.Notices[0].Code != "schema_version_fallback" {
+		t.Fatalf("v2 fallback validation result = %+v", validatedFallback)
+	}
+	assertDiagnosticsMatch(t, "v2 fallback diagnostics", validatedFallback.Diagnostics, compiledFallback.Errors)
+	assertDiagnosticsMatch(t, "v2 fallback notices", validatedFallback.Notices, compiledFallback.Notices)
+
+	unsupported := bytes.Replace(v2, []byte(`"schema_version": "2.0"`), []byte(`"schema_version": "3.0"`), 1)
+	compiledUnsupported := speccompiler.Compile("canonical-service.execution-spec.json", unsupported)
+	validatedUnsupported := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: unsupported})
+	if validatedUnsupported.OK || validatedUnsupported.Status != "blocked" || len(validatedUnsupported.Notices) != 0 {
+		t.Fatalf("unsupported validation result = %+v", validatedUnsupported)
+	}
+	assertDiagnosticsMatch(t, "unsupported diagnostics", validatedUnsupported.Diagnostics, compiledUnsupported.Errors)
+
+	fixture := newSubmissionFixture(t)
+	created, err := fixture.service.CreateRun(context.Background(), CreateRunInput{
+		DisplayName:    "canonical-service.execution-spec.json",
+		ExpectedSHA256: SHA256(v2),
+		CanonicalBytes: v2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Artifacts) != 2 {
+		t.Fatalf("v2 Run artifacts = %+v", created.Artifacts)
+	}
+}
+
 func assertDiagnosticsMatch(
 	t *testing.T,
 	label string,

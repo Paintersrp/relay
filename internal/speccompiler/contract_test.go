@@ -38,8 +38,7 @@ func TestSchemaVersionFallbackForms(t *testing.T) {
 		{name: "boolean", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": true`))},
 		{name: "array", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": []`))},
 		{name: "object", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": {}`))},
-		{name: "older unsupported", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "0.9"`))},
-		{name: "newer unsupported", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "2.0"`))},
+		{name: "malformed string", raw: replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "current"`))},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -47,6 +46,17 @@ func TestSchemaVersionFallbackForms(t *testing.T) {
 			assertSuccess(t, result)
 			if len(result.Notices) != 1 || result.Notices[0].Code != "schema_version_fallback" || result.Notices[0].Path != "/schema_version" {
 				t.Fatalf("expected one schema fallback notice, got %+v", result.Notices)
+			}
+		})
+	}
+
+	for _, version := range []string{"0.9", "2.0"} {
+		t.Run("unsupported "+version, func(t *testing.T) {
+			raw := replaceOnce(t, base, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "`+version+`"`))
+			result := Compile("compiler-plan-fixture.plan.json", raw)
+			assertFailureCode(t, result, "unsupported_schema_version")
+			if len(result.Notices) != 0 {
+				t.Fatalf("unsupported version returned fallback notice: %+v", result.Notices)
 			}
 		})
 	}
@@ -419,7 +429,8 @@ func TestEmbeddedSchemasMatchPinnedSourceBlobs(t *testing.T) {
 		want string
 	}{
 		{path: "schemas/plan.schema.json", want: "2a2fb55b39d6be8d79ab1de124c017d85ea1d872"},
-		{path: "schemas/execution-spec.schema.json", want: "f634e67b080c2280aec225483a2d7d198403c316"},
+		{path: "schemas/execution-spec-v1.0.schema.json", want: "5541ee79b414b6044c71cf33a856d1c49cf09018"},
+		{path: "schemas/execution-spec.schema.json", want: "b00b1e2ec95b2ccdaf5215174805232745a6869a"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
