@@ -180,10 +180,18 @@ func verifyInvocationUsesEffectiveBrief(invocation ExecutorInvocation, selected 
 	if matches != 1 {
 		return fmt.Errorf("executor invocation must reference exactly one selected effective brief path")
 	}
-	if invocation.StdinSource != "" && invocation.StdinSource != selected.Path {
+	if invocation.StdinBytes != 0 {
+		return fmt.Errorf("path-based executor invocation must not supply stdin bytes")
+	}
+	if !neutralStdinSource(invocation.StdinSource) {
 		return fmt.Errorf("executor invocation identifies an alternate brief source")
 	}
 	return nil
+}
+
+func neutralStdinSource(source string) bool {
+	source = strings.TrimSpace(source)
+	return source == "" || source == "/dev/null" || strings.EqualFold(source, "NUL") || source == os.DevNull
 }
 
 func (s *WorkflowExecutionService) failPrelaunchAttempt(
@@ -191,9 +199,10 @@ func (s *WorkflowExecutionService) failPrelaunchAttempt(
 	begun workflowruns.BeginExecutionAttemptResult,
 	preflight workflowrepos.ExecutionPreflightResult,
 	applierResult *WorkflowApplierResult,
+	selected *effectiveBriefInput,
 	cause error,
 ) (WorkflowStartResult, error) {
-	s.finishPrelaunchFailure(begun.Attempt, cause.Error())
+	s.finishPrelaunchFailure(begun.Attempt, selected, cause.Error())
 	result := WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}
 	if attempt, err := s.store.GetExecutionAttemptByAttemptID(ctx, begun.Attempt.AttemptID); err == nil {
 		result.Attempt = attempt

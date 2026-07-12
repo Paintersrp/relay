@@ -242,11 +242,14 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		}
 		selected, err := s.prepareResidualEffectiveBrief(ctx, begun.Attempt, applierResult)
 		if err != nil {
-			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, err)
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, nil, err)
+		}
+		if err := s.recordEffectiveBriefIdentity(ctx, begun.Attempt, selected); err != nil {
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, &selected, err)
 		}
 		adapter, err := s.adapterFactory(normalizedAdapter)
 		if err != nil {
-			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, err)
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, &selected, err)
 		}
 		runtimeResultPath := filepath.Join(s.store.ArtifactStore().Root(), ".runtime", run.RunID, "executor-result.tmp")
 		invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
@@ -259,14 +262,14 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 			Timeout:       s.timeout,
 		})
 		if err != nil {
-			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, fmt.Errorf("build executor invocation: %w", err))
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, &selected, fmt.Errorf("build executor invocation: %w", err))
 		}
 		if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
-			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, err)
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, &selected, err)
 		}
 		invocationPreflight := s.invocationPreflight(invocation)
 		if !invocationPreflight.OK {
-			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, fmt.Errorf("adapter preflight failed: %s", invocationPreflight.BlockerText))
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, &selected, fmt.Errorf("adapter preflight failed: %s", invocationPreflight.BlockerText))
 		}
 		runtimeCtx, cancel := context.WithCancel(context.Background())
 		runtime := &workflowRuntime{cancel: cancel}
@@ -549,6 +552,22 @@ type workflowAttemptRuntime struct {
 	StderrBytes              int64  `json:"stderr_bytes,omitempty"`
 }
 
+func (s *WorkflowExecutionService) recordEffectiveBriefIdentity(ctx context.Context, attempt workflowstore.ExecutionAttempt, selected effectiveBriefInput) error {
+	state := workflowAttemptRuntime{
+		EffectiveBriefArtifactID: selected.Artifact.ArtifactID,
+		EffectiveBriefSHA256:     selected.Artifact.SHA256,
+		EffectiveBriefMode:       string(selected.Mode),
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("encode effective brief identity: %w", err)
+	}
+	if _, err := s.runs.UpdateExecutionAttemptResult(ctx, attempt.AttemptID, string(data)); err != nil {
+		return fmt.Errorf("record effective brief identity: %w", err)
+	}
+	return nil
+}
+
 func (s *WorkflowExecutionService) execute(
 	ctx context.Context,
 	run workflowstore.Run,
@@ -574,7 +593,7 @@ func (s *WorkflowExecutionService) execute(
 
 	runtimeDir := filepath.Join(s.store.ArtifactStore().Root(), ".runtime", run.RunID, attempt.AttemptID)
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
-		s.finishPrelaunchFailure(attempt, "prepare output spool: "+err.Error())
+		s.finishPrelaunchFailure(attempt, &selected, "prepare output spool: "+err.Error())
 		return
 	}
 	defer func() {
@@ -586,13 +605,13 @@ func (s *WorkflowExecutionService) execute(
 	}()
 	stdoutCapture, err := newWorkflowOutputCapture(filepath.Join(runtimeDir, "stdout.log"), WorkflowLiveOutputLimitBytes)
 	if err != nil {
-		s.finishPrelaunchFailure(attempt, err.Error())
+		s.finishPrelaunchFailure(attempt, &selected, err.Error())
 		return
 	}
 	stderrCapture, err := newWorkflowOutputCapture(filepath.Join(runtimeDir, "stderr.log"), WorkflowLiveOutputLimitBytes)
 	if err != nil {
 		_ = stdoutCapture.Close()
-		s.finishPrelaunchFailure(attempt, err.Error())
+		s.finishPrelaunchFailure(attempt, &selected, err.Error())
 		return
 	}
 	runtime.setOutputCaptures(stdoutCapture, stderrCapture)
@@ -600,7 +619,7 @@ func (s *WorkflowExecutionService) execute(
 	if invocation.ResultFile != "" {
 		if err := os.MkdirAll(filepath.Dir(invocation.ResultFile), 0o700); err != nil {
 			_, _, _ = runtime.closeOutputs()
-			s.finishPrelaunchFailure(attempt, "prepare result path: "+err.Error())
+			s.finishPrelaunchFailure(attempt, &selected, "prepare result path: "+err.Error())
 			return
 		}
 	}
@@ -724,11 +743,19 @@ func (s *WorkflowExecutionService) execute(
 	_ = repository
 }
 
-func (s *WorkflowExecutionService) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, message string) {
-	resultJSON, _ := json.Marshal(workflowAttemptRuntime{
-		TerminationVerified: true,
-		Error:               redactSensitive(message),
-	})
+func (s *WorkflowExecutionService) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, selected *effectiveBriefInput, message string) {
+	state := workflowAttemptRuntime{}
+	if current, err := s.store.GetExecutionAttemptByAttemptID(context.Background(), attempt.AttemptID); err == nil && strings.TrimSpace(current.ResultJSON) != "" {
+		_ = json.Unmarshal([]byte(current.ResultJSON), &state)
+	}
+	if selected != nil {
+		state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
+		state.EffectiveBriefSHA256 = selected.Artifact.SHA256
+		state.EffectiveBriefMode = string(selected.Mode)
+	}
+	state.TerminationVerified = true
+	state.Error = redactSensitive(message)
+	resultJSON, _ := json.Marshal(state)
 	if _, err := s.runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{
 		AttemptID:  attempt.AttemptID,
 		Status:     workflowstore.AttemptStatusFailed,

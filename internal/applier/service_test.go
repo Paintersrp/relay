@@ -107,6 +107,34 @@ func TestApplyReplaySemantics(t *testing.T) {
 	})
 }
 
+func TestApplyResidualChainStillBlocksSourceContradiction(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "a.txt"), "actual\n")
+	projection := projection(
+		[]speccompiler.ProjectedSubstep{{Ref: "1.1", FileWorkRefs: []string{"1.1.file.1", "1.1.file.2"}}},
+		[]speccompiler.ProjectedPathChain{
+			chain("chain.a", 0, []string{"1.1.file.1", "1.1.file.2"}, []string{"a.txt", "b.txt"}, []string{"1.1"}),
+		},
+		[]speccompiler.ProjectedFileWork{
+			modifyWork("1.1.file.1", "1.1", "chain.a", "a.txt", directive("1.1.file.1.change.1", "replace", "missing", "updated", 1)),
+			{Ref: "1.1.file.2", SubstepRef: "1.1", PathChainRef: "chain.a", Path: "a.txt", DestinationPath: "b.txt", Operation: "rename", Content: "replacement\n"},
+		},
+	)
+	result, err := NewService().Apply(context.Background(), Input{WorkspaceRoot: root, Projection: projection})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != OutcomeBlocked || result.ImplementationResult.ModelExecutorRequired || len(result.ChangedFiles) != 0 {
+		t.Fatalf("result = %+v", result)
+	}
+	if got := string(mustRead(t, filepath.Join(root, "a.txt"))); got != "actual\n" {
+		t.Fatalf("source content = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "b.txt")); !os.IsNotExist(err) {
+		t.Fatalf("residual destination exists after blocker: %v", err)
+	}
+}
+
 func TestApplySupportedFilesystemOperations(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "modify.txt"), "old\n")

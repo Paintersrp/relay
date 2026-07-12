@@ -80,61 +80,71 @@ func safePath(root, rel string) (string, string, error) {
 	return filepath.ToSlash(rel), absolute, nil
 }
 
-func preflightPathExistence(root string, works []speccompiler.ProjectedFileWork) error {
-	state := map[string]bool{}
-	loaded := map[string]bool{}
-	load := func(path string) (bool, error) {
-		path = filepath.ToSlash(path)
-		if loaded[path] {
-			return state[path], nil
-		}
-		clean, absolute, err := safePath(root, path)
-		if err != nil {
-			return false, err
-		}
-		file, err := inspectPath(absolute)
-		if err != nil {
-			return false, fmt.Errorf("inspect %s: %w", clean, err)
-		}
-		loaded[path] = true
-		state[path] = file.exists
-		return file.exists, nil
-	}
+func preflightResidualPathChain(root string, replay speccompiler.ReplaySemantics, works []speccompiler.ProjectedFileWork) error {
+	paths := make([]string, 0)
 	for _, work := range works {
-		path := filepath.ToSlash(work.Path)
-		exists, err := load(path)
+		paths = appendUnique(paths, work.Path)
+		if work.Operation == "rename" {
+			paths = appendUnique(paths, work.DestinationPath)
+		}
+	}
+	state := make(map[string]virtualFile, len(paths))
+	for _, path := range paths {
+		clean, absolute, err := safePath(root, path)
 		if err != nil {
 			return err
 		}
+		file, err := inspectPath(absolute)
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", clean, err)
+		}
+		state[clean] = file
+	}
+	base := cloneVirtualState(state)
+	for _, work := range works {
+		path := filepath.ToSlash(work.Path)
+		current := state[path]
 		switch work.Operation {
 		case "create":
-			if exists {
+			if current.exists {
 				return fmt.Errorf("create destination already exists: %s", path)
 			}
-			state[path] = true
+			state[path] = virtualFile{exists: true, content: work.Content, mode: 0o644}
 		case "modify":
-			if !exists {
-				return fmt.Errorf("required source path is missing: %s", path)
+			if !current.exists {
+				return fmt.Errorf("modify source is missing: %s", path)
 			}
-		case "delete":
-			if !exists {
-				return fmt.Errorf("required source path is missing: %s", path)
-			}
-			state[path] = false
-		case "rename":
-			if !exists {
-				return fmt.Errorf("rename source is missing: %s", path)
-			}
-			destination := filepath.ToSlash(work.DestinationPath)
-			destinationExists, err := load(destination)
+			updated, err := replayDirectives(replay, path, current.content, base[path], work.Directives)
 			if err != nil {
 				return err
 			}
-			if destinationExists {
+			current.content = updated
+			state[path] = current
+		case "delete":
+			if !current.exists {
+				return fmt.Errorf("delete source is missing: %s", path)
+			}
+			state[path] = virtualFile{}
+		case "rename":
+			destination := filepath.ToSlash(work.DestinationPath)
+			if !current.exists {
+				return fmt.Errorf("rename source is missing: %s", path)
+			}
+			if state[destination].exists {
 				return fmt.Errorf("rename destination already exists: %s", destination)
 			}
-			state[path] = false
-			state[destination] = true
+			if work.PreserveContent {
+				state[destination] = current
+			} else {
+				if work.Content == "" {
+					return fmt.Errorf("rename replacement content is empty: %s", work.Ref)
+				}
+				current.content = work.Content
+				state[destination] = current
+			}
+			state[path] = virtualFile{}
+		default:
+			return fmt.Errorf("unsupported projected file operation: %s", work.Operation)
 		}
 	}
 	return nil

@@ -157,7 +157,7 @@ func classifyPathChain(root string, plan *pathChainPlan, works []speccompiler.Pr
 		}
 	}
 	if residualReason != "" {
-		if err := preflightPathExistence(root, works); err != nil {
+		if err := preflightResidualPathChain(root, plan.replay, works); err != nil {
 			blockPlan(plan, FailureClassUnsafeSource, err.Error())
 			return
 		}
