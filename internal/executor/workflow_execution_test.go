@@ -36,6 +36,7 @@ func (a *captureAdapter) BuildInvocation(request ExecutorAdapterRequest) (Execut
 		WorkDir:     request.RepoPath,
 		Stdin:       request.BriefContent,
 		StdinSource: request.BriefPath,
+		StdinBytes:  len([]byte(request.BriefContent)),
 		Model:       request.SelectedModel,
 		Agent:       string(a.id),
 		Preview:     "fake-agent < " + request.BriefPath,
@@ -70,6 +71,9 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 	if err := os.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repoPath, "source.txt"), []byte("source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	registry, err := workflowrepos.NewRegistry(store)
 	if err != nil {
 		t.Fatal(err)
@@ -83,11 +87,58 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 	}
 	brief := []byte("# Executor Brief\n\nUse the exact approved task.\n")
 	created, err := runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
-		FeatureSlug:      "workflow-execution-test",
-		RepoTarget:       "relay",
-		Branch:           "feat/simplification",
-		BaseCommit:       strings.Repeat("a", 40),
-		CanonicalJSON:    []byte(`{"test":true}`),
+		FeatureSlug: "workflow-execution-test",
+		RepoTarget:  "relay",
+		Branch:      "feat/simplification",
+		BaseCommit:  strings.Repeat("a", 40),
+		CanonicalJSON: []byte(`{
+  "schema_version": "2.0",
+  "feature_slug": "workflow-execution-test",
+  "repo_target": "relay",
+  "branch": "feat/simplification",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "goal": "Exercise ordinary full model execution.",
+  "context": "The canonical declaration is valid but outside the bounded deterministic rename surface.",
+  "scope": {
+    "in_scope": ["Execute one model-owned rename replacement."],
+    "out_of_scope": ["No unrelated behavior."]
+  },
+  "steps": [
+    {
+      "number": 1,
+      "goal": "Replace a file through model-owned rename content.",
+      "substeps": [
+        {
+          "number": 1,
+          "instruction": "Rename the source and replace its content.",
+          "files": [
+            {
+              "path": "source.txt",
+              "destination_path": "target.txt",
+              "operation": "rename",
+              "purpose": "Keep the fixture on the full model path.",
+              "implementation": {
+                "content": "target\n"
+              }
+            }
+          ],
+          "completion_criteria": ["The model-owned rename is complete."]
+        }
+      ],
+      "completion_criteria": ["The declaration is complete."]
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "go test ./internal/executor",
+        "expected": "The focused executor tests pass."
+      }
+    ]
+  },
+  "completion_criteria": ["The ordinary full model attempt completes."]
+}
+`),
 		RenderedMarkdown: brief,
 	})
 	if err != nil {

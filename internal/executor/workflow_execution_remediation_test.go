@@ -36,6 +36,7 @@ func (a previewSecretAdapter) BuildInvocation(request ExecutorAdapterRequest) (E
 		WorkDir:     request.RepoPath,
 		Stdin:       request.BriefContent,
 		StdinSource: request.BriefPath,
+		StdinBytes:  len([]byte(request.BriefContent)),
 		Model:       request.SelectedModel,
 		Agent:       string(AdapterOpenCodeGo),
 		Preview:     a.preview,

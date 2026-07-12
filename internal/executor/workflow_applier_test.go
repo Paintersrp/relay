@@ -2,6 +2,9 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +17,7 @@ import (
 
 func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 	fixture := newWorkflowFixture(t)
-	run := createRunWithCanonicalDeterministicSpec(t, fixture, "deterministic-applier-complete")
+	run := createRunWithCanonicalProjectionSpec(t, fixture, "applier-complete")
 	fixture.service.runner = func(context.Context, string, string, []string, string, time.Duration, pipeline.AgentCommandStreamCallbacks, pipeline.ProcessController) pipeline.AgentCommandRunResult {
 		t.Fatal("model runner must not be called after completed applier outcome")
 		return pipeline.AgentCommandRunResult{}
@@ -24,11 +27,15 @@ func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 		return applier.Result{
 			Outcome:      applier.OutcomeCompleted,
 			ActorKind:    applier.ActorKindApplier,
-			ChangedFiles: []string{"internal/example/config.go"},
-			Ledger: applier.Ledger{Entries: []applier.LedgerEntry{
-				{OperationID: "op-replace", Outcome: applier.OperationApplied, ChangedFiles: []string{"internal/example/config.go"}},
-			}},
-			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomeCompleted, ActorKind: applier.ActorKindApplier, CompletedOperations: []string{"op-replace"}, ChangedFiles: []string{"internal/example/config.go"}},
+			ChangedFiles: []string{"deterministic.txt"},
+			Partition: applier.Partition{
+				DeterministicPathChains: []string{"chain.1.1.file.1"},
+				DeterministicFileWork:   []string{"1.1.file.1"},
+				ProtectedPaths:          []string{"deterministic.txt"},
+				CoveredFileWork:         []string{"1.1.file.1"},
+			},
+			Ledger:               applier.Ledger{Entries: []applier.LedgerEntry{{PathChainRef: "chain.1.1.file.1", FileWorkRefs: []string{"1.1.file.1"}, Disposition: applier.DispositionDeterministic, Outcome: applier.OperationApplied, ChangedPaths: []string{"deterministic.txt"}}}},
+			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomeCompleted, ActorKind: applier.ActorKindApplier, CompletedPathChains: []string{"chain.1.1.file.1"}, CompletedFileWork: []string{"1.1.file.1"}, ChangedFiles: []string{"deterministic.txt"}, ProtectedPaths: []string{"deterministic.txt"}},
 			Evidence:             []applier.EvidenceArtifact{artifact},
 		}, nil
 	}
@@ -36,11 +43,8 @@ func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Attempt.AttemptID != "" {
-		t.Fatalf("applier-completed run created a model attempt: %+v", result.Attempt)
-	}
-	if result.Applier == nil || result.Applier.Outcome != string(applier.OutcomeCompleted) {
-		t.Fatalf("missing completed applier result: %+v", result.Applier)
+	if result.Attempt.AttemptID != "" || result.Applier == nil || result.Applier.Outcome != string(applier.OutcomeCompleted) {
+		t.Fatalf("result = %+v", result)
 	}
 	current, err := fixture.store.GetRunByRunID(context.Background(), run.RunID)
 	if err != nil {
@@ -49,31 +53,31 @@ func TestWorkflowStartCompletedApplierAvoidsModelAttempt(t *testing.T) {
 	if current.Status != workflowstore.RunStatusValidating {
 		t.Fatalf("Run status = %q, want validating", current.Status)
 	}
-	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(attempts) != 0 {
-		t.Fatalf("created %d model attempts for applier-only completion", len(attempts))
-	}
-	assertRunHasApplierArtifact(t, fixture, run.ID)
 }
 
-func TestWorkflowStartPartialApplierAddsResidualContextToOrdinaryAttempt(t *testing.T) {
+func TestWorkflowStartHybridPersistsAndInvokesOnlyResidualBrief(t *testing.T) {
 	fixture := newWorkflowFixture(t)
-	run := createRunWithCanonicalDeterministicSpec(t, fixture, "deterministic-applier-partial")
+	run := createRunWithCanonicalProjectionSpec(t, fixture, "applier-hybrid")
 	fixture.service.runner = successfulRunner
 	fixture.service.applier = func(ctx context.Context, input applier.Input) (applier.Result, error) {
 		artifact := writeFakeApplierEvidence(t, ctx, input.EvidenceWriter)
 		return applier.Result{
 			Outcome:      applier.OutcomePartial,
 			ActorKind:    applier.ActorKindApplier,
-			ChangedFiles: []string{"internal/example/config.go"},
+			ChangedFiles: []string{"deterministic.txt"},
+			Partition: applier.Partition{
+				DeterministicPathChains: []string{"chain.1.1.file.1"},
+				ResidualPathChains:      []string{"chain.1.2.file.1"},
+				DeterministicFileWork:   []string{"1.1.file.1"},
+				ResidualFileWork:        []string{"1.2.file.1"},
+				ProtectedPaths:          []string{"deterministic.txt"},
+				CoveredFileWork:         []string{"1.1.file.1", "1.2.file.1"},
+			},
 			Ledger: applier.Ledger{Entries: []applier.LedgerEntry{
-				{OperationID: "op-replace", Outcome: applier.OperationApplied, ChangedFiles: []string{"internal/example/config.go"}},
-				{OperationID: "op-model", Outcome: applier.OperationResidual, Reason: "operation is marked for model-backed execution"},
+				{PathChainRef: "chain.1.1.file.1", FileWorkRefs: []string{"1.1.file.1"}, Disposition: applier.DispositionDeterministic, Outcome: applier.OperationApplied, ChangedPaths: []string{"deterministic.txt"}},
+				{PathChainRef: "chain.1.2.file.1", FileWorkRefs: []string{"1.2.file.1"}, Disposition: applier.DispositionResidual, Outcome: applier.OperationResidual},
 			}},
-			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomePartial, ActorKind: applier.ActorKindApplier, CompletedOperations: []string{"op-replace"}, ResidualOperations: []string{"op-model"}, ChangedFiles: []string{"internal/example/config.go"}, ModelExecutorRequired: true},
+			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomePartial, ActorKind: applier.ActorKindApplier, CompletedPathChains: []string{"chain.1.1.file.1"}, ResidualPathChains: []string{"chain.1.2.file.1"}, CompletedFileWork: []string{"1.1.file.1"}, ResidualFileWork: []string{"1.2.file.1"}, ChangedFiles: []string{"deterministic.txt"}, ProtectedPaths: []string{"deterministic.txt"}, ModelExecutorRequired: true},
 			Evidence:             []applier.EvidenceArtifact{artifact},
 		}, nil
 	}
@@ -82,42 +86,60 @@ func TestWorkflowStartPartialApplierAddsResidualContextToOrdinaryAttempt(t *test
 		t.Fatal(err)
 	}
 	if result.Attempt.AttemptID == "" {
-		t.Fatal("partial applier outcome did not create ordinary model attempt")
+		t.Fatal("hybrid execution did not create an attempt")
 	}
-	if result.Applier == nil || result.Applier.Outcome != string(applier.OutcomePartial) {
-		t.Fatalf("missing partial applier result: %+v", result.Applier)
+	if !strings.Contains(fixture.adapter.brief, "## Relay Deterministic Pre-Application") || !strings.Contains(fixture.adapter.brief, "residual.txt") || strings.Contains(fixture.adapter.brief, "`deterministic.txt` - Apply deterministic work") {
+		t.Fatalf("unexpected effective brief:\n%s", fixture.adapter.brief)
 	}
-	if !strings.Contains(fixture.adapter.brief, "# Executor Brief") || !strings.Contains(fixture.adapter.brief, "Relay deterministic pre-application context") || !strings.Contains(fixture.adapter.brief, "op-model") {
-		t.Fatalf("residual context was not supplied with the ordinary brief: %q", fixture.adapter.brief)
-	}
-	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), run.ID)
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), result.Attempt.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(attempts) != 1 || attempts[0].Status != workflowstore.AttemptStatusSucceeded {
-		t.Fatalf("ordinary attempt history = %+v", attempts)
+	var residual workflowstore.Artifact
+	for _, artifact := range artifacts {
+		if artifact.Kind == "executor_residual_brief" {
+			residual = artifact
+		}
 	}
-	assertRunHasApplierArtifact(t, fixture, run.ID)
+	if residual.ArtifactID == "" || residual.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt {
+		t.Fatalf("residual artifact = %+v", residual)
+	}
+	content, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(residual.RelativePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != fixture.adapter.brief {
+		t.Fatal("adapter did not receive the exact persisted residual artifact")
+	}
+	attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), result.Attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runtime workflowAttemptRuntime
+	if err := json.Unmarshal([]byte(attempt.ResultJSON), &runtime); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.EffectiveBriefMode != "residual" || runtime.EffectiveBriefArtifactID != residual.ArtifactID || runtime.EffectiveBriefSHA256 != residual.SHA256 {
+		t.Fatalf("runtime identity = %+v, residual = %+v", runtime, residual)
+	}
 }
 
 func TestWorkflowStartBlockedApplierPreventsModelDispatch(t *testing.T) {
 	fixture := newWorkflowFixture(t)
-	run := createRunWithCanonicalDeterministicSpec(t, fixture, "deterministic-applier-blocked")
+	run := createRunWithCanonicalProjectionSpec(t, fixture, "applier-blocked")
 	fixture.service.runner = func(context.Context, string, string, []string, string, time.Duration, pipeline.AgentCommandStreamCallbacks, pipeline.ProcessController) pipeline.AgentCommandRunResult {
 		t.Fatal("model runner must not be called after blocked applier outcome")
 		return pipeline.AgentCommandRunResult{}
 	}
 	fixture.service.applier = func(ctx context.Context, input applier.Input) (applier.Result, error) {
 		artifact := writeFakeApplierEvidence(t, ctx, input.EvidenceWriter)
-		failure := &applier.FailurePacket{FailureClass: applier.FailureClassUnsafeSource, Summary: "source guard failed", BlockedOperations: []string{"op-blocked"}}
+		failure := &applier.FailurePacket{FailureClass: applier.FailureClassUnsafeSource, Summary: "source mismatch", BlockedPathChains: []string{"chain.1.1.file.1"}, BlockedFileWork: []string{"1.1.file.1"}}
 		return applier.Result{
-			Outcome:       applier.OutcomeBlocked,
-			ActorKind:     applier.ActorKindApplier,
-			FailurePacket: failure,
-			Ledger: applier.Ledger{Entries: []applier.LedgerEntry{
-				{OperationID: "op-blocked", Outcome: applier.OperationBlocked, Failure: applier.FailureClassUnsafeSource, Reason: "source guard failed"},
-			}},
-			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomeBlocked, ActorKind: applier.ActorKindApplier, BlockedOperations: []string{"op-blocked"}, FailureClass: applier.FailureClassUnsafeSource, FailureReason: "source guard failed"},
+			Outcome:              applier.OutcomeBlocked,
+			ActorKind:            applier.ActorKindApplier,
+			FailurePacket:        failure,
+			Ledger:               applier.Ledger{Entries: []applier.LedgerEntry{{PathChainRef: "chain.1.1.file.1", FileWorkRefs: []string{"1.1.file.1"}, Disposition: applier.DispositionBlocked, Outcome: applier.OperationBlocked, Failure: applier.FailureClassUnsafeSource, Reason: "source mismatch"}}},
+			ImplementationResult: applier.ImplementationResult{Outcome: applier.OutcomeBlocked, ActorKind: applier.ActorKindApplier, BlockedPathChains: []string{"chain.1.1.file.1"}, BlockedFileWork: []string{"1.1.file.1"}, FailureClass: applier.FailureClassUnsafeSource, FailureReason: "source mismatch"},
 			Evidence:             []applier.EvidenceArtifact{artifact},
 		}, nil
 	}
@@ -125,11 +147,8 @@ func TestWorkflowStartBlockedApplierPreventsModelDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Attempt.AttemptID != "" {
-		t.Fatalf("blocked applier created a model attempt: %+v", result.Attempt)
-	}
-	if result.Applier == nil || result.Applier.Outcome != string(applier.OutcomeBlocked) {
-		t.Fatalf("missing blocked applier result: %+v", result.Applier)
+	if result.Attempt.AttemptID != "" || result.Applier == nil || result.Applier.Outcome != string(applier.OutcomeBlocked) {
+		t.Fatalf("result = %+v", result)
 	}
 	current, err := fixture.store.GetRunByRunID(context.Background(), run.RunID)
 	if err != nil {
@@ -138,86 +157,109 @@ func TestWorkflowStartBlockedApplierPreventsModelDispatch(t *testing.T) {
 	if current.Status != workflowstore.RunStatusNeedsRevision {
 		t.Fatalf("Run status = %q, want needs_revision", current.Status)
 	}
-	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(attempts) != 0 {
-		t.Fatalf("created %d model attempts for blocked deterministic application", len(attempts))
-	}
-	assertRunHasApplierArtifact(t, fixture, run.ID)
 }
 
-func TestWorkflowStartWithoutDeterministicOperationsSkipsApplier(t *testing.T) {
+func TestWorkflowStartAllResidualUsesCanonicalBriefAndFullIdentity(t *testing.T) {
 	fixture := newWorkflowFixture(t)
 	fixture.service.runner = successfulRunner
-	fixture.service.applier = func(context.Context, applier.Input) (applier.Result, error) {
-		t.Fatal("applier must not be called when deterministic operations are absent")
-		return applier.Result{}, nil
-	}
-	result, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: fixture.run.RunID, Adapter: "opencode_go", Model: "ordinary-model"})
+	result, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: fixture.run.RunID, Adapter: "opencode_go", Model: "full-model"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Applier != nil {
-		t.Fatalf("unexpected applier result for ordinary run: %+v", result.Applier)
+	if fixture.adapter.brief != string(fixture.brief) {
+		t.Fatal("full execution did not receive the canonical brief")
 	}
-	if result.Attempt.AttemptID == "" {
-		t.Fatal("ordinary run did not create a model attempt")
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), result.Attempt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.Kind == "executor_residual_brief" {
+			t.Fatal("full execution created a residual artifact")
+		}
+	}
+	attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), result.Attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runtime workflowAttemptRuntime
+	if err := json.Unmarshal([]byte(attempt.ResultJSON), &runtime); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.EffectiveBriefMode != "full" || runtime.EffectiveBriefArtifactID == "" || runtime.EffectiveBriefSHA256 == "" {
+		t.Fatalf("runtime identity = %+v", runtime)
 	}
 }
 
-func createRunWithCanonicalDeterministicSpec(t *testing.T, fixture *workflowFixture, slug string) workflowstore.Run {
+func createRunWithCanonicalProjectionSpec(t *testing.T, fixture *workflowFixture, slug string) workflowstore.Run {
 	t.Helper()
+	repository, err := fixture.store.GetRepositoryTarget(context.Background(), "relay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository.LocalPath, "deterministic.txt"), []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository.LocalPath, "residual.txt"), []byte("source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	canonical := []byte(`{
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "feature_slug": "` + slug + `",
   "repo_target": "relay",
   "branch": "feat/simplification",
   "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "goal": "Exercise deterministic-first workflow behavior.",
-  "context": "Canonical v1.0 workflow fixture derived through the temporary applier bridge.",
+  "context": "Canonical workflow fixture projected directly by the compiler.",
   "scope": {
-    "in_scope": [
-      "Exercise one canonical deterministic operation."
-    ],
-    "out_of_scope": [
-      "Do not test deprecated authored payload compatibility."
-    ]
+    "in_scope": ["Exercise deterministic and residual file work."],
+    "out_of_scope": ["No unrelated behavior."]
   },
   "steps": [
     {
       "number": 1,
-      "goal": "Provide one deterministic operation for workflow tests.",
+      "goal": "Provide deterministic and residual declarations.",
       "substeps": [
         {
           "number": 1,
-          "instruction": "Replace the exact example configuration value.",
+          "instruction": "Apply deterministic work.",
           "files": [
             {
-              "path": "internal/example/config.go",
+              "path": "deterministic.txt",
               "operation": "modify",
-              "purpose": "Provide the deterministic operation consumed by workflow tests.",
+              "purpose": "Apply deterministic work.",
               "implementation": {
                 "changes": [
                   {
                     "kind": "replace",
-                    "old_text": "const enabled = false\n",
-                    "new_text": "const enabled = true\n",
+                    "old_text": "before\n",
+                    "new_text": "after\n",
                     "expected_occurrences": 1
                   }
                 ]
               }
             }
           ],
-          "completion_criteria": [
-            "The canonical file work projects to one legacy applier operation."
-          ]
+          "completion_criteria": ["The deterministic declaration is complete."]
+        },
+        {
+          "number": 2,
+          "instruction": "Apply residual work.",
+          "files": [
+            {
+              "path": "residual.txt",
+              "destination_path": "residual-renamed.txt",
+              "operation": "rename",
+              "purpose": "Exercise model-owned rename replacement content.",
+              "implementation": {
+                "content": "replacement\n"
+              }
+            }
+          ],
+          "completion_criteria": ["The residual declaration is complete."]
         }
       ],
-      "completion_criteria": [
-        "The workflow fixture contains one deterministic operation."
-      ]
+      "completion_criteria": ["The selected declarations are complete."]
     }
   ],
   "validation": {
@@ -228,9 +270,7 @@ func createRunWithCanonicalDeterministicSpec(t *testing.T, fixture *workflowFixt
       }
     ]
   },
-  "completion_criteria": [
-    "The canonical v1.0 fixture reaches deterministic workflow pre-application without authored payload metadata."
-  ]
+  "completion_criteria": ["The combined deterministic and residual result is complete."]
 }
 `)
 	created, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
@@ -254,18 +294,4 @@ func writeFakeApplierEvidence(t *testing.T, ctx context.Context, writer applier.
 		t.Fatal(err)
 	}
 	return artifact
-}
-
-func assertRunHasApplierArtifact(t *testing.T, fixture *workflowFixture, runRowID int64) {
-	t.Helper()
-	artifacts, err := fixture.store.ListArtifactsByRun(context.Background(), runRowID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, artifact := range artifacts {
-		if artifact.Kind == "applier_result_json" {
-			return
-		}
-	}
-	t.Fatalf("run artifacts do not include applier_result_json: %+v", artifacts)
 }

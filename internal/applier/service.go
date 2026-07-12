@@ -7,10 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"relay/internal/speccompiler"
 )
@@ -28,16 +25,22 @@ type ActorKind string
 
 const ActorKindApplier ActorKind = "applier"
 
+type Disposition string
+
+const (
+	DispositionDeterministic Disposition = "deterministic"
+	DispositionResidual      Disposition = "residual"
+	DispositionBlocked       Disposition = "blocked"
+)
+
 type OperationOutcome string
 
 const (
-	OperationApplied       OperationOutcome = "applied"
-	OperationSkipped       OperationOutcome = "skipped"
-	OperationUnsupported   OperationOutcome = "unsupported"
-	OperationModelRequired OperationOutcome = "model_required"
-	OperationResidual      OperationOutcome = "residual"
-	OperationBlocked       OperationOutcome = "blocked"
-	OperationNotAttempted  OperationOutcome = "not_attempted"
+	OperationApplied      OperationOutcome = "applied"
+	OperationResidual     OperationOutcome = "residual"
+	OperationBlocked      OperationOutcome = "blocked"
+	OperationUncertain    OperationOutcome = "uncertain"
+	OperationNotAttempted OperationOutcome = "not_attempted"
 )
 
 type FailureClass string
@@ -54,7 +57,7 @@ const (
 
 type Input struct {
 	WorkspaceRoot  string
-	Projection     speccompiler.ExecutionPayloadProjection
+	Projection     speccompiler.ExecutionProjection
 	EvidenceWriter EvidenceWriter
 }
 
@@ -62,10 +65,20 @@ type Result struct {
 	Outcome              Outcome              `json:"outcome"`
 	ActorKind            ActorKind            `json:"actor_kind"`
 	Ledger               Ledger               `json:"ledger"`
+	Partition            Partition            `json:"partition"`
 	ImplementationResult ImplementationResult `json:"implementation_result"`
 	FailurePacket        *FailurePacket       `json:"failure_packet,omitempty"`
 	ChangedFiles         []string             `json:"changed_files"`
 	Evidence             []EvidenceArtifact   `json:"evidence,omitempty"`
+}
+
+type Partition struct {
+	DeterministicPathChains []string `json:"deterministic_path_chains"`
+	ResidualPathChains      []string `json:"residual_path_chains"`
+	DeterministicFileWork   []string `json:"deterministic_file_work"`
+	ResidualFileWork        []string `json:"residual_file_work"`
+	ProtectedPaths          []string `json:"protected_paths"`
+	CoveredFileWork         []string `json:"covered_file_work"`
 }
 
 type Ledger struct {
@@ -73,38 +86,59 @@ type Ledger struct {
 }
 
 type LedgerEntry struct {
-	OperationID  string           `json:"operation_id"`
-	Kind         string           `json:"kind,omitempty"`
-	Mode         string           `json:"mode,omitempty"`
-	Paths        []string         `json:"paths,omitempty"`
-	Group        string           `json:"group,omitempty"`
-	DependsOn    []string         `json:"depends_on,omitempty"`
-	OnFailure    string           `json:"on_failure,omitempty"`
-	Outcome      OperationOutcome `json:"outcome"`
-	Reason       string           `json:"reason,omitempty"`
-	Failure      FailureClass     `json:"failure_class,omitempty"`
-	ChangedFiles []string         `json:"changed_files,omitempty"`
+	PathChainRef   string                       `json:"path_chain_ref"`
+	FileWorkRefs   []string                     `json:"file_work_refs"`
+	SubstepRefs    []string                     `json:"substep_refs"`
+	Operations     []string                     `json:"operations"`
+	Paths          []string                     `json:"paths"`
+	Dependencies   []string                     `json:"dependencies,omitempty"`
+	Replay         speccompiler.ReplaySemantics `json:"replay"`
+	Disposition    Disposition                  `json:"disposition"`
+	Outcome        OperationOutcome             `json:"outcome"`
+	Reason         string                       `json:"reason,omitempty"`
+	Failure        FailureClass                 `json:"failure_class,omitempty"`
+	ChangedPaths   []string                     `json:"changed_paths,omitempty"`
+	ProtectedPaths []string                     `json:"protected_paths,omitempty"`
+	UncertainPaths []string                     `json:"uncertain_paths,omitempty"`
 }
 
 type ImplementationResult struct {
 	Outcome               Outcome      `json:"outcome"`
 	ActorKind             ActorKind    `json:"actor_kind"`
-	CompletedOperations   []string     `json:"completed_operations"`
-	ResidualOperations    []string     `json:"residual_operations"`
-	SkippedOperations     []string     `json:"skipped_operations"`
-	BlockedOperations     []string     `json:"blocked_operations"`
+	CompletedPathChains   []string     `json:"completed_path_chains"`
+	ResidualPathChains    []string     `json:"residual_path_chains"`
+	BlockedPathChains     []string     `json:"blocked_path_chains"`
+	UncertainPathChains   []string     `json:"uncertain_path_chains"`
+	UnattemptedPathChains []string     `json:"unattempted_path_chains"`
+	CompletedFileWork     []string     `json:"completed_file_work"`
+	ResidualFileWork      []string     `json:"residual_file_work"`
+	BlockedFileWork       []string     `json:"blocked_file_work"`
+	UncertainFileWork     []string     `json:"uncertain_file_work"`
+	UnattemptedFileWork   []string     `json:"unattempted_file_work"`
 	ChangedFiles          []string     `json:"changed_files"`
+	ProtectedPaths        []string     `json:"protected_paths"`
+	UncertainPaths        []string     `json:"uncertain_paths"`
 	ModelExecutorRequired bool         `json:"model_executor_required"`
 	FailureClass          FailureClass `json:"failure_class,omitempty"`
 	FailureReason         string       `json:"failure_reason,omitempty"`
+	EvidenceFailureReason string       `json:"evidence_failure_reason,omitempty"`
 }
 
 type FailurePacket struct {
-	FailureClass       FailureClass `json:"failure_class"`
-	Summary            string       `json:"summary"`
-	BlockedOperations  []string     `json:"blocked_operations"`
-	ResidualOperations []string     `json:"residual_operations,omitempty"`
-	ChangedFiles       []string     `json:"changed_files,omitempty"`
+	FailureClass          FailureClass `json:"failure_class"`
+	Summary               string       `json:"summary"`
+	BlockedPathChains     []string     `json:"blocked_path_chains"`
+	BlockedFileWork       []string     `json:"blocked_file_work"`
+	UncertainPathChains   []string     `json:"uncertain_path_chains,omitempty"`
+	UncertainFileWork     []string     `json:"uncertain_file_work,omitempty"`
+	UnattemptedPathChains []string     `json:"unattempted_path_chains,omitempty"`
+	UnattemptedFileWork   []string     `json:"unattempted_file_work,omitempty"`
+	ResidualPathChains    []string     `json:"residual_path_chains,omitempty"`
+	ResidualFileWork      []string     `json:"residual_file_work,omitempty"`
+	ChangedFiles          []string     `json:"changed_files,omitempty"`
+	ProtectedPaths        []string     `json:"protected_paths,omitempty"`
+	UncertainPaths        []string     `json:"uncertain_paths,omitempty"`
+	EvidenceFailureReason string       `json:"evidence_failure_reason,omitempty"`
 }
 
 type EvidenceFile struct {
@@ -139,544 +173,338 @@ func (w *MemoryEvidenceWriter) WriteEvidence(_ context.Context, file EvidenceFil
 	return EvidenceArtifact{Kind: file.Kind, Filename: file.Filename, MediaType: file.MediaType, SHA256: hex.EncodeToString(digest[:]), SizeBytes: int64(len(file.Data))}, nil
 }
 
-type Service struct{}
+type mutationApplier func([]mutationAction) ([]string, error)
 
-func NewService() Service { return Service{} }
-
-type operationPlan struct {
-	index        int
-	id           string
-	op           speccompiler.ProjectedDeterministicOperation
-	outcome      OperationOutcome
-	failure      FailureClass
-	reason       string
-	changedFiles []string
-	apply        func() error
+type Service struct {
+	applyMutations mutationApplier
 }
 
-type operationPayload struct {
-	Content             string `json:"content"`
-	OldText             string `json:"old_text"`
-	NewText             string `json:"new_text"`
-	Anchor              string `json:"anchor"`
-	ExpectedOccurrences int    `json:"expected_occurrences"`
-	DestinationPath     string `json:"destination_path"`
-	DeleteFile          bool   `json:"delete_file"`
-}
-
-type sourceGuards struct {
-	FileExists  []string    `json:"file_exists"`
-	FileAbsent  []string    `json:"file_absent"`
-	Contains    []textGuard `json:"contains"`
-	NotContains []textGuard `json:"not_contains"`
-}
-
-type textGuard struct {
-	Path                string `json:"path"`
-	Text                string `json:"text"`
-	ExpectedOccurrences int    `json:"expected_occurrences"`
+func NewService() Service {
+	return Service{applyMutations: applyMutationActions}
 }
 
 func (s Service) Apply(ctx context.Context, input Input) (Result, error) {
-	result := Result{Outcome: OutcomeNotAttempted, ActorKind: ActorKindApplier, Ledger: Ledger{Entries: []LedgerEntry{}}, ChangedFiles: []string{}}
-	if len(input.Projection.DeterministicOperations) == 0 {
-		result.ImplementationResult = implementationResult(result)
+	result := Result{
+		Outcome:      OutcomeNotAttempted,
+		ActorKind:    ActorKindApplier,
+		Ledger:       Ledger{Entries: []LedgerEntry{}},
+		ChangedFiles: []string{},
+	}
+	if len(input.Projection.FileWork) == 0 {
+		result.ImplementationResult = summarizeImplementation(result, nil)
 		return result, nil
 	}
 	root, blocker := workspaceRoot(input.WorkspaceRoot)
 	if blocker != "" {
-		entry := LedgerEntry{OperationID: "workspace", Outcome: OperationBlocked, Failure: FailureClassEnvironment, Reason: blocker}
-		result.Ledger.Entries = append(result.Ledger.Entries, entry)
-		result = blockedResult(result, FailureClassEnvironment, blocker)
-		return result, nil
+		return environmentBlockedResult(result, blocker), nil
 	}
-	plans := make([]operationPlan, 0, len(input.Projection.DeterministicOperations))
-	byID := map[string]int{}
-	for i, op := range input.Projection.DeterministicOperations {
-		plan := s.planOperation(root, i, op)
-		plans = append(plans, plan)
-		byID[plan.id] = len(plans) - 1
+	if err := ctx.Err(); err != nil {
+		return environmentBlockedResult(result, err.Error()), nil
 	}
-	applyDependencies(plans, byID)
-	applyAtomicGroups(plans, input.Projection.OperationGroups)
-	for i := range plans {
-		if plans[i].outcome != OperationNotAttempted || plans[i].apply == nil {
+
+	plans := buildPathChainPlans(ctx, root, input.Projection)
+	propagateDispositions(plans, input.Projection)
+	partition, partitionFailure := buildPartition(plans, input.Projection)
+	if partitionFailure != "" {
+		covered := append([]string(nil), partition.CoveredFileWork...)
+		partition = Partition{
+			DeterministicPathChains: []string{},
+			ResidualPathChains:      []string{},
+			DeterministicFileWork:   []string{},
+			ResidualFileWork:        []string{},
+			ProtectedPaths:          []string{},
+			CoveredFileWork:         covered,
+		}
+		markProjectionBlocked(plans, partitionFailure)
+	}
+	result.Partition = partition
+
+	if hasBlockedPlan(plans) {
+		result.Outcome = OutcomeBlocked
+		return finalizeResult(ctx, input.EvidenceWriter, result, plans), nil
+	}
+	if len(partition.DeterministicPathChains) == 0 {
+		result.Outcome = OutcomeNotAttempted
+		return finalizeResult(ctx, input.EvidenceWriter, result, plans), nil
+	}
+
+	apply := s.applyMutations
+	if apply == nil {
+		apply = applyMutationActions
+	}
+	for index := range plans {
+		plan := &plans[index]
+		if plan.disposition != DispositionDeterministic {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
-			plans[i].outcome = OperationBlocked
-			plans[i].failure = FailureClassEnvironment
-			plans[i].reason = err.Error()
-			continue
-		}
-		if err := plans[i].apply(); err != nil {
-			plans[i].outcome = OperationBlocked
-			plans[i].failure = FailureClassEnvironment
-			plans[i].reason = err.Error()
-			continue
-		}
-		plans[i].outcome = OperationApplied
-	}
-	result.Ledger.Entries = ledgerEntries(plans)
-	result.ChangedFiles = uniqueChangedFiles(result.Ledger.Entries)
-	result = summarizeResult(result)
-	if input.EvidenceWriter != nil && len(result.Ledger.Entries) > 0 {
-		result = writeEvidence(ctx, input.EvidenceWriter, result)
-	}
-	return result, nil
-}
-
-func workspaceRoot(value string) (string, string) {
-	if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value {
-		return "", "workspace root is required without outer whitespace"
-	}
-	root, err := filepath.Abs(value)
-	if err != nil {
-		return "", fmt.Sprintf("resolve workspace root: %v", err)
-	}
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
-		return "", "workspace root is unavailable or not a directory"
-	}
-	return filepath.Clean(root), ""
-}
-
-func (s Service) planOperation(root string, index int, op speccompiler.ProjectedDeterministicOperation) operationPlan {
-	id := strings.TrimSpace(op.ID)
-	if id == "" {
-		id = fmt.Sprintf("operation-%d", index+1)
-	}
-	plan := operationPlan{index: index, id: id, op: op, outcome: OperationNotAttempted}
-	mode := strings.TrimSpace(op.Mode)
-	if mode == "model_required" || mode == "executor" || mode == "model" {
-		plan.outcome = OperationModelRequired
-		plan.reason = "operation is marked for model-backed execution"
-		return plan
-	}
-	if mode != "" && mode != "exact" {
-		return unsupportedPlan(plan, "unsupported deterministic operation mode")
-	}
-	if err := checkGuards(root, op.Guards); err != nil {
-		plan.outcome = OperationBlocked
-		plan.failure = FailureClassUnsafeSource
-		plan.reason = err.Error()
-		return plan
-	}
-	var payload operationPayload
-	if len(op.Payload) != 0 {
-		if err := json.Unmarshal(op.Payload, &payload); err != nil {
 			plan.outcome = OperationBlocked
-			plan.failure = FailureClassMaterialSpecGap
-			plan.reason = fmt.Sprintf("decode operation payload: %v", err)
-			return plan
+			plan.failure = FailureClassEnvironment
+			plan.reason = err.Error()
+			break
 		}
-	}
-	switch strings.TrimSpace(op.Kind) {
-	case "create":
-		return planCreate(root, plan, payload)
-	case "replace":
-		return planReplace(root, plan, payload)
-	case "insert_before":
-		return planInsert(root, plan, payload, false)
-	case "insert_after":
-		return planInsert(root, plan, payload, true)
-	case "remove":
-		return planRemove(root, plan, payload)
-	case "replace_file":
-		return planReplaceFile(root, plan, payload)
-	case "delete":
-		return planDelete(root, plan, payload)
-	case "rename":
-		return planRename(root, plan, payload)
-	default:
-		return unsupportedPlan(plan, "unsupported deterministic operation kind")
-	}
-}
-
-func unsupportedPlan(plan operationPlan, reason string) operationPlan {
-	switch strings.TrimSpace(plan.op.OnFailure) {
-	case "residual", "executor", "partial":
-		plan.outcome = OperationResidual
-		plan.reason = reason
-	case "model_required", "model":
-		plan.outcome = OperationModelRequired
-		plan.reason = reason
-	case "skip":
-		plan.outcome = OperationSkipped
-		plan.reason = reason
-	default:
-		plan.outcome = OperationBlocked
-		plan.failure = FailureClassUnsupported
-		plan.reason = reason
-	}
-	return plan
-}
-
-func operationPath(root string, op speccompiler.ProjectedDeterministicOperation, index int) (string, string, error) {
-	if len(op.Paths) <= index {
-		return "", "", fmt.Errorf("operation path %d is required", index+1)
-	}
-	return safePath(root, op.Paths[index])
-}
-
-func planCreate(root string, plan operationPlan, payload operationPayload) operationPlan {
-	_, abs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if payload.Content == "" {
-		return block(plan, FailureClassMaterialSpecGap, "create operation requires payload.content")
-	}
-	if _, err := os.Lstat(abs); err == nil {
-		return block(plan, FailureClassUnsafeSource, "create destination already exists")
-	} else if !os.IsNotExist(err) {
-		return block(plan, FailureClassEnvironment, err.Error())
-	}
-	plan.changedFiles = []string{plan.op.Paths[0]}
-	plan.apply = func() error {
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(abs, []byte(payload.Content), 0o644)
-	}
-	return plan
-}
-
-func planReplace(root string, plan operationPlan, payload operationPayload) operationPlan {
-	_, abs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if payload.OldText == "" {
-		return block(plan, FailureClassMaterialSpecGap, "replace operation requires payload.old_text")
-	}
-	expected := expectedOccurrences(plan.op, payload)
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	count := strings.Count(string(content), payload.OldText)
-	if count != expected {
-		return block(plan, FailureClassUnsafeSource, fmt.Sprintf("replace expected %d occurrence(s), found %d", expected, count))
-	}
-	plan.changedFiles = []string{plan.op.Paths[0]}
-	plan.apply = func() error {
-		updated := strings.Replace(string(content), payload.OldText, payload.NewText, expected)
-		return os.WriteFile(abs, []byte(updated), 0o644)
-	}
-	return plan
-}
-
-func planInsert(root string, plan operationPlan, payload operationPayload, after bool) operationPlan {
-	_, abs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if payload.Anchor == "" {
-		return block(plan, FailureClassMaterialSpecGap, "insert operation requires payload.anchor")
-	}
-	expected := expectedOccurrences(plan.op, payload)
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	text := string(content)
-	count := strings.Count(text, payload.Anchor)
-	if count != expected {
-		return block(plan, FailureClassUnsafeSource, fmt.Sprintf("insert expected %d anchor occurrence(s), found %d", expected, count))
-	}
-	replacement := payload.Content + payload.Anchor
-	if after {
-		replacement = payload.Anchor + payload.Content
-	}
-	plan.changedFiles = []string{plan.op.Paths[0]}
-	plan.apply = func() error {
-		updated := strings.Replace(text, payload.Anchor, replacement, expected)
-		return os.WriteFile(abs, []byte(updated), 0o644)
-	}
-	return plan
-}
-
-func planRemove(root string, plan operationPlan, payload operationPayload) operationPlan {
-	_, abs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if payload.OldText == "" {
-		return block(plan, FailureClassMaterialSpecGap, "remove operation requires payload.old_text")
-	}
-	expected := expectedOccurrences(plan.op, payload)
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	count := strings.Count(string(content), payload.OldText)
-	if count != expected {
-		return block(plan, FailureClassUnsafeSource, fmt.Sprintf("remove expected %d occurrence(s), found %d", expected, count))
-	}
-	plan.changedFiles = []string{plan.op.Paths[0]}
-	plan.apply = func() error {
-		updated := strings.Replace(string(content), payload.OldText, "", expected)
-		return os.WriteFile(abs, []byte(updated), 0o644)
-	}
-	return plan
-}
-
-func planReplaceFile(root string, plan operationPlan, payload operationPayload) operationPlan {
-	_, abs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if payload.Content == "" {
-		return block(plan, FailureClassMaterialSpecGap, "replace_file operation requires payload.content")
-	}
-	if _, err := os.Stat(abs); err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	plan.changedFiles = []string{plan.op.Paths[0]}
-	plan.apply = func() error { return os.WriteFile(abs, []byte(payload.Content), 0o644) }
-	return plan
-}
-
-func planDelete(root string, plan operationPlan, payload operationPayload) operationPlan {
-	_, abs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if !payload.DeleteFile {
-		return block(plan, FailureClassMaterialSpecGap, "delete operation requires payload.delete_file true")
-	}
-	if _, err := os.Stat(abs); err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	plan.changedFiles = []string{plan.op.Paths[0]}
-	plan.apply = func() error { return os.Remove(abs) }
-	return plan
-}
-
-func planRename(root string, plan operationPlan, payload operationPayload) operationPlan {
-	sourceRel, sourceAbs, err := operationPath(root, plan.op, 0)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	destRel := payload.DestinationPath
-	if destRel == "" && len(plan.op.Paths) > 1 {
-		destRel = plan.op.Paths[1]
-	}
-	if strings.TrimSpace(destRel) == "" {
-		return block(plan, FailureClassMaterialSpecGap, "rename operation requires destination path")
-	}
-	destRel, destAbs, err := safePath(root, destRel)
-	if err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if _, err := os.Stat(sourceAbs); err != nil {
-		return block(plan, FailureClassUnsafeSource, err.Error())
-	}
-	if _, err := os.Lstat(destAbs); err == nil {
-		return block(plan, FailureClassUnsafeSource, "rename destination already exists")
-	} else if !os.IsNotExist(err) {
-		return block(plan, FailureClassEnvironment, err.Error())
-	}
-	plan.changedFiles = []string{sourceRel, destRel}
-	plan.apply = func() error {
-		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
-			return err
-		}
-		return os.Rename(sourceAbs, destAbs)
-	}
-	return plan
-}
-
-func block(plan operationPlan, class FailureClass, reason string) operationPlan {
-	plan.outcome = OperationBlocked
-	plan.failure = class
-	plan.reason = reason
-	return plan
-}
-
-func expectedOccurrences(op speccompiler.ProjectedDeterministicOperation, payload operationPayload) int {
-	if op.ExpectedOccurrences > 0 {
-		return op.ExpectedOccurrences
-	}
-	if payload.ExpectedOccurrences > 0 {
-		return payload.ExpectedOccurrences
-	}
-	return 1
-}
-
-func applyDependencies(plans []operationPlan, byID map[string]int) {
-	for i := range plans {
-		if plans[i].outcome != OperationNotAttempted {
-			continue
-		}
-		for _, dependency := range plans[i].op.DependsOn {
-			depIndex, ok := byID[strings.TrimSpace(dependency)]
-			if !ok {
-				plans[i] = block(plans[i], FailureClassDependency, "dependency is not declared: "+dependency)
-				break
-			}
-			dep := plans[depIndex]
-			if dep.outcome == OperationBlocked {
-				plans[i] = block(plans[i], FailureClassDependency, "dependency is blocked: "+dependency)
-				break
-			}
-			if dep.outcome != OperationNotAttempted {
-				plans[i].outcome = OperationResidual
-				plans[i].reason = "dependency is not deterministically applied: " + dependency
-				break
-			}
-		}
-	}
-}
-
-func applyAtomicGroups(plans []operationPlan, groups []speccompiler.ProjectedOperationGroup) {
-	atomic := map[string]bool{}
-	for _, group := range groups {
-		if group.Atomic && strings.TrimSpace(group.ID) != "" {
-			atomic[strings.TrimSpace(group.ID)] = true
-		}
-	}
-	for groupID := range atomic {
-		var members []int
-		hasBlocked := false
-		hasResidual := false
-		for i := range plans {
-			if strings.TrimSpace(plans[i].op.Group) == groupID {
-				members = append(members, i)
-				if plans[i].outcome == OperationBlocked {
-					hasBlocked = true
-				}
-				if plans[i].outcome != OperationNotAttempted {
-					hasResidual = true
-				}
-			}
-		}
-		if !hasBlocked && !hasResidual {
-			continue
-		}
-		for _, index := range members {
-			if plans[index].outcome == OperationNotAttempted {
-				if hasBlocked {
-					plans[index] = block(plans[index], FailureClassGroup, "atomic group contains a blocked operation")
-				} else {
-					plans[index].outcome = OperationResidual
-					plans[index].reason = "atomic group contains non-deterministic residual work"
-				}
-			}
-		}
-	}
-}
-
-func checkGuards(root string, raw json.RawMessage) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	var guards sourceGuards
-	if err := json.Unmarshal(raw, &guards); err != nil {
-		return fmt.Errorf("decode source guards: %w", err)
-	}
-	for _, path := range guards.FileExists {
-		_, abs, err := safePath(root, path)
+		potentiallyAffected, err := apply(plan.actions)
 		if err != nil {
-			return err
+			plan.outcome = OperationUncertain
+			plan.failure = FailureClassEnvironment
+			plan.reason = err.Error()
+			plan.uncertainPaths = append([]string(nil), potentiallyAffected...)
+			break
 		}
-		if _, err := os.Stat(abs); err != nil {
-			return fmt.Errorf("source guard file_exists failed for %s: %w", path, err)
-		}
+		plan.outcome = OperationApplied
+		plan.changedPaths = append([]string(nil), potentiallyAffected...)
+		plan.protectedPaths = append([]string(nil), potentiallyAffected...)
 	}
-	for _, path := range guards.FileAbsent {
-		_, abs, err := safePath(root, path)
-		if err != nil {
-			return err
-		}
-		if _, err := os.Lstat(abs); err == nil {
-			return fmt.Errorf("source guard file_absent failed for %s", path)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
+
+	result.ChangedFiles = changedFiles(plans)
+	result.Partition.ProtectedPaths = append([]string(nil), result.ChangedFiles...)
+	switch {
+	case hasEnvironmentalStop(plans):
+		result.Outcome = OutcomeBlocked
+	case len(partition.ResidualPathChains) > 0:
+		result.Outcome = OutcomePartial
+	default:
+		result.Outcome = OutcomeCompleted
 	}
-	for _, guard := range guards.Contains {
-		if err := checkTextGuard(root, guard, true); err != nil {
-			return err
-		}
-	}
-	for _, guard := range guards.NotContains {
-		if err := checkTextGuard(root, guard, false); err != nil {
-			return err
-		}
-	}
-	return nil
+	return finalizeResult(ctx, input.EvidenceWriter, result, plans), nil
 }
 
-func checkTextGuard(root string, guard textGuard, contains bool) error {
-	_, abs, err := safePath(root, guard.Path)
-	if err != nil {
-		return err
+func finalizeResult(ctx context.Context, writer EvidenceWriter, result Result, plans []pathChainPlan) Result {
+	result.Ledger.Entries = ledgerEntries(plans)
+	result.ChangedFiles = changedFiles(plans)
+	result.Partition.ProtectedPaths = append([]string(nil), result.ChangedFiles...)
+	result.ImplementationResult = summarizeImplementation(result, plans)
+	if result.Outcome == OutcomeBlocked {
+		result.FailurePacket = failurePacket(result, plans)
 	}
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		return err
+	return persistEvidence(ctx, writer, result)
+}
+
+func environmentBlockedResult(result Result, reason string) Result {
+	result.Outcome = OutcomeBlocked
+	result.Partition = Partition{
+		DeterministicPathChains: []string{},
+		ResidualPathChains:      []string{},
+		DeterministicFileWork:   []string{},
+		ResidualFileWork:        []string{},
+		ProtectedPaths:          []string{},
+		CoveredFileWork:         []string{},
 	}
-	count := strings.Count(string(content), guard.Text)
-	if contains {
-		expected := guard.ExpectedOccurrences
-		if expected == 0 {
-			if count == 0 {
-				return fmt.Errorf("source guard contains failed for %s", guard.Path)
+	result.FailurePacket = &FailurePacket{FailureClass: FailureClassEnvironment, Summary: reason, BlockedPathChains: []string{"workspace"}, BlockedFileWork: []string{}}
+	result.ImplementationResult = ImplementationResult{
+		Outcome:               OutcomeBlocked,
+		ActorKind:             ActorKindApplier,
+		CompletedPathChains:   []string{},
+		ResidualPathChains:    []string{},
+		BlockedPathChains:     []string{"workspace"},
+		UncertainPathChains:   []string{},
+		UnattemptedPathChains: []string{},
+		CompletedFileWork:     []string{},
+		ResidualFileWork:      []string{},
+		BlockedFileWork:       []string{},
+		UncertainFileWork:     []string{},
+		UnattemptedFileWork:   []string{},
+		ChangedFiles:          []string{},
+		ProtectedPaths:        []string{},
+		UncertainPaths:        []string{},
+		ModelExecutorRequired: false,
+		FailureClass:          FailureClassEnvironment,
+		FailureReason:         reason,
+	}
+	return result
+}
+
+func summarizeImplementation(result Result, plans []pathChainPlan) ImplementationResult {
+	implementation := ImplementationResult{
+		Outcome:               result.Outcome,
+		ActorKind:             ActorKindApplier,
+		CompletedPathChains:   []string{},
+		ResidualPathChains:    []string{},
+		BlockedPathChains:     []string{},
+		UncertainPathChains:   []string{},
+		UnattemptedPathChains: []string{},
+		CompletedFileWork:     []string{},
+		ResidualFileWork:      []string{},
+		BlockedFileWork:       []string{},
+		UncertainFileWork:     []string{},
+		UnattemptedFileWork:   []string{},
+		ChangedFiles:          append([]string(nil), result.ChangedFiles...),
+		ProtectedPaths:        append([]string(nil), result.Partition.ProtectedPaths...),
+		UncertainPaths:        []string{},
+	}
+	for _, plan := range plans {
+		switch plan.outcome {
+		case OperationApplied:
+			implementation.CompletedPathChains = append(implementation.CompletedPathChains, plan.ref)
+			implementation.CompletedFileWork = append(implementation.CompletedFileWork, plan.fileWorkRefs...)
+		case OperationResidual:
+			implementation.ResidualPathChains = append(implementation.ResidualPathChains, plan.ref)
+			implementation.ResidualFileWork = append(implementation.ResidualFileWork, plan.fileWorkRefs...)
+		case OperationBlocked:
+			implementation.BlockedPathChains = append(implementation.BlockedPathChains, plan.ref)
+			implementation.BlockedFileWork = append(implementation.BlockedFileWork, plan.fileWorkRefs...)
+		case OperationUncertain:
+			implementation.UncertainPathChains = append(implementation.UncertainPathChains, plan.ref)
+			implementation.UncertainFileWork = append(implementation.UncertainFileWork, plan.fileWorkRefs...)
+			implementation.UncertainPaths = appendUnique(implementation.UncertainPaths, plan.uncertainPaths...)
+		case OperationNotAttempted:
+			if plan.disposition == DispositionResidual {
+				implementation.ResidualPathChains = append(implementation.ResidualPathChains, plan.ref)
+				implementation.ResidualFileWork = append(implementation.ResidualFileWork, plan.fileWorkRefs...)
+			} else if plan.disposition == DispositionDeterministic {
+				implementation.UnattemptedPathChains = append(implementation.UnattemptedPathChains, plan.ref)
+				implementation.UnattemptedFileWork = append(implementation.UnattemptedFileWork, plan.fileWorkRefs...)
 			}
-			return nil
 		}
-		if count != expected {
-			return fmt.Errorf("source guard contains expected %d occurrence(s) in %s, found %d", expected, guard.Path, count)
+		if implementation.FailureClass == FailureClassNone && plan.failure != FailureClassNone {
+			implementation.FailureClass = plan.failure
+			implementation.FailureReason = plan.reason
 		}
-		return nil
 	}
-	if count != 0 {
-		return fmt.Errorf("source guard not_contains failed for %s", guard.Path)
-	}
-	return nil
+	sort.Strings(implementation.UncertainPaths)
+	implementation.ModelExecutorRequired = result.Outcome == OutcomeNotAttempted || result.Outcome == OutcomePartial
+	return implementation
 }
 
-func safePath(root, rel string) (string, string, error) {
-	if strings.TrimSpace(rel) == "" || strings.TrimSpace(rel) != rel {
-		return "", "", fmt.Errorf("path must be nonblank without outer whitespace")
+func failurePacket(result Result, plans []pathChainPlan) *FailurePacket {
+	packet := &FailurePacket{
+		BlockedPathChains:     []string{},
+		BlockedFileWork:       []string{},
+		UncertainPathChains:   []string{},
+		UncertainFileWork:     []string{},
+		UnattemptedPathChains: []string{},
+		UnattemptedFileWork:   []string{},
+		ResidualPathChains:    []string{},
+		ResidualFileWork:      []string{},
+		ChangedFiles:          append([]string(nil), result.ChangedFiles...),
+		ProtectedPaths:        append([]string(nil), result.Partition.ProtectedPaths...),
+		UncertainPaths:        []string{},
 	}
-	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "//") || strings.Contains(rel, "\\") || strings.Contains(rel, ":") {
-		return "", "", fmt.Errorf("unsafe repository path: %s", rel)
-	}
-	parts := strings.Split(rel, "/")
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." {
-			return "", "", fmt.Errorf("unsafe repository path: %s", rel)
+	for _, plan := range plans {
+		switch plan.outcome {
+		case OperationBlocked:
+			packet.BlockedPathChains = append(packet.BlockedPathChains, plan.ref)
+			packet.BlockedFileWork = append(packet.BlockedFileWork, plan.fileWorkRefs...)
+		case OperationUncertain:
+			packet.UncertainPathChains = append(packet.UncertainPathChains, plan.ref)
+			packet.UncertainFileWork = append(packet.UncertainFileWork, plan.fileWorkRefs...)
+			packet.UncertainPaths = appendUnique(packet.UncertainPaths, plan.uncertainPaths...)
+		case OperationNotAttempted:
+			if plan.disposition == DispositionDeterministic {
+				packet.UnattemptedPathChains = append(packet.UnattemptedPathChains, plan.ref)
+				packet.UnattemptedFileWork = append(packet.UnattemptedFileWork, plan.fileWorkRefs...)
+			} else if plan.disposition == DispositionResidual {
+				packet.ResidualPathChains = append(packet.ResidualPathChains, plan.ref)
+				packet.ResidualFileWork = append(packet.ResidualFileWork, plan.fileWorkRefs...)
+			}
+		case OperationResidual:
+			packet.ResidualPathChains = append(packet.ResidualPathChains, plan.ref)
+			packet.ResidualFileWork = append(packet.ResidualFileWork, plan.fileWorkRefs...)
+		}
+		if packet.FailureClass == FailureClassNone && plan.failure != FailureClassNone {
+			packet.FailureClass = plan.failure
+			packet.Summary = plan.reason
 		}
 	}
-	if parts[0] == ".git" {
-		return "", "", fmt.Errorf("unsafe repository path targets git metadata: %s", rel)
+	sort.Strings(packet.UncertainPaths)
+	if packet.Summary == "" {
+		packet.FailureClass = FailureClassMaterialSpecGap
+		packet.Summary = "deterministic projection is blocked"
 	}
-	abs := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
-	prefix := root + string(os.PathSeparator)
-	if abs != root && !strings.HasPrefix(abs, prefix) {
-		return "", "", fmt.Errorf("unsafe repository path escapes workspace: %s", rel)
-	}
-	return filepath.ToSlash(rel), abs, nil
+	return packet
 }
 
-func ledgerEntries(plans []operationPlan) []LedgerEntry {
+func persistEvidence(ctx context.Context, writer EvidenceWriter, result Result) Result {
+	if writer == nil || len(result.Ledger.Entries) == 0 {
+		return result
+	}
+	type descriptor struct {
+		kind     string
+		filename string
+		value    any
+	}
+	files := []descriptor{
+		{kind: "applier_ledger_json", filename: "applier-ledger.json", value: result.Ledger},
+		{kind: "applier_partition_json", filename: "applier-partition.json", value: result.Partition},
+		{kind: "applier_result_json", filename: "applier-result.json", value: result.ImplementationResult},
+		{kind: "applier_changed_files_json", filename: "applier-changed-files.json", value: map[string][]string{"changed_files": result.ChangedFiles}},
+	}
+	if result.FailurePacket != nil {
+		files = append(files, descriptor{kind: "applier_failure_packet_json", filename: "applier-failure-packet.json", value: result.FailurePacket})
+	}
+	for _, file := range files {
+		data, err := json.MarshalIndent(file.value, "", "  ")
+		if err == nil {
+			data = append(data, '\n')
+			var artifact EvidenceArtifact
+			artifact, err = writer.WriteEvidence(ctx, EvidenceFile{Kind: file.kind, Filename: file.filename, MediaType: "application/json", Data: data})
+			if err == nil {
+				result.Evidence = append(result.Evidence, artifact)
+				continue
+			}
+		}
+		reason := fmt.Sprintf("persist applier evidence %s: %v", file.kind, err)
+		result.Outcome = OutcomeBlocked
+		result.ImplementationResult.Outcome = OutcomeBlocked
+		result.ImplementationResult.ModelExecutorRequired = false
+		result.ImplementationResult.EvidenceFailureReason = reason
+		if result.ImplementationResult.FailureClass == FailureClassNone {
+			result.ImplementationResult.FailureClass = FailureClassEnvironment
+			result.ImplementationResult.FailureReason = reason
+		}
+		if result.FailurePacket == nil {
+			result.FailurePacket = &FailurePacket{
+				FailureClass:          FailureClassEnvironment,
+				Summary:               reason,
+				BlockedPathChains:     []string{},
+				BlockedFileWork:       []string{},
+				UncertainPathChains:   append([]string(nil), result.ImplementationResult.UncertainPathChains...),
+				UncertainFileWork:     append([]string(nil), result.ImplementationResult.UncertainFileWork...),
+				UnattemptedPathChains: append([]string(nil), result.ImplementationResult.UnattemptedPathChains...),
+				UnattemptedFileWork:   append([]string(nil), result.ImplementationResult.UnattemptedFileWork...),
+				ResidualPathChains:    append([]string(nil), result.ImplementationResult.ResidualPathChains...),
+				ResidualFileWork:      append([]string(nil), result.ImplementationResult.ResidualFileWork...),
+				ChangedFiles:          append([]string(nil), result.ChangedFiles...),
+				ProtectedPaths:        append([]string(nil), result.Partition.ProtectedPaths...),
+				UncertainPaths:        append([]string(nil), result.ImplementationResult.UncertainPaths...),
+			}
+		}
+		result.FailurePacket.EvidenceFailureReason = reason
+		return result
+	}
+	return result
+}
+
+func ledgerEntries(plans []pathChainPlan) []LedgerEntry {
 	entries := make([]LedgerEntry, 0, len(plans))
 	for _, plan := range plans {
-		entries = append(entries, LedgerEntry{OperationID: plan.id, Kind: plan.op.Kind, Mode: plan.op.Mode, Paths: append([]string(nil), plan.op.Paths...), Group: plan.op.Group, DependsOn: append([]string(nil), plan.op.DependsOn...), OnFailure: plan.op.OnFailure, Outcome: plan.outcome, Reason: plan.reason, Failure: plan.failure, ChangedFiles: append([]string(nil), plan.changedFiles...)})
+		entries = append(entries, LedgerEntry{
+			PathChainRef:   plan.ref,
+			FileWorkRefs:   append([]string(nil), plan.fileWorkRefs...),
+			SubstepRefs:    append([]string(nil), plan.substepRefs...),
+			Operations:     append([]string(nil), plan.operations...),
+			Paths:          append([]string(nil), plan.paths...),
+			Dependencies:   append([]string(nil), plan.dependencies...),
+			Replay:         plan.replay,
+			Disposition:    plan.disposition,
+			Outcome:        plan.outcome,
+			Reason:         plan.reason,
+			Failure:        plan.failure,
+			ChangedPaths:   append([]string(nil), plan.changedPaths...),
+			ProtectedPaths: append([]string(nil), plan.protectedPaths...),
+			UncertainPaths: append([]string(nil), plan.uncertainPaths...),
+		})
 	}
 	return entries
 }
 
-func uniqueChangedFiles(entries []LedgerEntry) []string {
+func changedFiles(plans []pathChainPlan) []string {
 	seen := map[string]struct{}{}
-	for _, entry := range entries {
-		if entry.Outcome != OperationApplied {
+	for _, plan := range plans {
+		if plan.outcome != OperationApplied {
 			continue
 		}
-		for _, path := range entry.ChangedFiles {
+		for _, path := range plan.changedPaths {
 			seen[path] = struct{}{}
 		}
 	}
@@ -686,84 +514,4 @@ func uniqueChangedFiles(entries []LedgerEntry) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func summarizeResult(result Result) Result {
-	blocked := []string{}
-	residual := []string{}
-	skipped := []string{}
-	completed := []string{}
-	var failure FailureClass
-	reason := ""
-	for _, entry := range result.Ledger.Entries {
-		switch entry.Outcome {
-		case OperationApplied:
-			completed = append(completed, entry.OperationID)
-		case OperationBlocked:
-			blocked = append(blocked, entry.OperationID)
-			if failure == FailureClassNone || failure == "" {
-				failure = entry.Failure
-				reason = entry.Reason
-			}
-		case OperationResidual, OperationModelRequired, OperationUnsupported:
-			residual = append(residual, entry.OperationID)
-		case OperationSkipped:
-			skipped = append(skipped, entry.OperationID)
-		}
-	}
-	switch {
-	case len(blocked) > 0:
-		result.Outcome = OutcomeBlocked
-	case len(completed) > 0 && (len(residual) > 0 || len(skipped) > 0):
-		result.Outcome = OutcomePartial
-	case len(completed) > 0:
-		result.Outcome = OutcomeCompleted
-	default:
-		result.Outcome = OutcomeNotAttempted
-	}
-	result.ChangedFiles = uniqueChangedFiles(result.Ledger.Entries)
-	result.ImplementationResult = ImplementationResult{Outcome: result.Outcome, ActorKind: ActorKindApplier, CompletedOperations: completed, ResidualOperations: residual, SkippedOperations: skipped, BlockedOperations: blocked, ChangedFiles: result.ChangedFiles, ModelExecutorRequired: len(residual) > 0 || result.Outcome == OutcomeNotAttempted, FailureClass: failure, FailureReason: reason}
-	if len(blocked) > 0 {
-		result.FailurePacket = &FailurePacket{FailureClass: failure, Summary: reason, BlockedOperations: blocked, ResidualOperations: residual, ChangedFiles: result.ChangedFiles}
-	}
-	return result
-}
-
-func implementationResult(result Result) ImplementationResult {
-	return ImplementationResult{Outcome: result.Outcome, ActorKind: result.ActorKind, CompletedOperations: []string{}, ResidualOperations: []string{}, SkippedOperations: []string{}, BlockedOperations: []string{}, ChangedFiles: []string{}, ModelExecutorRequired: true}
-}
-
-func blockedResult(result Result, class FailureClass, reason string) Result {
-	result.Outcome = OutcomeBlocked
-	result.FailurePacket = &FailurePacket{FailureClass: class, Summary: reason, BlockedOperations: []string{"workspace"}}
-	result.ImplementationResult = ImplementationResult{Outcome: OutcomeBlocked, ActorKind: ActorKindApplier, BlockedOperations: []string{"workspace"}, ChangedFiles: []string{}, FailureClass: class, FailureReason: reason}
-	return result
-}
-
-func writeEvidence(ctx context.Context, writer EvidenceWriter, result Result) Result {
-	type evidenceDescriptor struct {
-		kind     string
-		filename string
-		value    any
-	}
-	files := make([]evidenceDescriptor, 0, 4)
-	files = append(files, evidenceDescriptor{kind: "applier_ledger_json", filename: "applier-ledger.json", value: result.Ledger})
-	files = append(files, evidenceDescriptor{kind: "applier_result_json", filename: "applier-result.json", value: result.ImplementationResult})
-	files = append(files, evidenceDescriptor{kind: "applier_changed_files_json", filename: "applier-changed-files.json", value: map[string][]string{"changed_files": result.ChangedFiles}})
-	if result.FailurePacket != nil {
-		files = append(files, evidenceDescriptor{kind: "applier_failure_packet_json", filename: "applier-failure-packet.json", value: result.FailurePacket})
-	}
-	for _, file := range files {
-		data, err := json.MarshalIndent(file.value, "", "  ")
-		if err != nil {
-			return blockedResult(result, FailureClassEnvironment, fmt.Sprintf("marshal evidence %s: %v", file.kind, err))
-		}
-		data = append(data, '\n')
-		artifact, err := writer.WriteEvidence(ctx, EvidenceFile{Kind: file.kind, Filename: file.filename, MediaType: "application/json", Data: data})
-		if err != nil {
-			return blockedResult(result, FailureClassEnvironment, fmt.Sprintf("write evidence %s: %v", file.kind, err))
-		}
-		result.Evidence = append(result.Evidence, artifact)
-	}
-	return result
 }

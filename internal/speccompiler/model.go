@@ -72,6 +72,20 @@ type ExecutionValidationCommand struct {
 	Expected         string `json:"expected"`
 }
 
+type EffectiveBriefMode string
+
+const (
+	EffectiveBriefFull     EffectiveBriefMode = "full"
+	EffectiveBriefResidual EffectiveBriefMode = "residual"
+)
+
+type EffectiveBriefSelection struct {
+	Mode                  EffectiveBriefMode
+	ResidualFileWorkRefs  []string
+	CompletedFileWorkRefs []string
+	ProtectedPaths        []string
+}
+
 func decodeExecutionDocument(raw []byte, registration versionRegistration) (*ExecutionDocument, error) {
 	var document ExecutionDocument
 	if err := json.Unmarshal(raw, &document); err != nil {

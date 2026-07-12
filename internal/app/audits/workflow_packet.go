@@ -99,10 +99,26 @@ func buildWorkflowAuditPacket(
 	if err := json.Unmarshal(executionSpec, &executionSpecJSON); err != nil {
 		return nil, fmt.Errorf("decode canonical Execution Spec for audit packet: %w", err)
 	}
-	executionProjection, projectionDiagnostics := speccompiler.ProjectExecutionPayload(executionSpec)
-	if len(projectionDiagnostics) != 0 {
-		first := projectionDiagnostics[0]
-		return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
+	var executionRoot map[string]json.RawMessage
+	if err := json.Unmarshal(executionSpec, &executionRoot); err != nil {
+		return nil, fmt.Errorf("decode canonical Execution Spec for audit packet: %w", err)
+	}
+	executionProjection := speccompiler.ExecutionProjection{}
+	if _, hasSteps := executionRoot["steps"]; hasSteps {
+		compiled, executionDocument := speccompiler.CompileExecutionSpec(filepath.Base(executionSpecArtifact.RelativePath), executionSpec)
+		if len(compiled.Errors) != 0 || executionDocument == nil {
+			if len(compiled.Errors) == 0 {
+				return nil, fmt.Errorf("project canonical Execution Spec metadata: execution document is unavailable")
+			}
+			first := compiled.Errors[0]
+			return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
+		}
+		var projectionDiagnostics []speccompiler.Diagnostic
+		executionProjection, projectionDiagnostics = speccompiler.ProjectExecutionSpec(executionDocument)
+		if len(projectionDiagnostics) != 0 {
+			first := projectionDiagnostics[0]
+			return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
+		}
 	}
 	managedContext, err := workflowAuditManagedContext(planModel, matchedRepoTarget, selectedPass)
 	if err != nil {

@@ -22,14 +22,16 @@ type workflowApplierFunc func(context.Context, applier.Input) (applier.Result, e
 // pre-application. It deliberately represents applier evidence as applier
 // evidence, not as model-backed Executor evidence.
 type WorkflowApplierResult struct {
-	Outcome               string                       `json:"outcome"`
-	ActorKind             string                       `json:"actor_kind"`
-	ImplementationResult  applier.ImplementationResult `json:"implementation_result"`
-	FailurePacket         *applier.FailurePacket       `json:"failure_packet,omitempty"`
-	ChangedFiles          []string                     `json:"changed_files,omitempty"`
-	Evidence              []applier.EvidenceArtifact   `json:"evidence,omitempty"`
-	ProjectionDiagnostics []speccompiler.Diagnostic    `json:"projection_diagnostics,omitempty"`
-	ResidualContext       string                       `json:"-"`
+	Outcome               string                           `json:"outcome"`
+	ActorKind             string                           `json:"actor_kind"`
+	Partition             applier.Partition                `json:"partition"`
+	ImplementationResult  applier.ImplementationResult     `json:"implementation_result"`
+	FailurePacket         *applier.FailurePacket           `json:"failure_packet,omitempty"`
+	ChangedFiles          []string                         `json:"changed_files,omitempty"`
+	Evidence              []applier.EvidenceArtifact       `json:"evidence,omitempty"`
+	ProjectionDiagnostics []speccompiler.Diagnostic        `json:"projection_diagnostics,omitempty"`
+	Document              *speccompiler.ExecutionDocument  `json:"-"`
+	Projection            speccompiler.ExecutionProjection `json:"-"`
 }
 
 type workflowRunEvidenceWriter struct {
@@ -42,11 +44,30 @@ func defaultWorkflowApplier() workflowApplierFunc {
 	return service.Apply
 }
 
-func (s *WorkflowExecutionService) applyDeterministicFirst(ctx context.Context, run workflowstore.Run, repoPath string, executionSpec []byte) (*WorkflowApplierResult, error) {
-	projection, diagnostics := speccompiler.ProjectExecutionPayload(executionSpec)
-	writer := workflowRunEvidenceWriter{store: s.store, run: run}
+func (s *WorkflowExecutionService) applyDeterministicFirst(
+	ctx context.Context,
+	run workflowstore.Run,
+	repoPath string,
+	executionSpec []byte,
+	executionSpecArtifact workflowstore.Artifact,
+) (*WorkflowApplierResult, error) {
+	filename := filepath.Base(filepath.FromSlash(executionSpecArtifact.RelativePath))
+	compiled, document := speccompiler.CompileExecutionSpec(filename, executionSpec)
+	if len(compiled.Errors) > 0 || document == nil {
+		result := projectionDiagnosticResult(compiled.Errors)
+		writer := workflowRunEvidenceWriter{store: s.store, run: run}
+		if err := writeJSONEvidence(ctx, writer, "applier_failure_packet_json", "applier-failure-packet.json", result.FailurePacket, &result.Evidence); err != nil {
+			return nil, err
+		}
+		if err := writeJSONEvidence(ctx, writer, "applier_projection_diagnostics_json", "applier-projection-diagnostics.json", compiled.Errors, &result.Evidence); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+	projection, diagnostics := speccompiler.ProjectExecutionSpec(document)
 	if len(diagnostics) > 0 {
 		result := projectionDiagnosticResult(diagnostics)
+		writer := workflowRunEvidenceWriter{store: s.store, run: run}
 		if err := writeJSONEvidence(ctx, writer, "applier_failure_packet_json", "applier-failure-packet.json", result.FailurePacket, &result.Evidence); err != nil {
 			return nil, err
 		}
@@ -55,36 +76,39 @@ func (s *WorkflowExecutionService) applyDeterministicFirst(ctx context.Context, 
 		}
 		return result, nil
 	}
-	if len(projection.DeterministicOperations) == 0 {
+	if len(projection.FileWork) == 0 {
 		return nil, nil
 	}
 	apply := s.applier
 	if apply == nil {
 		apply = defaultWorkflowApplier()
 	}
+	writer := workflowRunEvidenceWriter{store: s.store, run: run}
 	raw, err := apply(ctx, applier.Input{WorkspaceRoot: repoPath, Projection: projection, EvidenceWriter: writer})
 	if err != nil {
 		return nil, fmt.Errorf("deterministic applier: %w", err)
 	}
-	if raw.Outcome == applier.OutcomeNotAttempted && len(raw.Ledger.Entries) == 0 {
-		return nil, nil
-	}
 	result := workflowApplierResult(raw)
+	result.Document = document
+	result.Projection = projection
 	return &result, nil
 }
 
 func projectionDiagnosticResult(diagnostics []speccompiler.Diagnostic) *WorkflowApplierResult {
-	summary := "execution_payload projection diagnostics blocked deterministic-first execution"
+	summary := "canonical Execution Spec compilation or projection diagnostics blocked deterministic-first execution"
 	failure := &applier.FailurePacket{
 		FailureClass:      applier.FailureClassMaterialSpecGap,
 		Summary:           summary,
-		BlockedOperations: []string{"execution_payload"},
+		BlockedPathChains: []string{"execution_spec"},
+		BlockedFileWork:   []string{},
 	}
 	implementation := applier.ImplementationResult{
 		Outcome:               applier.OutcomeBlocked,
 		ActorKind:             applier.ActorKindApplier,
-		BlockedOperations:     []string{"execution_payload"},
+		BlockedPathChains:     []string{"execution_spec"},
+		BlockedFileWork:       []string{},
 		ChangedFiles:          []string{},
+		ProtectedPaths:        []string{},
 		ModelExecutorRequired: false,
 		FailureClass:          applier.FailureClassMaterialSpecGap,
 		FailureReason:         summary,
@@ -99,18 +123,15 @@ func projectionDiagnosticResult(diagnostics []speccompiler.Diagnostic) *Workflow
 }
 
 func workflowApplierResult(raw applier.Result) WorkflowApplierResult {
-	result := WorkflowApplierResult{
+	return WorkflowApplierResult{
 		Outcome:              string(raw.Outcome),
 		ActorKind:            string(raw.ActorKind),
+		Partition:            raw.Partition,
 		ImplementationResult: raw.ImplementationResult,
 		FailurePacket:        raw.FailurePacket,
 		ChangedFiles:         append([]string(nil), raw.ChangedFiles...),
 		Evidence:             append([]applier.EvidenceArtifact(nil), raw.Evidence...),
 	}
-	if raw.Outcome == applier.OutcomePartial {
-		result.ResidualContext = buildResidualContext(raw)
-	}
-	return result
 }
 
 func (w workflowRunEvidenceWriter) WriteEvidence(ctx context.Context, file applier.EvidenceFile) (applier.EvidenceArtifact, error) {
@@ -206,58 +227,6 @@ func (s *WorkflowExecutionService) loadVerifiedRunArtifact(ctx context.Context, 
 		return nil, workflowstore.Artifact{}, fmt.Errorf("Run %s artifact integrity check failed", kind)
 	}
 	return data, selected, nil
-}
-
-func briefWithResidualContext(brief []byte, residualContext string) []byte {
-	if strings.TrimSpace(residualContext) == "" {
-		return brief
-	}
-	combined := make([]byte, 0, len(brief)+len(residualContext)+96)
-	combined = append(combined, brief...)
-	combined = append(combined, []byte("\n\n---\n\n## Relay deterministic pre-application context\n\n")...)
-	combined = append(combined, residualContext...)
-	if len(combined) == 0 || combined[len(combined)-1] != '\n' {
-		combined = append(combined, '\n')
-	}
-	return combined
-}
-
-func buildResidualContext(result applier.Result) string {
-	var builder strings.Builder
-	builder.WriteString("The approved Executor Brief above remains authoritative. This supplement is factual state from Relay's deterministic pre-application layer and does not authorize scope expansion, repair of blocked deterministic defects, or reinterpretation of the approved spec.\n\n")
-	builder.WriteString("Applied operations:\n")
-	writeList(&builder, result.ImplementationResult.CompletedOperations)
-	builder.WriteString("\nResidual/model-required operations:\n")
-	writeList(&builder, result.ImplementationResult.ResidualOperations)
-	builder.WriteString("\nSkipped operations:\n")
-	writeList(&builder, result.ImplementationResult.SkippedOperations)
-	builder.WriteString("\nChanged files from deterministic application:\n")
-	writeList(&builder, result.ChangedFiles)
-	builder.WriteString("\nLedger entries:\n")
-	for _, entry := range result.Ledger.Entries {
-		builder.WriteString("- ")
-		builder.WriteString(entry.OperationID)
-		builder.WriteString(": ")
-		builder.WriteString(string(entry.Outcome))
-		if entry.Reason != "" {
-			builder.WriteString(" — ")
-			builder.WriteString(entry.Reason)
-		}
-		builder.WriteString("\n")
-	}
-	return builder.String()
-}
-
-func writeList(builder *strings.Builder, values []string) {
-	if len(values) == 0 {
-		builder.WriteString("- none\n")
-		return
-	}
-	for _, value := range values {
-		builder.WriteString("- ")
-		builder.WriteString(value)
-		builder.WriteString("\n")
-	}
 }
 
 var _ applier.EvidenceWriter = workflowRunEvidenceWriter{}

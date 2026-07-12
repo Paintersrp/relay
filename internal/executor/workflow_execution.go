@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -195,7 +194,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	if err != nil {
 		return WorkflowStartResult{}, fmt.Errorf("resolve repository target: %w", err)
 	}
-	executionSpec, _, err := s.loadVerifiedExecutionSpec(ctx, run)
+	executionSpec, executionSpecArtifact, err := s.loadVerifiedExecutionSpec(ctx, run)
 	if err != nil {
 		return WorkflowStartResult{}, err
 	}
@@ -208,8 +207,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		return WorkflowStartResult{Run: run, Preflight: preflight}, &WorkflowPreflightError{Result: preflight}
 	}
 
-	residualContext := ""
-	applierResult, err := s.applyDeterministicFirst(ctx, run, repository.LocalPath, executionSpec)
+	applierResult, err := s.applyDeterministicFirst(ctx, run, repository.LocalPath, executionSpec, executionSpecArtifact)
 	if err != nil {
 		return WorkflowStartResult{}, err
 	}
@@ -227,15 +225,60 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 				return WorkflowStartResult{}, err
 			}
 			return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, nil
-		case "partial":
-			residualContext = applierResult.ResidualContext
-		case "not_attempted":
+		case "partial", "not_attempted":
 		default:
 			return WorkflowStartResult{}, fmt.Errorf("unsupported deterministic applier outcome %q", applierResult.Outcome)
 		}
 	}
-	effectiveBrief := briefWithResidualContext(brief, residualContext)
 
+	if applierResult != nil && applierResult.Outcome == "partial" {
+		begun, err := s.runs.BeginExecutionAttempt(ctx, workflowruns.BeginExecutionAttemptInput{
+			RunID:   run.RunID,
+			Adapter: normalizedAdapter,
+			Model:   input.Model,
+		})
+		if err != nil {
+			return WorkflowStartResult{}, err
+		}
+		selected, err := s.prepareResidualEffectiveBrief(ctx, begun.Attempt, applierResult)
+		if err != nil {
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, err)
+		}
+		adapter, err := s.adapterFactory(normalizedAdapter)
+		if err != nil {
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, err)
+		}
+		runtimeResultPath := filepath.Join(s.store.ArtifactStore().Root(), ".runtime", run.RunID, "executor-result.tmp")
+		invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
+			RunID:         run.ID,
+			RepoPath:      repository.LocalPath,
+			BriefContent:  string(selected.Content),
+			BriefPath:     selected.Path,
+			ResultPath:    runtimeResultPath,
+			SelectedModel: input.Model,
+			Timeout:       s.timeout,
+		})
+		if err != nil {
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, fmt.Errorf("build executor invocation: %w", err))
+		}
+		if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, err)
+		}
+		invocationPreflight := s.invocationPreflight(invocation)
+		if !invocationPreflight.OK {
+			return s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, fmt.Errorf("adapter preflight failed: %s", invocationPreflight.BlockerText))
+		}
+		runtimeCtx, cancel := context.WithCancel(context.Background())
+		runtime := &workflowRuntime{cancel: cancel}
+		s.putRuntime(begun.Attempt.AttemptID, runtime)
+		s.launch(func() {
+			defer s.deleteRuntime(begun.Attempt.AttemptID)
+			s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, invocation, adapter, runtime)
+		})
+		return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
+	}
+
+	selected := fullEffectiveBriefInput(brief, briefArtifact, briefPath)
 	adapter, err := s.adapterFactory(normalizedAdapter)
 	if err != nil {
 		return WorkflowStartResult{}, err
@@ -244,8 +287,8 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
 		RunID:         run.ID,
 		RepoPath:      repository.LocalPath,
-		BriefContent:  string(effectiveBrief),
-		BriefPath:     briefPath,
+		BriefContent:  string(selected.Content),
+		BriefPath:     selected.Path,
 		ResultPath:    runtimeResultPath,
 		SelectedModel: input.Model,
 		Timeout:       s.timeout,
@@ -253,14 +296,13 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	if err != nil {
 		return WorkflowStartResult{}, fmt.Errorf("build executor invocation: %w", err)
 	}
-	if err := verifyInvocationUsesBrief(invocation, effectiveBrief, briefPath); err != nil {
+	if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
 		return WorkflowStartResult{}, err
 	}
 	invocationPreflight := s.invocationPreflight(invocation)
 	if !invocationPreflight.OK {
 		return WorkflowStartResult{}, fmt.Errorf("adapter preflight failed: %s", invocationPreflight.BlockerText)
 	}
-
 	begun, err := s.runs.BeginExecutionAttempt(ctx, workflowruns.BeginExecutionAttemptInput{
 		RunID:   run.RunID,
 		Adapter: normalizedAdapter,
@@ -274,7 +316,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	s.putRuntime(begun.Attempt.AttemptID, runtime)
 	s.launch(func() {
 		defer s.deleteRuntime(begun.Attempt.AttemptID)
-		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, briefArtifact, invocation, adapter, runtime)
+		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, invocation, adapter, runtime)
 	})
 	return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
 }
@@ -486,24 +528,25 @@ func (e *WorkflowPreflightError) Error() string {
 }
 
 type workflowAttemptRuntime struct {
-	OwnerInstanceID       string `json:"owner_instance_id,omitempty"`
-	CommandPreview        string `json:"command_preview,omitempty"`
-	ProcessIdentity       string `json:"process_identity,omitempty"`
-	LaunchDisposition     string `json:"launch_disposition,omitempty"`
-	ExitCode              int    `json:"exit_code"`
-	TimedOut              bool   `json:"timed_out"`
-	TerminationVerified   bool   `json:"termination_verified"`
-	CleanupPending        bool   `json:"cleanup_pending,omitempty"`
-	PendingTerminalStatus string `json:"pending_terminal_status,omitempty"`
-	Error                 string `json:"error,omitempty"`
-	NormalizedStatus      string `json:"normalized_status,omitempty"`
-	BlockerText           string `json:"blocker_text,omitempty"`
-	BriefArtifactID       string `json:"brief_artifact_id,omitempty"`
-	BriefSHA256           string `json:"brief_sha256,omitempty"`
-	StdoutTruncated       bool   `json:"stdout_truncated,omitempty"`
-	StderrTruncated       bool   `json:"stderr_truncated,omitempty"`
-	StdoutBytes           int64  `json:"stdout_bytes,omitempty"`
-	StderrBytes           int64  `json:"stderr_bytes,omitempty"`
+	OwnerInstanceID          string `json:"owner_instance_id,omitempty"`
+	CommandPreview           string `json:"command_preview,omitempty"`
+	ProcessIdentity          string `json:"process_identity,omitempty"`
+	LaunchDisposition        string `json:"launch_disposition,omitempty"`
+	ExitCode                 int    `json:"exit_code"`
+	TimedOut                 bool   `json:"timed_out"`
+	TerminationVerified      bool   `json:"termination_verified"`
+	CleanupPending           bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus    string `json:"pending_terminal_status,omitempty"`
+	Error                    string `json:"error,omitempty"`
+	NormalizedStatus         string `json:"normalized_status,omitempty"`
+	BlockerText              string `json:"blocker_text,omitempty"`
+	EffectiveBriefArtifactID string `json:"effective_brief_artifact_id,omitempty"`
+	EffectiveBriefSHA256     string `json:"effective_brief_sha256,omitempty"`
+	EffectiveBriefMode       string `json:"effective_brief_mode,omitempty"`
+	StdoutTruncated          bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated          bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes              int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes              int64  `json:"stderr_bytes,omitempty"`
 }
 
 func (s *WorkflowExecutionService) execute(
@@ -511,16 +554,17 @@ func (s *WorkflowExecutionService) execute(
 	run workflowstore.Run,
 	attempt workflowstore.ExecutionAttempt,
 	repository workflowstore.RepositoryTarget,
-	briefArtifact workflowstore.Artifact,
+	selected effectiveBriefInput,
 	invocation ExecutorInvocation,
 	adapter ExecutorAdapter,
 	runtime *workflowRuntime,
 ) {
 	state := workflowAttemptRuntime{
-		OwnerInstanceID: s.ownerInstanceID,
-		CommandPreview:  redactSensitive(invocation.Preview),
-		BriefArtifactID: briefArtifact.ArtifactID,
-		BriefSHA256:     briefArtifact.SHA256,
+		OwnerInstanceID:          s.ownerInstanceID,
+		CommandPreview:           redactSensitive(invocation.Preview),
+		EffectiveBriefArtifactID: selected.Artifact.ArtifactID,
+		EffectiveBriefSHA256:     selected.Artifact.SHA256,
+		EffectiveBriefMode:       string(selected.Mode),
 	}
 	updateState := func() {
 		data, _ := json.Marshal(state)
@@ -821,19 +865,17 @@ func (s *WorkflowExecutionService) loadVerifiedBrief(ctx context.Context, run wo
 }
 
 func verifyInvocationUsesBrief(invocation ExecutorInvocation, brief []byte, briefPath string) error {
-	if invocation.Stdin != "" {
-		stdin := []byte(invocation.Stdin)
-		if bytes.Equal(stdin, brief) || bytes.HasPrefix(stdin, append(append([]byte(nil), brief...), []byte("\n\n---\n\n## Relay deterministic pre-application context\n\n")...)) {
-			return nil
-		}
-		return fmt.Errorf("executor invocation changed the rendered Executor Brief bytes")
-	}
-	for _, arg := range invocation.Args {
-		if arg == briefPath {
-			return nil
-		}
-	}
-	return fmt.Errorf("executor invocation does not reference the rendered Executor Brief")
+	digest := sha256.Sum256(brief)
+	return verifyInvocationUsesEffectiveBrief(invocation, effectiveBriefInput{
+		Mode:    "full",
+		Content: append([]byte(nil), brief...),
+		Artifact: workflowstore.Artifact{
+			ArtifactID: "verification",
+			SHA256:     hex.EncodeToString(digest[:]),
+			SizeBytes:  int64(len(brief)),
+		},
+		Path: briefPath,
+	})
 }
 
 func cancellationRequested(store *workflowstore.Store, attemptID string) bool {
