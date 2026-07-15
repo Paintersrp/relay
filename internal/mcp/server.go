@@ -19,9 +19,10 @@ const toolsListPageSize = 50
 // Server is the MCP stdio server. It reads newline-delimited JSON-RPC 2.0
 // requests from r and writes responses to w.
 type Server struct {
-	log   *slog.Logger
-	deps  *MCPDeps
-	tools []ToolDefinition
+	log             *slog.Logger
+	deps            *MCPDeps
+	tools           []ToolDefinition
+	surfaceHandlers map[string]surfaceDispatch
 }
 
 // NewServer constructs an MCP server with the exact workflow profile registry.
@@ -274,6 +275,14 @@ func (s *Server) handleToolsCall(req Request) Response {
 	args := params.Arguments
 	if args == nil {
 		args = json.RawMessage("{}")
+	}
+
+	if s.surfaceHandlers != nil {
+		result, err := s.dispatchSurfaceTool(params.Name, args)
+		if err != nil {
+			return errResponse(req.ID, CodeInvalidParams, err.Error())
+		}
+		return okResponse(req.ID, result)
 	}
 
 	var result ToolCallResult

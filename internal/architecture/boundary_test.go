@@ -182,4 +182,27 @@ func TestFeatureAPIPackagesDoNotImportStoreDirectly(t *testing.T) {
 	}
 }
 
+func TestOperationRegistryDoesNotImportRuntimeLayers(t *testing.T) {
+	root := repoRoot(t)
+	registryRoot := filepath.Join(root, "internal", "operations", "registry")
+	for _, file := range goFiles(t, registryRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if strings.HasPrefix(imp.path, modulePath+"/internal/") {
+				t.Fatalf("%s imports runtime package %q; operation registry must remain runtime-independent", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}
 
+func TestSurfaceContractsImportOnlyOperationRegistryInternally(t *testing.T) {
+	root := repoRoot(t)
+	surfaceRoot := filepath.Join(root, "internal", "mcp", "surfacecontracts")
+	const allowed = modulePath + "/internal/operations/registry"
+	for _, file := range goFiles(t, surfaceRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if strings.HasPrefix(imp.path, modulePath+"/internal/") && imp.path != allowed {
+				t.Fatalf("%s imports runtime package %q; surface contracts may import only the operation registry", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}

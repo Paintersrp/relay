@@ -63,6 +63,13 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 		{http.MethodPost, "/api/projects/project/plan-attempts"},
 		{http.MethodGet, "/api/projects/project/refactor/candidates"},
 		{http.MethodPost, "/handoffs"},
+
+		{http.MethodPost, "/mcp/apps/planner-authoring/v1"},
+		{http.MethodPost, "/mcp/apps/planner-plan/v1"},
+		{http.MethodPost, "/mcp/apps/planner-execution/v1"},
+		{http.MethodPost, "/mcp/apps/auditor-review/v1"},
+		{http.MethodPost, "/mcp/apps/auditor-audit/v1"},
+		{http.MethodPost, "/mcp/apps/auditor-remediation/v1"},
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))

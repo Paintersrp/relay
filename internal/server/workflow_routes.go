@@ -72,6 +72,10 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.RealIP)
 
+	if err := mcp.ValidateCompiledSurfaceCatalog(); err != nil {
+		panic(err)
+	}
+
 	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
 	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
 
