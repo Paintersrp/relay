@@ -39,6 +39,69 @@ var (
 	semanticCatalogErr  error
 )
 
+func ValidateOperationRequest(surface SurfaceContractID, tool string, raw []byte) error {
+	_, _, _, err := validateOperationRequest(surface, tool, raw)
+	return err
+}
+
+func validateOperationRequest(surface SurfaceContractID, tool string, raw []byte) (map[string]any, OperationDefinition, bool, error) {
+	request, err := ValidateRequest(surface, tool, raw)
+	if err != nil {
+		return nil, OperationDefinition{}, false, err
+	}
+	operation, hasOperation, err := validateRequestAuthority(surface, tool, request)
+	if err != nil {
+		return nil, OperationDefinition{}, false, requestError("request_authority_invalid", "$")
+	}
+	if err := validateSurfaceAction(surface, tool); err != nil {
+		return nil, OperationDefinition{}, false, requestError("request_authority_invalid", "$")
+	}
+
+	switch tool {
+	case "create_operation_packet", "refresh_operation_packet":
+		if !hasOperation {
+			return nil, OperationDefinition{}, false, requestError("request_authority_invalid", "$.operation_id")
+		}
+		if err := normalizePacketRequest(tool, operation, request); err != nil {
+			return nil, OperationDefinition{}, false, requestError("request_semantic_invalid", "$")
+		}
+	case "validate_artifact", "submit_plan", "create_run":
+		if err := validateTopLevelClearance(request); err != nil {
+			return nil, OperationDefinition{}, false, requestError("request_semantic_invalid", "$.sensitive_data_clearance")
+		}
+	case "close_operation_packet", "record_audit_decision":
+	}
+	return request, operation, hasOperation, nil
+}
+
+func validateSurfaceAction(surface SurfaceContractID, tool string) error {
+	var action AllowedAction
+	switch tool {
+	case "validate_artifact":
+		action = "validate_artifact"
+	case "submit_plan":
+		action = "submit_plan"
+	case "create_run":
+		action = "create_run"
+	case "get_run_artifact":
+		action = "get_run_artifact"
+	case "record_audit_decision":
+		action = "record_audit_decision"
+	default:
+		return nil
+	}
+	operations, err := OperationsForSurface(surface)
+	if err != nil || len(operations) == 0 {
+		return errors.New("surface action authority is unavailable")
+	}
+	for _, operation := range operations {
+		if !containsAction(operation.AllowedNonSourceActions, action) {
+			return errors.New("surface action is not allowed")
+		}
+	}
+	return nil
+}
+
 func SemanticRequestBasis(surface SurfaceContractID, tool string, raw []byte) ([]byte, error) {
 	if err := Validate(); err != nil {
 		return nil, requestError("request_contract_unavailable", "$")
@@ -48,30 +111,9 @@ func SemanticRequestBasis(surface SurfaceContractID, tool string, raw []byte) ([
 		return nil, requestError("request_projection_unavailable", "$")
 	}
 
-	request, err := ValidateRequest(surface, tool, raw)
+	request, operation, hasOperation, err := validateOperationRequest(surface, tool, raw)
 	if err != nil {
 		return nil, err
-	}
-	operation, hasOperation, err := validateRequestAuthority(surface, tool, request)
-	if err != nil {
-		return nil, requestError("request_authority_invalid", "$")
-	}
-
-	switch tool {
-	case "create_operation_packet", "refresh_operation_packet":
-		if !hasOperation {
-			return nil, requestError("request_authority_invalid", "$.operation_id")
-		}
-		if err := normalizePacketRequest(tool, operation, request); err != nil {
-			return nil, requestError("request_semantic_invalid", "$")
-		}
-	case "validate_artifact", "submit_plan", "create_run":
-		if err := validateTopLevelClearance(request); err != nil {
-			return nil, requestError("request_semantic_invalid", "$.sensitive_data_clearance")
-		}
-	case "close_operation_packet", "record_audit_decision":
-	default:
-		return nil, requestError("request_projection_unavailable", "$")
 	}
 
 	delete(request, "input_files")
@@ -241,6 +283,9 @@ func normalizePacketRequest(tool string, operation OperationDefinition, request 
 		if !ok || !containsSourceKind(slot.AllowedSourceKinds, InputSourceKind(sourceKind)) {
 			return fmt.Errorf("input %q source_kind %q is not allowed", name, sourceKind)
 		}
+		if err := validateInputSourceKind(sourceKind, input); err != nil {
+			return fmt.Errorf("input %q: %w", name, err)
+		}
 		sha := expectedSHA(input)
 		if sha == "" {
 			return fmt.Errorf("input %q expected_sha256 is required", name)
@@ -336,6 +381,37 @@ func expectedSHA(input map[string]any) string {
 	return value
 }
 
+func validateInputSourceKind(sourceKind string, input map[string]any) error {
+	source, ok := input["source"].(map[string]any)
+	if !ok {
+		return errors.New("source object is required")
+	}
+	var requiredKeys []string
+	switch sourceKind {
+	case "uploaded_file":
+		requiredKeys = []string{"file_index"}
+	case "relay_artifact":
+		requiredKeys = []string{"artifact_id"}
+	case "inline_text":
+		requiredKeys = []string{"text"}
+	case "workflow_record":
+		requiredKeys = []string{"workflow_record"}
+	case "committed_source":
+		requiredKeys = []string{"repository_key", "revision", "path", "expected_blob_oid"}
+	default:
+		return errors.New("source_kind is unsupported")
+	}
+	if len(source) != len(requiredKeys) {
+		return errors.New("source object does not match source_kind")
+	}
+	for _, key := range requiredKeys {
+		if _, exists := source[key]; !exists {
+			return errors.New("source object does not match source_kind")
+		}
+	}
+	return nil
+}
+
 func uploadedFileIndex(input map[string]any) (int, error) {
 	source, ok := input["source"].(map[string]any)
 	if !ok {
@@ -386,6 +462,12 @@ func validateWorkflowRecordPolicy(policy string, input map[string]any) error {
 	}
 	if !allowed {
 		return fmt.Errorf("workflow_record kind %q is not allowed by policy %q", kind, policy)
+	}
+	if nestedExpected, exists := record["expected_sha256"]; exists {
+		value, ok := nestedExpected.(string)
+		if !ok || value != expectedSHA(input) {
+			return errors.New("workflow_record expected_sha256 does not equal input expected_sha256")
+		}
 	}
 	return nil
 }

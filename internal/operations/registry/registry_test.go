@@ -265,6 +265,51 @@ func TestConcurrentRegistrySchemaAndSemanticReadsAreDeterministic(t *testing.T) 
 	}
 }
 
+func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []byte
+	}{
+		{
+			name: "operation_disallowed_reference",
+			raw: mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
+				value["workflow_references"] = []any{map[string]any{"kind": "run", "run_id": "run-1"}}
+			}),
+		},
+		{
+			name: "source_kind_branch_mismatch",
+			raw: mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
+				value["inputs"].([]any)[0].(map[string]any)["source"] = map[string]any{"text": "requirements"}
+			}),
+		},
+		{
+			name: "workflow_record_digest_mismatch",
+			raw: mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
+				input := value["inputs"].([]any)[0].(map[string]any)
+				input["source_kind"] = "workflow_record"
+				input["source"] = map[string]any{
+					"workflow_record": map[string]any{
+						"kind":            "plan_artifact",
+						"plan_id":         "plan-1",
+						"artifact_id":     "artifact-1",
+						"expected_sha256": strings.Repeat("f", 64),
+					},
+				}
+			}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := ValidateOperationRequest("planner-plan.v1", "create_operation_packet", test.raw); err == nil || err.Error() != "request_semantic_invalid:$" {
+				t.Fatalf("operation validation error = %v", err)
+			}
+		})
+	}
+	if err := validateSurfaceAction("planner-authoring.v1", "validate_artifact"); err == nil {
+		t.Fatal("planner-authoring accepted validate_artifact")
+	}
+}
+
 func mutateObject(t *testing.T, raw []byte, mutate func(map[string]any)) []byte {
 	t.Helper()
 	var value map[string]any

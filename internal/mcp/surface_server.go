@@ -224,7 +224,7 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 	if !ok {
 		return ToolCallResult{}, errors.New("surface handler is not configured")
 	}
-	if _, err := registry.ValidateRequest(dispatch.surface, name, args); err != nil {
+	if err := registry.ValidateOperationRequest(dispatch.surface, name, args); err != nil {
 		return ToolCallResult{}, err
 	}
 	return dispatch.handle(args), nil

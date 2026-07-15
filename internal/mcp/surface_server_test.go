@@ -248,6 +248,112 @@ func TestSurfaceDispatcherValidatesExactSchemaBeforeHandler(t *testing.T) {
 	}
 }
 
+func TestSurfaceDispatcherRejectsOperationSemanticViolationsBeforeHandler(t *testing.T) {
+	manifest, ok := surfacecontracts.Get("planner-authoring.v1")
+	if !ok {
+		t.Fatal("planner-authoring.v1 missing")
+	}
+	var called atomic.Int32
+	handlers := handlersForManifest(manifest)
+	for index := range handlers {
+		if handlers[index].Name == "create_operation_packet" {
+			handlers[index].Handle = func(json.RawMessage) ToolCallResult {
+				called.Add(1)
+				return toolOK("unexpected")
+			}
+		}
+	}
+	server, err := NewServerForSurface(nil, &MCPDeps{}, manifest.SurfaceContract, handlers)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sha := strings.Repeat("a", 64)
+	request := func(source map[string]any, references []any) json.RawMessage {
+		value := map[string]any{
+			"surface_contract": "planner-authoring.v1",
+			"mutation_id":      "mutation-1",
+			"operation_id":     "planner.requirements",
+			"project_id":       "project-1",
+			"inputs": []any{
+				map[string]any{
+					"input_name":      "confirmed_intent",
+					"source_kind":     "inline_text",
+					"display_name":    "intent.txt",
+					"media_type":      "text/plain",
+					"expected_sha256": sha,
+					"source":          source,
+				},
+			},
+			"workflow_references": references,
+			"attestations": []any{
+				map[string]any{
+					"kind":           "confirmed_intent",
+					"input_name":     "confirmed_intent",
+					"subject_sha256": sha,
+					"confirmed":      true,
+				},
+				map[string]any{
+					"kind":       "sensitive_data_clearance",
+					"input_name": "confirmed_intent",
+					"clearance": map[string]any{
+						"policy_version": "relay.canonical-artifact-sensitive-data.v1",
+						"subject_sha256": sha,
+						"declaration": map[string]any{
+							"password":                                 false,
+							"api_key_or_access_token":                  false,
+							"refresh_token_or_session_material":        false,
+							"cookie_or_authorization_header":           false,
+							"private_or_ssh_key":                       false,
+							"credential":                               false,
+							"complete_secret_bearing_environment_file": false,
+							"avoidable_signed_secret_bearing_url":      false,
+						},
+						"confirmed": true,
+					},
+				},
+			},
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+
+	tests := []struct {
+		name      string
+		arguments json.RawMessage
+	}{
+		{
+			name:      "source_kind_branch_mismatch",
+			arguments: request(map[string]any{"artifact_id": "artifact-1"}, []any{}),
+		},
+		{
+			name: "operation_disallowed_reference",
+			arguments: request(
+				map[string]any{"text": "confirmed intent"},
+				[]any{map[string]any{"kind": "run", "run_id": "run-1"}},
+			),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			params, err := json.Marshal(ToolCallParams{Name: "create_operation_packet", Arguments: test.arguments})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := server.handleToolsCall(Request{ID: json.RawMessage(`1`), Params: params})
+			if response.Error == nil || response.Error.Code != CodeInvalidParams || !strings.Contains(response.Error.Message, "request_semantic_invalid") {
+				t.Fatalf("operation validation response = %+v", response)
+			}
+			if called.Load() != 0 {
+				t.Fatalf("handler was invoked %d times", called.Load())
+			}
+		})
+	}
+}
+
 func TestConcurrentDescriptorConversionAndSurfaceAssemblyAreDeterministic(t *testing.T) {
 	manifest, ok := surfacecontracts.Get("planner-plan.v1")
 	if !ok {
