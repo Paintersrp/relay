@@ -223,27 +223,8 @@ func validateWorkflowInputReferences(inputs []InputBinding, references []Workflo
 
 func workflowInputReferencePresent(record WorkflowReference, references []WorkflowReference) bool {
 	for _, reference := range references {
-		switch record.Kind {
-		case "plan":
-			if reference.Kind == "plan" && reference.PlanID == record.PlanID {
-				return true
-			}
-		case "pass":
-			if reference.Kind == "pass" && reference.PlanID == record.PlanID && reference.PassID == record.PassID {
-				return true
-			}
-		case "run":
-			if reference.Kind == "run" && reference.RunID == record.RunID {
-				return true
-			}
-		case "audit_packet":
-			if reference.Kind == "run" && reference.RunID == record.RunID {
-				return true
-			}
-		case "audit_decision":
-			if reference.Kind == "audit_decision" && reference.RunID == record.RunID && reference.AuditDecisionID == record.AuditDecisionID {
-				return true
-			}
+		if reference.Kind == record.Kind && reference == record {
+			return true
 		}
 	}
 	return false

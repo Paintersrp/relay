@@ -312,12 +312,12 @@ func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T
 
 func TestSurfaceManifestSHA256Authority(t *testing.T) {
 	want := map[SurfaceContractID]string{
-		"planner-authoring.v1":   "a94d2f9a8ec82638bbd7d1c37c17219a5cece348a2e6e8209a3777b46ed9cfd1",
-		"planner-plan.v1":        "c8a75040fde86124d4214b5536486fc243af092b818048bd9a7e3e668cbeaadb",
-		"planner-execution.v1":   "25747af05f20d1520db5e7b909df2bc0b928ad341e81862c36ee0fec96702d2f",
-		"auditor-review.v1":      "7768048c210f9727bacfdad5c288a6d8141f27007b821fc1b3d48222a05dc038",
-		"auditor-audit.v1":       "b3d04b3927539831dbc68cb9660c6800312f4f6490627a1af6fdff52f3058488",
-		"auditor-remediation.v1": "ececae7a3f319b628693319c67749a3eae2f6f4fd7cd852fa319f9e4e54217f9",
+		"planner-authoring.v1":   "0618add5d538eec9b2300695157439d2bfdf4349ce4684dfc8232a50cdf21a58",
+		"planner-plan.v1":        "9f23d3745a26ac2e60f62aa737532d637b4705b17cf042c7f74b40ad3653d5a2",
+		"planner-execution.v1":   "cee346ea5c41c6407485075db7963d86916b471e702a148e3230ec00b2508951",
+		"auditor-review.v1":      "9ecf7331e5324a97e35917c4817e4f13a231976075735915e32d3def4983dc95",
+		"auditor-audit.v1":       "1c6beea3a467453c978e8cd0353a82be7d2ce12be35eba35df907d9b2a2ecfdb",
+		"auditor-remediation.v1": "a4651845c6c725380f364faed57b648f5941ddda32c9f394c49fc8d1b51ffc03",
 	}
 	for surface, expected := range want {
 		got, ok := SurfaceManifestSHA256(surface)

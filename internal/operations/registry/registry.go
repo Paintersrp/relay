@@ -15,8 +15,8 @@ import (
 
 const (
 	PublicContractVersion = "relay.mcp.public-contract.v1"
-	PublicContractBytes   = 300811
-	PublicContractSHA256  = "49304ea6a6367544a231bce7a33867b4316b02c7d4ce3e747423e166e6841133"
+	PublicContractBytes   = 301441
+	PublicContractSHA256  = "662b4055b5ae188c52bd8d5114af84cfda9aa0d7e5621586217b3dc38a8c42a4"
 
 	RegistryVersion         = "relay.operation-registry.v1"
 	OperationRegistryBytes  = 24114

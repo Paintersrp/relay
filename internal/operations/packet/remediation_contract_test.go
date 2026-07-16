@@ -19,21 +19,21 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden := map[registry.OperationID]string{
-		"planner.requirements":                        "90ff04857c5945fbf0078b5c976c72cd6e7395cf6a6ad5c3ed6292c995e2310b",
-		"planner.design":                              "5bba79687efccc65a3639e41497b0bd3fb97c01a8317dc35a33a0f2eaeb301c2",
-		"planner.plan":                                "bc889e4ffa8360fd1cf1f00f73e6af72f1819a24fb429e567bd1d795b18bf738",
-		"planner.one_shot_execution_spec":             "2c16438b739830a4e98a2e181bf0dd46a9a3b16d95114c4ba1058ef0ffee188e",
-		"planner.selected_pass_design_brief":          "e674e8537a9730d0a366770ec01d9c34711aa526a66dc32ee3bf357b8eecc745",
-		"planner.selected_pass_execution_spec":        "4aea289c60f81585a6c8748d141b08554337ae654addbd285769360be6c25100",
-		"auditor.requirements_review":                 "bf6942960efb3a27ec1bdeeab3a518c6497bc160ebb4f2ab044e81a837dbd993",
-		"auditor.design_review":                       "42535d99180a1eae078524c48cbffbdad71e97f08d7407fa1f6b40b48c59d179",
-		"auditor.plan_review":                         "aef320ee665bf93a5b6be5fa37bd2af9c6b840dc81c4e93dbebb652e36f91302",
-		"auditor.selected_pass_design_brief_review":   "230233533c4b8eff8aeb4b03111a0eb85ecb03aadb8095a4a566412e1a247abf",
-		"auditor.one_shot_execution_spec_review":      "e4c12b2289fb109433ad0258ab3bad6e37c6a17ecade60a0b0ac65aa7e90c826",
-		"auditor.selected_pass_execution_spec_review": "65dd6d198efc8165593accb5f26f187a33f9541214c4092406ac735e68c6828f",
-		"auditor.audit":                               "b4d35b60bda1eeb8592500bf404095c26b01783a2cebb6766ed50112a8151d91",
-		"auditor.remediation_execution_spec":          "26e037bf6722698117a8249c783c1be9df97fd866c052e869c6a96c9f1e4680e",
-		"auditor.remediation_execution_spec_review":   "27b83089789fe8d838a01bb8a0340f0484f6e5e1a5fa8786db3ececdc7334228",
+		"planner.requirements":                        "85795fd50edc820c121ced5adc4df7d17f6f7d63e9c2f791b5b55bdb038678a3",
+		"planner.design":                              "4942332a201f0b13ffd2b0e0eac4b3b30bb35d3a7988e204ff432af2d412f80d",
+		"planner.plan":                                "1266dc23e7b0e58a86b74d87fdc92f32fa2c151c799c83f72ce5275aca4f0d67",
+		"planner.one_shot_execution_spec":             "bd3a918357b6413595409906d3331c7dc75150cd6bda385ad8471a0692ee5ec9",
+		"planner.selected_pass_design_brief":          "fdaa31a7c0ef160b4eca880002db9e9486980b5d4ea18c0083927a92d7f3ce4e",
+		"planner.selected_pass_execution_spec":        "e709d99b63049c8f2f003cda2725662e02ba21e1c4a431672d3855f1991eb7f4",
+		"auditor.requirements_review":                 "d09336e735d7671e57e67a65b8dbb70ea75a74ac81d8b960bd01b0afbfab3137",
+		"auditor.design_review":                       "1c3d6c0a3eff242f3376a5168c7c43a790fc6c2916d44e68a7769278f2ff4d1e",
+		"auditor.plan_review":                         "b77ce5eff7cc7500b3845e97f6b7ec36c6da3d2b23b0ea16f5ce9db8271c2127",
+		"auditor.selected_pass_design_brief_review":   "ba873b584d81c92b26ec4c5bed109cbed2278ae23c057a43ce061b711db75cb0",
+		"auditor.one_shot_execution_spec_review":      "a93e98ea0e22061c8ca9162e7560ab322cb267b46c73ddeadca8e84c9393e58e",
+		"auditor.selected_pass_execution_spec_review": "f716e4336b395b9b6780517c5ca5724360104c455b49f880bb067e2423a2d2d2",
+		"auditor.audit":                               "61e248d33ff3048dada12de4c6257e254cdc110a33e35eb701df6f69120f10ad",
+		"auditor.remediation_execution_spec":          "ec23cd557822760da04cddeaa8b0e21c782c5ee0df935023920c2a79d134ef9a",
+		"auditor.remediation_execution_spec_review":   "dfcf373618a6055a805e1dcf81a08aa37e7f700d591f274da11271b373d27a78",
 	}
 	if len(operations) != len(golden) {
 		t.Fatalf("operation count = %d, golden count = %d", len(operations), len(golden))
