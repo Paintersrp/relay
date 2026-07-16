@@ -1,7 +1,9 @@
 package packet
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -107,6 +109,9 @@ func validateAndCanonicalize(input Document) (Document, registry.OperationDefini
 	if err != nil {
 		return Document{}, registry.OperationDefinition{}, err
 	}
+	if err := validateWorkflowInputReferences(result.Inputs, result.WorkflowReferences); err != nil {
+		return Document{}, registry.OperationDefinition{}, err
+	}
 	result.Attestations, err = canonicalAttestations(input.Attestations, result.Inputs, operation, refreshing)
 	if err != nil {
 		return Document{}, registry.OperationDefinition{}, err
@@ -162,6 +167,9 @@ func canonicalWorkflowReferences(values []WorkflowReference, operation registry.
 			return nil, invalid("workflow_reference_missing")
 		}
 	}
+	if err := validateWorkflowReferenceRelationships(out); err != nil {
+		return nil, err
+	}
 	rank := make(map[registry.WorkflowReferenceKind]int)
 	for index, kind := range registry.WorkflowReferenceRank() {
 		rank[kind] = index
@@ -173,6 +181,72 @@ func canonicalWorkflowReferences(values []WorkflowReference, operation registry.
 		return workflowReferenceKey(out[i]) < workflowReferenceKey(out[j])
 	})
 	return out, nil
+}
+
+func validateWorkflowReferenceRelationships(values []WorkflowReference) error {
+	planIDs := make(map[string]struct{})
+	runIDs := make(map[string]struct{})
+	for _, value := range values {
+		switch value.Kind {
+		case "plan":
+			planIDs[value.PlanID] = struct{}{}
+		case "run":
+			runIDs[value.RunID] = struct{}{}
+		}
+	}
+	for _, value := range values {
+		switch value.Kind {
+		case "pass":
+			if _, ok := planIDs[value.PlanID]; !ok {
+				return invalid("workflow_reference_relationship")
+			}
+		case "audit_packet", "audit_decision":
+			if _, ok := runIDs[value.RunID]; !ok {
+				return invalid("workflow_reference_relationship")
+			}
+		}
+	}
+	return nil
+}
+
+func validateWorkflowInputReferences(inputs []InputBinding, references []WorkflowReference) error {
+	for _, input := range inputs {
+		if input.SourceKind != InputSourceWorkflowRecord {
+			continue
+		}
+		if !workflowInputReferencePresent(input.Source.WorkflowReference, references) {
+			return invalid("workflow_record_reference")
+		}
+	}
+	return nil
+}
+
+func workflowInputReferencePresent(record WorkflowReference, references []WorkflowReference) bool {
+	for _, reference := range references {
+		switch record.Kind {
+		case "plan":
+			if reference.Kind == "plan" && reference.PlanID == record.PlanID {
+				return true
+			}
+		case "pass":
+			if reference.Kind == "pass" && reference.PlanID == record.PlanID && reference.PassID == record.PassID {
+				return true
+			}
+		case "run":
+			if reference.Kind == "run" && reference.RunID == record.RunID {
+				return true
+			}
+		case "audit_packet":
+			if reference.Kind == "run" && reference.RunID == record.RunID {
+				return true
+			}
+		case "audit_decision":
+			if reference.Kind == "audit_decision" && reference.RunID == record.RunID && reference.AuditDecisionID == record.AuditDecisionID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateWorkflowReference(value WorkflowReference) error {
@@ -664,12 +738,24 @@ func validatePathIdentity(value PathIdentity) error {
 		return invalid("path_identity")
 	}
 	if value.ByteLength <= 8192 {
-		if value.PathBytesBase64 == "" {
+		if value.ByteLength > 0 && value.PathBytesBase64 == "" {
 			return invalid("path_bytes_missing")
 		}
 		decoded, err := base64.StdEncoding.Strict().DecodeString(value.PathBytesBase64)
 		if err != nil || int64(len(decoded)) != value.ByteLength || base64.StdEncoding.EncodeToString(decoded) != value.PathBytesBase64 {
 			return invalid("path_bytes_base64")
+		}
+		for _, value := range decoded {
+			if value == 0 {
+				return invalid("path_bytes_nul")
+			}
+		}
+		digest := sha256.New()
+		_, _ = digest.Write([]byte("relay.git-path.v1"))
+		_, _ = digest.Write([]byte{0})
+		_, _ = digest.Write(decoded)
+		if hex.EncodeToString(digest.Sum(nil)) != value.PathID {
+			return invalid("path_id_mismatch")
 		}
 	} else if value.PathBytesBase64 != "" {
 		return invalid("path_bytes_oversize")

@@ -329,6 +329,9 @@ func normalizePacketRequest(tool string, operation OperationDefinition, request 
 	if err := validateAndSortReferences(references, operation.WorkflowReferenceKinds); err != nil {
 		return err
 	}
+	if err := validateWorkflowRecordReferenceLinks(inputs, references); err != nil {
+		return err
+	}
 	request["workflow_references"] = mapsToAny(references)
 
 	if err := sortUniqueObjects(primaryRevisions, []string{"repository_key"}); err != nil {
@@ -628,41 +631,60 @@ func allClearanceValuesFalse(declaration map[string]any) bool {
 	return true
 }
 
-func validateAndSortReferences(references []map[string]any, allowed []WorkflowReferenceKind) error {
-	allowedSet := make(map[string]struct{}, len(allowed))
-	for _, kind := range allowed {
+func validateAndSortReferences(references []map[string]any, required []WorkflowReferenceKind) error {
+	allowedSet := make(map[string]struct{}, len(required))
+	for _, kind := range required {
 		allowedSet[string(kind)] = struct{}{}
-	}
-	if len(references) != len(allowedSet) {
-		return fmt.Errorf("workflow_references requires %d entries, got %d", len(allowedSet), len(references))
 	}
 	rank := make(map[string]int)
 	for index, kind := range WorkflowReferenceRank() {
 		rank[string(kind)] = index
 	}
 	seen := make(map[string]struct{}, len(references))
-	seenKinds := make(map[string]struct{}, len(references))
+	presentKinds := make(map[string]bool, len(required))
+	planIDs := make(map[string]struct{})
+	runIDs := make(map[string]struct{})
 	for _, reference := range references {
 		kind, ok := reference["kind"].(string)
-		if !ok {
+		if !ok || kind == "" {
 			return errors.New("workflow reference kind is required")
 		}
 		if _, ok := allowedSet[kind]; !ok {
 			return fmt.Errorf("workflow reference kind %q is not allowed", kind)
 		}
-		if _, duplicate := seenKinds[kind]; duplicate {
-			return fmt.Errorf("workflow reference kind %q is duplicated", kind)
-		}
-		seenKinds[kind] = struct{}{}
-		identity, err := compactSortedJSON(reference)
+		identity, err := workflowReferenceRequestIdentity(reference)
 		if err != nil {
 			return err
 		}
-		key := kind + "\x00" + string(identity)
+		key := kind + "\x00" + identity
 		if _, duplicate := seen[key]; duplicate {
-			return fmt.Errorf("workflow reference %q is duplicated", kind)
+			return fmt.Errorf("workflow reference %q identity is duplicated", kind)
 		}
 		seen[key] = struct{}{}
+		presentKinds[kind] = true
+		switch kind {
+		case "plan":
+			planIDs[reference["plan_id"].(string)] = struct{}{}
+		case "run":
+			runIDs[reference["run_id"].(string)] = struct{}{}
+		}
+	}
+	for _, kind := range required {
+		if !presentKinds[string(kind)] {
+			return fmt.Errorf("workflow reference kind %q is required", kind)
+		}
+	}
+	for _, reference := range references {
+		switch reference["kind"] {
+		case "pass":
+			if _, ok := planIDs[reference["plan_id"].(string)]; !ok {
+				return errors.New("pass workflow reference does not belong to a supplied plan")
+			}
+		case "audit_packet", "audit_decision":
+			if _, ok := runIDs[reference["run_id"].(string)]; !ok {
+				return errors.New("audit workflow reference does not belong to a supplied run")
+			}
+		}
 	}
 	sort.Slice(references, func(left, right int) bool {
 		leftKind := references[left]["kind"].(string)
@@ -670,11 +692,105 @@ func validateAndSortReferences(references []map[string]any, allowed []WorkflowRe
 		if rank[leftKind] != rank[rightKind] {
 			return rank[leftKind] < rank[rightKind]
 		}
-		leftJSON, _ := compactSortedJSON(references[left])
-		rightJSON, _ := compactSortedJSON(references[right])
-		return bytes.Compare(leftJSON, rightJSON) < 0
+		leftIdentity, _ := workflowReferenceRequestIdentity(references[left])
+		rightIdentity, _ := workflowReferenceRequestIdentity(references[right])
+		return leftIdentity < rightIdentity
 	})
 	return nil
+}
+
+func workflowReferenceRequestIdentity(reference map[string]any) (string, error) {
+	kind, _ := reference["kind"].(string)
+	require := func(key string) (string, error) {
+		value, ok := reference[key].(string)
+		if !ok || value == "" {
+			return "", fmt.Errorf("workflow reference %s is required", key)
+		}
+		return value, nil
+	}
+	switch kind {
+	case "plan":
+		return require("plan_id")
+	case "pass":
+		planID, err := require("plan_id")
+		if err != nil {
+			return "", err
+		}
+		passID, err := require("pass_id")
+		if err != nil {
+			return "", err
+		}
+		return planID + "\x00" + passID, nil
+	case "run":
+		return require("run_id")
+	case "audit_packet":
+		runID, err := require("run_id")
+		if err != nil {
+			return "", err
+		}
+		packetID, err := require("audit_packet_id")
+		if err != nil {
+			return "", err
+		}
+		return runID + "\x00" + packetID, nil
+	case "audit_decision":
+		runID, err := require("run_id")
+		if err != nil {
+			return "", err
+		}
+		decisionID, err := require("audit_decision_id")
+		if err != nil {
+			return "", err
+		}
+		return runID + "\x00" + decisionID, nil
+	default:
+		return "", fmt.Errorf("workflow reference kind %q is unsupported", kind)
+	}
+}
+
+func validateWorkflowRecordReferenceLinks(inputs, references []map[string]any) error {
+	for _, input := range inputs {
+		if input["source_kind"] != "workflow_record" {
+			continue
+		}
+		source, ok := input["source"].(map[string]any)
+		if !ok {
+			return errors.New("workflow_record source object is required")
+		}
+		record, ok := source["workflow_record"].(map[string]any)
+		if !ok || !workflowRecordReferencePresent(record, references) {
+			return errors.New("workflow_record input is not represented by workflow_references")
+		}
+	}
+	return nil
+}
+
+func workflowRecordReferencePresent(record map[string]any, references []map[string]any) bool {
+	for _, reference := range references {
+		switch record["kind"] {
+		case "plan_artifact":
+			if reference["kind"] == "plan" && reference["plan_id"] == record["plan_id"] {
+				return true
+			}
+		case "pass_record":
+			if reference["kind"] == "pass" && reference["plan_id"] == record["plan_id"] && reference["pass_id"] == record["pass_id"] {
+				return true
+			}
+		case "run_execution_spec":
+			if reference["kind"] == "run" && reference["run_id"] == record["run_id"] {
+				return true
+			}
+		case "audit_packet":
+			if reference["kind"] == "run" && reference["run_id"] == record["run_id"] {
+				return true
+			}
+		case "audit_decision":
+			if reference["kind"] == "audit_decision" && reference["run_id"] == record["run_id"] && reference["audit_decision_id"] == record["audit_decision_id"] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateAndSortAnchors(anchors []map[string]any, allowed []AnchorPurpose) error {

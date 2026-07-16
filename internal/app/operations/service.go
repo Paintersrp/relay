@@ -92,6 +92,10 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (PacketView, 
 	if err := lifecycleMutationError(ctx, s.store, prior); err != nil {
 		return PacketView{}, err
 	}
+	priorArtifact, _, err := s.loadVerifiedPacketDocument(ctx, prior)
+	if err != nil {
+		return PacketView{}, err
+	}
 	prepared, err := s.prepare(input.Document, &packet.PriorPacketIdentity{PacketID: prior.PacketID, PacketSHA256: prior.PacketSHA256})
 	if err != nil {
 		return PacketView{}, err
@@ -104,6 +108,7 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (PacketView, 
 	if err != nil {
 		return PacketView{}, internalFailure()
 	}
+	var authorityErr error
 	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
 		current, err := tx.GetOperationPacketByPacketID(ctx, priorID)
 		if err != nil {
@@ -111,6 +116,14 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (PacketView, 
 		}
 		if current.LifecycleState != workflowstore.OperationPacketLifecycleActive || current.ReplacementPacketRowID.Valid || current.SupersededAt.Valid || current.ClosedAt.Valid {
 			return sql.ErrNoRows
+		}
+		dependencies, err := tx.ListOperationPacketRetentionDependencies(ctx, current.ID)
+		if err != nil {
+			return err
+		}
+		if err := validateRequiredDependencies(dependencies, priorArtifact.ArtifactID); err != nil {
+			authorityErr = err
+			return err
 		}
 		artifact, err := tx.CreateOperationPacketArtifact(ctx, workflowstore.CreateOperationPacketArtifactParams{ArtifactID: prepared.ArtifactID, Kind: staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes})
 		if err != nil {
@@ -127,6 +140,9 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (PacketView, 
 		return err
 	})
 	if err != nil {
+		if authorityErr != nil {
+			return PacketView{}, authorityErr
+		}
 		return PacketView{}, s.refreshFailure(ctx, priorID)
 	}
 	return s.Get(ctx, prepared.PacketID)
@@ -137,8 +153,20 @@ func (s *Service) Close(ctx context.Context, input CloseInput) (PacketSummary, e
 	if packetID == "" {
 		return PacketSummary{}, &Error{Code: CodePacketNotFound}
 	}
+	current, err := s.loadPacket(ctx, packetID)
+	if err != nil {
+		return PacketSummary{}, err
+	}
+	if err := lifecycleMutationError(ctx, s.store, current); err != nil {
+		return PacketSummary{}, err
+	}
+	artifact, _, err := s.loadVerifiedPacketDocument(ctx, current)
+	if err != nil {
+		return PacketSummary{}, err
+	}
 	closedAt := canonicalTime(s.clock.Now())
-	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+	var authorityErr error
+	err = s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		current, err := tx.GetOperationPacketByPacketID(ctx, packetID)
 		if err != nil {
 			return err
@@ -146,10 +174,21 @@ func (s *Service) Close(ctx context.Context, input CloseInput) (PacketSummary, e
 		if current.LifecycleState != workflowstore.OperationPacketLifecycleActive || current.ReplacementPacketRowID.Valid || current.SupersededAt.Valid || current.ClosedAt.Valid {
 			return sql.ErrNoRows
 		}
+		dependencies, err := tx.ListOperationPacketRetentionDependencies(ctx, current.ID)
+		if err != nil {
+			return err
+		}
+		if err := validateRequiredDependencies(dependencies, artifact.ArtifactID); err != nil {
+			authorityErr = err
+			return err
+		}
 		_, err = tx.CloseOperationPacket(ctx, workflowstore.CloseOperationPacketParams{PacketID: packetID, ClosedAt: closedAt})
 		return err
 	})
 	if err != nil {
+		if authorityErr != nil {
+			return PacketSummary{}, authorityErr
+		}
 		current, loadErr := s.loadPacket(ctx, packetID)
 		if loadErr != nil {
 			return PacketSummary{}, loadErr
@@ -171,20 +210,9 @@ func (s *Service) Get(ctx context.Context, packetID string) (PacketView, error) 
 	if value.ReadinessState != workflowstore.OperationPacketReadinessReady {
 		return PacketView{}, &Error{Code: CodePacketNotReady}
 	}
-	artifact, err := s.store.GetOperationPacketArtifact(ctx, value.ID)
+	artifact, data, err := s.loadVerifiedPacketDocument(ctx, value)
 	if err != nil {
-		return PacketView{}, retainedAuthorityError(workflowstore.OperationPacketDependencyPacketDocument)
-	}
-	dependency, err := s.store.GetOperationPacketRetentionDependency(ctx, value.ID, workflowstore.OperationPacketDependencyPacketDocument, artifact.ArtifactID)
-	if err != nil || !dependency.Required || !dependency.Attached || !dependency.Retained || !dependency.OwnerIdentity.Valid || dependency.OwnerIdentity.String != artifact.ArtifactID {
-		return PacketView{}, retainedAuthorityError(workflowstore.OperationPacketDependencyPacketDocument)
-	}
-	data, err := s.readArtifact(artifact)
-	if err != nil {
-		return PacketView{}, &Error{Code: CodePacketArtifactMismatch}
-	}
-	if artifact.SHA256 != value.PacketSHA256 || artifact.MediaType != packet.MediaType || int64(len(data)) != artifact.SizeBytes {
-		return PacketView{}, &Error{Code: CodePacketArtifactMismatch}
+		return PacketView{}, err
 	}
 	replacement, err := s.replacement(ctx, value)
 	if err != nil {
@@ -203,6 +231,9 @@ func (s *Service) AuthorizeMutation(ctx context.Context, request MutationRequest
 	}
 	if value.ReadinessState != workflowstore.OperationPacketReadinessReady {
 		return MutationAuthorization{}, &Error{Code: CodePacketNotReady}
+	}
+	if _, _, err := s.loadVerifiedPacketDocument(ctx, value); err != nil {
+		return MutationAuthorization{}, err
 	}
 	if request.SurfaceContract != registry.SurfaceContractID(value.SurfaceContractID) || request.OperationID != registry.OperationID(value.OperationID) {
 		return MutationAuthorization{}, &Error{Code: CodePacketRouteMismatch}
@@ -225,6 +256,9 @@ func (s *Service) AuthorizeMutation(ctx context.Context, request MutationRequest
 func (s *Service) AuthorizeRead(ctx context.Context, request ReadRequest) (ReadAuthorization, error) {
 	value, err := s.loadPacket(ctx, strings.TrimSpace(request.PacketID))
 	if err != nil {
+		return ReadAuthorization{}, err
+	}
+	if _, _, err := s.loadVerifiedPacketDocument(ctx, value); err != nil {
 		return ReadAuthorization{}, err
 	}
 	dependency, err := s.authorizeDependency(ctx, value, request.DependencyClass, request.DependencyKey)
@@ -300,6 +334,46 @@ func (s *Service) authorizeDependency(ctx context.Context, packetValue workflows
 		return workflowstore.OperationPacketRetentionDependency{}, retainedAuthorityError(class)
 	}
 	return value, nil
+}
+func (s *Service) loadVerifiedPacketDocument(ctx context.Context, value workflowstore.OperationPacket) (workflowstore.OperationPacketArtifact, []byte, error) {
+	artifact, err := s.store.GetOperationPacketArtifact(ctx, value.ID)
+	if err != nil {
+		return workflowstore.OperationPacketArtifact{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyPacketDocument)
+	}
+	dependencies, err := s.store.ListOperationPacketRetentionDependencies(ctx, value.ID)
+	if err != nil {
+		return workflowstore.OperationPacketArtifact{}, nil, internalFailure()
+	}
+	if err := validateRequiredDependencies(dependencies, artifact.ArtifactID); err != nil {
+		return workflowstore.OperationPacketArtifact{}, nil, err
+	}
+	data, err := s.readArtifact(artifact)
+	if err != nil {
+		return workflowstore.OperationPacketArtifact{}, nil, &Error{Code: CodePacketArtifactMismatch}
+	}
+	if artifact.SHA256 != value.PacketSHA256 || artifact.MediaType != packet.MediaType || int64(len(data)) != artifact.SizeBytes {
+		return workflowstore.OperationPacketArtifact{}, nil, &Error{Code: CodePacketArtifactMismatch}
+	}
+	return artifact, data, nil
+}
+
+func validateRequiredDependencies(values []workflowstore.OperationPacketRetentionDependency, packetArtifactID string) error {
+	packetDocumentFound := false
+	for _, value := range values {
+		if value.DependencyClass == workflowstore.OperationPacketDependencyPacketDocument && value.DependencyKey == packetArtifactID {
+			packetDocumentFound = true
+			if !value.Required || !value.Attached || !value.Retained || !value.OwnerIdentity.Valid || value.OwnerIdentity.String != packetArtifactID {
+				return retainedAuthorityError(workflowstore.OperationPacketDependencyPacketDocument)
+			}
+		}
+		if value.Required && (!value.Attached || !value.Retained || !value.OwnerIdentity.Valid || strings.TrimSpace(value.OwnerIdentity.String) == "") {
+			return retainedAuthorityError(value.DependencyClass)
+		}
+	}
+	if !packetDocumentFound {
+		return retainedAuthorityError(workflowstore.OperationPacketDependencyPacketDocument)
+	}
+	return nil
 }
 func (s *Service) readArtifact(artifact workflowstore.OperationPacketArtifact) ([]byte, error) {
 	root := s.store.ArtifactStore().Root()
