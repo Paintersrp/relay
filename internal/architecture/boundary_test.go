@@ -206,3 +206,40 @@ func TestSurfaceContractsImportOnlyOperationRegistryInternally(t *testing.T) {
 		}
 	}
 }
+
+func TestPacketDomainImportsOnlyOperationRegistryInternally(t *testing.T) {
+	root := repoRoot(t)
+	packetRoot := filepath.Join(root, "internal", "operations", "packet")
+	const allowed = modulePath + "/internal/operations/registry"
+	for _, file := range goFiles(t, packetRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if strings.HasPrefix(imp.path, modulePath+"/internal/") && imp.path != allowed {
+				t.Fatalf("%s imports runtime package %q; packet domain may import only the operation registry", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}
+
+func TestOperationsAppDoesNotImportTransportLayers(t *testing.T) {
+	root := repoRoot(t)
+	operationsRoot := filepath.Join(root, "internal", "app", "operations")
+	for _, file := range goFiles(t, operationsRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if isAPIImport(imp.path) || imp.path == modulePath+"/internal/mcp" || strings.HasPrefix(imp.path, modulePath+"/internal/mcp/") || imp.path == modulePath+"/internal/server" || strings.HasPrefix(imp.path, modulePath+"/internal/server/") {
+				t.Fatalf("%s imports transport package %q; operations app policy must remain transport-independent", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}
+
+func TestWorkflowStoreDoesNotImportPacketOrTransportPolicy(t *testing.T) {
+	root := repoRoot(t)
+	storeRoot := filepath.Join(root, "internal", "store", "workflow")
+	for _, file := range goFiles(t, storeRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if imp.path == modulePath+"/internal/operations/packet" || strings.HasPrefix(imp.path, modulePath+"/internal/operations/packet/") || imp.path == modulePath+"/internal/mcp" || strings.HasPrefix(imp.path, modulePath+"/internal/mcp/") || imp.path == modulePath+"/internal/server" || strings.HasPrefix(imp.path, modulePath+"/internal/server/") {
+				t.Fatalf("%s imports packet or transport policy package %q", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}

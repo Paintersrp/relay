@@ -3,6 +3,127 @@ package workflowstore
 import "database/sql"
 
 const (
+	OperationPacketSchemaVersion  = "relay.operation-packet.v1"
+	OperationPacketReadinessReady = "ready"
+
+	OperationPacketLifecycleActive     = "active"
+	OperationPacketLifecycleSuperseded = "superseded"
+	OperationPacketLifecycleClosed     = "closed"
+
+	OperationPacketDependencyPacketDocument   = "packet_document"
+	OperationPacketDependencyInputArtifact    = "input_artifact"
+	OperationPacketDependencyWorkflowSnapshot = "workflow_snapshot"
+	OperationPacketDependencyRepositoryVault  = "repository_vault"
+	OperationPacketDependencyGitPathObject    = "git_path_object"
+	OperationPacketDependencyManifestMember   = "manifest_member"
+	OperationPacketDependencyRunArtifact      = "run_artifact"
+)
+
+type OperationPacketArtifact struct {
+	ID           int64
+	ArtifactID   string
+	Kind         string
+	RelativePath string
+	MediaType    string
+	SHA256       string
+	SizeBytes    int64
+	CreatedAt    string
+}
+
+type OperationPacket struct {
+	ID                     int64
+	PacketID               string
+	PacketSHA256           string
+	SchemaVersion          string
+	Role                   string
+	OperationID            string
+	SurfaceContractID      string
+	ProjectID              string
+	ReadinessState         string
+	LifecycleState         string
+	PriorPacketRowID       sql.NullInt64
+	ReplacementPacketRowID sql.NullInt64
+	CreatedAt              string
+	SupersededAt           sql.NullString
+	ClosedAt               sql.NullString
+	PacketArtifactRowID    int64
+}
+
+type OperationPacketReplacement struct {
+	PacketID          string
+	PacketSHA256      string
+	Role              string
+	OperationID       string
+	SurfaceContractID string
+}
+
+type OperationPacketRetentionDependency struct {
+	ID              int64
+	PacketRowID     int64
+	DependencyClass string
+	DependencyKey   string
+	Required        bool
+	Attached        bool
+	Retained        bool
+	OwnerIdentity   sql.NullString
+	CreatedAt       string
+	UpdatedAt       string
+}
+
+type CreateOperationPacketArtifactParams struct {
+	ArtifactID   string
+	Kind         string
+	RelativePath string
+	MediaType    string
+	SHA256       string
+	SizeBytes    int64
+}
+
+type CreateOperationPacketParams struct {
+	PacketID            string
+	PacketSHA256        string
+	SchemaVersion       string
+	Role                string
+	OperationID         string
+	SurfaceContractID   string
+	ProjectID           string
+	ReadinessState      string
+	PriorPacketRowID    sql.NullInt64
+	CreatedAt           string
+	PacketArtifactRowID int64
+}
+
+type SupersedeOperationPacketParams struct {
+	PacketID               string
+	ReplacementPacketRowID int64
+	SupersededAt           string
+}
+
+type CloseOperationPacketParams struct {
+	PacketID string
+	ClosedAt string
+}
+
+type AttachOperationPacketDependencyParams struct {
+	PacketRowID     int64
+	DependencyClass string
+	DependencyKey   string
+	Required        bool
+	Attached        bool
+	Retained        bool
+	OwnerIdentity   sql.NullString
+}
+
+type UpdateOperationPacketDependencyAvailabilityParams struct {
+	PacketRowID     int64
+	DependencyClass string
+	DependencyKey   string
+	Attached        bool
+	Retained        bool
+	OwnerIdentity   sql.NullString
+}
+
+const (
 	ProjectStatusActive   = "active"
 	ProjectStatusArchived = "archived"
 

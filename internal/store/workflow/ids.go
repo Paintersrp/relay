@@ -30,6 +30,10 @@ func NewArtifactID() string {
 	return "artifact-" + uuid.NewString()
 }
 
+func NewOperationPacketID() string {
+	return "opkt-" + uuid.NewString()
+}
+
 func NewAuditPacketID() string {
 	return "packet-" + uuid.NewString()
 }

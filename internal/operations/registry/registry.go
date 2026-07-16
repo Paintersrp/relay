@@ -65,6 +65,7 @@ type OperationDefinition struct {
 
 type registryDocument struct {
 	RegistryVersion            string                              `json:"registry_version"`
+	SurfaceManifestSHA256      map[SurfaceContractID]string        `json:"-"`
 	OperationOrder             []OperationID                       `json:"operation_order"`
 	Operations                 map[OperationID]OperationDefinition `json:"operations"`
 	WorkflowReferenceRank      []WorkflowReferenceKind             `json:"workflow_reference_rank"`
@@ -80,8 +81,9 @@ type publicContractEnvelope struct {
 		Enum []string `json:"enum"`
 	} `json:"definitions"`
 	Surfaces map[string]struct {
-		Role       string   `json:"role"`
-		Operations []string `json:"operations"`
+		Role           string   `json:"role"`
+		Operations     []string `json:"operations"`
+		ManifestSHA256 string   `json:"manifest_sha256"`
 	} `json:"surfaces"`
 }
 
@@ -180,6 +182,15 @@ func PacketOptionalEmptyArrays() []string {
 	return append([]string(nil), loaded.PacketOptionalEmptyArrays...)
 }
 
+func SurfaceManifestSHA256(surface SurfaceContractID) (string, bool) {
+	load()
+	if loadErr != nil {
+		return "", false
+	}
+	value, ok := loaded.SurfaceManifestSHA256[surface]
+	return value, ok
+}
+
 func SemanticProjectionVersion(tool string) (string, bool) {
 	load()
 	if loadErr != nil {
@@ -247,12 +258,17 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 		return registryDocument{}, errors.New("public contract and operation registry cardinality differ")
 	}
 
+	document.SurfaceManifestSHA256 = make(map[SurfaceContractID]string, len(public.Surfaces))
 	publicSurfaceByOperation := make(map[string]string, len(document.OperationOrder))
 	publicRoleByOperation := make(map[string]string, len(document.OperationOrder))
 	for surfaceID, surface := range public.Surfaces {
 		if surface.Role != "planner" && surface.Role != "auditor" {
 			return registryDocument{}, fmt.Errorf("surface %q has invalid role %q", surfaceID, surface.Role)
 		}
+		if len(surface.ManifestSHA256) != 64 {
+			return registryDocument{}, fmt.Errorf("surface %q manifest sha256 is invalid", surfaceID)
+		}
+		document.SurfaceManifestSHA256[SurfaceContractID(surfaceID)] = surface.ManifestSHA256
 		for _, operationID := range surface.Operations {
 			if _, exists := publicSurfaceByOperation[operationID]; exists {
 				return registryDocument{}, fmt.Errorf("operation %q belongs to more than one surface", operationID)

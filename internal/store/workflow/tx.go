@@ -11,6 +11,113 @@ type Tx struct {
 	tx *sql.Tx
 }
 
+func (tx *Tx) CreateOperationPacketArtifact(ctx context.Context, params CreateOperationPacketArtifactParams) (OperationPacketArtifact, error) {
+	return scanOperationPacketArtifact(tx.tx.QueryRowContext(ctx, `
+INSERT INTO operation_packet_artifacts (
+    artifact_id,
+    kind,
+    relative_path,
+    media_type,
+    sha256,
+    size_bytes
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING `+operationPacketArtifactColumns,
+		params.ArtifactID,
+		params.Kind,
+		params.RelativePath,
+		params.MediaType,
+		params.SHA256,
+		params.SizeBytes,
+	))
+}
+
+func (tx *Tx) CreateOperationPacket(ctx context.Context, params CreateOperationPacketParams) (OperationPacket, error) {
+	return scanOperationPacket(tx.tx.QueryRowContext(ctx, `
+INSERT INTO operation_packets (
+    packet_id, packet_sha256, schema_version, role, operation_id,
+    surface_contract_id, project_id, readiness_state, prior_packet_row_id,
+    created_at, packet_artifact_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING `+operationPacketColumns,
+		params.PacketID, params.PacketSHA256, params.SchemaVersion, params.Role,
+		params.OperationID, params.SurfaceContractID, params.ProjectID,
+		params.ReadinessState, params.PriorPacketRowID, params.CreatedAt,
+		params.PacketArtifactRowID,
+	))
+}
+
+func (tx *Tx) GetOperationPacketByPacketID(ctx context.Context, packetID string) (OperationPacket, error) {
+	return getOperationPacketByPacketID(ctx, tx.tx, packetID)
+}
+
+func (tx *Tx) GetOperationPacketByRowID(ctx context.Context, rowID int64) (OperationPacket, error) {
+	return getOperationPacketByRowID(ctx, tx.tx, rowID)
+}
+
+func (tx *Tx) GetOperationPacketArtifact(ctx context.Context, packetRowID int64) (OperationPacketArtifact, error) {
+	return getOperationPacketArtifact(ctx, tx.tx, packetRowID)
+}
+
+func (tx *Tx) GetOperationPacketReplacement(ctx context.Context, packetRowID int64) (OperationPacketReplacement, error) {
+	return getOperationPacketReplacement(ctx, tx.tx, packetRowID)
+}
+
+func (tx *Tx) AttachOperationPacketDependency(ctx context.Context, params AttachOperationPacketDependencyParams) (OperationPacketRetentionDependency, error) {
+	return scanOperationPacketDependency(tx.tx.QueryRowContext(ctx, `
+INSERT INTO operation_packet_retention_dependencies (
+    packet_row_id, dependency_class, dependency_key, required, attached, retained, owner_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING `+operationPacketDependencyColumns,
+		params.PacketRowID, params.DependencyClass, params.DependencyKey,
+		operationPacketDependencyBool(params.Required), operationPacketDependencyBool(params.Attached),
+		operationPacketDependencyBool(params.Retained), params.OwnerIdentity,
+	))
+}
+
+func (tx *Tx) UpdateOperationPacketDependencyAvailability(ctx context.Context, params UpdateOperationPacketDependencyAvailabilityParams) (OperationPacketRetentionDependency, error) {
+	return scanOperationPacketDependency(tx.tx.QueryRowContext(ctx, `
+UPDATE operation_packet_retention_dependencies
+SET attached = ?, retained = ?, owner_identity = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE packet_row_id = ? AND dependency_class = ? AND dependency_key = ?
+RETURNING `+operationPacketDependencyColumns,
+		operationPacketDependencyBool(params.Attached), operationPacketDependencyBool(params.Retained), params.OwnerIdentity,
+		params.PacketRowID, params.DependencyClass, params.DependencyKey,
+	))
+}
+
+func (tx *Tx) SupersedeOperationPacket(ctx context.Context, params SupersedeOperationPacketParams) (OperationPacket, error) {
+	return scanOperationPacket(tx.tx.QueryRowContext(ctx, `
+UPDATE operation_packets
+SET lifecycle_state = 'superseded', replacement_packet_row_id = ?, superseded_at = ?
+WHERE packet_id = ? AND readiness_state = 'ready' AND lifecycle_state = 'active'
+  AND replacement_packet_row_id IS NULL AND superseded_at IS NULL AND closed_at IS NULL
+RETURNING `+operationPacketColumns,
+		params.ReplacementPacketRowID, params.SupersededAt, params.PacketID,
+	))
+}
+
+func (tx *Tx) CloseOperationPacket(ctx context.Context, params CloseOperationPacketParams) (OperationPacket, error) {
+	return scanOperationPacket(tx.tx.QueryRowContext(ctx, `
+UPDATE operation_packets
+SET lifecycle_state = 'closed', closed_at = ?
+WHERE packet_id = ? AND readiness_state = 'ready' AND lifecycle_state = 'active'
+  AND replacement_packet_row_id IS NULL AND superseded_at IS NULL AND closed_at IS NULL
+RETURNING `+operationPacketColumns,
+		params.ClosedAt, params.PacketID,
+	))
+}
+
+func (tx *Tx) ListOperationPacketRetentionDependencies(ctx context.Context, packetRowID int64) ([]OperationPacketRetentionDependency, error) {
+	return listOperationPacketRetentionDependencies(ctx, tx.tx, packetRowID)
+}
+
+func (tx *Tx) GetOperationPacketRetentionDependency(ctx context.Context, packetRowID int64, dependencyClass, dependencyKey string) (OperationPacketRetentionDependency, error) {
+	return getOperationPacketRetentionDependency(ctx, tx.tx, packetRowID, dependencyClass, dependencyKey)
+}
+
 func (tx *Tx) CreateRepositoryTarget(ctx context.Context, repoTarget, localPath string) (RepositoryTarget, error) {
 	var value RepositoryTarget
 	err := tx.tx.QueryRowContext(ctx, `

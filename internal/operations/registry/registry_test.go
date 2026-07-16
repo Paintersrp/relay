@@ -310,6 +310,26 @@ func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T
 	}
 }
 
+func TestSurfaceManifestSHA256Authority(t *testing.T) {
+	want := map[SurfaceContractID]string{
+		"planner-authoring.v1":   "a94d2f9a8ec82638bbd7d1c37c17219a5cece348a2e6e8209a3777b46ed9cfd1",
+		"planner-plan.v1":        "c8a75040fde86124d4214b5536486fc243af092b818048bd9a7e3e668cbeaadb",
+		"planner-execution.v1":   "25747af05f20d1520db5e7b909df2bc0b928ad341e81862c36ee0fec96702d2f",
+		"auditor-review.v1":      "7768048c210f9727bacfdad5c288a6d8141f27007b821fc1b3d48222a05dc038",
+		"auditor-audit.v1":       "b3d04b3927539831dbc68cb9660c6800312f4f6490627a1af6fdff52f3058488",
+		"auditor-remediation.v1": "ececae7a3f319b628693319c67749a3eae2f6f4fd7cd852fa319f9e4e54217f9",
+	}
+	for surface, expected := range want {
+		got, ok := SurfaceManifestSHA256(surface)
+		if !ok || got != expected {
+			t.Fatalf("surface %q manifest = %q, %v; want %q, true", surface, got, ok, expected)
+		}
+	}
+	if _, ok := SurfaceManifestSHA256("unknown.v1"); ok {
+		t.Fatal("unknown surface returned a manifest identity")
+	}
+}
+
 func mutateObject(t *testing.T, raw []byte, mutate func(map[string]any)) []byte {
 	t.Helper()
 	var value map[string]any
