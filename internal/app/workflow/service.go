@@ -56,7 +56,7 @@ func ResolveRunStage(status string) (string, error) {
 }
 
 func (s *Service) ListRepositories(ctx context.Context) ([]workflowstore.RepositoryTarget, error) {
-	return s.store.ListRepositoryTargets(ctx)
+	return s.store.ListRepositoryTargetsWithConfiguration(ctx)
 }
 
 func (s *Service) GetRepository(ctx context.Context, repoTarget string) (workflowstore.RepositoryTarget, error) {
@@ -79,6 +79,18 @@ func (s *Service) ConfirmRepository(
 	input RepositoryConfirmationInput,
 ) (RepositoryRegistrationResult, error) {
 	return s.registry.Confirm(ctx, input)
+}
+
+func (s *Service) ResolveRepositoryRevision(
+	ctx context.Context,
+	input RepositoryRevisionInput,
+) (RepositoryRevision, error) {
+	return s.registry.ResolveRevision(ctx, workflowrepos.RevisionRequest{
+		RepoTarget:        strings.TrimSpace(input.RepoTarget),
+		ExplicitCommitOID: input.ExplicitCommitOID,
+		Policy:            input.Policy,
+		Governance:        input.Governance,
+	})
 }
 
 func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) ([]PlanSummary, error) {

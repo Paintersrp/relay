@@ -119,17 +119,54 @@ func (tx *Tx) GetOperationPacketRetentionDependency(ctx context.Context, packetR
 }
 
 func (tx *Tx) CreateRepositoryTarget(ctx context.Context, repoTarget, localPath string) (RepositoryTarget, error) {
-	var value RepositoryTarget
-	err := tx.tx.QueryRowContext(ctx, `
-INSERT INTO repository_targets (repo_target, local_path)
-VALUES (?, ?)
-RETURNING repo_target, local_path, created_at, updated_at`, repoTarget, localPath).Scan(
-		&value.RepoTarget,
-		&value.LocalPath,
-		&value.CreatedAt,
-		&value.UpdatedAt,
-	)
-	return value, err
+	return tx.CreateRepositoryTargetWithConfiguration(ctx, CreateRepositoryTargetParams{
+		RepoTarget: repoTarget,
+		LocalPath:  localPath,
+	})
+}
+
+func (tx *Tx) CreateRepositoryTargetWithConfiguration(
+	ctx context.Context,
+	params CreateRepositoryTargetParams,
+) (RepositoryTarget, error) {
+	return scanRepositoryTarget(tx.tx.QueryRowContext(ctx, `
+INSERT INTO repository_targets (
+    repo_target,
+    local_path,
+    configured_branch_ref,
+    configuration_version
+)
+VALUES (?, ?, ?, 1)
+RETURNING `+repositoryTargetColumns,
+		params.RepoTarget,
+		params.LocalPath,
+		params.ConfiguredBranchRef,
+	))
+}
+
+func (tx *Tx) ConfigureRepositoryTarget(
+	ctx context.Context,
+	params ConfigureRepositoryTargetParams,
+) (RepositoryTarget, error) {
+	if params.ExpectedConfigurationVersion < 1 {
+		return RepositoryTarget{}, fmt.Errorf("expected repository configuration version must be positive")
+	}
+	if params.ConfiguredBranchRef == "" {
+		return RepositoryTarget{}, fmt.Errorf("configured branch ref is required")
+	}
+	return scanRepositoryTarget(tx.tx.QueryRowContext(ctx, `
+UPDATE repository_targets
+SET
+    configured_branch_ref = ?,
+    configuration_version = configuration_version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE repo_target = ? COLLATE NOCASE
+  AND configuration_version = ?
+RETURNING `+repositoryTargetColumns,
+		params.ConfiguredBranchRef,
+		params.RepoTarget,
+		params.ExpectedConfigurationVersion,
+	))
 }
 
 func (tx *Tx) GetRepositoryTarget(ctx context.Context, repoTarget string) (RepositoryTarget, error) {

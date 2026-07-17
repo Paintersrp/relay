@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -37,10 +38,12 @@ func NewWorkflowHandler(service WorkflowRepositoryService, logger *slog.Logger) 
 }
 
 type repositoryResponse struct {
-	RepoTarget string `json:"repoTarget"`
-	LocalPath  string `json:"localPath"`
-	CreatedAt  string `json:"createdAt"`
-	UpdatedAt  string `json:"updatedAt"`
+	RepoTarget           string  `json:"repoTarget"`
+	LocalPath            string  `json:"localPath"`
+	ConfiguredBranchRef  *string `json:"configuredBranchRef"`
+	ConfigurationVersion int64   `json:"configurationVersion"`
+	CreatedAt            string  `json:"createdAt"`
+	UpdatedAt            string  `json:"updatedAt"`
 }
 
 type remoteCandidateResponse struct {
@@ -50,33 +53,58 @@ type remoteCandidateResponse struct {
 }
 
 type inspectionResponse struct {
-	State                   string                    `json:"state"`
-	SelectedPath            string                    `json:"selectedPath"`
-	ResolvedLocalPath       string                    `json:"resolvedLocalPath"`
-	Remotes                 []remoteCandidateResponse `json:"remotes"`
-	SelectedRemote          *remoteCandidateResponse  `json:"selectedRemote,omitempty"`
-	SuggestedRepoTarget     string                    `json:"suggestedRepoTarget,omitempty"`
-	TargetOverrideReason    string                    `json:"targetOverrideReason,omitempty"`
-	RepoTarget              string                    `json:"repoTarget,omitempty"`
-	RepoTargetSource        string                    `json:"repoTargetSource,omitempty"`
-	RegistrationDisposition string                    `json:"registrationDisposition,omitempty"`
-	ExistingRepository      *repositoryResponse       `json:"existingRepository,omitempty"`
-	ConflictKind            string                    `json:"conflictKind,omitempty"`
-	ConfirmationHash        string                    `json:"confirmationHash,omitempty"`
-	Notices                 []string                  `json:"notices"`
+	State                        string                    `json:"state"`
+	SelectedPath                 string                    `json:"selectedPath"`
+	ResolvedLocalPath            string                    `json:"resolvedLocalPath"`
+	Remotes                      []remoteCandidateResponse `json:"remotes"`
+	SelectedRemote               *remoteCandidateResponse  `json:"selectedRemote,omitempty"`
+	SuggestedRepoTarget          string                    `json:"suggestedRepoTarget,omitempty"`
+	TargetOverrideReason         string                    `json:"targetOverrideReason,omitempty"`
+	RepoTarget                   string                    `json:"repoTarget,omitempty"`
+	RepoTargetSource             string                    `json:"repoTargetSource,omitempty"`
+	RegistrationDisposition      string                    `json:"registrationDisposition,omitempty"`
+	ExistingRepository           *repositoryResponse       `json:"existingRepository,omitempty"`
+	CurrentConfiguredBranchRef   *string                   `json:"currentConfiguredBranchRef"`
+	ExpectedConfigurationVersion int64                     `json:"expectedConfigurationVersion"`
+	ProposedConfiguredBranchRef  *string                   `json:"proposedConfiguredBranchRef"`
+	ProposedConfigurationVersion int64                     `json:"proposedConfigurationVersion"`
+	ProposedBranchCommitOID      string                    `json:"proposedBranchCommitOid,omitempty"`
+	ProposedBranchTreeOID        string                    `json:"proposedBranchTreeOid,omitempty"`
+	ConfigurationDisposition     string                    `json:"configurationDisposition,omitempty"`
+	ConflictKind                 string                    `json:"conflictKind,omitempty"`
+	ConfirmationHash             string                    `json:"confirmationHash,omitempty"`
+	Notices                      []string                  `json:"notices"`
+}
+
+type optionalBranchRef struct {
+	Present bool
+	Value   string
+}
+
+func (value *optionalBranchRef) UnmarshalJSON(data []byte) error {
+	value.Present = true
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("proposedConfiguredBranchRef must not be null")
+	}
+	if err := json.Unmarshal(data, &value.Value); err != nil {
+		return errors.New("proposedConfiguredBranchRef must be a string")
+	}
+	return nil
 }
 
 type inspectRepositoryRequest struct {
-	LocalPath          string `json:"localPath"`
-	RemoteName         string `json:"remoteName"`
-	RepoTargetOverride string `json:"repoTargetOverride"`
+	LocalPath                   string            `json:"localPath"`
+	RemoteName                  string            `json:"remoteName"`
+	RepoTargetOverride          string            `json:"repoTargetOverride"`
+	ProposedConfiguredBranchRef optionalBranchRef `json:"proposedConfiguredBranchRef"`
 }
 
 type confirmRepositoryRequest struct {
-	LocalPath                string `json:"localPath"`
-	RemoteName               string `json:"remoteName"`
-	RepoTargetOverride       string `json:"repoTargetOverride"`
-	ExpectedConfirmationHash string `json:"expectedConfirmationHash"`
+	LocalPath                   string            `json:"localPath"`
+	RemoteName                  string            `json:"remoteName"`
+	RepoTargetOverride          string            `json:"repoTargetOverride"`
+	ProposedConfiguredBranchRef optionalBranchRef `json:"proposedConfiguredBranchRef"`
+	ExpectedConfirmationHash    string            `json:"expectedConfirmationHash"`
 }
 
 func (h *WorkflowHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -108,9 +136,10 @@ func (h *WorkflowHandler) Inspect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := h.service.InspectRepository(r.Context(), workflowapp.RepositoryInspectionInput{
-		LocalPath:          request.LocalPath,
-		RemoteName:         request.RemoteName,
-		RepoTargetOverride: request.RepoTargetOverride,
+		LocalPath:                   request.LocalPath,
+		RemoteName:                  request.RemoteName,
+		RepoTargetOverride:          request.RepoTargetOverride,
+		ProposedConfiguredBranchRef: request.ProposedConfiguredBranchRef.Value,
 	})
 	if err != nil {
 		h.writeWorkflowRepositoryError(w, r, err)
@@ -126,10 +155,11 @@ func (h *WorkflowHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := h.service.ConfirmRepository(r.Context(), workflowapp.RepositoryConfirmationInput{
-		LocalPath:                request.LocalPath,
-		RemoteName:               request.RemoteName,
-		RepoTargetOverride:       request.RepoTargetOverride,
-		ExpectedConfirmationHash: request.ExpectedConfirmationHash,
+		LocalPath:                   request.LocalPath,
+		RemoteName:                  request.RemoteName,
+		RepoTargetOverride:          request.RepoTargetOverride,
+		ProposedConfiguredBranchRef: request.ProposedConfiguredBranchRef.Value,
+		ExpectedConfirmationHash:    request.ExpectedConfirmationHash,
 	})
 	if err != nil {
 		var confirmationError *workflowrepos.ConfirmationError
@@ -151,8 +181,9 @@ func (h *WorkflowHandler) Create(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	shared.JSON(w, status, map[string]any{
-		"outcome":    value.Outcome,
-		"repository": repositoryDTO(value.Repository),
+		"outcome":                  value.Outcome,
+		"configurationDisposition": value.ConfigurationDisposition,
+		"repository":               repositoryDTO(value.Repository),
 	})
 }
 
@@ -170,11 +201,21 @@ func decodeRepositoryRequest(r *http.Request, target any) error {
 
 func repositoryDTO(value workflowapp.RepositoryTarget) repositoryResponse {
 	return repositoryResponse{
-		RepoTarget: value.RepoTarget,
-		LocalPath:  value.LocalPath,
-		CreatedAt:  value.CreatedAt,
-		UpdatedAt:  value.UpdatedAt,
+		RepoTarget:           value.RepoTarget,
+		LocalPath:            value.LocalPath,
+		ConfiguredBranchRef:  nullableStringDTO(value.ConfiguredBranchRef),
+		ConfigurationVersion: value.ConfigurationVersion,
+		CreatedAt:            value.CreatedAt,
+		UpdatedAt:            value.UpdatedAt,
 	}
+}
+
+func nullableStringDTO(value sql.NullString) *string {
+	if !value.Valid {
+		return nil
+	}
+	out := value.String
+	return &out
 }
 
 func inspectionDTO(value workflowapp.RepositoryInspection) inspectionResponse {
@@ -193,20 +234,27 @@ func inspectionDTO(value workflowapp.RepositoryInspection) inspectionResponse {
 		existingRepository = &dto
 	}
 	return inspectionResponse{
-		State:                   value.State,
-		SelectedPath:            value.SelectedPath,
-		ResolvedLocalPath:       value.ResolvedLocalPath,
-		Remotes:                 remotes,
-		SelectedRemote:          selectedRemote,
-		SuggestedRepoTarget:     value.SuggestedRepoTarget,
-		TargetOverrideReason:    value.TargetOverrideReason,
-		RepoTarget:              value.RepoTarget,
-		RepoTargetSource:        value.RepoTargetSource,
-		RegistrationDisposition: value.RegistrationDisposition,
-		ExistingRepository:      existingRepository,
-		ConflictKind:            value.ConflictKind,
-		ConfirmationHash:        value.ConfirmationHash,
-		Notices:                 append([]string{}, value.Notices...),
+		State:                        value.State,
+		SelectedPath:                 value.SelectedPath,
+		ResolvedLocalPath:            value.ResolvedLocalPath,
+		Remotes:                      remotes,
+		SelectedRemote:               selectedRemote,
+		SuggestedRepoTarget:          value.SuggestedRepoTarget,
+		TargetOverrideReason:         value.TargetOverrideReason,
+		RepoTarget:                   value.RepoTarget,
+		RepoTargetSource:             value.RepoTargetSource,
+		RegistrationDisposition:      value.RegistrationDisposition,
+		ExistingRepository:           existingRepository,
+		CurrentConfiguredBranchRef:   nullableStringDTO(value.CurrentConfiguredBranchRef),
+		ExpectedConfigurationVersion: value.ExpectedConfigurationVersion,
+		ProposedConfiguredBranchRef:  nullableStringDTO(value.ProposedConfiguredBranchRef),
+		ProposedConfigurationVersion: value.ProposedConfigurationVersion,
+		ProposedBranchCommitOID:      value.ProposedBranchCommitOID,
+		ProposedBranchTreeOID:        value.ProposedBranchTreeOID,
+		ConfigurationDisposition:     value.ConfigurationDisposition,
+		ConflictKind:                 value.ConflictKind,
+		ConfirmationHash:             value.ConfirmationHash,
+		Notices:                      append([]string{}, value.Notices...),
 	}
 }
 
@@ -228,6 +276,9 @@ func (h *WorkflowHandler) writeWorkflowRepositoryError(
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Repository target was not found")
 	case errors.Is(err, workflowrepos.ErrInvalidRepositoryPath):
 		shared.Error(w, http.StatusUnprocessableEntity, "INVALID_REPOSITORY_PATH", err.Error())
+	case errors.Is(err, workflowrepos.ErrInvalidConfiguredBranch),
+		errors.Is(err, workflowrepos.ErrConfiguredBranchUnavailable):
+		shared.Error(w, http.StatusUnprocessableEntity, "INVALID_REPOSITORY_AUTHORITY", err.Error())
 	case errors.Is(err, workflowrepos.ErrGitUnavailable),
 		errors.Is(err, workflowrepos.ErrGitTimeout),
 		errors.Is(err, workflowrepos.ErrGitOutputLimit):

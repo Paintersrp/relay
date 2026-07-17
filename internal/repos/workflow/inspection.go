@@ -60,16 +60,18 @@ const (
 )
 
 type InspectionInput struct {
-	LocalPath          string
-	RemoteName         string
-	RepoTargetOverride string
+	LocalPath                   string
+	RemoteName                  string
+	RepoTargetOverride          string
+	ProposedConfiguredBranchRef string
 }
 
 type ConfirmationInput struct {
-	LocalPath                string
-	RemoteName               string
-	RepoTargetOverride       string
-	ExpectedConfirmationHash string
+	LocalPath                   string
+	RemoteName                  string
+	RepoTargetOverride          string
+	ProposedConfiguredBranchRef string
+	ExpectedConfirmationHash    string
 }
 
 type RemoteCandidate struct {
@@ -79,25 +81,33 @@ type RemoteCandidate struct {
 }
 
 type Inspection struct {
-	State                   string
-	SelectedPath            string
-	ResolvedLocalPath       string
-	Remotes                 []RemoteCandidate
-	SelectedRemote          *RemoteCandidate
-	SuggestedRepoTarget     string
-	TargetOverrideReason    string
-	RepoTarget              string
-	RepoTargetSource        string
-	RegistrationDisposition string
-	ExistingRepository      *workflowstore.RepositoryTarget
-	ConflictKind            string
-	ConfirmationHash        string
-	Notices                 []string
+	State                        string
+	SelectedPath                 string
+	ResolvedLocalPath            string
+	Remotes                      []RemoteCandidate
+	SelectedRemote               *RemoteCandidate
+	SuggestedRepoTarget          string
+	TargetOverrideReason         string
+	RepoTarget                   string
+	RepoTargetSource             string
+	RegistrationDisposition      string
+	ExistingRepository           *workflowstore.RepositoryTarget
+	CurrentConfiguredBranchRef   sql.NullString
+	ExpectedConfigurationVersion int64
+	ProposedConfiguredBranchRef  sql.NullString
+	ProposedConfigurationVersion int64
+	ProposedBranchCommitOID      string
+	ProposedBranchTreeOID        string
+	ConfigurationDisposition     string
+	ConflictKind                 string
+	ConfirmationHash             string
+	Notices                      []string
 }
 
 type RegistrationResult struct {
-	Outcome    string
-	Repository workflowstore.RepositoryTarget
+	Outcome                  string
+	ConfigurationDisposition string
+	Repository               workflowstore.RepositoryTarget
 }
 
 type ConfirmationError struct {
@@ -174,14 +184,14 @@ func (r execInspectionRunner) Run(ctx context.Context, directory string, args ..
 		Stdout: strings.TrimSpace(stdout.String()),
 		Stderr: strings.TrimSpace(stderr.String()),
 	}
+	if errors.Is(stdout.err, ErrGitOutputLimit) || errors.Is(stderr.err, ErrGitOutputLimit) {
+		return result, ErrGitOutputLimit
+	}
 	if errors.Is(commandContext.Err(), context.DeadlineExceeded) {
 		return result, ErrGitTimeout
 	}
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		return result, ErrGitUnavailable
-	}
-	if errors.Is(stdout.err, ErrGitOutputLimit) || errors.Is(stderr.err, ErrGitOutputLimit) {
-		return result, ErrGitOutputLimit
 	}
 	return result, err
 }
@@ -369,6 +379,13 @@ func (r *Registry) Inspect(ctx context.Context, input InspectionInput) (Inspecti
 	inspection.State = InspectionStateReady
 	inspection.RegistrationDisposition = disposition
 	inspection.ExistingRepository = existing
+	if err := r.inspectBranchConfiguration(
+		ctx,
+		&inspection,
+		input.ProposedConfiguredBranchRef,
+	); err != nil {
+		return Inspection{}, err
+	}
 	inspection.ConfirmationHash, err = confirmationHash(inspection)
 	if err != nil {
 		return Inspection{}, err
@@ -382,9 +399,10 @@ func (r *Registry) Confirm(ctx context.Context, input ConfirmationInput) (Regist
 		return RegistrationResult{}, fmt.Errorf("expected confirmation hash is required")
 	}
 	current, err := r.Inspect(ctx, InspectionInput{
-		LocalPath:          input.LocalPath,
-		RemoteName:         input.RemoteName,
-		RepoTargetOverride: input.RepoTargetOverride,
+		LocalPath:                   input.LocalPath,
+		RemoteName:                  input.RemoteName,
+		RepoTargetOverride:          input.RepoTargetOverride,
+		ProposedConfiguredBranchRef: input.ProposedConfiguredBranchRef,
 	})
 	if err != nil {
 		return RegistrationResult{}, err
@@ -418,9 +436,36 @@ func (r *Registry) Confirm(ctx context.Context, input ConfirmationInput) (Regist
 			return registrationConflictError(current, existing, conflictKind)
 		}
 		if disposition == RegistrationDispositionReuse {
+			if existing.ConfigurationVersion != current.ExpectedConfigurationVersion ||
+				!sameNullableString(existing.ConfiguredBranchRef, current.CurrentConfiguredBranchRef) {
+				return ErrStaleRepositoryConfiguration
+			}
+			if current.ConfigurationDisposition == ConfigurationDispositionPreserve {
+				result = RegistrationResult{
+					Outcome:                  RegistrationOutcomeReused,
+					ConfigurationDisposition: current.ConfigurationDisposition,
+					Repository:               *existing,
+				}
+				return nil
+			}
+			configured, configureErr := tx.ConfigureRepositoryTarget(
+				ctx,
+				workflowstore.ConfigureRepositoryTargetParams{
+					RepoTarget:                   current.RepoTarget,
+					ExpectedConfigurationVersion: current.ExpectedConfigurationVersion,
+					ConfiguredBranchRef:          current.ProposedConfiguredBranchRef.String,
+				},
+			)
+			if errors.Is(configureErr, sql.ErrNoRows) {
+				return ErrStaleRepositoryConfiguration
+			}
+			if configureErr != nil {
+				return configureErr
+			}
 			result = RegistrationResult{
-				Outcome:    RegistrationOutcomeReused,
-				Repository: *existing,
+				Outcome:                  RegistrationOutcomeReused,
+				ConfigurationDisposition: current.ConfigurationDisposition,
+				Repository:               configured,
 			}
 			return nil
 		}
@@ -428,23 +473,42 @@ func (r *Registry) Confirm(ctx context.Context, input ConfirmationInput) (Regist
 		if r.beforeCreate != nil {
 			r.beforeCreate()
 		}
-		created, createErr := tx.CreateRepositoryTarget(
+		created, createErr := tx.CreateRepositoryTargetWithConfiguration(
 			ctx,
-			current.RepoTarget,
-			current.ResolvedLocalPath,
+			workflowstore.CreateRepositoryTargetParams{
+				RepoTarget:          current.RepoTarget,
+				LocalPath:           current.ResolvedLocalPath,
+				ConfiguredBranchRef: current.ProposedConfiguredBranchRef,
+			},
 		)
 		if createErr != nil {
 			insertErr = createErr
 			return createErr
 		}
 		result = RegistrationResult{
-			Outcome:    RegistrationOutcomeCreated,
-			Repository: created,
+			Outcome:                  RegistrationOutcomeCreated,
+			ConfigurationDisposition: current.ConfigurationDisposition,
+			Repository:               created,
 		}
 		return nil
 	})
 	if err == nil {
 		return result, nil
+	}
+	if errors.Is(err, ErrStaleRepositoryConfiguration) {
+		fresh, inspectErr := r.Inspect(ctx, InspectionInput{
+			LocalPath:                   input.LocalPath,
+			RemoteName:                  input.RemoteName,
+			RepoTargetOverride:          input.RepoTargetOverride,
+			ProposedConfiguredBranchRef: input.ProposedConfiguredBranchRef,
+		})
+		if inspectErr != nil {
+			return RegistrationResult{}, errors.Join(err, inspectErr)
+		}
+		return RegistrationResult{}, &ConfirmationError{
+			Reason:     "stale",
+			Inspection: fresh,
+		}
 	}
 	if insertErr == nil {
 		return RegistrationResult{}, err
@@ -485,9 +549,16 @@ func (r *Registry) resolveAfterFailedInsert(
 					conflictKind,
 				)
 			case disposition == RegistrationDispositionReuse:
+				if !repositoryMatchesInspection(*existing, current) {
+					return RegistrationResult{}, &ConfirmationError{
+						Reason:     "stale",
+						Inspection: current,
+					}
+				}
 				return RegistrationResult{
-					Outcome:    RegistrationOutcomeReused,
-					Repository: *existing,
+					Outcome:                  RegistrationOutcomeReused,
+					ConfigurationDisposition: current.ConfigurationDisposition,
+					Repository:               *existing,
 				}, nil
 			}
 		} else {
@@ -627,25 +698,39 @@ func deriveRepoTarget(remoteURL string) (string, error) {
 
 func confirmationHash(inspection Inspection) (string, error) {
 	payload := struct {
-		Version                 string                          `json:"version"`
-		SelectedPath            string                          `json:"selectedPath"`
-		ResolvedLocalPath       string                          `json:"resolvedLocalPath"`
-		SelectedRemote          *RemoteCandidate                `json:"selectedRemote"`
-		SuggestedRepoTarget     string                          `json:"suggestedRepoTarget"`
-		RepoTarget              string                          `json:"repoTarget"`
-		RepoTargetSource        string                          `json:"repoTargetSource"`
-		RegistrationDisposition string                          `json:"registrationDisposition"`
-		ExistingRepository      *workflowstore.RepositoryTarget `json:"existingRepository"`
+		Version                      string                          `json:"version"`
+		SelectedPath                 string                          `json:"selectedPath"`
+		ResolvedLocalPath            string                          `json:"resolvedLocalPath"`
+		SelectedRemote               *RemoteCandidate                `json:"selectedRemote"`
+		SuggestedRepoTarget          string                          `json:"suggestedRepoTarget"`
+		RepoTarget                   string                          `json:"repoTarget"`
+		RepoTargetSource             string                          `json:"repoTargetSource"`
+		RegistrationDisposition      string                          `json:"registrationDisposition"`
+		ExistingRepository           *workflowstore.RepositoryTarget `json:"existingRepository"`
+		CurrentConfiguredBranchRef   sql.NullString                  `json:"currentConfiguredBranchRef"`
+		ExpectedConfigurationVersion int64                           `json:"expectedConfigurationVersion"`
+		ProposedConfiguredBranchRef  sql.NullString                  `json:"proposedConfiguredBranchRef"`
+		ProposedConfigurationVersion int64                           `json:"proposedConfigurationVersion"`
+		ProposedBranchCommitOID      string                          `json:"proposedBranchCommitOid"`
+		ProposedBranchTreeOID        string                          `json:"proposedBranchTreeOid"`
+		ConfigurationDisposition     string                          `json:"configurationDisposition"`
 	}{
-		Version:                 "1",
-		SelectedPath:            inspection.SelectedPath,
-		ResolvedLocalPath:       inspection.ResolvedLocalPath,
-		SelectedRemote:          inspection.SelectedRemote,
-		SuggestedRepoTarget:     inspection.SuggestedRepoTarget,
-		RepoTarget:              inspection.RepoTarget,
-		RepoTargetSource:        inspection.RepoTargetSource,
-		RegistrationDisposition: inspection.RegistrationDisposition,
-		ExistingRepository:      inspection.ExistingRepository,
+		Version:                      "2",
+		SelectedPath:                 inspection.SelectedPath,
+		ResolvedLocalPath:            inspection.ResolvedLocalPath,
+		SelectedRemote:               inspection.SelectedRemote,
+		SuggestedRepoTarget:          inspection.SuggestedRepoTarget,
+		RepoTarget:                   inspection.RepoTarget,
+		RepoTargetSource:             inspection.RepoTargetSource,
+		RegistrationDisposition:      inspection.RegistrationDisposition,
+		ExistingRepository:           inspection.ExistingRepository,
+		CurrentConfiguredBranchRef:   inspection.CurrentConfiguredBranchRef,
+		ExpectedConfigurationVersion: inspection.ExpectedConfigurationVersion,
+		ProposedConfiguredBranchRef:  inspection.ProposedConfiguredBranchRef,
+		ProposedConfigurationVersion: inspection.ProposedConfigurationVersion,
+		ProposedBranchCommitOID:      inspection.ProposedBranchCommitOID,
+		ProposedBranchTreeOID:        inspection.ProposedBranchTreeOID,
+		ConfigurationDisposition:     inspection.ConfigurationDisposition,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

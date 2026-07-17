@@ -230,10 +230,24 @@ type ProjectNote struct {
 }
 
 type RepositoryTarget struct {
-	RepoTarget string
-	LocalPath  string
-	CreatedAt  string
-	UpdatedAt  string
+	RepoTarget           string
+	LocalPath            string
+	ConfiguredBranchRef  sql.NullString
+	ConfigurationVersion int64
+	CreatedAt            string
+	UpdatedAt            string
+}
+
+type CreateRepositoryTargetParams struct {
+	RepoTarget          string
+	LocalPath           string
+	ConfiguredBranchRef sql.NullString
+}
+
+type ConfigureRepositoryTargetParams struct {
+	RepoTarget                   string
+	ExpectedConfigurationVersion int64
+	ConfiguredBranchRef          string
 }
 
 type Plan struct {

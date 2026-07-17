@@ -177,6 +177,26 @@ func (s *Store) GetRepositoryTargetByLocalPath(ctx context.Context, localPath st
 	return getRepositoryTargetByLocalPath(ctx, s.db, localPath)
 }
 
+func (s *Store) ListRepositoryTargetsWithConfiguration(ctx context.Context) ([]RepositoryTarget, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT `+repositoryTargetColumns+`
+FROM repository_targets
+ORDER BY repo_target COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]RepositoryTarget, 0)
+	for rows.Next() {
+		value, err := scanRepositoryTarget(rows)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 func (s *Store) GetPlanByPlanID(ctx context.Context, planID string) (Plan, error) {
 	return getPlanByPlanID(ctx, s.db, planID)
 }
@@ -305,18 +325,19 @@ ORDER BY attempt_number`, runRowID)
 	return values, rows.Err()
 }
 
+const repositoryTargetColumns = `
+repo_target,
+local_path,
+configured_branch_ref,
+configuration_version,
+created_at,
+updated_at`
+
 func getRepositoryTarget(ctx context.Context, queryer rowQueryer, repoTarget string) (RepositoryTarget, error) {
-	var value RepositoryTarget
-	err := queryer.QueryRowContext(ctx, `
-SELECT repo_target, local_path, created_at, updated_at
+	return scanRepositoryTarget(queryer.QueryRowContext(ctx, `
+SELECT `+repositoryTargetColumns+`
 FROM repository_targets
-WHERE repo_target = ? COLLATE NOCASE`, repoTarget).Scan(
-		&value.RepoTarget,
-		&value.LocalPath,
-		&value.CreatedAt,
-		&value.UpdatedAt,
-	)
-	return value, err
+WHERE repo_target = ? COLLATE NOCASE`, repoTarget))
 }
 
 func getRepositoryTargetByLocalPath(
@@ -325,20 +346,13 @@ func getRepositoryTargetByLocalPath(
 	localPath string,
 ) (RepositoryTarget, error) {
 	query := `
-SELECT repo_target, local_path, created_at, updated_at
+SELECT ` + repositoryTargetColumns + `
 FROM repository_targets
 WHERE local_path = ?`
 	if runtime.GOOS == "windows" {
 		query += " COLLATE NOCASE"
 	}
-	var value RepositoryTarget
-	err := queryer.QueryRowContext(ctx, query, localPath).Scan(
-		&value.RepoTarget,
-		&value.LocalPath,
-		&value.CreatedAt,
-		&value.UpdatedAt,
-	)
-	return value, err
+	return scanRepositoryTarget(queryer.QueryRowContext(ctx, query, localPath))
 }
 
 func getPlanByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (Plan, error) {
@@ -634,6 +648,19 @@ ORDER BY created_at, id`, ownerRowID)
 
 type rowScanner interface {
 	Scan(...any) error
+}
+
+func scanRepositoryTarget(row rowScanner) (RepositoryTarget, error) {
+	var value RepositoryTarget
+	err := row.Scan(
+		&value.RepoTarget,
+		&value.LocalPath,
+		&value.ConfiguredBranchRef,
+		&value.ConfigurationVersion,
+		&value.CreatedAt,
+		&value.UpdatedAt,
+	)
+	return value, err
 }
 
 func scanAuditPacket(row rowScanner) (AuditPacket, error) {

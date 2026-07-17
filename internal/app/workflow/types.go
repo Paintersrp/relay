@@ -13,6 +13,10 @@ type (
 	RepositoryInspection         = workflowrepos.Inspection
 	RepositoryRemoteCandidate    = workflowrepos.RemoteCandidate
 	RepositoryRegistrationResult = workflowrepos.RegistrationResult
+	RepositoryUsePolicy          = workflowrepos.RepositoryUsePolicy
+	GovernanceRequest            = workflowrepos.GovernanceRequest
+	GovernanceAvailability       = workflowrepos.GovernanceAvailability
+	RepositoryRevision           = workflowrepos.ResolvedRevision
 )
 
 const (
@@ -23,6 +27,13 @@ const (
 	DefaultArtifactContentLimit int64 = 64 * 1024
 	MaxArtifactContentLimit     int64 = 64 * 1024
 )
+
+type RepositoryRevisionInput struct {
+	RepoTarget        string
+	ExplicitCommitOID string
+	Policy            RepositoryUsePolicy
+	Governance        GovernanceRequest
+}
 
 type ArtifactMetadata struct {
 	ArtifactID string
