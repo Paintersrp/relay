@@ -515,12 +515,14 @@ func validateAttestation(value Attestation) error {
 		}
 		expected = Attestation{Kind: value.Kind, InputName: value.InputName, Confirmed: true}
 	case "sensitive_data_clearance":
-		if value.Clearance == nil || value.Clearance.PolicyVersion != "relay.canonical-artifact-sensitive-data.v1" || !validSHA256(value.Clearance.SubjectSHA256) || !value.Clearance.Confirmed {
+		if value.Clearance == nil {
 			return invalid("attestation_sensitive_data_clearance")
 		}
-		declaration := value.Clearance.Declaration
-		if declaration.Password || declaration.APIKeyOrAccessToken || declaration.RefreshTokenOrSessionMaterial || declaration.CookieOrAuthorizationHeader || declaration.PrivateOrSSHKey || declaration.Credential || declaration.CompleteSecretBearingEnvironmentFile || declaration.AvoidableSignedSecretBearingURL {
-			return invalid("attestation_sensitive_data_declaration")
+		if err := registry.ValidateSensitiveDataClearance(*value.Clearance); err != nil {
+			if err == registry.ErrSensitiveDataDeclaration {
+				return invalid("attestation_sensitive_data_declaration")
+			}
+			return invalid("attestation_sensitive_data_clearance")
 		}
 		expected = Attestation{Kind: value.Kind, InputName: value.InputName, Clearance: value.Clearance}
 	default:

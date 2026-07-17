@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"relay/internal/mcp/fileacquisition"
 )
 
 const (
@@ -220,6 +222,73 @@ func (f *HTTPSFileParameterFetcher) FetchArtifact(ctx context.Context, ref ChatG
 		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadTooLarge, "artifact_file exceeds the 1 MiB limit")
 	}
 	return FileParameterContent{Bytes: data, DisplayName: displayName}, nil
+}
+
+func (f *HTTPSFileParameterFetcher) FetchFile(ctx context.Context, ref fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
+	if strings.TrimSpace(ref.FileID) == "" {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileReferenceInvalid, "uploaded_file.file_id is required")
+	}
+	rawURL := strings.TrimSpace(ref.DownloadURL)
+	if rawURL == "" {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileReferenceInvalid, "uploaded_file.download_url is required")
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil || !u.IsAbs() {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileReferenceInvalid, "uploaded_file.download_url must be an absolute HTTPS URL")
+	}
+	targets := newValidatedTargetRegistry()
+	if err := f.validateURL(ctx, u, targets); err != nil {
+		return fileacquisition.FetchedFile{}, err
+	}
+
+	timeout := f.Timeout
+	if timeout <= 0 {
+		timeout = fileDownloadTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client, closeIdle := f.client(targets)
+	if closeIdle != nil {
+		defer closeIdle()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileReferenceInvalid, "uploaded_file.download_url could not be requested")
+	}
+	req.Header.Set("Accept", "application/octet-stream, */*;q=0.1")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		var fileErr *FileParameterError
+		if errors.As(err, &fileErr) {
+			return fileacquisition.FetchedFile{}, fileErr
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileDownloadFailed, "uploaded_file download timed out")
+		}
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileDownloadFailed, "uploaded_file could not be downloaded")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileDownloadStatus, fmt.Sprintf("uploaded_file download returned HTTP %d", resp.StatusCode))
+	}
+	limit := f.MaxBytes
+	if limit <= 0 {
+		limit = maxPlannerHandoffFileBytes
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileDownloadFailed, "uploaded_file response could not be read")
+	}
+	if len(data) == 0 {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileDownloadEmpty, "uploaded_file response was empty")
+	}
+	if int64(len(data)) > limit {
+		return fileacquisition.FetchedFile{}, fileParamErr(MCPBlockerFileDownloadTooLarge, "uploaded_file exceeds the 1 MiB limit")
+	}
+	return fileacquisition.FetchedFile{Bytes: data}, nil
 }
 
 func (f *HTTPSFileParameterFetcher) client(targets *validatedTargetRegistry) (*http.Client, func()) {

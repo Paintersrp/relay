@@ -41,6 +41,7 @@ ORDER BY name`)
 		"audit_packets",
 		"execution_attempts",
 		"goose_db_version",
+		"mcp_mutation_results",
 		"operation_packet_artifacts",
 		"operation_packet_retention_dependencies",
 		"operation_packets",

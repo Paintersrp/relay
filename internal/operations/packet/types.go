@@ -84,23 +84,9 @@ type Attestation struct {
 	Clearance               *SensitiveDataClearance
 }
 
-type SensitiveDataClearance struct {
-	PolicyVersion string
-	SubjectSHA256 string
-	Declaration   SensitiveDataDeclaration
-	Confirmed     bool
-}
+type SensitiveDataClearance = registry.SensitiveDataClearance
 
-type SensitiveDataDeclaration struct {
-	Password                             bool
-	APIKeyOrAccessToken                  bool
-	RefreshTokenOrSessionMaterial        bool
-	CookieOrAuthorizationHeader          bool
-	PrivateOrSSHKey                      bool
-	Credential                           bool
-	CompleteSecretBearingEnvironmentFile bool
-	AvoidableSignedSecretBearingURL      bool
-}
+type SensitiveDataDeclaration = registry.SensitiveDataDeclaration
 
 type InputBinding struct {
 	InputName       string

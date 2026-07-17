@@ -64,15 +64,16 @@ type OperationDefinition struct {
 }
 
 type registryDocument struct {
-	RegistryVersion            string                              `json:"registry_version"`
-	SurfaceManifestSHA256      map[SurfaceContractID]string        `json:"-"`
-	OperationOrder             []OperationID                       `json:"operation_order"`
-	Operations                 map[OperationID]OperationDefinition `json:"operations"`
-	WorkflowReferenceRank      []WorkflowReferenceKind             `json:"workflow_reference_rank"`
-	AttestationRank            []AttestationKind                   `json:"attestation_rank"`
-	TransportExcludedKeys      []string                            `json:"transport_excluded_keys"`
-	PacketOptionalEmptyArrays  []string                            `json:"packet_optional_empty_arrays"`
-	SemanticProjectionVersions map[string]string                   `json:"semantic_projection_versions"`
+	RegistryVersion            string                                    `json:"registry_version"`
+	SurfaceManifestSHA256      map[SurfaceContractID]string              `json:"-"`
+	SurfaceTools               map[SurfaceContractID]map[string]struct{} `json:"-"`
+	OperationOrder             []OperationID                             `json:"operation_order"`
+	Operations                 map[OperationID]OperationDefinition       `json:"operations"`
+	WorkflowReferenceRank      []WorkflowReferenceKind                   `json:"workflow_reference_rank"`
+	AttestationRank            []AttestationKind                         `json:"attestation_rank"`
+	TransportExcludedKeys      []string                                  `json:"transport_excluded_keys"`
+	PacketOptionalEmptyArrays  []string                                  `json:"packet_optional_empty_arrays"`
+	SemanticProjectionVersions map[string]string                         `json:"semantic_projection_versions"`
 }
 
 type publicContractEnvelope struct {
@@ -81,9 +82,10 @@ type publicContractEnvelope struct {
 		Enum []string `json:"enum"`
 	} `json:"definitions"`
 	Surfaces map[string]struct {
-		Role           string   `json:"role"`
-		Operations     []string `json:"operations"`
-		ManifestSHA256 string   `json:"manifest_sha256"`
+		Role           string                     `json:"role"`
+		Operations     []string                   `json:"operations"`
+		ManifestSHA256 string                     `json:"manifest_sha256"`
+		Tools          map[string]json.RawMessage `json:"tools"`
 	} `json:"surfaces"`
 }
 
@@ -259,6 +261,7 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 	}
 
 	document.SurfaceManifestSHA256 = make(map[SurfaceContractID]string, len(public.Surfaces))
+	document.SurfaceTools = make(map[SurfaceContractID]map[string]struct{}, len(public.Surfaces))
 	publicSurfaceByOperation := make(map[string]string, len(document.OperationOrder))
 	publicRoleByOperation := make(map[string]string, len(document.OperationOrder))
 	for surfaceID, surface := range public.Surfaces {
@@ -269,6 +272,11 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 			return registryDocument{}, fmt.Errorf("surface %q manifest sha256 is invalid", surfaceID)
 		}
 		document.SurfaceManifestSHA256[SurfaceContractID(surfaceID)] = surface.ManifestSHA256
+		tools := make(map[string]struct{}, len(surface.Tools))
+		for tool := range surface.Tools {
+			tools[tool] = struct{}{}
+		}
+		document.SurfaceTools[SurfaceContractID(surfaceID)] = tools
 		for _, operationID := range surface.Operations {
 			if _, exists := publicSurfaceByOperation[operationID]; exists {
 				return registryDocument{}, fmt.Errorf("operation %q belongs to more than one surface", operationID)

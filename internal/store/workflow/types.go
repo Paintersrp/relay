@@ -123,6 +123,38 @@ type UpdateOperationPacketDependencyAvailabilityParams struct {
 	OwnerIdentity   sql.NullString
 }
 
+type MCPMutationKey struct {
+	SurfaceContractID string
+	ToolName          string
+	MutationID        string
+}
+
+type MCPMutationResult struct {
+	ID                      int64
+	SurfaceContractID       string
+	ToolName                string
+	MutationID              string
+	SurfaceManifestSHA256   string
+	SemanticIdentityVersion string
+	SemanticRequestSHA256   string
+	ResultKind              string
+	ResultIdentityJSON      string
+	ResultSHA256            string
+	CommittedAt             string
+}
+
+type CreateMCPMutationResultParams struct {
+	SurfaceContractID       string
+	ToolName                string
+	MutationID              string
+	SurfaceManifestSHA256   string
+	SemanticIdentityVersion string
+	SemanticRequestSHA256   string
+	ResultKind              string
+	ResultIdentityJSON      string
+	ResultSHA256            string
+}
+
 const (
 	ProjectStatusActive   = "active"
 	ProjectStatusArchived = "archived"
