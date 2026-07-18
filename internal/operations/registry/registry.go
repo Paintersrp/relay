@@ -132,10 +132,15 @@ func Lookup(id OperationID) (OperationDefinition, bool) {
 		return OperationDefinition{}, false
 	}
 	value, ok := loaded.Operations[id]
-	if !ok {
-		return OperationDefinition{}, false
+	if ok {
+		return cloneOperation(value), true
 	}
-	return cloneOperation(value), true
+	for _, operation := range WayfinderOperations() {
+		if operation.OperationID == id {
+			return operation, true
+		}
+	}
+	return OperationDefinition{}, false
 }
 
 func OperationsForSurface(surface SurfaceContractID) ([]OperationDefinition, error) {
@@ -145,6 +150,11 @@ func OperationsForSurface(surface SurfaceContractID) ([]OperationDefinition, err
 	}
 	out := make([]OperationDefinition, 0)
 	for _, operation := range all {
+		if operation.SurfaceContract == surface {
+			out = append(out, operation)
+		}
+	}
+	for _, operation := range WayfinderOperations() {
 		if operation.SurfaceContract == surface {
 			out = append(out, operation)
 		}
@@ -190,6 +200,14 @@ func SurfaceManifestSHA256(surface SurfaceContractID) (string, bool) {
 		return "", false
 	}
 	value, ok := loaded.SurfaceManifestSHA256[surface]
+	if ok {
+		return value, true
+	}
+	for _, profile := range WayfinderRoleProfiles() {
+		if profile.SurfaceContract == surface {
+			return profile.ManifestSHA256, true
+		}
+	}
 	return value, ok
 }
 
