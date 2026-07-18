@@ -26,6 +26,7 @@ import { Route as RunsRunIdIndexRouteImport } from './routes/runs/$runId/index'
 import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
 import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
+import { Route as FeatureWorkspacesWorkspaceIdTicketsRouteImport } from './routes/feature-workspaces/$workspaceId.tickets'
 import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId.passes.$passId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -114,6 +115,12 @@ const RunsRunIdAuditRoute = RunsRunIdAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
+const FeatureWorkspacesWorkspaceIdTicketsRoute =
+  FeatureWorkspacesWorkspaceIdTicketsRouteImport.update({
+    id: '/tickets',
+    path: '/tickets',
+    getParentRoute: () => FeatureWorkspacesWorkspaceIdRoute,
+  } as any)
 const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
   id: '/passes/$passId',
   path: '/passes/$passId',
@@ -122,7 +129,7 @@ const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRoute
+  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/repositories/': typeof RepositoriesIndexRoute
   '/runs/': typeof RunsIndexRoute
+  '/feature-workspaces/$workspaceId/tickets': typeof FeatureWorkspacesWorkspaceIdTicketsRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
@@ -142,7 +150,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRoute
+  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
@@ -153,6 +161,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/repositories': typeof RepositoriesIndexRoute
   '/runs': typeof RunsIndexRoute
+  '/feature-workspaces/$workspaceId/tickets': typeof FeatureWorkspacesWorkspaceIdTicketsRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
@@ -162,7 +171,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRoute
+  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
@@ -174,6 +183,7 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/repositories/': typeof RepositoriesIndexRoute
   '/runs/': typeof RunsIndexRoute
+  '/feature-workspaces/$workspaceId/tickets': typeof FeatureWorkspacesWorkspaceIdTicketsRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/repositories/'
     | '/runs/'
+    | '/feature-workspaces/$workspaceId/tickets'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
     | '/runs/$runId/specification'
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/repositories'
     | '/runs'
+    | '/feature-workspaces/$workspaceId/tickets'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
     | '/runs/$runId/specification'
@@ -235,6 +247,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/repositories/'
     | '/runs/'
+    | '/feature-workspaces/$workspaceId/tickets'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
     | '/runs/$runId/specification'
@@ -244,7 +257,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  FeatureWorkspacesWorkspaceIdRoute: typeof FeatureWorkspacesWorkspaceIdRoute
+  FeatureWorkspacesWorkspaceIdRoute: typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   FeatureWorkspacesNewRoute: typeof FeatureWorkspacesNewRoute
   PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
   PlansNewRoute: typeof PlansNewRoute
@@ -379,6 +392,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsRunIdAuditRouteImport
       parentRoute: typeof RunsRunIdRoute
     }
+    '/feature-workspaces/$workspaceId/tickets': {
+      id: '/feature-workspaces/$workspaceId/tickets'
+      path: '/tickets'
+      fullPath: '/feature-workspaces/$workspaceId/tickets'
+      preLoaderRoute: typeof FeatureWorkspacesWorkspaceIdTicketsRouteImport
+      parentRoute: typeof FeatureWorkspacesWorkspaceIdRoute
+    }
     '/plans/$planId/passes/$passId': {
       id: '/plans/$planId/passes/$passId'
       path: '/passes/$passId'
@@ -388,6 +408,21 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface FeatureWorkspacesWorkspaceIdRouteChildren {
+  FeatureWorkspacesWorkspaceIdTicketsRoute: typeof FeatureWorkspacesWorkspaceIdTicketsRoute
+}
+
+const FeatureWorkspacesWorkspaceIdRouteChildren: FeatureWorkspacesWorkspaceIdRouteChildren =
+  {
+    FeatureWorkspacesWorkspaceIdTicketsRoute:
+      FeatureWorkspacesWorkspaceIdTicketsRoute,
+  }
+
+const FeatureWorkspacesWorkspaceIdRouteWithChildren =
+  FeatureWorkspacesWorkspaceIdRoute._addFileChildren(
+    FeatureWorkspacesWorkspaceIdRouteChildren,
+  )
 
 interface PlansPlanIdRouteChildren {
   PlansPlanIdPassesPassIdRoute: typeof PlansPlanIdPassesPassIdRoute
@@ -421,7 +456,8 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  FeatureWorkspacesWorkspaceIdRoute: FeatureWorkspacesWorkspaceIdRoute,
+  FeatureWorkspacesWorkspaceIdRoute:
+    FeatureWorkspacesWorkspaceIdRouteWithChildren,
   FeatureWorkspacesNewRoute: FeatureWorkspacesNewRoute,
   PlansPlanIdRoute: PlansPlanIdRouteWithChildren,
   PlansNewRoute: PlansNewRoute,

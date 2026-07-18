@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -16,11 +17,14 @@ import (
 	repositoriesapi "relay/internal/api/repositories"
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
+	ticketsapi "relay/internal/api/tickets"
 	appaudits "relay/internal/app/audits"
 	appfeatures "relay/internal/app/features"
+	appoperations "relay/internal/app/operations"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
+	apptickets "relay/internal/app/tickets"
 	appwayfinder "relay/internal/app/wayfinder"
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
@@ -68,6 +72,18 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		panic(err)
 	}
 	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID)
+	ticketService, err := apptickets.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	packetService, err := appoperations.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	ticketWorkflowService, err := appoperations.NewTicketWorkflowService(packetService, ticketService)
+	if err != nil {
+		panic(err)
+	}
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
 	projectHandler := projectsapi.NewWorkflowHandler(projectService)
@@ -78,6 +94,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	artifactHandler := artifactsapi.NewWorkflowHandler(readService)
 	auditHandler := auditsapi.NewWorkflowHandler(auditService)
 	featureWorkspaceHandler := featuresapi.NewWorkspaceHandler(wayfinderService, featureAuthorityService)
+	ticketHandler := ticketsapi.NewWorkflowHandler(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -102,6 +119,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		artifactsapi.MountWorkflowRoutes(api, artifactHandler)
 		auditsapi.MountWorkflowRoutes(api, auditHandler)
 		featuresapi.MountWorkspaceRoutes(api, featureWorkspaceHandler)
+		ticketsapi.MountWorkflowRoutes(api, ticketHandler)
 		api.HandleFunc("/*", workflowJSONNotFound)
 	})
 
@@ -129,6 +147,23 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	})
 
 	return router
+}
+
+type ticketReadService struct {
+	service *apptickets.Service
+	store   *workflowstore.Store
+}
+
+func (s ticketReadService) Read(ctx context.Context, ticketID string) (apptickets.TicketDetail, error) {
+	return s.service.Read(ctx, ticketID)
+}
+
+func (s ticketReadService) ListHistory(ctx context.Context, ticketID string) ([]workflowstore.DeliveryTicketRevision, error) {
+	ticket, err := s.store.GetDeliveryTicketByTicketID(ctx, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListDeliveryTicketRevisions(ctx, ticket.ID)
 }
 
 func resolveWorkflowRunStage(status string) (string, error) {
