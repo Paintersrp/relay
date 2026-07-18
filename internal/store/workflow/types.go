@@ -31,22 +31,23 @@ type OperationPacketArtifact struct {
 }
 
 type OperationPacket struct {
-	ID                     int64
-	PacketID               string
-	PacketSHA256           string
-	SchemaVersion          string
-	Role                   string
-	OperationID            string
-	SurfaceContractID      string
-	ProjectID              string
-	ReadinessState         string
-	LifecycleState         string
-	PriorPacketRowID       sql.NullInt64
-	ReplacementPacketRowID sql.NullInt64
-	CreatedAt              string
-	SupersededAt           sql.NullString
-	ClosedAt               sql.NullString
-	PacketArtifactRowID    int64
+	ID                       int64
+	PacketID                 string
+	PacketSHA256             string
+	SchemaVersion            string
+	Role                     string
+	OperationID              string
+	SurfaceContractID        string
+	ProjectID                string
+	ReadinessState           string
+	LifecycleState           string
+	PriorPacketRowID         sql.NullInt64
+	ReplacementPacketRowID   sql.NullInt64
+	CoordinatedPublicationID sql.NullString
+	CreatedAt                string
+	SupersededAt             sql.NullString
+	ClosedAt                 sql.NullString
+	PacketArtifactRowID      int64
 }
 
 type OperationPacketReplacement struct {
@@ -80,17 +81,18 @@ type CreateOperationPacketArtifactParams struct {
 }
 
 type CreateOperationPacketParams struct {
-	PacketID            string
-	PacketSHA256        string
-	SchemaVersion       string
-	Role                string
-	OperationID         string
-	SurfaceContractID   string
-	ProjectID           string
-	ReadinessState      string
-	PriorPacketRowID    sql.NullInt64
-	CreatedAt           string
-	PacketArtifactRowID int64
+	PacketID                 string
+	PacketSHA256             string
+	SchemaVersion            string
+	Role                     string
+	OperationID              string
+	SurfaceContractID        string
+	ProjectID                string
+	ReadinessState           string
+	PriorPacketRowID         sql.NullInt64
+	CoordinatedPublicationID sql.NullString
+	CreatedAt                string
+	PacketArtifactRowID      int64
 }
 
 type SupersedeOperationPacketParams struct {

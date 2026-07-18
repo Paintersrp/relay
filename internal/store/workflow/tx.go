@@ -37,14 +37,14 @@ func (tx *Tx) CreateOperationPacket(ctx context.Context, params CreateOperationP
 INSERT INTO operation_packets (
     packet_id, packet_sha256, schema_version, role, operation_id,
     surface_contract_id, project_id, readiness_state, prior_packet_row_id,
-    created_at, packet_artifact_row_id
+    coordinated_publication_id, created_at, packet_artifact_row_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING `+operationPacketColumns,
 		params.PacketID, params.PacketSHA256, params.SchemaVersion, params.Role,
 		params.OperationID, params.SurfaceContractID, params.ProjectID,
-		params.ReadinessState, params.PriorPacketRowID, params.CreatedAt,
-		params.PacketArtifactRowID,
+		params.ReadinessState, params.PriorPacketRowID, params.CoordinatedPublicationID,
+		params.CreatedAt, params.PacketArtifactRowID,
 	))
 }
 

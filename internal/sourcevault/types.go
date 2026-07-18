@@ -106,9 +106,12 @@ type ImportResult struct {
 }
 
 type RetainRequest struct {
-	ClosureID     string
-	OwnerClass    string
-	OwnerIdentity string
+	ClosureID       string
+	OwnerClass      string
+	OwnerIdentity   string
+	PacketID        string
+	DependencyClass string
+	DependencyKey   string
 }
 
 type ReadObjectRequest struct {

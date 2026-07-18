@@ -34,6 +34,10 @@ func NewOperationPacketID() string {
 	return "opkt-" + uuid.NewString()
 }
 
+func NewOperationPacketPublicationID() string {
+	return "publication-" + uuid.NewString()
+}
+
 func NewSourceVaultID() string {
 	return "vault-" + uuid.NewString()
 }

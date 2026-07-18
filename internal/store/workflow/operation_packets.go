@@ -9,8 +9,8 @@ import (
 const operationPacketColumns = `
     id, packet_id, packet_sha256, schema_version, role, operation_id,
     surface_contract_id, project_id, readiness_state, lifecycle_state,
-    prior_packet_row_id, replacement_packet_row_id, created_at, superseded_at,
-    closed_at, packet_artifact_row_id`
+    prior_packet_row_id, replacement_packet_row_id, coordinated_publication_id,
+    created_at, superseded_at, closed_at, packet_artifact_row_id`
 
 const operationPacketArtifactColumns = `
     id, artifact_id, kind, relative_path, media_type, sha256, size_bytes, created_at`
@@ -76,7 +76,7 @@ func getOperationPacketRetentionDependency(ctx context.Context, query rowQueryer
 }
 func scanOperationPacket(row rowScanner) (OperationPacket, error) {
 	var value OperationPacket
-	err := row.Scan(&value.ID, &value.PacketID, &value.PacketSHA256, &value.SchemaVersion, &value.Role, &value.OperationID, &value.SurfaceContractID, &value.ProjectID, &value.ReadinessState, &value.LifecycleState, &value.PriorPacketRowID, &value.ReplacementPacketRowID, &value.CreatedAt, &value.SupersededAt, &value.ClosedAt, &value.PacketArtifactRowID)
+	err := row.Scan(&value.ID, &value.PacketID, &value.PacketSHA256, &value.SchemaVersion, &value.Role, &value.OperationID, &value.SurfaceContractID, &value.ProjectID, &value.ReadinessState, &value.LifecycleState, &value.PriorPacketRowID, &value.ReplacementPacketRowID, &value.CoordinatedPublicationID, &value.CreatedAt, &value.SupersededAt, &value.ClosedAt, &value.PacketArtifactRowID)
 	return value, err
 }
 func scanOperationPacketArtifact(row rowScanner) (OperationPacketArtifact, error) {

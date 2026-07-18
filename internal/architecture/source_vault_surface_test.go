@@ -7,13 +7,12 @@ import (
 	"testing"
 )
 
-func TestSourceVaultHasNoPublicSurfaceOrPacketOrchestration(t *testing.T) {
+func TestSourceVaultDoesNotLeakIntoPublicTransportOrPacketPolicy(t *testing.T) {
 	root := repoRoot(t)
 	for _, relative := range []string{
 		"internal/api",
 		"internal/mcp",
 		"internal/server",
-		"internal/app/operations",
 	} {
 		path := filepath.Join(root, filepath.FromSlash(relative))
 		err := filepath.WalkDir(path, func(filePath string, entry os.DirEntry, err error) error {
@@ -28,7 +27,7 @@ func TestSourceVaultHasNoPublicSurfaceOrPacketOrchestration(t *testing.T) {
 				return err
 			}
 			if strings.Contains(string(data), "internal/sourcevault") {
-				t.Fatalf("%s integrates source-vault authority before PASS-5/PASS-6", rel(t, root, filePath))
+				t.Fatalf("%s imports source-vault policy into a public transport package", rel(t, root, filePath))
 			}
 			return nil
 		})
@@ -55,7 +54,7 @@ func TestSourceVaultAddsNoPublicSourceRouteOrTool(t *testing.T) {
 			}
 			text := string(data)
 			if strings.Contains(text, "/source-vault") || strings.Contains(text, "source_vault_read") || strings.Contains(text, "SourceVaultResult") {
-				t.Fatalf("%s exposes a PASS-4 source-vault route, tool, or result contract", rel(t, root, filePath))
+				t.Fatalf("%s exposes a source-vault route, tool, or result contract", rel(t, root, filePath))
 			}
 			return nil
 		})

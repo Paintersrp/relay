@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"relay/internal/app/operations"
 	"relay/internal/config"
 	"relay/internal/executor"
 	"relay/internal/server"
@@ -39,8 +40,18 @@ func main() {
 	if value := os.Getenv("RELAY_SOURCE_VAULT_DIR"); value != "" {
 		sourceVaultDir = value
 	}
-	if _, err := sourcevault.Open(context.Background(), sourceVaultDir, workflowStore); err != nil {
+	sourceVaults, err := sourcevault.Open(context.Background(), sourceVaultDir, workflowStore)
+	if err != nil {
 		log.Error("open and reconcile source vaults", "error", err)
+		os.Exit(1)
+	}
+	authorityPublications, err := operations.NewAuthorityPublicationService(workflowStore, sourceVaults)
+	if err != nil {
+		log.Error("open operation packet authority publication service", "error", err)
+		os.Exit(1)
+	}
+	if err := authorityPublications.Reconcile(context.Background()); err != nil {
+		log.Error("reconcile operation packet authority publications", "error", err)
 		os.Exit(1)
 	}
 
