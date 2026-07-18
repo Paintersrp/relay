@@ -5,41 +5,15 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+
+	workflowartifacts "relay/internal/artifacts/workflow"
 )
 
 func TestCommittedOperationPacketPublicationFreezesDependenciesAndMutationResult(t *testing.T) {
 	ctx := context.Background()
 	store := openPublicationStore(t)
 	batch, packetFile := sealedPacketPublication(t, store, "publication-remediation-immutable")
-	var packet OperationPacket
-	var mutation MCPMutationResult
-	err := store.CommitOperationPacketPublication(ctx, batch, func(tx *Tx) error {
-		var artifact OperationPacketArtifact
-		packet, artifact, mutation = createPublicationPacketRows(t, ctx, tx, batch.PublicationID(), "opkt-publication-remediation-immutable", packetFile)
-		if _, err := tx.AttachOperationPacketDependency(ctx, AttachOperationPacketDependencyParams{
-			PacketRowID: packet.ID, DependencyClass: OperationPacketDependencyPacketDocument,
-			DependencyKey: artifact.ArtifactID, Required: true, Attached: true, Retained: true,
-			OwnerIdentity: sql.NullString{String: artifact.ArtifactID, Valid: true},
-		}); err != nil {
-			return err
-		}
-		if _, err := tx.CreateOperationPacketArtifactBinding(ctx, CreateOperationPacketArtifactBindingParams{
-			PublicationID: batch.PublicationID(), PacketRowID: packet.ID, Sequence: 0,
-			DependencyClass: OperationPacketDependencyPacketDocument, DependencyKey: artifact.ArtifactID,
-			PacketArtifactRowID: sql.NullInt64{Int64: artifact.ID, Valid: true},
-		}); err != nil {
-			return err
-		}
-		_, err := tx.CreateOperationPacketPublication(ctx, CreateOperationPacketPublicationParams{
-			PublicationID: batch.PublicationID(), PacketRowID: packet.ID, PacketArtifactRowID: artifact.ID,
-			MutationResultRowID: mutation.ID, Namespace: batch.Namespace(), ManifestSHA256: batch.ManifestSHA256(),
-			ExpectedBindingCount: 1, ExpectedDependencyCount: 1,
-		})
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	packet, mutation := commitPublicationFixture(t, ctx, store, batch, "opkt-publication-remediation-immutable", packetFile)
 
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		_, err := tx.AttachOperationPacketDependency(ctx, AttachOperationPacketDependencyParams{
@@ -77,6 +51,40 @@ func TestCommittedOperationPacketPublicationFreezesDependenciesAndMutationResult
 	if !dependency.Required || !dependency.Attached || !dependency.Retained || !dependency.OwnerIdentity.Valid || dependency.OwnerIdentity.String != dependency.DependencyKey {
 		t.Fatalf("committed dependency changed: %#v", dependency)
 	}
+}
+
+func commitPublicationFixture(t *testing.T, ctx context.Context, store *Store, batch *workflowartifacts.PublicationBatch, packetID string, packetFile workflowartifacts.File) (OperationPacket, MCPMutationResult) {
+	t.Helper()
+	var packet OperationPacket
+	var mutation MCPMutationResult
+	err := store.CommitOperationPacketPublication(ctx, batch, func(tx *Tx) error {
+		var artifact OperationPacketArtifact
+		packet, artifact, mutation = createPublicationPacketRows(t, ctx, tx, batch.PublicationID(), packetID, packetFile)
+		if _, err := tx.AttachOperationPacketDependency(ctx, AttachOperationPacketDependencyParams{
+			PacketRowID: packet.ID, DependencyClass: OperationPacketDependencyPacketDocument,
+			DependencyKey: artifact.ArtifactID, Required: true, Attached: true, Retained: true,
+			OwnerIdentity: sql.NullString{String: artifact.ArtifactID, Valid: true},
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.CreateOperationPacketArtifactBinding(ctx, CreateOperationPacketArtifactBindingParams{
+			PublicationID: batch.PublicationID(), PacketRowID: packet.ID, Sequence: 0,
+			DependencyClass: OperationPacketDependencyPacketDocument, DependencyKey: artifact.ArtifactID,
+			PacketArtifactRowID: sql.NullInt64{Int64: artifact.ID, Valid: true},
+		}); err != nil {
+			return err
+		}
+		_, err := tx.CreateOperationPacketPublication(ctx, CreateOperationPacketPublicationParams{
+			PublicationID: batch.PublicationID(), PacketRowID: packet.ID, PacketArtifactRowID: artifact.ID,
+			MutationResultRowID: mutation.ID, Namespace: batch.Namespace(), ManifestSHA256: batch.ManifestSHA256(),
+			ExpectedBindingCount: 1, ExpectedDependencyCount: 1,
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return packet, mutation
 }
 
 func TestLegacyOperationPacketDependencyRemainsMutable(t *testing.T) {
