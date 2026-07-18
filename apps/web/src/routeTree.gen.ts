@@ -20,6 +20,8 @@ import { Route as ProjectsNewRouteImport } from './routes/projects/new'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as PlansNewRouteImport } from './routes/plans/new'
 import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
+import { Route as FeatureWorkspacesNewRouteImport } from './routes/feature-workspaces/new'
+import { Route as FeatureWorkspacesWorkspaceIdRouteImport } from './routes/feature-workspaces/$workspaceId'
 import { Route as RunsRunIdIndexRouteImport } from './routes/runs/$runId/index'
 import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
@@ -81,6 +83,17 @@ const PlansPlanIdRoute = PlansPlanIdRouteImport.update({
   path: '/plans/$planId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FeatureWorkspacesNewRoute = FeatureWorkspacesNewRouteImport.update({
+  id: '/feature-workspaces/new',
+  path: '/feature-workspaces/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeatureWorkspacesWorkspaceIdRoute =
+  FeatureWorkspacesWorkspaceIdRouteImport.update({
+    id: '/feature-workspaces/$workspaceId',
+    path: '/feature-workspaces/$workspaceId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const RunsRunIdIndexRoute = RunsRunIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -109,6 +122,8 @@ const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRoute
+  '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
@@ -127,6 +142,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRoute
+  '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
@@ -145,6 +162,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRoute
+  '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
@@ -165,6 +184,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/feature-workspaces/$workspaceId'
+    | '/feature-workspaces/new'
     | '/plans/$planId'
     | '/plans/new'
     | '/projects/$projectId'
@@ -183,6 +204,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/feature-workspaces/$workspaceId'
+    | '/feature-workspaces/new'
     | '/plans/$planId'
     | '/plans/new'
     | '/projects/$projectId'
@@ -200,6 +223,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/feature-workspaces/$workspaceId'
+    | '/feature-workspaces/new'
     | '/plans/$planId'
     | '/plans/new'
     | '/projects/$projectId'
@@ -219,6 +244,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FeatureWorkspacesWorkspaceIdRoute: typeof FeatureWorkspacesWorkspaceIdRoute
+  FeatureWorkspacesNewRoute: typeof FeatureWorkspacesNewRoute
   PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
   PlansNewRoute: typeof PlansNewRoute
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
@@ -310,6 +337,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlansPlanIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/feature-workspaces/new': {
+      id: '/feature-workspaces/new'
+      path: '/feature-workspaces/new'
+      fullPath: '/feature-workspaces/new'
+      preLoaderRoute: typeof FeatureWorkspacesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/feature-workspaces/$workspaceId': {
+      id: '/feature-workspaces/$workspaceId'
+      path: '/feature-workspaces/$workspaceId'
+      fullPath: '/feature-workspaces/$workspaceId'
+      preLoaderRoute: typeof FeatureWorkspacesWorkspaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/runs/$runId/': {
       id: '/runs/$runId/'
       path: '/'
@@ -380,6 +421,8 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FeatureWorkspacesWorkspaceIdRoute: FeatureWorkspacesWorkspaceIdRoute,
+  FeatureWorkspacesNewRoute: FeatureWorkspacesNewRoute,
   PlansPlanIdRoute: PlansPlanIdRouteWithChildren,
   PlansNewRoute: PlansNewRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,

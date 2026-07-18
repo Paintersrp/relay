@@ -10,15 +10,18 @@ import (
 	artifactsapi "relay/internal/api/artifacts"
 	auditsapi "relay/internal/api/audits"
 	canonicalapi "relay/internal/api/canonical"
+	featuresapi "relay/internal/api/features"
 	plansapi "relay/internal/api/plans"
 	projectsapi "relay/internal/api/projects"
 	repositoriesapi "relay/internal/api/repositories"
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
 	appaudits "relay/internal/app/audits"
+	appfeatures "relay/internal/app/features"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
+	appwayfinder "relay/internal/app/wayfinder"
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
 	"relay/internal/mcp"
@@ -56,6 +59,14 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err != nil {
 		panic(err)
 	}
+	wayfinderService, err := appwayfinder.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	featureAuthorityService, err := appfeatures.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
 	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID)
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
@@ -66,6 +77,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	executionHandler := runsapi.NewWorkflowExecutionHandler(executionService)
 	artifactHandler := artifactsapi.NewWorkflowHandler(readService)
 	auditHandler := auditsapi.NewWorkflowHandler(auditService)
+	featureWorkspaceHandler := featuresapi.NewWorkspaceHandler(wayfinderService, featureAuthorityService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -89,6 +101,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		runsapi.MountWorkflowExecutionRoutes(api, executionHandler)
 		artifactsapi.MountWorkflowRoutes(api, artifactHandler)
 		auditsapi.MountWorkflowRoutes(api, auditHandler)
+		featuresapi.MountWorkspaceRoutes(api, featureWorkspaceHandler)
 		api.HandleFunc("/*", workflowJSONNotFound)
 	})
 
