@@ -28,13 +28,16 @@ func TestAuthorityPublicationCreateRefreshAndReplayUseLifecycleAuthority(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	createRetry := authorityPublicationCreateInput(t, "mutation-create", "opkt-create", "artifact-create-retry", "planner.plan", "planner-plan.v1")
+	createRetry := authorityPublicationCreateInput(t, "mutation-create", "opkt-create-loser", "artifact-create-retry", "planner.plan", "planner-plan.v1")
 	createWinner, err := service.Publish(ctx, createRetry)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !createWinner.Replay || createWinner.Publication.PublicationID != created.Publication.PublicationID || createWinner.Packet.PacketID != created.Packet.PacketID || createWinner.Mutation.ResultSHA256 != created.Mutation.ResultSHA256 {
 		t.Fatalf("create winner = %#v, first = %#v", createWinner, created)
+	}
+	if _, err := store.GetOperationPacketByPacketID(ctx, createRetry.PacketID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("losing create packet lookup = %v", err)
 	}
 
 	refresh := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh", "artifact-refresh", "planner.plan", "planner-plan.v1")
@@ -49,13 +52,16 @@ func TestAuthorityPublicationCreateRefreshAndReplayUseLifecycleAuthority(t *test
 	if prior.LifecycleState != workflowstore.OperationPacketLifecycleSuperseded || !prior.ReplacementPacketRowID.Valid || prior.ReplacementPacketRowID.Int64 != refreshed.Packet.ID || !refreshed.Packet.PriorPacketRowID.Valid || refreshed.Packet.PriorPacketRowID.Int64 != prior.ID {
 		t.Fatalf("refresh lineage prior=%#v replacement=%#v", prior, refreshed.Packet)
 	}
-	refreshRetry := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh", "artifact-refresh-retry", "planner.plan", "planner-plan.v1")
+	refreshRetry := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh-loser", "artifact-refresh-retry", "planner.plan", "planner-plan.v1")
 	refreshWinner, err := service.Publish(ctx, refreshRetry)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !refreshWinner.Replay || refreshWinner.Publication.PublicationID != refreshed.Publication.PublicationID || refreshWinner.Packet.PacketID != refreshed.Packet.PacketID || refreshWinner.Mutation.ResultSHA256 != refreshed.Mutation.ResultSHA256 {
 		t.Fatalf("refresh winner = %#v, first = %#v", refreshWinner, refreshed)
+	}
+	if _, err := store.GetOperationPacketByPacketID(ctx, refreshRetry.PacketID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("losing refresh packet lookup = %v", err)
 	}
 }
 

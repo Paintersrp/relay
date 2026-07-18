@@ -325,14 +325,22 @@ func (s *AuthorityPublicationService) Publish(ctx context.Context, input Authori
 }
 
 func validatePublicationMutationAuthority(input AuthorityPublicationInput, packet workflowstore.OperationPacket, artifact workflowstore.OperationPacketArtifact, prior *workflowstore.OperationPacket, mutation workflowstore.MCPMutationResult) error {
+	return validatePublicationMutationAuthorityMode(input, packet, artifact, prior, mutation, true)
+}
+
+func validateCommittedPublicationWinnerAuthority(input AuthorityPublicationInput, packet workflowstore.OperationPacket, artifact workflowstore.OperationPacketArtifact, prior *workflowstore.OperationPacket, mutation workflowstore.MCPMutationResult) error {
+	return validatePublicationMutationAuthorityMode(input, packet, artifact, prior, mutation, false)
+}
+
+func validatePublicationMutationAuthorityMode(input AuthorityPublicationInput, packet workflowstore.OperationPacket, artifact workflowstore.OperationPacketArtifact, prior *workflowstore.OperationPacket, mutation workflowstore.MCPMutationResult, requireCandidateIdentity bool) error {
 	tool := input.Idempotency.Key.Tool
 	surface := input.Idempotency.Key.SurfaceContractID
 	operation, ok := registry.Lookup(registry.OperationID(packet.OperationID))
 	projectionVersion, versionOK := registry.SemanticProjectionVersion(string(tool))
 	if !ok || !versionOK ||
-		packet.PacketID != input.PacketID ||
 		packet.PacketArtifactRowID != artifact.ID ||
 		packet.PacketSHA256 != artifact.SHA256 ||
+		(requireCandidateIdentity && (packet.PacketID != input.PacketID || artifact.ArtifactID != input.PacketArtifactID)) ||
 		string(operation.Role) != packet.Role ||
 		string(operation.SurfaceContract) != packet.SurfaceContractID ||
 		packet.SurfaceContractID != string(surface) ||
@@ -453,7 +461,7 @@ func (s *AuthorityPublicationService) resolveCommittedPublicationWinner(ctx cont
 		}
 		prior = &value
 	}
-	if err := validatePublicationMutationAuthority(input, integrity.Packet, integrity.PacketArtifact, prior, integrity.MutationResult); err != nil {
+	if err := validateCommittedPublicationWinnerAuthority(input, integrity.Packet, integrity.PacketArtifact, prior, integrity.MutationResult); err != nil {
 		return AuthorityPublicationResult{}, err
 	}
 	if integrity.MutationResult.ResultKind != string(stored.ResultKind) ||
