@@ -140,6 +140,11 @@ func Lookup(id OperationID) (OperationDefinition, bool) {
 			return operation, true
 		}
 	}
+	for _, operation := range TicketOperations() {
+		if operation.OperationID == id {
+			return operation, true
+		}
+	}
 	return OperationDefinition{}, false
 }
 
@@ -155,6 +160,11 @@ func OperationsForSurface(surface SurfaceContractID) ([]OperationDefinition, err
 		}
 	}
 	for _, operation := range WayfinderOperations() {
+		if operation.SurfaceContract == surface {
+			out = append(out, operation)
+		}
+	}
+	for _, operation := range TicketOperations() {
 		if operation.SurfaceContract == surface {
 			out = append(out, operation)
 		}
@@ -204,6 +214,11 @@ func SurfaceManifestSHA256(surface SurfaceContractID) (string, bool) {
 		return value, true
 	}
 	for _, profile := range WayfinderRoleProfiles() {
+		if profile.SurfaceContract == surface {
+			return profile.ManifestSHA256, true
+		}
+	}
+	for _, profile := range TicketRoleProfiles() {
 		if profile.SurfaceContract == surface {
 			return profile.ManifestSHA256, true
 		}
