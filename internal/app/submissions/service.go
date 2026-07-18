@@ -12,6 +12,7 @@ import (
 
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
+	"relay/internal/planningartifacts"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -109,18 +110,32 @@ func (s *Service) ValidateArtifact(_ context.Context, input ValidationInput) (Va
 }
 
 func validateArtifact(input ValidationInput) ValidationResult {
-	compiled := speccompiler.Compile(input.DisplayName, input.CanonicalBytes)
 	kind := "unknown"
-	if identity, diagnostics := speccompiler.ParseFilename(input.DisplayName); len(diagnostics) == 0 {
+	diagnostics := []speccompiler.Diagnostic{}
+	notices := []speccompiler.Diagnostic{}
+	ok := false
+	if identity, filenameDiagnostics := speccompiler.ParseFilename(input.DisplayName); len(filenameDiagnostics) == 0 {
 		kind = string(identity.Kind)
+		switch identity.Kind {
+		case speccompiler.ArtifactRequirements, speccompiler.ArtifactSharedDesign, speccompiler.ArtifactTicketDesignBrief:
+			diagnostics = planningartifacts.Validate(identity.Kind, input.CanonicalBytes)
+			ok = len(diagnostics) == 0
+		default:
+			compiled := speccompiler.Compile(input.DisplayName, input.CanonicalBytes)
+			diagnostics = compiled.Errors
+			notices = compiled.Notices
+			ok = len(diagnostics) == 0
+		}
+	} else {
+		diagnostics = filenameDiagnostics
 	}
 	result := ValidationResult{
-		OK:          len(compiled.Errors) == 0,
+		OK:          ok,
 		Status:      "valid",
 		Kind:        kind,
 		SHA256:      SHA256(input.CanonicalBytes),
-		Diagnostics: boundedDiagnostics(compiled.Errors),
-		Notices:     boundedDiagnostics(compiled.Notices),
+		Diagnostics: boundedDiagnostics(diagnostics),
+		Notices:     boundedDiagnostics(notices),
 	}
 	if !result.OK {
 		result.Status = "blocked"

@@ -38,6 +38,8 @@ A tool outside the active profile is not registered and returns JSON-RPC method-
 - `file_name` — a canonical `.plan.json` or `.execution-spec.json` basename;
 - optional `mime_type`.
 
+For `validate_artifact`, the accepted filename forms also include `.requirements.md`, `.design.md`, and ticket-qualified `.design-brief.md`; `submit_plan` and `create_run` remain JSON-only admission paths.
+
 The fetcher retrieves exact bytes, rejects unsafe or unsupported references, and never returns signed download URLs in tool output. Submission actions compare the downloaded bytes with the required `expected_sha256` before durable mutation.
 
 ## Actions
@@ -48,7 +50,7 @@ The fetcher retrieves exact bytes, rejects unsafe or unsupported references, and
 
 **Input:** `artifact_file`.
 
-Validates one canonical Plan or Execution Spec by exact downloaded bytes. It returns the computed SHA-256, artifact kind, bounded diagnostics, and notices. It does not persist the artifact or return its body.
+Validates one canonical Plan or Execution Spec JSON artifact, or authored Requirements, Shared Design, or Ticket Design Brief Markdown artifact, by exact downloaded bytes. Markdown validation checks only required headings: it does not score or interpret content. It returns the computed SHA-256, artifact kind, bounded diagnostics, and notices. It does not persist the artifact, admit a ticket, or return its body.
 
 ### `list_projects`
 

@@ -415,6 +415,28 @@ func TestValidateArtifactIsNonMutatingAndBounded(t *testing.T) {
 	}
 }
 
+func TestValidateArtifactSupportsAuthoredMarkdownWithoutAdmission(t *testing.T) {
+	h := newCanonicalTestHarness(t, ToolProfilePlanner)
+	data := []byte("# Shared Design\n\n## Context\n\n## Design\n\n## Risks\n\n## Validation\n")
+	ref := h.put("validate-design", "relay.design.md", data)
+	result := h.server.HandleValidateArtifact(canonicalArgs(t, artifactArgs{ArtifactFile: ref}))
+	if result.IsError {
+		t.Fatalf("validate failed: %s", canonicalToolText(t, result))
+	}
+	var out artifactValidationOutput
+	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK || out.Status != "valid" || out.Kind != "shared_design" || out.SHA256 != canonicalTestSHA(data) || out.Diagnostics == nil || out.Notices == nil {
+		t.Fatalf("unexpected validation output: %+v", out)
+	}
+	for _, table := range []string{"plans", "plan_passes", "runs", "artifacts"} {
+		if got := workflowRowCount(t, h.store, table); got != 0 {
+			t.Fatalf("%s rows = %d, want 0", table, got)
+		}
+	}
+}
+
 func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	h.registerRepo(t, "relay")

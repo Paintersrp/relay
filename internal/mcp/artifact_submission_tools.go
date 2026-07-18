@@ -37,11 +37,23 @@ var artifactFileSchema = json.RawMessage(`{
   }
 }`)
 
+var validationArtifactFileSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["download_url", "file_id", "file_name"],
+  "properties": {
+    "download_url": {"type": "string", "format": "uri"},
+    "file_id": {"type": "string", "minLength": 1},
+    "mime_type": {"type": "string"},
+    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\.plan\\.json|\\.execution-spec\\.json|\\.requirements\\.md|\\.design\\.md|\\.ticket-[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*\\.r[1-9][0-9]*\\.design-brief\\.md)$"}
+  }
+}`)
+
 var validateArtifactSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
   "required": ["artifact_file"],
-  "properties": {"artifact_file": ` + string(artifactFileSchema) + `}
+  "properties": {"artifact_file": ` + string(validationArtifactFileSchema) + `}
 }`)
 
 var submitPlanSchema = json.RawMessage(`{
@@ -79,7 +91,7 @@ var createRunSchema = json.RawMessage(`{
 var (
 	ToolValidateArtifact = ToolDefinition{
 		Name:        "validate_artifact",
-		Description: "Validate one canonical Plan or Execution Spec JSON file by exact downloaded bytes. Returns bounded diagnostics and SHA-256 only; never returns artifact bodies.",
+		Description: "Validate one canonical Plan or Execution Spec JSON file, or authored Requirements, Shared Design, or Ticket Design Brief Markdown file, by exact downloaded bytes. Returns bounded diagnostics and SHA-256 only; never returns artifact bodies.",
 		InputSchema: validateArtifactSchema,
 		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
 	}
