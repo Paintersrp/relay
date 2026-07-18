@@ -114,6 +114,14 @@ type RetainRequest struct {
 	DependencyKey   string
 }
 
+// PreparedInvestigationRetention is verified source authority that can be
+// retained with an investigation row in one workflow transaction.
+type PreparedInvestigationRetention struct {
+	OwnerIdentity string
+	Vault         workflowstore.SourceVault
+	Closure       workflowstore.SourceVaultClosure
+}
+
 type ReadObjectRequest struct {
 	ClosureID    string
 	ObjectOID    string

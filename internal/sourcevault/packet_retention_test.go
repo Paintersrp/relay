@@ -106,6 +106,28 @@ func TestRetainPreparedInTxRollsBackWithCallerTransaction(t *testing.T) {
 	}
 }
 
+func TestRetainPreparedInvestigationInTxRollsBackWithCallerTransaction(t *testing.T) {
+	ctx := context.Background()
+	store := openPacketRetentionStore(t)
+	vault, first, _ := createReadyPacketRetentionClosures(t, ctx, store)
+	manager := &Manager{store: store}
+	sentinel := &Error{Code: CodeStateConflict}
+	err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		if _, err := manager.RetainPreparedInvestigationInTx(ctx, tx, PreparedInvestigationRetention{
+			OwnerIdentity: "investigation-rollback", Vault: vault, Closure: first,
+		}); err != nil {
+			return err
+		}
+		return sentinel
+	})
+	if err != sentinel {
+		t.Fatalf("rollback error = %v", err)
+	}
+	if _, err := store.GetActiveSourceVaultRetentionByOwner(ctx, workflowstore.SourceVaultOwnerArtifact, "investigation-rollback"); err == nil {
+		t.Fatal("investigation retention survived caller rollback")
+	}
+}
+
 func openPacketRetentionStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
 	directory := t.TempDir()

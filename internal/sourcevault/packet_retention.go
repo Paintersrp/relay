@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	workflowstore "relay/internal/store/workflow"
 )
@@ -93,6 +94,90 @@ func (m *Manager) RetainPreparedInTx(ctx context.Context, tx *workflowstore.Tx, 
 		return retention, nil
 	}
 	winner, winnerErr := tx.GetActiveSourceVaultRetentionByOwner(ctx, workflowstore.SourceVaultOwnerOperationPacket, ownerIdentity)
+	if winnerErr == nil {
+		if winner.ClosureRowID == closure.ID {
+			return winner, nil
+		}
+		return workflowstore.SourceVaultRetention{}, &Error{Code: CodeRetentionConflict}
+	}
+	if !errors.Is(winnerErr, sql.ErrNoRows) {
+		return workflowstore.SourceVaultRetention{}, managerError(ctx, winnerErr, CodeDatabaseFailure)
+	}
+	if errors.Is(err, workflowstore.ErrSourceVaultRetentionConflict) {
+		return workflowstore.SourceVaultRetention{}, &Error{Code: CodeRetentionConflict}
+	}
+	return workflowstore.SourceVaultRetention{}, managerError(ctx, err, CodeDatabaseFailure)
+}
+
+// PrepareInvestigationRetention verifies an exact closure before the caller
+// creates its immutable investigation evidence. It returns no vault path or
+// object access capability.
+func (m *Manager) PrepareInvestigationRetention(ctx context.Context, closureID, investigationID string) (PreparedInvestigationRetention, error) {
+	if strings.TrimSpace(closureID) != closureID || closureID == "" || strings.TrimSpace(investigationID) != investigationID || investigationID == "" || len(investigationID) > 512 {
+		return PreparedInvestigationRetention{}, &Error{Code: CodeInvalidRequest}
+	}
+	closure, err := m.store.GetSourceVaultClosureByClosureID(ctx, closureID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && closure.State != workflowstore.SourceVaultClosureStateReady) {
+		return PreparedInvestigationRetention{}, &Error{Code: CodeVaultUnavailable}
+	}
+	if err != nil {
+		return PreparedInvestigationRetention{}, managerError(ctx, err, CodeDatabaseFailure)
+	}
+	vault, err := m.sourceVaultForClosure(ctx, closure)
+	if err != nil {
+		return PreparedInvestigationRetention{}, managerError(ctx, err, CodeDatabaseFailure)
+	}
+	unlock := m.lockVault(vault.VaultID)
+	defer unlock()
+	vaultPath, err := m.git.VaultPath(vault.RelativePath)
+	if err != nil {
+		return PreparedInvestigationRetention{}, managerError(ctx, err, CodeVaultUnavailable)
+	}
+	if err := m.git.ValidateVault(ctx, vaultPath); err != nil {
+		return PreparedInvestigationRetention{}, m.failClosure(ctx, closure, err, workflowstore.SourceVaultFailureVaultInvalid)
+	}
+	if err := m.git.VerifyVaultClosure(ctx, vaultPath, closure.CommitOID, closure.TreeOID, closure.RefName); err != nil {
+		return PreparedInvestigationRetention{}, m.failClosure(ctx, closure, err, workflowstore.SourceVaultFailurePostImportVerification)
+	}
+	return PreparedInvestigationRetention{OwnerIdentity: investigationID, Vault: vault, Closure: closure}, nil
+}
+
+// RetainPreparedInvestigationInTx creates the retention edge in the same
+// transaction as its durable investigation row.
+func (m *Manager) RetainPreparedInvestigationInTx(ctx context.Context, tx *workflowstore.Tx, prepared PreparedInvestigationRetention) (workflowstore.SourceVaultRetention, error) {
+	if tx == nil || strings.TrimSpace(prepared.OwnerIdentity) != prepared.OwnerIdentity || prepared.OwnerIdentity == "" {
+		return workflowstore.SourceVaultRetention{}, &Error{Code: CodeInvalidRequest}
+	}
+	closure, err := tx.GetSourceVaultClosureByClosureID(ctx, prepared.Closure.ClosureID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && closure.State != workflowstore.SourceVaultClosureStateReady) {
+		return workflowstore.SourceVaultRetention{}, &Error{Code: CodeVaultUnavailable}
+	}
+	if err != nil {
+		return workflowstore.SourceVaultRetention{}, managerError(ctx, err, CodeDatabaseFailure)
+	}
+	if closure.ID != prepared.Closure.ID || closure.VaultRowID != prepared.Vault.ID || closure.CommitOID != prepared.Closure.CommitOID || closure.TreeOID != prepared.Closure.TreeOID || closure.Generation != prepared.Closure.Generation || closure.RefName != prepared.Closure.RefName {
+		return workflowstore.SourceVaultRetention{}, &Error{Code: CodeVaultUnavailable}
+	}
+	vault, err := tx.GetSourceVaultByVaultID(ctx, prepared.Vault.VaultID)
+	if err != nil || vault.ID != prepared.Vault.ID || vault.RepoTarget != prepared.Vault.RepoTarget || vault.RelativePath != prepared.Vault.RelativePath {
+		if err == nil {
+			err = workflowstore.ErrSourceVaultStateConflict
+		}
+		return workflowstore.SourceVaultRetention{}, managerError(ctx, err, CodeDatabaseFailure)
+	}
+	retention, err := tx.CreateOrGetSourceVaultRetention(ctx, workflowstore.CreateSourceVaultRetentionParams{
+		RetentionID:   workflowstore.NewSourceVaultRetentionID(),
+		ClosureRowID:  closure.ID,
+		OwnerClass:    workflowstore.SourceVaultOwnerArtifact,
+		OwnerIdentity: prepared.OwnerIdentity,
+	})
+	if err == nil {
+		if retention.ClosureRowID != closure.ID || retention.OwnerClass != workflowstore.SourceVaultOwnerArtifact || retention.OwnerIdentity != prepared.OwnerIdentity || retention.State != workflowstore.SourceVaultRetentionStateActive {
+			return workflowstore.SourceVaultRetention{}, &Error{Code: CodeRetentionConflict}
+		}
+		return retention, nil
+	}
+	winner, winnerErr := tx.GetActiveSourceVaultRetentionByOwner(ctx, workflowstore.SourceVaultOwnerArtifact, prepared.OwnerIdentity)
 	if winnerErr == nil {
 		if winner.ClosureRowID == closure.ID {
 			return winner, nil

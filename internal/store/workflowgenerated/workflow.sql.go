@@ -997,6 +997,31 @@ func (q *Queries) GetFeatureWorkspaceDiscoveryTicketByID(ctx context.Context, di
 	return i, err
 }
 
+const getFeatureWorkspaceInvestigationByID = `-- name: GetFeatureWorkspaceInvestigationByID :one
+SELECT id, investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+FROM feature_workspace_investigations
+WHERE investigation_id = ?
+`
+
+func (q *Queries) GetFeatureWorkspaceInvestigationByID(ctx context.Context, investigationID string) (FeatureWorkspaceInvestigation, error) {
+	row := q.db.QueryRowContext(ctx, getFeatureWorkspaceInvestigationByID, investigationID)
+	var i FeatureWorkspaceInvestigation
+	err := row.Scan(
+		&i.ID,
+		&i.InvestigationID,
+		&i.WorkspaceRowID,
+		&i.TicketRowID,
+		&i.Sequence,
+		&i.InvestigationKind,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.ArtifactSha256,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getLatestExecutionAttemptByRun = `-- name: GetLatestExecutionAttemptByRun :one
 SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json, created_at, started_at, finished_at, cancellation_requested_at
 FROM execution_attempts

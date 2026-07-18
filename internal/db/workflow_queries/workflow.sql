@@ -392,6 +392,11 @@ INSERT INTO feature_workspace_investigations (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
+-- name: GetFeatureWorkspaceInvestigationByID :one
+SELECT *
+FROM feature_workspace_investigations
+WHERE investigation_id = ?;
+
 -- name: ListFeatureWorkspaceInvestigations :many
 SELECT *
 FROM feature_workspace_investigations
