@@ -716,3 +716,230 @@ func noRowsAsConflict(err error, operation string) error {
 	}
 	return err
 }
+func (tx *Tx) GetOrCreateSourceVault(ctx context.Context, params CreateSourceVaultParams) (SourceVault, error) {
+	if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO source_vaults (vault_id, repo_target, relative_path)
+VALUES (?, ?, ?)
+ON CONFLICT(repo_target) DO NOTHING`, params.VaultID, params.RepoTarget, params.RelativePath); err != nil {
+		return SourceVault{}, err
+	}
+	return tx.GetSourceVaultByRepositoryTarget(ctx, params.RepoTarget)
+}
+
+func (tx *Tx) AcquireSourceVaultClosure(
+	ctx context.Context,
+	params AcquireSourceVaultClosureParams,
+) (SourceVaultClosureAcquisition, error) {
+	current, err := scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
+SELECT `+sourceVaultClosureColumns+`
+FROM source_vault_closures
+WHERE vault_row_id = ? AND commit_oid = ? AND tree_oid = ? AND state <> 'released'
+LIMIT 1`, params.VaultRowID, params.CommitOID, params.TreeOID))
+	if err == nil {
+		switch current.State {
+		case SourceVaultClosureStateReady:
+			return SourceVaultClosureAcquisition{Closure: current, Disposition: SourceVaultClosureAcquisitionReady}, nil
+		case SourceVaultClosureStateImporting:
+			return SourceVaultClosureAcquisition{Closure: current, Disposition: SourceVaultClosureAcquisitionImporting}, nil
+		case SourceVaultClosureStateReleasing:
+			return SourceVaultClosureAcquisition{Closure: current, Disposition: SourceVaultClosureAcquisitionReleasing}, nil
+		case SourceVaultClosureStateUnavailable:
+			retried, updateErr := scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
+UPDATE source_vault_closures
+SET state = 'importing', failure_reason = NULL, verified_at = NULL,
+    import_started_at = CASE WHEN import_started_at = ? THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE ? END,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE closure_id = ? AND state = 'unavailable'
+RETURNING `+sourceVaultClosureColumns, params.StartedAt, params.StartedAt, current.ClosureID))
+			if updateErr != nil {
+				return SourceVaultClosureAcquisition{}, sourceVaultNoRows(updateErr, "retry source vault closure")
+			}
+			return SourceVaultClosureAcquisition{Closure: retried, Disposition: SourceVaultClosureAcquisitionRetry}, nil
+		default:
+			return SourceVaultClosureAcquisition{}, fmt.Errorf("unsupported current source vault closure state %q", current.State)
+		}
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return SourceVaultClosureAcquisition{}, err
+	}
+
+	var generation int64
+	if err := tx.tx.QueryRowContext(ctx, `
+SELECT COALESCE(MAX(generation), 0) + 1
+FROM source_vault_closures
+WHERE vault_row_id = ? AND commit_oid = ? AND tree_oid = ?`,
+		params.VaultRowID, params.CommitOID, params.TreeOID,
+	).Scan(&generation); err != nil {
+		return SourceVaultClosureAcquisition{}, err
+	}
+	created, err := scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
+INSERT INTO source_vault_closures (
+    closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name,
+    state, import_started_at
+)
+VALUES (?, ?, ?, ?, ?, ?, 'importing', ?)
+RETURNING `+sourceVaultClosureColumns,
+		params.ClosureID,
+		params.VaultRowID,
+		params.CommitOID,
+		params.TreeOID,
+		generation,
+		params.RefName,
+		params.StartedAt,
+	))
+	if err != nil {
+		return SourceVaultClosureAcquisition{}, err
+	}
+	return SourceVaultClosureAcquisition{Closure: created, Disposition: SourceVaultClosureAcquisitionCreated}, nil
+}
+
+func (tx *Tx) TransitionSourceVaultClosure(
+	ctx context.Context,
+	params TransitionSourceVaultClosureParams,
+) (SourceVaultClosure, error) {
+	verifiedAt := sql.NullString{}
+	releasedAt := sql.NullString{}
+	if params.NextState == SourceVaultClosureStateReady {
+		verifiedAt = sql.NullString{String: params.TransitionAt, Valid: true}
+	}
+	if params.NextState == SourceVaultClosureStateReleased {
+		releasedAt = sql.NullString{String: params.TransitionAt, Valid: true}
+	}
+	value, err := scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
+UPDATE source_vault_closures
+SET state = ?, failure_reason = ?, verified_at = ?, released_at = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE closure_id = ? AND state = ?
+RETURNING `+sourceVaultClosureColumns,
+		params.NextState,
+		params.FailureReason,
+		verifiedAt,
+		releasedAt,
+		params.ClosureID,
+		params.ExpectedState,
+	))
+	return value, sourceVaultNoRows(err, "transition source vault closure")
+}
+
+func (tx *Tx) CreateOrGetSourceVaultRetention(
+	ctx context.Context,
+	params CreateSourceVaultRetentionParams,
+) (SourceVaultRetention, error) {
+	closure, err := tx.GetSourceVaultClosureByRowID(ctx, params.ClosureRowID)
+	if err != nil {
+		return SourceVaultRetention{}, err
+	}
+	if closure.State != SourceVaultClosureStateReady {
+		return SourceVaultRetention{}, fmt.Errorf("source vault closure is not ready")
+	}
+
+	existing, err := tx.GetSourceVaultRetentionByOwnerEdge(ctx, params.ClosureRowID, params.OwnerClass, params.OwnerIdentity)
+	if err == nil {
+		if existing.State == SourceVaultRetentionStateActive {
+			return existing, nil
+		}
+		return SourceVaultRetention{}, fmt.Errorf("%w: released source vault retention cannot be reactivated", ErrSourceVaultRetentionConflict)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return SourceVaultRetention{}, err
+	}
+
+	activeOwner, err := tx.GetActiveSourceVaultRetentionByOwner(ctx, params.OwnerClass, params.OwnerIdentity)
+	if err == nil {
+		if activeOwner.ClosureRowID == params.ClosureRowID {
+			return activeOwner, nil
+		}
+		return SourceVaultRetention{}, fmt.Errorf("%w: active owner identity targets another source vault closure", ErrSourceVaultRetentionConflict)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return SourceVaultRetention{}, err
+	}
+
+	_, insertErr := tx.tx.ExecContext(ctx, `
+INSERT INTO source_vault_retentions (
+    retention_id, closure_row_id, owner_class, owner_identity, state
+)
+VALUES (?, ?, ?, ?, 'active')`,
+		params.RetentionID,
+		params.ClosureRowID,
+		params.OwnerClass,
+		params.OwnerIdentity,
+	)
+	if insertErr == nil {
+		return tx.GetSourceVaultRetentionByOwnerEdge(ctx, params.ClosureRowID, params.OwnerClass, params.OwnerIdentity)
+	}
+
+	existing, exactErr := tx.GetSourceVaultRetentionByOwnerEdge(ctx, params.ClosureRowID, params.OwnerClass, params.OwnerIdentity)
+	if exactErr == nil {
+		if existing.State == SourceVaultRetentionStateActive {
+			return existing, nil
+		}
+		return SourceVaultRetention{}, fmt.Errorf("%w: released source vault retention cannot be reactivated", ErrSourceVaultRetentionConflict)
+	}
+	if !errors.Is(exactErr, sql.ErrNoRows) {
+		return SourceVaultRetention{}, exactErr
+	}
+	activeOwner, ownerErr := tx.GetActiveSourceVaultRetentionByOwner(ctx, params.OwnerClass, params.OwnerIdentity)
+	if ownerErr == nil {
+		if activeOwner.ClosureRowID == params.ClosureRowID {
+			return activeOwner, nil
+		}
+		return SourceVaultRetention{}, fmt.Errorf("%w: active owner identity targets another source vault closure", ErrSourceVaultRetentionConflict)
+	}
+	if !errors.Is(ownerErr, sql.ErrNoRows) {
+		return SourceVaultRetention{}, ownerErr
+	}
+	return SourceVaultRetention{}, insertErr
+}
+
+func (tx *Tx) ReleaseSourceVaultRetention(
+	ctx context.Context,
+	params ReleaseSourceVaultRetentionParams,
+) (SourceVaultRetention, error) {
+	value, err := scanSourceVaultRetention(tx.tx.QueryRowContext(ctx, `
+UPDATE source_vault_retentions
+SET state = 'released', released_at = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE retention_id = ? AND state = 'active'
+RETURNING `+sourceVaultRetentionColumns,
+		params.ReleasedAt,
+		params.RetentionID,
+	))
+	if err == nil {
+		return value, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return SourceVaultRetention{}, err
+	}
+	winner, readErr := tx.GetSourceVaultRetentionByRetentionID(ctx, params.RetentionID)
+	if readErr != nil {
+		return SourceVaultRetention{}, readErr
+	}
+	if winner.State == SourceVaultRetentionStateReleased {
+		return winner, nil
+	}
+	return SourceVaultRetention{}, fmt.Errorf("%w: release source vault retention", ErrSourceVaultStateConflict)
+}
+
+func (tx *Tx) BeginSourceVaultClosureRelease(ctx context.Context, closureID, transitionAt string) (SourceVaultClosure, error) {
+	closure, err := tx.GetSourceVaultClosureByClosureID(ctx, closureID)
+	if err != nil {
+		return SourceVaultClosure{}, err
+	}
+	if closure.State != SourceVaultClosureStateReady && closure.State != SourceVaultClosureStateUnavailable {
+		return SourceVaultClosure{}, fmt.Errorf("%w: source vault closure is not cleanup eligible", ErrSourceVaultCleanupBlocked)
+	}
+	count, err := tx.CountActiveSourceVaultRetentions(ctx, closure.ID)
+	if err != nil {
+		return SourceVaultClosure{}, err
+	}
+	if count != 0 {
+		return SourceVaultClosure{}, fmt.Errorf("%w: source vault closure still has active retentions", ErrSourceVaultCleanupBlocked)
+	}
+	return tx.TransitionSourceVaultClosure(ctx, TransitionSourceVaultClosureParams{
+		ClosureID:     closureID,
+		ExpectedState: closure.State,
+		NextState:     SourceVaultClosureStateReleasing,
+		TransitionAt:  transitionAt,
+	})
+}

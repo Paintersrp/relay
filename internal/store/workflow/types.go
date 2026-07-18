@@ -465,3 +465,129 @@ type CreateAuditDecisionParams struct {
 	Decision                 string
 	Rationale                string
 }
+
+const (
+	SourceVaultClosureStateImporting   = "importing"
+	SourceVaultClosureStateReady       = "ready"
+	SourceVaultClosureStateUnavailable = "unavailable"
+	SourceVaultClosureStateReleasing   = "releasing"
+	SourceVaultClosureStateReleased    = "released"
+
+	SourceVaultClosureAcquisitionCreated   = "created"
+	SourceVaultClosureAcquisitionRetry     = "retry"
+	SourceVaultClosureAcquisitionReady     = "ready"
+	SourceVaultClosureAcquisitionImporting = "importing"
+	SourceVaultClosureAcquisitionReleasing = "releasing"
+
+	SourceVaultRetentionStateActive   = "active"
+	SourceVaultRetentionStateReleased = "released"
+
+	SourceVaultOwnerOperationPacket = "operation_packet"
+	SourceVaultOwnerArtifact        = "artifact"
+	SourceVaultOwnerWorkflowResult  = "workflow_result"
+	SourceVaultOwnerAuditRecord     = "audit_record"
+
+	SourceVaultFailureInterruptedImport        = "interrupted_import"
+	SourceVaultFailureSourceCommitMissing      = "source_commit_missing"
+	SourceVaultFailureSourceCommitTypeMismatch = "source_commit_type_mismatch"
+	SourceVaultFailureSourceTreeMissing        = "source_tree_missing"
+	SourceVaultFailureSourceTreeTypeMismatch   = "source_tree_type_mismatch"
+	SourceVaultFailureSourceTreeMismatch       = "source_tree_mismatch"
+	SourceVaultFailureSourceGitStartFailed     = "source_git_start_failed"
+	SourceVaultFailurePackGenerationFailed     = "pack_generation_failed"
+	SourceVaultFailureVaultMissing             = "vault_missing"
+	SourceVaultFailureVaultInvalid             = "vault_invalid"
+	SourceVaultFailureVaultGitStartFailed      = "vault_git_start_failed"
+	SourceVaultFailurePackIndexFailed          = "pack_index_failed"
+	SourceVaultFailureVaultCommitMissing       = "vault_commit_missing"
+	SourceVaultFailureVaultCommitTypeMismatch  = "vault_commit_type_mismatch"
+	SourceVaultFailureVaultTreeMissing         = "vault_tree_missing"
+	SourceVaultFailureVaultTreeTypeMismatch    = "vault_tree_type_mismatch"
+	SourceVaultFailureVaultTreeMismatch        = "vault_tree_mismatch"
+	SourceVaultFailureRefCreateFailed          = "ref_create_failed"
+	SourceVaultFailureRefMissing               = "ref_missing"
+	SourceVaultFailureRefMismatch              = "ref_mismatch"
+	SourceVaultFailureRefDeleteFailed          = "ref_delete_failed"
+	SourceVaultFailurePostImportVerification   = "post_import_verification_failed"
+	SourceVaultFailureOperationCancelled       = "operation_cancelled"
+	SourceVaultFailureReleaseOwnerConflict     = "release_owner_conflict"
+	SourceVaultFailureReleaseInterrupted       = "release_interrupted"
+)
+
+type SourceVault struct {
+	ID           int64
+	VaultID      string
+	RepoTarget   string
+	RelativePath string
+	CreatedAt    string
+	UpdatedAt    string
+}
+
+type SourceVaultClosure struct {
+	ID              int64
+	ClosureID       string
+	VaultRowID      int64
+	CommitOID       string
+	TreeOID         string
+	Generation      int64
+	RefName         string
+	State           string
+	FailureReason   sql.NullString
+	ImportStartedAt string
+	VerifiedAt      sql.NullString
+	ReleasedAt      sql.NullString
+	CreatedAt       string
+	UpdatedAt       string
+}
+
+type SourceVaultRetention struct {
+	ID            int64
+	RetentionID   string
+	ClosureRowID  int64
+	OwnerClass    string
+	OwnerIdentity string
+	State         string
+	CreatedAt     string
+	UpdatedAt     string
+	ReleasedAt    sql.NullString
+}
+
+type SourceVaultClosureAcquisition struct {
+	Closure     SourceVaultClosure
+	Disposition string
+}
+
+type CreateSourceVaultParams struct {
+	VaultID      string
+	RepoTarget   string
+	RelativePath string
+}
+
+type AcquireSourceVaultClosureParams struct {
+	VaultRowID int64
+	ClosureID  string
+	CommitOID  string
+	TreeOID    string
+	RefName    string
+	StartedAt  string
+}
+
+type TransitionSourceVaultClosureParams struct {
+	ClosureID     string
+	ExpectedState string
+	NextState     string
+	FailureReason sql.NullString
+	TransitionAt  string
+}
+
+type CreateSourceVaultRetentionParams struct {
+	RetentionID   string
+	ClosureRowID  int64
+	OwnerClass    string
+	OwnerIdentity string
+}
+
+type ReleaseSourceVaultRetentionParams struct {
+	RetentionID string
+	ReleasedAt  string
+}

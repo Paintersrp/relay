@@ -76,7 +76,7 @@ func sqliteDSN(path string) string {
 	if strings.Contains(path, "?") {
 		separator = "&"
 	}
-	return path + separator + "_journal_mode=WAL&_pragma=foreign_keys(1)"
+	return path + separator + "_journal_mode=WAL&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 }
 
 func (s *Store) DB() *sql.DB {
@@ -175,6 +175,67 @@ func (s *Store) GetRepositoryTarget(ctx context.Context, repoTarget string) (Rep
 
 func (s *Store) GetRepositoryTargetByLocalPath(ctx context.Context, localPath string) (RepositoryTarget, error) {
 	return getRepositoryTargetByLocalPath(ctx, s.db, localPath)
+}
+func (s *Store) GetSourceVaultByVaultID(ctx context.Context, vaultID string) (SourceVault, error) {
+	return getSourceVaultByVaultID(ctx, s.db, vaultID)
+}
+
+func (s *Store) GetSourceVaultByRepositoryTarget(ctx context.Context, repoTarget string) (SourceVault, error) {
+	return getSourceVaultByRepositoryTarget(ctx, s.db, repoTarget)
+}
+
+func (s *Store) GetSourceVaultClosureByClosureID(ctx context.Context, closureID string) (SourceVaultClosure, error) {
+	return getSourceVaultClosureByClosureID(ctx, s.db, closureID)
+}
+
+func (s *Store) GetCurrentSourceVaultClosureByIdentity(
+	ctx context.Context,
+	vaultRowID int64,
+	commitOID string,
+	treeOID string,
+) (SourceVaultClosure, error) {
+	return getCurrentSourceVaultClosureByIdentity(ctx, s.db, vaultRowID, commitOID, treeOID)
+}
+
+func (s *Store) ListSourceVaultClosuresByIdentity(
+	ctx context.Context,
+	vaultRowID int64,
+	commitOID string,
+	treeOID string,
+) ([]SourceVaultClosure, error) {
+	return listSourceVaultClosuresByIdentity(ctx, s.db, vaultRowID, commitOID, treeOID)
+}
+
+func (s *Store) ListSourceVaultClosuresForReconciliation(ctx context.Context) ([]SourceVaultClosure, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT `+sourceVaultClosureColumns+`
+FROM source_vault_closures
+ORDER BY vault_row_id, commit_oid, tree_oid, generation, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSourceVaultClosures(rows)
+}
+
+func (s *Store) GetSourceVaultRetentionByRetentionID(ctx context.Context, retentionID string) (SourceVaultRetention, error) {
+	return getSourceVaultRetentionByRetentionID(ctx, s.db, retentionID)
+}
+
+func (s *Store) GetActiveSourceVaultRetentionByOwner(
+	ctx context.Context,
+	ownerClass string,
+	ownerIdentity string,
+) (SourceVaultRetention, error) {
+	return getActiveSourceVaultRetentionByOwner(ctx, s.db, ownerClass, ownerIdentity)
+}
+
+func (s *Store) ListSourceVaultRetentions(ctx context.Context, closureRowID int64) ([]SourceVaultRetention, error) {
+	return listSourceVaultRetentions(ctx, s.db, closureRowID)
+}
+
+func (s *Store) CountActiveSourceVaultRetentions(ctx context.Context, closureRowID int64) (int64, error) {
+	return countActiveSourceVaultRetentions(ctx, s.db, closureRowID)
 }
 
 func (s *Store) ListRepositoryTargetsWithConfiguration(ctx context.Context) ([]RepositoryTarget, error) {

@@ -34,6 +34,18 @@ func NewOperationPacketID() string {
 	return "opkt-" + uuid.NewString()
 }
 
+func NewSourceVaultID() string {
+	return "vault-" + uuid.NewString()
+}
+
+func NewSourceVaultClosureID() string {
+	return "closure-" + uuid.NewString()
+}
+
+func NewSourceVaultRetentionID() string {
+	return "retention-" + uuid.NewString()
+}
+
 func NewAuditPacketID() string {
 	return "packet-" + uuid.NewString()
 }

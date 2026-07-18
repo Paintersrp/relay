@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"relay/internal/config"
 	"relay/internal/executor"
 	"relay/internal/server"
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -32,6 +34,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer workflowStore.Close()
+
+	sourceVaultDir := "data/workflow/source-vaults"
+	if value := os.Getenv("RELAY_SOURCE_VAULT_DIR"); value != "" {
+		sourceVaultDir = value
+	}
+	if _, err := sourcevault.Open(context.Background(), sourceVaultDir, workflowStore); err != nil {
+		log.Error("open and reconcile source vaults", "error", err)
+		os.Exit(1)
+	}
 
 	ownerInstanceID := executor.NewOwnerInstanceID()
 	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID)

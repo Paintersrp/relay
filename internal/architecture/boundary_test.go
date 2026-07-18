@@ -243,3 +243,30 @@ func TestWorkflowStoreDoesNotImportPacketOrTransportPolicy(t *testing.T) {
 		}
 	}
 }
+func TestSourceVaultDoesNotImportTransportOrPacketPolicy(t *testing.T) {
+	root := repoRoot(t)
+	vaultRoot := filepath.Join(root, "internal", "sourcevault")
+	for _, file := range goFiles(t, vaultRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if isAPIImport(imp.path) ||
+				imp.path == modulePath+"/internal/mcp" || strings.HasPrefix(imp.path, modulePath+"/internal/mcp/") ||
+				imp.path == modulePath+"/internal/server" || strings.HasPrefix(imp.path, modulePath+"/internal/server/") ||
+				imp.path == modulePath+"/internal/operations/packet" || strings.HasPrefix(imp.path, modulePath+"/internal/operations/packet/") ||
+				imp.path == modulePath+"/internal/app/operations" || strings.HasPrefix(imp.path, modulePath+"/internal/app/operations/") {
+				t.Fatalf("%s imports public or packet policy package %q", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}
+
+func TestWorkflowStoreDoesNotImportSourceVaultPolicy(t *testing.T) {
+	root := repoRoot(t)
+	storeRoot := filepath.Join(root, "internal", "store", "workflow")
+	for _, file := range goFiles(t, storeRoot) {
+		for _, imp := range importsForFile(t, file) {
+			if imp.path == modulePath+"/internal/sourcevault" || strings.HasPrefix(imp.path, modulePath+"/internal/sourcevault/") {
+				t.Fatalf("%s imports source-vault filesystem or subprocess policy %q", rel(t, root, file), imp.path)
+			}
+		}
+	}
+}

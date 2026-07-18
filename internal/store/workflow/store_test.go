@@ -54,6 +54,9 @@ ORDER BY name`)
 		"projects",
 		"repository_targets",
 		"runs",
+		"source_vault_closures",
+		"source_vault_retentions",
+		"source_vaults",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected fresh workflow tables\ngot:  %v\nwant: %v", got, want)
