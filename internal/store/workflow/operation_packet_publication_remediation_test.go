@@ -13,7 +13,10 @@ func TestCommittedOperationPacketPublicationFreezesDependenciesAndMutationResult
 	ctx := context.Background()
 	store := openPublicationStore(t)
 	batch, packetFile := sealedPacketPublication(t, store, "publication-remediation-immutable")
-	packet, mutation := commitPublicationFixture(t, ctx, store, batch, "opkt-publication-remediation-immutable", packetFile)
+	packet, mutation, err := commitPublicationFixture(t, ctx, store, batch, "opkt-publication-remediation-immutable", packetFile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		_, err := tx.AttachOperationPacketDependency(ctx, AttachOperationPacketDependencyParams{
@@ -53,13 +56,20 @@ func TestCommittedOperationPacketPublicationFreezesDependenciesAndMutationResult
 	}
 }
 
-func commitPublicationFixture(t *testing.T, ctx context.Context, store *Store, batch *workflowartifacts.PublicationBatch, packetID string, packetFile workflowartifacts.File) (OperationPacket, MCPMutationResult) {
+func commitPublicationFixture(t *testing.T, ctx context.Context, store *Store, batch *workflowartifacts.PublicationBatch, packetID string, packetFile workflowartifacts.File, mutationOverride func(*Tx) (MCPMutationResult, error)) (OperationPacket, MCPMutationResult, error) {
 	t.Helper()
 	var packet OperationPacket
 	var mutation MCPMutationResult
 	err := store.CommitOperationPacketPublication(ctx, batch, func(tx *Tx) error {
 		var artifact OperationPacketArtifact
 		packet, artifact, mutation = createPublicationPacketRows(t, ctx, tx, batch.PublicationID(), packetID, packetFile)
+		if mutationOverride != nil {
+			var err error
+			mutation, err = mutationOverride(tx)
+			if err != nil {
+				return err
+			}
+		}
 		if _, err := tx.AttachOperationPacketDependency(ctx, AttachOperationPacketDependencyParams{
 			PacketRowID: packet.ID, DependencyClass: OperationPacketDependencyPacketDocument,
 			DependencyKey: artifact.ArtifactID, Required: true, Attached: true, Retained: true,
@@ -81,10 +91,7 @@ func commitPublicationFixture(t *testing.T, ctx context.Context, store *Store, b
 		})
 		return err
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return packet, mutation
+	return packet, mutation, err
 }
 
 func TestLegacyOperationPacketDependencyRemainsMutable(t *testing.T) {
@@ -135,37 +142,13 @@ func TestOperationPacketPublicationRejectsMutationResultSurfaceMismatch(t *testi
 	ctx := context.Background()
 	store := openPublicationStore(t)
 	batch, packetFile := sealedPacketPublication(t, store, "publication-remediation-result-mismatch")
-	err := store.CommitOperationPacketPublication(ctx, batch, func(tx *Tx) error {
-		packet, artifact, _ := createPublicationPacketRows(t, ctx, tx, batch.PublicationID(), "opkt-publication-remediation-result-mismatch", packetFile)
-		mismatched, err := tx.CreateMCPMutationResult(ctx, CreateMCPMutationResultParams{
+	_, _, err := commitPublicationFixture(t, ctx, store, batch, "opkt-publication-remediation-result-mismatch", packetFile, func(tx *Tx) (MCPMutationResult, error) {
+		return tx.CreateMCPMutationResult(ctx, CreateMCPMutationResultParams{
 			SurfaceContractID: "planner-execution.v1", ToolName: "create_run", MutationID: "mutation-result-mismatch",
 			SurfaceManifestSHA256: strings.Repeat("a", 64), SemanticIdentityVersion: "relay.semantic.create-run.v1",
 			SemanticRequestSHA256: strings.Repeat("b", 64), ResultKind: "create_run_result",
 			ResultIdentityJSON: `{"run_id":"run-mismatch"}`, ResultSHA256: strings.Repeat("c", 64),
 		})
-		if err != nil {
-			return err
-		}
-		if _, err := tx.AttachOperationPacketDependency(ctx, AttachOperationPacketDependencyParams{
-			PacketRowID: packet.ID, DependencyClass: OperationPacketDependencyPacketDocument,
-			DependencyKey: artifact.ArtifactID, Required: true, Attached: true, Retained: true,
-			OwnerIdentity: sql.NullString{String: artifact.ArtifactID, Valid: true},
-		}); err != nil {
-			return err
-		}
-		if _, err := tx.CreateOperationPacketArtifactBinding(ctx, CreateOperationPacketArtifactBindingParams{
-			PublicationID: batch.PublicationID(), PacketRowID: packet.ID, Sequence: 0,
-			DependencyClass: OperationPacketDependencyPacketDocument, DependencyKey: artifact.ArtifactID,
-			PacketArtifactRowID: sql.NullInt64{Int64: artifact.ID, Valid: true},
-		}); err != nil {
-			return err
-		}
-		_, err = tx.CreateOperationPacketPublication(ctx, CreateOperationPacketPublicationParams{
-			PublicationID: batch.PublicationID(), PacketRowID: packet.ID, PacketArtifactRowID: artifact.ID,
-			MutationResultRowID: mismatched.ID, Namespace: batch.Namespace(), ManifestSHA256: batch.ManifestSHA256(),
-			ExpectedBindingCount: 1, ExpectedDependencyCount: 1,
-		})
-		return err
 	})
 	if err == nil {
 		t.Fatal("publication accepted a mutation result from another surface")
