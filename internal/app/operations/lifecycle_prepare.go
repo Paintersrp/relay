@@ -291,13 +291,7 @@ func (s *LifecycleService) prepareRepositories(ctx context.Context, project work
 
 func (s *LifecycleService) prepareGovernance(ctx context.Context, packetID string, operation registry.OperationDefinition, request lifecycleRequest, repositories repositoryPreparation) (packet.GovernanceBinding, packet.ManifestDomainBinding, []PublicationVaultInput, workflowrepos.ResolvedRevision, error) {
 	manifestPath := governanceManifestPath(operation.Role)
-	clean := false
-	for _, binding := range repositories.bindings {
-		if strings.EqualFold(binding.RepositoryTarget, "relay-specs") && requiresCleanProject(operation.SourcePolicy) {
-			clean = true
-			break
-		}
-	}
+	clean := governanceRequiresCleanProject(operation, repositories)
 	revision, err := s.repositories.ResolveRevision(ctx, workflowrepos.RevisionRequest{
 		RepoTarget:        "relay-specs",
 		ExplicitCommitOID: request.relaySpecsRevision,
@@ -349,12 +343,24 @@ func (s *LifecycleService) revalidateRepositoryAuthority(ctx context.Context, op
 	if governance.RevisionSource == workflowrepos.RevisionSourceExplicitCommit {
 		explicit = governance.CommitOID
 	}
-	governanceClean := requiresCleanProject(operation.SourcePolicy)
+	governanceClean := governanceRequiresCleanProject(operation, repositories)
 	current, err := s.repositories.ResolveRevision(ctx, workflowrepos.RevisionRequest{RepoTarget: governance.RepositoryTarget.RepoTarget, ExplicitCommitOID: explicit, Policy: workflowrepos.RepositoryUsePolicy{RequireCleanWorktree: governanceClean, RequireGovernanceAuthority: true}, Governance: workflowrepos.GovernanceRequest{ManifestPath: governanceManifestPath(operation.Role), Domain: string(operation.ManifestDomain)}})
 	if err != nil || current.RepositoryTargetConfigurationVersion != governance.RepositoryTargetConfigurationVersion || current.RevisionSource != governance.RevisionSource || current.ConfiguredWorkingBranchRef != governance.ConfiguredWorkingBranchRef || current.CommitOID != governance.CommitOID || current.TreeOID != governance.TreeOID {
 		return &sourcevault.Error{Code: sourcevault.CodeStaleConfiguredAuthority}
 	}
 	return nil
+}
+
+func governanceRequiresCleanProject(operation registry.OperationDefinition, repositories repositoryPreparation) bool {
+	if !requiresCleanProject(operation.SourcePolicy) {
+		return false
+	}
+	for _, binding := range repositories.bindings {
+		if strings.EqualFold(binding.RepositoryTarget, "relay-specs") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *LifecycleService) materializeInputs(ctx context.Context, operation registry.OperationDefinition, request lifecycleRequest, acquired fileacquisition.Result, workflow workflowPreparation, repositories repositoryPreparation, builder *retainedBuilder) ([]packet.InputBinding, []PublicationVaultInput, error) {
