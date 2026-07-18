@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"relay/internal/app/idempotency"
 	workflowartifacts "relay/internal/artifacts/workflow"
@@ -48,6 +49,8 @@ type AuthorityPublicationMutation func(context.Context, *workflowstore.Tx, Publi
 
 type AuthorityPublicationInput struct {
 	PacketID           string
+	PriorPacketID      string
+	RequestIdentity    semanticidentity.RequestIdentity
 	PacketArtifactID   string
 	PacketMediaType    string
 	PacketBytes        []byte
@@ -84,7 +87,7 @@ func NewAuthorityPublicationService(store *workflowstore.Store, vaults *sourceva
 
 func (s *AuthorityPublicationService) Publish(ctx context.Context, input AuthorityPublicationInput) (AuthorityPublicationResult, error) {
 	if err := validateAuthorityPublicationInput(input); err != nil {
-		return AuthorityPublicationResult{}, ErrAuthorityPublication
+		return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)
 	}
 	publicationID := workflowstore.NewOperationPacketPublicationID()
 	preparedVaults := make([]sourcevault.PreparedRetention, 0, len(input.VaultRelationships))
@@ -199,7 +202,15 @@ func (s *AuthorityPublicationService) Publish(ctx context.Context, input Authori
 		if err != nil {
 			return err
 		}
-		if err := validatePublicationMutationAuthority(input, result.Packet, mutationRow); err != nil {
+		var priorPacket *workflowstore.OperationPacket
+		if input.PriorPacketID != "" {
+			value, err := tx.GetOperationPacketByPacketID(ctx, input.PriorPacketID)
+			if err != nil {
+				return err
+			}
+			priorPacket = &value
+		}
+		if err := validatePublicationMutationAuthority(input, result.Packet, packetArtifact, priorPacket, mutationRow); err != nil {
 			return err
 		}
 
@@ -313,23 +324,110 @@ func (s *AuthorityPublicationService) Publish(ctx context.Context, input Authori
 	return result, nil
 }
 
-func validatePublicationMutationAuthority(input AuthorityPublicationInput, packet workflowstore.OperationPacket, mutation workflowstore.MCPMutationResult) error {
+func validatePublicationMutationAuthority(input AuthorityPublicationInput, packet workflowstore.OperationPacket, artifact workflowstore.OperationPacketArtifact, prior *workflowstore.OperationPacket, mutation workflowstore.MCPMutationResult) error {
+	tool := input.Idempotency.Key.Tool
+	surface := input.Idempotency.Key.SurfaceContractID
 	operation, ok := registry.Lookup(registry.OperationID(packet.OperationID))
-	if !ok ||
+	projectionVersion, versionOK := registry.SemanticProjectionVersion(string(tool))
+	if !ok || !versionOK ||
 		packet.PacketID != input.PacketID ||
+		packet.PacketArtifactRowID != artifact.ID ||
+		packet.PacketSHA256 != artifact.SHA256 ||
 		string(operation.Role) != packet.Role ||
 		string(operation.SurfaceContract) != packet.SurfaceContractID ||
-		packet.SurfaceContractID != string(input.Idempotency.Key.SurfaceContractID) ||
-		!containsAction(operation.AllowedNonSourceActions, registry.AllowedAction(input.Idempotency.Key.Tool)) ||
+		packet.SurfaceContractID != string(surface) ||
+		input.Idempotency.Fingerprint.SurfaceContractID() != surface ||
+		input.Idempotency.Fingerprint.Tool() != tool ||
+		!registry.IsStateChangingToolForSurface(surface, string(tool)) ||
 		mutation.SurfaceContractID != packet.SurfaceContractID ||
-		mutation.ToolName != string(input.Idempotency.Key.Tool) ||
+		mutation.ToolName != string(tool) ||
 		mutation.MutationID != input.Idempotency.Key.MutationID ||
 		mutation.SurfaceManifestSHA256 != input.Idempotency.SurfaceManifestSHA256 ||
+		mutation.SemanticIdentityVersion != projectionVersion ||
 		mutation.SemanticIdentityVersion != input.Idempotency.Fingerprint.SemanticIdentityVersion() ||
 		mutation.SemanticRequestSHA256 != input.Idempotency.Fingerprint.SemanticRequestSHA256() {
 		return &Error{Code: CodeAuthorityPublicationConflict}
 	}
+	identity, err := semanticidentity.DecodeResultIdentity(
+		surface,
+		tool,
+		semanticidentity.ResultKind(mutation.ResultKind),
+		[]byte(mutation.ResultIdentityJSON),
+	)
+	if err != nil {
+		return &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	switch tool {
+	case registry.MutationToolCreateOperationPacket:
+		request, requestOK := input.RequestIdentity.(semanticidentity.CreateOperationPacket)
+		result, resultOK := identity.(semanticidentity.CreateOperationPacketResult)
+		if !requestOK || !resultOK || request.OperationID != registry.OperationID(packet.OperationID) || request.ProjectID != packet.ProjectID || request.SurfaceContract != surface ||
+			input.PriorPacketID != "" || prior != nil || packet.PriorPacketRowID.Valid || packet.LifecycleState != workflowstore.OperationPacketLifecycleActive ||
+			packet.ReplacementPacketRowID.Valid || packet.SupersededAt.Valid || packet.ClosedAt.Valid ||
+			result.SurfaceManifestSHA256 != input.Idempotency.SurfaceManifestSHA256 ||
+			!operationPacketViewIdentityMatches(result.Packet, packet, artifact, nil) {
+			return &Error{Code: CodeAuthorityPublicationConflict}
+		}
+	case registry.MutationToolRefreshOperationPacket:
+		request, requestOK := input.RequestIdentity.(semanticidentity.RefreshOperationPacket)
+		result, resultOK := identity.(semanticidentity.RefreshOperationPacketResult)
+		if !requestOK || !resultOK || prior == nil || input.PriorPacketID == "" || request.ExpectedPacketID != input.PriorPacketID || prior.PacketID != input.PriorPacketID || request.SurfaceContract != surface ||
+			!packet.PriorPacketRowID.Valid || packet.PriorPacketRowID.Int64 != prior.ID || packet.LifecycleState != workflowstore.OperationPacketLifecycleActive ||
+			packet.ReplacementPacketRowID.Valid || packet.SupersededAt.Valid || packet.ClosedAt.Valid ||
+			prior.LifecycleState != workflowstore.OperationPacketLifecycleSuperseded || !prior.SupersededAt.Valid || prior.ClosedAt.Valid ||
+			prior.Role != packet.Role || prior.OperationID != packet.OperationID || prior.SurfaceContractID != packet.SurfaceContractID || prior.ProjectID != packet.ProjectID ||
+			!prior.ReplacementPacketRowID.Valid || prior.ReplacementPacketRowID.Int64 != packet.ID ||
+			result.SurfaceManifestSHA256 != input.Idempotency.SurfaceManifestSHA256 ||
+			!operationPacketSummaryIdentityMatches(result.PriorPacket, *prior, &packet) ||
+			!operationPacketViewIdentityMatches(result.Packet, packet, artifact, nil) {
+			return &Error{Code: CodeAuthorityPublicationConflict}
+		}
+	default:
+		return &Error{Code: CodeAuthorityPublicationConflict}
+	}
 	return nil
+}
+
+func operationPacketViewIdentityMatches(value semanticidentity.OperationPacketViewIdentity, packet workflowstore.OperationPacket, artifact workflowstore.OperationPacketArtifact, replacement *workflowstore.OperationPacket) bool {
+	return operationPacketSummaryIdentityMatches(value.Summary, packet, replacement) &&
+		value.Document.ArtifactID == artifact.ArtifactID &&
+		value.Document.MediaType == artifact.MediaType &&
+		value.Document.SizeBytes == artifact.SizeBytes &&
+		value.Document.SHA256 == artifact.SHA256
+}
+
+func operationPacketSummaryIdentityMatches(value semanticidentity.PacketSummaryIdentity, packet workflowstore.OperationPacket, replacement *workflowstore.OperationPacket) bool {
+	if value.PacketID != packet.PacketID ||
+		value.PacketSHA256 != packet.PacketSHA256 ||
+		value.SchemaVersion != packet.SchemaVersion ||
+		value.Role != packet.Role ||
+		string(value.OperationID) != packet.OperationID ||
+		string(value.SurfaceContractID) != packet.SurfaceContractID ||
+		value.ProjectID != packet.ProjectID ||
+		value.ReadinessState != packet.ReadinessState ||
+		value.LifecycleState != packet.LifecycleState ||
+		!operationPacketOptionalStringMatches(value.SupersededAt, packet.SupersededAt) ||
+		!operationPacketOptionalStringMatches(value.ClosedAt, packet.ClosedAt) {
+		return false
+	}
+	if packet.ReplacementPacketRowID.Valid {
+		return replacement != nil &&
+			replacement.ID == packet.ReplacementPacketRowID.Int64 &&
+			value.ReplacementPacket != nil &&
+			value.ReplacementPacket.PacketID == replacement.PacketID &&
+			value.ReplacementPacket.PacketSHA256 == replacement.PacketSHA256 &&
+			value.ReplacementPacket.Role == replacement.Role &&
+			string(value.ReplacementPacket.OperationID) == replacement.OperationID &&
+			string(value.ReplacementPacket.SurfaceContractID) == replacement.SurfaceContractID
+	}
+	return replacement == nil && value.ReplacementPacket == nil
+}
+
+func operationPacketOptionalStringMatches(value *string, stored sql.NullString) bool {
+	if !stored.Valid {
+		return value == nil
+	}
+	return value != nil && *value == stored.String
 }
 
 func (s *AuthorityPublicationService) resolveCommittedPublicationWinner(ctx context.Context, input AuthorityPublicationInput, stored idempotency.StoredResult, replay bool) (AuthorityPublicationResult, error) {
@@ -344,7 +442,18 @@ func (s *AuthorityPublicationService) resolveCommittedPublicationWinner(ctx cont
 	if err != nil {
 		return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)
 	}
-	if err := validatePublicationMutationAuthority(input, integrity.Packet, integrity.MutationResult); err != nil {
+	var prior *workflowstore.OperationPacket
+	if input.PriorPacketID != "" {
+		value, err := s.store.GetOperationPacketByPacketID(ctx, input.PriorPacketID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return AuthorityPublicationResult{}, &Error{Code: CodeAuthorityPublicationConflict}
+		}
+		if err != nil {
+			return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)
+		}
+		prior = &value
+	}
+	if err := validatePublicationMutationAuthority(input, integrity.Packet, integrity.PacketArtifact, prior, integrity.MutationResult); err != nil {
 		return AuthorityPublicationResult{}, err
 	}
 	if integrity.MutationResult.ResultKind != string(stored.ResultKind) ||
@@ -436,8 +545,30 @@ func (s *AuthorityPublicationService) Reconcile(ctx context.Context) error {
 }
 
 func validateAuthorityPublicationInput(input AuthorityPublicationInput) error {
-	if input.PacketID == "" || input.PacketArtifactID == "" || input.PacketMediaType == "" || len(input.PacketBytes) == 0 || input.Mutation == nil {
+	if input.PacketID == "" || input.PacketArtifactID == "" || input.PacketMediaType == "" || len(input.PacketBytes) == 0 || input.Mutation == nil || input.RequestIdentity == nil {
 		return ErrAuthorityPublication
+	}
+	fingerprint, err := semanticidentity.BuildFingerprint(input.RequestIdentity)
+	if err != nil ||
+		fingerprint.SurfaceContractID() != input.Idempotency.Fingerprint.SurfaceContractID() ||
+		fingerprint.Tool() != input.Idempotency.Fingerprint.Tool() ||
+		fingerprint.SemanticIdentityVersion() != input.Idempotency.Fingerprint.SemanticIdentityVersion() ||
+		fingerprint.SemanticRequestSHA256() != input.Idempotency.Fingerprint.SemanticRequestSHA256() ||
+		fingerprint.SurfaceContractID() != input.Idempotency.Key.SurfaceContractID ||
+		fingerprint.Tool() != input.Idempotency.Key.Tool {
+		return &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	switch request := input.RequestIdentity.(type) {
+	case semanticidentity.CreateOperationPacket:
+		if input.Idempotency.Key.Tool != registry.MutationToolCreateOperationPacket || input.PriorPacketID != "" || request.SurfaceContract != input.Idempotency.Key.SurfaceContractID {
+			return &Error{Code: CodeAuthorityPublicationConflict}
+		}
+	case semanticidentity.RefreshOperationPacket:
+		if input.Idempotency.Key.Tool != registry.MutationToolRefreshOperationPacket || input.PriorPacketID == "" || strings.TrimSpace(input.PriorPacketID) != input.PriorPacketID || request.ExpectedPacketID != input.PriorPacketID || request.SurfaceContract != input.Idempotency.Key.SurfaceContractID {
+			return &Error{Code: CodeAuthorityPublicationConflict}
+		}
+	default:
+		return &Error{Code: CodeAuthorityPublicationConflict}
 	}
 	artifacts := make(map[string]struct{}, len(input.RetainedArtifacts))
 	for _, value := range input.RetainedArtifacts {
