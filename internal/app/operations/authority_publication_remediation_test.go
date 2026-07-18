@@ -76,54 +76,58 @@ func TestAuthorityPublicationSanitizesCallbackPromotionAndCommitFailures(t *test
 	ctx := context.Background()
 
 	t.Run("callback diagnostics", func(t *testing.T) {
-		service, _ := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationRemediationInput(t, "mutation-callback-diagnostic", "opkt-callback-diagnostic", "artifact-callback-diagnostic", "planner.plan", "planner-plan.v1")
-		input.Mutation = func(context.Context, *workflowstore.Tx, PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
-			return workflowstore.OperationPacket{}, nil, errors.New("password=do-not-render C:\\private\\workflow.sqlite")
-		}
-		result, err := service.Publish(ctx, input)
-		assertSanitizedAuthorityPublicationFailure(t, result, err, "password=", "workflow.sqlite")
+		authorityPublicationRemediationDiagnostic(t, ctx, "callback", func(_ *workflowstore.Store, input *AuthorityPublicationInput) {
+			input.Mutation = func(context.Context, *workflowstore.Tx, PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
+				return workflowstore.OperationPacket{}, nil, errors.New("password=do-not-render C:\\private\\workflow.sqlite")
+			}
+		}, "password=", "workflow.sqlite")
 	})
 
 	t.Run("promotion diagnostics", func(t *testing.T) {
-		service, _ := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationRemediationInput(t, "mutation-promotion-diagnostic", "opkt-promotion-diagnostic", "artifact-promotion-diagnostic", "planner.plan", "planner-plan.v1")
-		original := input.Mutation
-		input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
-			if err := os.MkdirAll(filepath.Dir(mutation.PacketArtifact.AbsolutePath), 0o700); err != nil {
-				return workflowstore.OperationPacket{}, nil, err
+		authorityPublicationRemediationDiagnostic(t, ctx, "promotion", func(_ *workflowstore.Store, input *AuthorityPublicationInput) {
+			original := input.Mutation
+			input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
+				if err := os.MkdirAll(filepath.Dir(mutation.PacketArtifact.AbsolutePath), 0o700); err != nil {
+					return workflowstore.OperationPacket{}, nil, err
+				}
+				return original(ctx, tx, mutation)
 			}
-			return original(ctx, tx, mutation)
-		}
-		result, err := service.Publish(ctx, input)
-		assertSanitizedAuthorityPublicationFailure(t, result, err, "operation-packet-publications", filepath.Clean(input.PacketArtifactID))
+		}, "operation-packet-publications", "artifact-promotion-diagnostic")
 	})
 
 	t.Run("commit diagnostics and promoted rollback", func(t *testing.T) {
-		service, store := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationRemediationInput(t, "mutation-commit-diagnostic", "opkt-commit-diagnostic", "artifact-commit-diagnostic", "planner.plan", "planner-plan.v1")
-		original := input.Mutation
 		var publicationID string
-		input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
-			publicationID = mutation.PublicationID
-			packet, identity, err := original(ctx, tx, mutation)
-			if err != nil {
-				return workflowstore.OperationPacket{}, nil, err
+		store := authorityPublicationRemediationDiagnostic(t, ctx, "commit", func(_ *workflowstore.Store, input *AuthorityPublicationInput) {
+			original := input.Mutation
+			input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
+				publicationID = mutation.PublicationID
+				packet, identity, err := original(ctx, tx, mutation)
+				if err != nil {
+					return workflowstore.OperationPacket{}, nil, err
+				}
+				_, err = tx.CreateOperationPacketRetainedArtifact(ctx, workflowstore.CreateOperationPacketRetainedArtifactParams{
+					PublicationID: "publication-missing-deferred-parent", ArtifactID: "artifact-missing-deferred-parent",
+					Kind:         workflowstore.OperationPacketRetainedArtifactInlineInput,
+					RelativePath: "operation-packet-publications/publication-missing-deferred-parent/inputs/value.txt",
+					MediaType:    "text/plain", SHA256: strings.Repeat("b", 64), SizeBytes: 1,
+				})
+				return packet, identity, err
 			}
-			_, err = tx.CreateOperationPacketRetainedArtifact(ctx, workflowstore.CreateOperationPacketRetainedArtifactParams{
-				PublicationID: "publication-missing-deferred-parent", ArtifactID: "artifact-missing-deferred-parent",
-				Kind:         workflowstore.OperationPacketRetainedArtifactInlineInput,
-				RelativePath: "operation-packet-publications/publication-missing-deferred-parent/inputs/value.txt",
-				MediaType:    "text/plain", SHA256: strings.Repeat("b", 64), SizeBytes: 1,
-			})
-			return packet, identity, err
-		}
-		result, err := service.Publish(ctx, input)
-		assertSanitizedAuthorityPublicationFailure(t, result, err, "FOREIGN KEY", "publication-missing-deferred-parent")
+		}, "FOREIGN KEY", "publication-missing-deferred-parent")
 		if _, err := os.Stat(filepath.Join(store.ArtifactStore().Root(), "operation-packet-publications", publicationID)); !os.IsNotExist(err) {
 			t.Fatalf("promoted loser survived failed commit: %v", err)
 		}
 	})
+}
+
+func authorityPublicationRemediationDiagnostic(t *testing.T, ctx context.Context, scenario string, configure func(*workflowstore.Store, *AuthorityPublicationInput), forbidden ...string) *workflowstore.Store {
+	t.Helper()
+	service, store := openAuthorityPublicationRemediationService(t, ctx)
+	input := authorityPublicationRemediationInput(t, "mutation-"+scenario+"-diagnostic", "opkt-"+scenario+"-diagnostic", "artifact-"+scenario+"-diagnostic", "planner.plan", "planner-plan.v1")
+	configure(store, &input)
+	result, err := service.Publish(ctx, input)
+	assertSanitizedAuthorityPublicationFailure(t, result, err, forbidden...)
+	return store
 }
 
 func openAuthorityPublicationRemediationService(t *testing.T, ctx context.Context) (*AuthorityPublicationService, *workflowstore.Store) {
