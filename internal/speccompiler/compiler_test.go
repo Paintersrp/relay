@@ -234,7 +234,7 @@ func TestFilenameMustBeBasename(t *testing.T) {
 func TestSourceProvenanceIsPinned(t *testing.T) {
 	want := Provenance{
 		Repository:       "Paintersrp/relay-specs",
-		Commit:           "7bd061c3ad989260345da5c5b2f42b3833561242",
+		Commit:           "cba7f79963e457266dafc2fd1865fd605a40b7bc",
 		CompilerContract: "contracts/compiler.md",
 		Schemas: []SchemaProvenance{
 			{ArtifactKind: ArtifactPlan, Version: "1.0", Path: "schemas/plan.schema.json"},

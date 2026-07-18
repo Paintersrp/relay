@@ -14,15 +14,17 @@ import (
 
 const (
 	AuthorityRepository = "Paintersrp/relay-specs"
-	AuthorityCommit     = "7bd061c3ad989260345da5c5b2f42b3833561242"
+	AuthorityCommit     = "cba7f79963e457266dafc2fd1865fd605a40b7bc"
 )
 
 type Kind string
 
 const (
-	KindPlan          Kind = "plan"
-	KindExecutionSpec Kind = "execution_spec"
-	KindAuditPacket   Kind = "audit_packet"
+	KindPlan           Kind = "plan"
+	KindExecutionSpec  Kind = "execution_spec"
+	KindAuditPacket    Kind = "audit_packet"
+	KindDeliveryTicket Kind = "delivery_ticket"
+	KindTransitionPlan Kind = "transition_plan"
 )
 
 type Definition struct {
@@ -33,35 +35,45 @@ type Definition struct {
 	Bytes           []byte
 }
 
+type catalogEntry struct {
+	Kind            Kind
+	ProducerVersion string
+	AuthorityPath   string
+	Filename        string
+	SHA256          string
+}
+
 //go:embed schemas/*.json
 var schemaFS embed.FS
 
-var orderedKinds = []Kind{KindPlan, KindExecutionSpec, KindAuditPacket}
+var authoritativeCatalog = []catalogEntry{
+	{Kind: KindPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/plan.schema.json", Filename: "plan.schema.json", SHA256: "03a75ab1352d27193ec27b5aec9f449e65daf69de66d6897ab74672bdc705cf8"},
+	{Kind: KindExecutionSpec, ProducerVersion: "2.0", AuthorityPath: "schemas/execution-spec.schema.json", Filename: "execution-spec.schema.json", SHA256: "92a1e8f1c2b9cc7bd4382f69f3d8bf8668c1ab72f2985c10fd746ba23a3df4d7"},
+	{Kind: KindAuditPacket, ProducerVersion: "2.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "91aaed33acca520d0ad2f511a472be7296993b37cb1dcd0b1976025b648850cf"},
+	{Kind: KindDeliveryTicket, ProducerVersion: "1.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "663845dfe1191d397102e689fd09f1ff1d26823ae6dc6798a2ec9cd623a02ee7"},
+	{Kind: KindTransitionPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/transition-plan.schema.json", Filename: "transition-plan.schema.json", SHA256: "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
+}
 
 func Current(kind Kind) (Definition, bool) {
-	version, path, ok := definitionMetadata(kind)
+	entry, ok := catalogEntryFor(kind)
 	if !ok {
 		return Definition{}, false
 	}
-	raw, err := schemaFS.ReadFile("schemas/" + schemaFilename(kind))
+	raw, err := schemaFS.ReadFile("schemas/" + entry.Filename)
 	if err != nil {
 		panic(fmt.Sprintf("read embedded %s schema: %v", kind, err))
 	}
-	raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
-	sum := sha256.Sum256(raw)
-	return Definition{
-		Kind:            kind,
-		ProducerVersion: version,
-		AuthorityPath:   path,
-		SHA256:          hex.EncodeToString(sum[:]),
-		Bytes:           append([]byte(nil), raw...),
-	}, true
+	definition, err := definitionFromEmbeddedBytes(entry, raw)
+	if err != nil {
+		panic(fmt.Sprintf("verify embedded %s schema against %s@%s: %v", kind, AuthorityRepository, AuthorityCommit, err))
+	}
+	return definition, true
 }
 
 func Definitions() []Definition {
-	out := make([]Definition, 0, len(orderedKinds))
-	for _, kind := range orderedKinds {
-		definition, _ := Current(kind)
+	out := make([]Definition, 0, len(authoritativeCatalog))
+	for _, entry := range authoritativeCatalog {
+		definition, _ := Current(entry.Kind)
 		out = append(out, definition)
 	}
 	return out
@@ -102,30 +114,40 @@ func Validate(kind Kind, raw []byte) (bool, error) {
 	return result.Valid(), nil
 }
 
-func definitionMetadata(kind Kind) (string, string, bool) {
-	switch kind {
-	case KindPlan:
-		return "1.0", "schemas/plan.schema.json", true
-	case KindExecutionSpec:
-		return "2.0", "schemas/execution-spec.schema.json", true
-	case KindAuditPacket:
-		return "2.0", "schemas/audit-packet.schema.json", true
-	default:
-		return "", "", false
+func catalogEntryFor(kind Kind) (catalogEntry, bool) {
+	for _, entry := range authoritativeCatalog {
+		if entry.Kind == kind {
+			return entry, true
+		}
 	}
+	return catalogEntry{}, false
 }
 
 func schemaFilename(kind Kind) string {
-	switch kind {
-	case KindPlan:
-		return "plan.schema.json"
-	case KindExecutionSpec:
-		return "execution-spec.schema.json"
-	case KindAuditPacket:
-		return "audit-packet.schema.json"
-	default:
+	entry, ok := catalogEntryFor(kind)
+	if !ok {
 		return ""
 	}
+	return entry.Filename
+}
+
+func definitionFromEmbeddedBytes(entry catalogEntry, raw []byte) (Definition, error) {
+	if entry.AuthorityPath != "schemas/"+entry.Filename {
+		return Definition{}, fmt.Errorf("catalog authority path %q does not identify embedded file %q", entry.AuthorityPath, entry.Filename)
+	}
+	raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+	sum := sha256.Sum256(raw)
+	actualSHA256 := hex.EncodeToString(sum[:])
+	if actualSHA256 != entry.SHA256 {
+		return Definition{}, fmt.Errorf("embedded bytes SHA-256 %s does not match pinned %s", actualSHA256, entry.SHA256)
+	}
+	return Definition{
+		Kind:            entry.Kind,
+		ProducerVersion: entry.ProducerVersion,
+		AuthorityPath:   entry.AuthorityPath,
+		SHA256:          actualSHA256,
+		Bytes:           append([]byte(nil), raw...),
+	}, nil
 }
 
 func schemaURL(kind Kind) string {
@@ -238,6 +260,8 @@ func portablePatternConstraints(pattern string) ([]any, error) {
 		}, nil
 	case `^[1-9][0-9]*\.[1-9][0-9]*$`:
 		return []any{patternConstraint(`^[1-9][0-9]*\.[1-9][0-9]*$`)}, nil
+	case `^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$`:
+		return []any{patternConstraint(`^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$`)}, nil
 	case `^(?!.*[\r\n])(?!\s*$).+\.execution-spec\.json$`:
 		return []any{patternConstraint(`^.+\.execution-spec\.json$`)}, nil
 	case `^(?!.*[\r\n])(?!\s*$).+\.executor-brief\.md$`:

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Transition Plan v1.0",
+  "description": "Structural schema for the canonical Transition Plan artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {},
+    "feature_slug": { "$ref": "#/$defs/feature_slug" },
+    "ticket_id": { "$ref": "#/$defs/ticket_id" },
+    "ticket_revision": { "$ref": "#/$defs/revision" },
+    "cutover_prerequisites": { "$ref": "#/$defs/criteria_array" },
+    "activation_obligations": { "$ref": "#/$defs/criteria_array" },
+    "rollback_eligibility": { "enum": [ "eligible", "not_eligible" ] },
+    "rollback_obligations": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
+    "completion_criteria": { "$ref": "#/$defs/criteria_array" }
+  },
+  "required": [ "feature_slug", "ticket_id", "ticket_revision", "cutover_prerequisites", "activation_obligations", "rollback_eligibility", "rollback_obligations", "completion_criteria" ],
+  "allOf": [
+    {
+      "if": { "properties": { "rollback_eligibility": { "const": "eligible" } }, "required": [ "rollback_eligibility" ] },
+      "then": { "properties": { "rollback_obligations": { "minItems": 1 } } },
+      "else": { "properties": { "rollback_obligations": { "maxItems": 0 } } }
+    }
+  ],
+  "$defs": {
+    "feature_slug": { "type": "string", "pattern": "^(?!.*[\\r\\n])[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "ticket_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "single_line_prose": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!\\s*$)[^\\r\\n]*\\S[^\\r\\n]*$" },
+    "criteria_array": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/single_line_prose" } }
+  }
+}

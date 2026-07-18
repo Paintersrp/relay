@@ -8,7 +8,7 @@ import (
 )
 
 func TestDefinitionsMatchAcceptedAuthorityBytes(t *testing.T) {
-	if AuthorityRepository != "Paintersrp/relay-specs" || AuthorityCommit != "7bd061c3ad989260345da5c5b2f42b3833561242" {
+	if AuthorityRepository != "Paintersrp/relay-specs" || AuthorityCommit != "cba7f79963e457266dafc2fd1865fd605a40b7bc" {
 		t.Fatalf("authority = %s@%s", AuthorityRepository, AuthorityCommit)
 	}
 	want := []struct {
@@ -20,6 +20,8 @@ func TestDefinitionsMatchAcceptedAuthorityBytes(t *testing.T) {
 		{KindPlan, "1.0", "schemas/plan.schema.json", "03a75ab1352d27193ec27b5aec9f449e65daf69de66d6897ab74672bdc705cf8"},
 		{KindExecutionSpec, "2.0", "schemas/execution-spec.schema.json", "92a1e8f1c2b9cc7bd4382f69f3d8bf8668c1ab72f2985c10fd746ba23a3df4d7"},
 		{KindAuditPacket, "2.0", "schemas/audit-packet.schema.json", "91aaed33acca520d0ad2f511a472be7296993b37cb1dcd0b1976025b648850cf"},
+		{KindDeliveryTicket, "1.0", "schemas/delivery-ticket.schema.json", "663845dfe1191d397102e689fd09f1ff1d26823ae6dc6798a2ec9cd623a02ee7"},
+		{KindTransitionPlan, "1.0", "schemas/transition-plan.schema.json", "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
 	}
 	got := Definitions()
 	if len(got) != len(want) {
@@ -54,6 +56,53 @@ func TestDefinitionsMatchAcceptedAuthorityBytes(t *testing.T) {
 	}
 	if _, ok := Current(Kind("unknown")); ok {
 		t.Fatal("unknown kind resolved")
+	}
+}
+
+func TestPinnedCatalogFailsClosedForPartialOrMismatchedPins(t *testing.T) {
+	entry, ok := catalogEntryFor(KindDeliveryTicket)
+	if !ok {
+		t.Fatal("delivery ticket is missing from the pinned catalog")
+	}
+	raw, err := schemaFS.ReadFile("schemas/" + entry.Filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	partial := entry
+	partial.AuthorityPath = "schemas/transition-plan.schema.json"
+	if _, err := definitionFromEmbeddedBytes(partial, raw); err == nil {
+		t.Fatal("partial schema/provenance pin unexpectedly passed")
+	}
+
+	mismatched := entry
+	mismatched.SHA256 = strings.Repeat("0", 64)
+	if _, err := definitionFromEmbeddedBytes(mismatched, raw); err == nil {
+		t.Fatal("mismatched schema bytes/provenance pin unexpectedly passed")
+	}
+}
+
+func TestTicketOrientedSchemasCompileAndValidate(t *testing.T) {
+	tests := []struct {
+		kind Kind
+		raw  []byte
+	}{
+		{
+			kind: KindDeliveryTicket,
+			raw:  []byte(`{"feature_slug":"ticket-provenance","ticket_id":"P2-T1","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","goal":"Pin ticket authority.","context":"Pin exact ticket-oriented authority provenance.","scope":{"in_scope":["Embed schemas."],"out_of_scope":["Register mutations."]},"depends_on":[],"implementation_obligations":[{"path":"internal/artifactschema","obligation":"Embed the approved schemas."}],"validation_intent":["Validate the embedded schema."],"transition_applicability":"not_required","completion_criteria":["Authority is pinned."]}`),
+		},
+		{
+			kind: KindTransitionPlan,
+			raw:  []byte(`{"feature_slug":"ticket-provenance","ticket_id":"P2-T1","ticket_revision":1,"cutover_prerequisites":["Authority is pinned."],"activation_obligations":["Use the embedded schemas."],"rollback_eligibility":"not_eligible","rollback_obligations":[],"completion_criteria":["Transition is complete."]}`),
+		},
+	}
+	for _, test := range tests {
+		t.Run(string(test.kind), func(t *testing.T) {
+			valid, err := Validate(test.kind, test.raw)
+			if err != nil || !valid {
+				t.Fatalf("valid=%v err=%v", valid, err)
+			}
+		})
 	}
 }
 

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Delivery Ticket v1.0",
+  "description": "Structural schema for the canonical Delivery Ticket artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {},
+    "feature_slug": { "$ref": "#/$defs/feature_slug" },
+    "ticket_id": { "$ref": "#/$defs/ticket_id" },
+    "revision": { "$ref": "#/$defs/revision" },
+    "replaces_revision": { "type": [ "integer", "null" ], "minimum": 1 },
+    "repo_target": { "$ref": "#/$defs/repository_key" },
+    "branch": { "$ref": "#/$defs/machine_string" },
+    "base_commit": { "$ref": "#/$defs/commit_sha" },
+    "goal": { "$ref": "#/$defs/single_line_prose" },
+    "context": { "$ref": "#/$defs/multiline_prose" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "depends_on": { "type": "array", "items": { "$ref": "#/$defs/dependency_reference" } },
+    "implementation_obligations": { "type": "array", "items": { "$ref": "#/$defs/implementation_obligation" } },
+    "validation_intent": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
+    "transition_applicability": { "enum": [ "not_required", "required" ] },
+    "cancellation": { "$ref": "#/$defs/cancellation" },
+    "completion_criteria": { "$ref": "#/$defs/criteria_array" }
+  },
+  "required": [ "feature_slug", "ticket_id", "revision", "replaces_revision", "repo_target", "branch", "base_commit", "goal", "context", "scope", "depends_on", "implementation_obligations", "validation_intent", "transition_applicability", "completion_criteria" ],
+  "allOf": [
+    {
+      "if": { "properties": { "cancellation": { "type": "object" } }, "required": [ "cancellation" ] },
+      "then": {
+        "properties": {
+          "depends_on": { "maxItems": 0 },
+          "implementation_obligations": { "maxItems": 0 },
+          "validation_intent": { "maxItems": 0 },
+          "transition_applicability": { "const": "not_required" }
+        }
+      },
+      "else": {
+        "properties": {
+          "implementation_obligations": { "minItems": 1 },
+          "validation_intent": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "feature_slug": { "type": "string", "pattern": "^(?!.*[\\r\\n])[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "ticket_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "single_line_prose": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!\\s*$)[^\\r\\n]*\\S[^\\r\\n]*$" },
+    "multiline_prose": { "type": "string", "pattern": "^[\\s\\S]*\\S[\\s\\S]*$" },
+    "machine_string": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!\\s*$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$" },
+    "repository_key": { "$ref": "#/$defs/machine_string" },
+    "commit_sha": { "type": "string", "pattern": "^(?!.*[\\r\\n])[0-9a-f]{40}$" },
+    "path": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$" },
+    "criteria_array": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/single_line_prose" } },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "in_scope": { "$ref": "#/$defs/criteria_array" }, "out_of_scope": { "$ref": "#/$defs/criteria_array" } },
+      "required": [ "in_scope", "out_of_scope" ]
+    },
+    "dependency_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "ticket_id": { "$ref": "#/$defs/ticket_id" }, "revision": { "$ref": "#/$defs/revision" } },
+      "required": [ "ticket_id", "revision" ]
+    },
+    "implementation_obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "path": { "$ref": "#/$defs/path" }, "obligation": { "$ref": "#/$defs/single_line_prose" } },
+      "required": [ "path", "obligation" ]
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "reason": { "$ref": "#/$defs/single_line_prose" } },
+      "required": [ "reason" ]
+    }
+  }
+}
