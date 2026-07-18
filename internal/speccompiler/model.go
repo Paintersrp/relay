@@ -104,6 +104,28 @@ type DeliveryTicketCancellation struct {
 	Reason string `json:"reason"`
 }
 
+type TransitionPlanDocument struct {
+	FeatureSlug           string   `json:"feature_slug"`
+	TicketID              string   `json:"ticket_id"`
+	TicketRevision        int64    `json:"ticket_revision"`
+	CutoverPrerequisites  []string `json:"cutover_prerequisites"`
+	ActivationObligations []string `json:"activation_obligations"`
+	RollbackEligibility   string   `json:"rollback_eligibility"`
+	RollbackObligations   []string `json:"rollback_obligations"`
+	CompletionCriteria    []string `json:"completion_criteria"`
+}
+
+type TransitionPlanProjection struct {
+	FeatureSlug           string
+	TicketID              string
+	TicketRevision        int64
+	CutoverPrerequisites  []string
+	ActivationObligations []string
+	RollbackEligibility   string
+	RollbackObligations   []string
+	CompletionCriteria    []string
+}
+
 type EffectiveBriefMode string
 
 const (
@@ -128,6 +150,14 @@ func decodeExecutionDocument(raw []byte) (*ExecutionDocument, error) {
 
 func decodeDeliveryTicketDocument(raw []byte) (*DeliveryTicketDocument, error) {
 	var document DeliveryTicketDocument
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	return &document, nil
+}
+
+func decodeTransitionPlanDocument(raw []byte) (*TransitionPlanDocument, error) {
+	var document TransitionPlanDocument
 	if err := json.Unmarshal(raw, &document); err != nil {
 		return nil, err
 	}

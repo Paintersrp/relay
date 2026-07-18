@@ -80,6 +80,8 @@ func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
 		}, true
 	case ArtifactDeliveryTicket:
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindDeliveryTicket}, true
+	case ArtifactTransitionPlan:
+		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindTransitionPlan}, true
 	default:
 		return currentArtifactDefinition{}, false
 	}
@@ -122,8 +124,8 @@ type Provenance struct {
 }
 
 func SourceProvenance() Provenance {
-	schemas := make([]SchemaProvenance, 0, 3)
-	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactExecutionSpec, ArtifactDeliveryTicket} {
+	schemas := make([]SchemaProvenance, 0, 4)
+	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactExecutionSpec, ArtifactDeliveryTicket, ArtifactTransitionPlan} {
 		definition, _ := currentDefinition(kind)
 		shared, _ := artifactschema.Current(definition.SchemaKind)
 		schemas = append(schemas, SchemaProvenance{ArtifactKind: kind, Version: definition.ProducerVersion, Path: shared.AuthorityPath})
@@ -147,6 +149,12 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 			return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
 		}
 		result, _ := CompileDeliveryTicket(filenameBasename, rawJSON)
+		return result
+	case ArtifactTransitionPlan:
+		if !strings.HasSuffix(filenameBasename, transitionPlanJSONSuffix) {
+			return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
+		}
+		result, _ := CompileTransitionPlan(filenameBasename, rawJSON)
 		return result
 	default:
 		return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
@@ -193,6 +201,52 @@ func compileDeliveryTicketDocument(filename FilenameInfo, root *jsonNode, rawJSO
 		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Render validated Delivery Ticket: %v", err)}}, notices), nil
 	}
 	output := filename.OutputStem + ".delivery-ticket.md"
+	return Result{OutputFilename: &output, Markdown: &markdown, Errors: []Diagnostic{}, Notices: notices}, document
+}
+
+func CompileTransitionPlan(filenameBasename string, rawJSON []byte) (Result, *TransitionPlanDocument) {
+	filename, filenameErrors := ParseFilename(filenameBasename)
+	if len(filenameErrors) != 0 {
+		return failed(filenameErrors, nil), nil
+	}
+	if filename.Kind != ArtifactTransitionPlan || !strings.HasSuffix(filenameBasename, transitionPlanJSONSuffix) {
+		return failed([]Diagnostic{{Code: "unsupported_artifact_filename", Path: "", Message: "Filename must identify a Transition Plan JSON artifact."}}, nil), nil
+	}
+
+	root, lexicalErrors := parseDocument(rawJSON)
+	if len(lexicalErrors) != 0 {
+		return failed(lexicalErrors, nil), nil
+	}
+	return compileTransitionPlanDocument(filename, root, rawJSON)
+}
+
+func compileTransitionPlanDocument(filename FilenameInfo, root *jsonNode, rawJSON []byte) (Result, *TransitionPlanDocument) {
+	definition, _ := currentDefinition(filename.Kind)
+	notices := schemaVersionNotice(root, definition)
+	schemaValid, schemaErr := artifactschema.Validate(definition.SchemaKind, rawJSON)
+	errors := validateTransitionPlan(root, filename)
+	if schemaErr != nil {
+		errors = append(errors, Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Embedded current %s schema validation failed: %v", definition.Kind, schemaErr)})
+	} else if !schemaValid && len(errors) == 0 {
+		errors = append(errors, Diagnostic{Code: "invalid_value_type", Path: "", Message: fmt.Sprintf("Artifact does not satisfy the embedded current %s JSON Schema.", definition.Kind)})
+	}
+	errors = normalizeDiagnostics(errors)
+	notices = normalizeDiagnostics(notices)
+	if len(errors) != 0 {
+		return failed(errors, notices), nil
+	}
+	document, err := decodeTransitionPlanDocument(rawJSON)
+	if err != nil {
+		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Transition Plan: %v", err)}}, notices), nil
+	}
+	if _, diagnostics := ProjectTransitionPlan(document); len(diagnostics) != 0 {
+		return failed(diagnostics, notices), nil
+	}
+	markdown, err := renderTransitionPlan(document)
+	if err != nil {
+		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Render validated Transition Plan: %v", err)}}, notices), nil
+	}
+	output := filename.OutputStem + ".transition-plan.md"
 	return Result{OutputFilename: &output, Markdown: &markdown, Errors: []Diagnostic{}, Notices: notices}, document
 }
 

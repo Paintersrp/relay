@@ -451,7 +451,7 @@ func renderDeliveryTicket(ticket *DeliveryTicketDocument) (string, error) {
 
 	b.WriteString("## Identity\n\n")
 	fmt.Fprintf(&b, "- Ticket: `%s`\n", ticket.TicketID)
-	fmt.Fprintf(&b, "- Revision: %d\n\n", ticket.Revision)
+	fmt.Fprintf(&b, "- Revision: `%d`\n\n", ticket.Revision)
 
 	b.WriteString("## Target\n\n")
 	fmt.Fprintf(&b, "- Repository: `%s`\n", ticket.RepoTarget)
@@ -497,6 +497,42 @@ func renderDeliveryTicket(ticket *DeliveryTicketDocument) (string, error) {
 		b.WriteString("\n\n")
 	}
 	writeBulletSection(&b, "## Completion Criteria", ticket.Completion)
+	return oneFinalNewline(b.String()), nil
+}
+
+func renderTransitionPlan(plan *TransitionPlanDocument) (string, error) {
+	if plan == nil {
+		return "", fmt.Errorf("transition plan document is required")
+	}
+	var b strings.Builder
+	b.WriteString("# Transition Plan\n\n")
+	b.WriteString(derivedNotice)
+	b.WriteString("\n\n")
+
+	b.WriteString("## Ticket Identity\n\n")
+	fmt.Fprintf(&b, "- Ticket: `%s`\n", plan.TicketID)
+	fmt.Fprintf(&b, "- Revision: `%d`\n\n", plan.TicketRevision)
+
+	writeBulletSection(&b, "## Cutover Prerequisites", plan.CutoverPrerequisites)
+	writeBulletSection(&b, "## Activation Obligations", plan.ActivationObligations)
+
+	b.WriteString("## Rollback\n\n")
+	eligibility := plan.RollbackEligibility
+	if eligibility == "not_eligible" {
+		eligibility = "not eligible"
+	}
+	fmt.Fprintf(&b, "- Eligibility: %s\n\n", eligibility)
+	if len(plan.RollbackObligations) == 0 {
+		b.WriteString("None\n\n")
+	} else {
+		for _, obligation := range plan.RollbackObligations {
+			b.WriteString("- ")
+			b.WriteString(trimHuman(obligation))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	writeBulletSection(&b, "## Completion Criteria", plan.CompletionCriteria)
 	return oneFinalNewline(b.String()), nil
 }
 

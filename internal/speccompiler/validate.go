@@ -690,6 +690,78 @@ func validateDeliveryTicket(root *jsonNode, filename FilenameInfo) []Diagnostic 
 	return v.diagnostics
 }
 
+func validateTransitionPlan(root *jsonNode, filename FilenameInfo) []Diagnostic {
+	v := &validator{}
+	order := []string{
+		"schema_version", "feature_slug", "ticket_id", "ticket_revision", "cutover_prerequisites",
+		"activation_obligations", "rollback_eligibility", "rollback_obligations", "completion_criteria",
+	}
+	required := []string{
+		"feature_slug", "ticket_id", "ticket_revision", "cutover_prerequisites", "activation_obligations",
+		"rollback_eligibility", "rollback_obligations", "completion_criteria",
+	}
+	if !v.objectShape(root, "", order, required) {
+		return v.diagnostics
+	}
+
+	if slug, ok := v.stringMember(root, "feature_slug", "/feature_slug", stringFeatureSlug); ok && slug != filename.FeatureSlug {
+		v.add("filename_slug_mismatch", "/feature_slug", fmt.Sprintf("feature_slug %q does not match filename slug %q.", slug, filename.FeatureSlug))
+	}
+	if ticketID, ok := v.stringMember(root, "ticket_id", "/ticket_id", stringTicketID); ok && ticketID != filename.TicketID {
+		v.add("ticket_id_mismatch", "/ticket_id", fmt.Sprintf("ticket_id %q does not match filename ticket ID %q.", ticketID, filename.TicketID))
+	}
+	if revision, ok := v.integerMemberWithCode(root, "ticket_revision", "/ticket_revision", 1, "invalid_ticket_revision"); ok && int64(revision) != filename.Revision {
+		v.add("revision_mismatch", "/ticket_revision", fmt.Sprintf("ticket_revision %d does not match filename revision %d.", revision, filename.Revision))
+	}
+
+	for _, field := range []string{"cutover_prerequisites", "activation_obligations", "rollback_obligations", "completion_criteria"} {
+		if member, ok := root.objectMember(field); ok {
+			path := "/" + field
+			v.validateStringArray(member.value, path, field == "rollback_obligations")
+			if member.value.kind == nodeArray {
+				for index, item := range member.value.array {
+					if item.kind == nodeString {
+						v.validateSafeRollForwardContent(item.text, joinPointer(path, strconv.Itoa(index)))
+					}
+				}
+			}
+		}
+	}
+
+	rollbackEligibility, eligibilityOK := v.stringMember(root, "rollback_eligibility", "/rollback_eligibility", stringSingleLine)
+	if eligibilityOK && rollbackEligibility != "eligible" && rollbackEligibility != "not_eligible" {
+		v.add("invalid_rollback_eligibility", "/rollback_eligibility", "Value must be either eligible or not_eligible.")
+	}
+	if member, ok := root.objectMember("rollback_obligations"); ok && member.value.kind == nodeArray && eligibilityOK {
+		switch rollbackEligibility {
+		case "eligible":
+			if len(member.value.array) == 0 {
+				v.add("rollback_requires_obligations", "/rollback_obligations", "Eligible rollback must declare at least one rollback obligation before the boundary.")
+			}
+		case "not_eligible":
+			if len(member.value.array) != 0 {
+				v.add("one_way_boundary_has_rollback", "/rollback_obligations", "A one-way transition boundary must not declare rollback obligations.")
+			}
+		}
+	}
+	return v.diagnostics
+}
+
+func (v *validator) validateSafeRollForwardContent(value, path string) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return
+	}
+	if templateMarkerPattern.MatchString(value) {
+		v.add("unsafe_roll_forward_content", path, "Transition content must not contain an unresolved template marker.")
+		return
+	}
+	switch strings.ToUpper(trimmed) {
+	case "TODO", "TBD", "FIXME", "...":
+		v.add("unsafe_roll_forward_content", path, "Transition content must state a concrete safe roll-forward condition.")
+	}
+}
+
 func (v *validator) validateReplacesRevision(node *jsonNode, path string, revision int, revisionOK bool) {
 	member, ok := node.objectMember("replaces_revision")
 	if !ok || member.value.kind == nodeNull {

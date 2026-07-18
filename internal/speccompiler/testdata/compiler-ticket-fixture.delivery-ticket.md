@@ -5,7 +5,7 @@
 ## Identity
 
 - Ticket: `P2-T3`
-- Revision: 1
+- Revision: `1`
 
 ## Target
 

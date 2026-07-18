@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "compiler-transition-fixture",
+  "ticket_id": "P2-T4",
+  "ticket_revision": 1,
+  "cutover_prerequisites": [
+    "The Delivery Ticket is accepted.",
+    "The current Transition Plan authority is available."
+  ],
+  "activation_obligations": [
+    "Activate the compiled Transition Plan only after all prerequisites pass."
+  ],
+  "rollback_eligibility": "eligible",
+  "rollback_obligations": [
+    "Restore the previous authority before crossing the boundary."
+  ],
+  "completion_criteria": [
+    "The transition is complete and safe to roll forward."
+  ]
+}

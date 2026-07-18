@@ -295,9 +295,8 @@ func TestTicketArtifactFilenameValidation(t *testing.T) {
 	}
 }
 
-func TestCompileDoesNotRenderTicketArtifactKindsYet(t *testing.T) {
+func TestCompileDoesNotRenderUnsupportedTicketArtifactKinds(t *testing.T) {
 	for _, filename := range []string{
-		"checkout.ticket-P2-T2.r1.transition-plan.json",
 		"checkout.requirements.md",
 		"checkout.design.md",
 		"checkout.ticket-P2-T2.r1.design-brief.md",
@@ -307,6 +306,96 @@ func TestCompileDoesNotRenderTicketArtifactKindsYet(t *testing.T) {
 			assertFailureCode(t, result, "unsupported_artifact_kind")
 			if len(result.Errors) != 1 {
 				t.Fatalf("ticket artifact dispatch should stop before parsing: %+v", result.Errors)
+			}
+		})
+	}
+}
+
+func TestCompileTransitionPlanMatchesGolden(t *testing.T) {
+	raw := readFixture(t, "compiler-transition-fixture.transition-plan.json")
+	golden := string(readFixture(t, "compiler-transition-fixture.transition-plan.md"))
+	result, document := CompileTransitionPlan("compiler-transition-fixture.ticket-P2-T4.r1.transition-plan.json", raw)
+	assertSuccess(t, result)
+	if document == nil || document.TicketID != "P2-T4" || document.TicketRevision != 1 {
+		t.Fatalf("unexpected decoded transition plan document: %+v", document)
+	}
+	if result.OutputFilename == nil || *result.OutputFilename != "compiler-transition-fixture.ticket-P2-T4.r1.transition-plan.md" {
+		t.Fatalf("unexpected output filename: %#v", result.OutputFilename)
+	}
+	if result.Markdown == nil || *result.Markdown != golden {
+		t.Fatalf("rendered transition plan does not match golden\n--- got ---\n%s\n--- want ---\n%s", dereference(result.Markdown), golden)
+	}
+	for _, required := range []string{
+		"## Ticket Identity\n\n- Ticket: `P2-T4`\n- Revision: `1`\n\n## Cutover Prerequisites\n",
+		"## Rollback\n\n- Eligibility: eligible\n\n- Restore the previous authority before crossing the boundary.\n\n## Completion Criteria\n",
+	} {
+		if !strings.Contains(*result.Markdown, required) {
+			t.Fatalf("rendered transition plan is missing contract output %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"## Applicability", "- Feature:", "## Rollback Boundary", "### Rollback Obligations Before Boundary", "## Safe Roll-Forward Completion",
+	} {
+		if strings.Contains(*result.Markdown, forbidden) {
+			t.Fatalf("rendered transition plan contains removed output %q", forbidden)
+		}
+	}
+	projection, diagnostics := ProjectTransitionPlan(document)
+	if len(diagnostics) != 0 {
+		t.Fatalf("projection diagnostics = %+v", diagnostics)
+	}
+	if projection.RollbackEligibility != "eligible" || len(projection.RollbackObligations) != 1 {
+		t.Fatalf("unexpected transition projection: %+v", projection)
+	}
+	assertOneFinalNewline(t, *result.Markdown)
+}
+
+func TestCompileTransitionPlanIsDeterministic(t *testing.T) {
+	raw := readFixture(t, "compiler-transition-fixture.transition-plan.json")
+	first := Compile("compiler-transition-fixture.ticket-P2-T4.r1.transition-plan.json", raw)
+	second := Compile("compiler-transition-fixture.ticket-P2-T4.r1.transition-plan.json", append([]byte(nil), raw...))
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("identical transition plan input produced different results\nfirst=%+v\nsecond=%+v", first, second)
+	}
+}
+
+func TestRenderTransitionPlanUsesNoneForOneWayRollback(t *testing.T) {
+	markdown, err := renderTransitionPlan(&TransitionPlanDocument{
+		TicketID:              "P2-T4",
+		TicketRevision:        1,
+		CutoverPrerequisites:  []string{"The prerequisite passes."},
+		ActivationObligations: []string{"The activation is bounded."},
+		RollbackEligibility:   "not_eligible",
+		CompletionCriteria:    []string{"The transition completes safely."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown, "## Rollback\n\n- Eligibility: not eligible\n\nNone\n\n## Completion Criteria\n") {
+		t.Fatalf("one-way rollback output does not match contract:\n%s", markdown)
+	}
+}
+
+func TestTransitionPlanDiagnosticsAreStable(t *testing.T) {
+	base := readFixture(t, "compiler-transition-fixture.transition-plan.json")
+	cases := []struct {
+		name string
+		raw  []byte
+		code string
+	}{
+		{name: "feature identity", raw: replaceOnce(t, base, []byte(`"feature_slug": "compiler-transition-fixture"`), []byte(`"feature_slug": "other-fixture"`)), code: "filename_slug_mismatch"},
+		{name: "ticket identity", raw: replaceOnce(t, base, []byte(`"ticket_id": "P2-T4"`), []byte(`"ticket_id": "P2-T5"`)), code: "ticket_id_mismatch"},
+		{name: "revision identity", raw: replaceOnce(t, base, []byte("  \"ticket_revision\": 1,\n"), []byte("  \"ticket_revision\": 2,\n")), code: "revision_mismatch"},
+		{name: "rollback before boundary", raw: replaceOnce(t, base, []byte("  \"rollback_obligations\": [\n    \"Restore the previous authority before crossing the boundary.\"\n  ],\n"), []byte("  \"rollback_obligations\": [],\n")), code: "rollback_requires_obligations"},
+		{name: "one-way boundary", raw: replaceOnce(t, base, []byte("  \"rollback_eligibility\": \"eligible\",\n"), []byte("  \"rollback_eligibility\": \"not_eligible\",\n")), code: "one_way_boundary_has_rollback"},
+		{name: "unsafe roll-forward content", raw: replaceOnce(t, base, []byte("    \"The transition is complete and safe to roll forward.\"\n"), []byte("    \"TODO\"\n")), code: "unsafe_roll_forward_content"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Compile("compiler-transition-fixture.ticket-P2-T4.r1.transition-plan.json", tc.raw)
+			assertFailureCode(t, result, tc.code)
+			if result.OutputFilename != nil || result.Markdown != nil {
+				t.Fatalf("invalid transition plan returned partial output: %+v", result)
 			}
 		})
 	}
@@ -327,7 +416,7 @@ func TestCompileDeliveryTicketMatchesGolden(t *testing.T) {
 		t.Fatalf("rendered ticket does not match golden\n--- got ---\n%s\n--- want ---\n%s", dereference(result.Markdown), golden)
 	}
 	for _, required := range []string{
-		"## Identity\n\n- Ticket: `P2-T3`\n- Revision: 1\n\n## Target\n",
+		"## Identity\n\n- Ticket: `P2-T3`\n- Revision: `1`\n\n## Target\n",
 		"## Transition Applicability\n\nnot_required\n\n## Replacement\n\nNone\n\n## Cancellation\n\nNone\n\n## Completion Criteria\n",
 	} {
 		if !strings.Contains(*result.Markdown, required) {
@@ -408,6 +497,7 @@ func TestSourceProvenanceIsPinned(t *testing.T) {
 			{ArtifactKind: ArtifactPlan, Version: "1.0", Path: "schemas/plan.schema.json"},
 			{ArtifactKind: ArtifactExecutionSpec, Version: "2.0", Path: "schemas/execution-spec.schema.json"},
 			{ArtifactKind: ArtifactDeliveryTicket, Version: "1.0", Path: "schemas/delivery-ticket.schema.json"},
+			{ArtifactKind: ArtifactTransitionPlan, Version: "1.0", Path: "schemas/transition-plan.schema.json"},
 		},
 	}
 	if got := SourceProvenance(); !reflect.DeepEqual(got, want) {
