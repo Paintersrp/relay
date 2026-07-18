@@ -10,6 +10,44 @@ import (
 	"database/sql"
 )
 
+const advanceFeatureWorkspaceRouteState = `-- name: AdvanceFeatureWorkspaceRouteState :one
+UPDATE feature_workspaces
+SET current_route_state_row_id = ?, state = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+`
+
+type AdvanceFeatureWorkspaceRouteStateParams struct {
+	CurrentRouteStateRowID sql.NullInt64 `json:"current_route_state_row_id"`
+	State                  string        `json:"state"`
+	WorkspaceID            string        `json:"workspace_id"`
+	Version                int64         `json:"version"`
+}
+
+func (q *Queries) AdvanceFeatureWorkspaceRouteState(ctx context.Context, arg AdvanceFeatureWorkspaceRouteStateParams) (FeatureWorkspace, error) {
+	row := q.db.QueryRowContext(ctx, advanceFeatureWorkspaceRouteState,
+		arg.CurrentRouteStateRowID,
+		arg.State,
+		arg.WorkspaceID,
+		arg.Version,
+	)
+	var i FeatureWorkspace
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectRowID,
+		&i.FeatureSlug,
+		&i.State,
+		&i.Version,
+		&i.CurrentRouteStateRowID,
+		&i.CurrentAuthorityRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const completePlan = `-- name: CompletePlan :one
 UPDATE plans
 SET
@@ -207,6 +245,407 @@ func (q *Queries) CreateExecutionAttempt(ctx context.Context, arg CreateExecutio
 	return i, err
 }
 
+const createFeatureWorkspace = `-- name: CreateFeatureWorkspace :one
+INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug)
+VALUES (?, ?, ?)
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+`
+
+type CreateFeatureWorkspaceParams struct {
+	WorkspaceID  string `json:"workspace_id"`
+	ProjectRowID int64  `json:"project_row_id"`
+	FeatureSlug  string `json:"feature_slug"`
+}
+
+func (q *Queries) CreateFeatureWorkspace(ctx context.Context, arg CreateFeatureWorkspaceParams) (FeatureWorkspace, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspace, arg.WorkspaceID, arg.ProjectRowID, arg.FeatureSlug)
+	var i FeatureWorkspace
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectRowID,
+		&i.FeatureSlug,
+		&i.State,
+		&i.Version,
+		&i.CurrentRouteStateRowID,
+		&i.CurrentAuthorityRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceAdmittedInput = `-- name: CreateFeatureWorkspaceAdmittedInput :one
+INSERT INTO feature_workspace_admitted_inputs (
+    admitted_input_id, workspace_row_id, sequence, input_name, input_role,
+    source_kind, artifact_row_id, retained_artifact_row_id, source_closure_row_id,
+    artifact_sha256, source_reference
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, admitted_input_id, workspace_row_id, sequence, input_name, input_role, source_kind, artifact_row_id, retained_artifact_row_id, source_closure_row_id, artifact_sha256, source_reference, created_at
+`
+
+type CreateFeatureWorkspaceAdmittedInputParams struct {
+	AdmittedInputID       string         `json:"admitted_input_id"`
+	WorkspaceRowID        int64          `json:"workspace_row_id"`
+	Sequence              int64          `json:"sequence"`
+	InputName             string         `json:"input_name"`
+	InputRole             string         `json:"input_role"`
+	SourceKind            string         `json:"source_kind"`
+	ArtifactRowID         sql.NullInt64  `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64  `json:"retained_artifact_row_id"`
+	SourceClosureRowID    sql.NullInt64  `json:"source_closure_row_id"`
+	ArtifactSha256        sql.NullString `json:"artifact_sha256"`
+	SourceReference       string         `json:"source_reference"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceAdmittedInput(ctx context.Context, arg CreateFeatureWorkspaceAdmittedInputParams) (FeatureWorkspaceAdmittedInput, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceAdmittedInput,
+		arg.AdmittedInputID,
+		arg.WorkspaceRowID,
+		arg.Sequence,
+		arg.InputName,
+		arg.InputRole,
+		arg.SourceKind,
+		arg.ArtifactRowID,
+		arg.RetainedArtifactRowID,
+		arg.SourceClosureRowID,
+		arg.ArtifactSha256,
+		arg.SourceReference,
+	)
+	var i FeatureWorkspaceAdmittedInput
+	err := row.Scan(
+		&i.ID,
+		&i.AdmittedInputID,
+		&i.WorkspaceRowID,
+		&i.Sequence,
+		&i.InputName,
+		&i.InputRole,
+		&i.SourceKind,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.SourceClosureRowID,
+		&i.ArtifactSha256,
+		&i.SourceReference,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceAuthorityLayer = `-- name: CreateFeatureWorkspaceAuthorityLayer :one
+INSERT INTO feature_workspace_authority_layers (
+    authority_revision_row_id, layer_kind, sequence, artifact_row_id,
+    retained_artifact_row_id, artifact_sha256, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+`
+
+type CreateFeatureWorkspaceAuthorityLayerParams struct {
+	AuthorityRevisionRowID int64         `json:"authority_revision_row_id"`
+	LayerKind              string        `json:"layer_kind"`
+	Sequence               int64         `json:"sequence"`
+	ArtifactRowID          sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID  sql.NullInt64 `json:"retained_artifact_row_id"`
+	ArtifactSha256         string        `json:"artifact_sha256"`
+	SourceClosureRowID     sql.NullInt64 `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceAuthorityLayer(ctx context.Context, arg CreateFeatureWorkspaceAuthorityLayerParams) (FeatureWorkspaceAuthorityLayer, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceAuthorityLayer,
+		arg.AuthorityRevisionRowID,
+		arg.LayerKind,
+		arg.Sequence,
+		arg.ArtifactRowID,
+		arg.RetainedArtifactRowID,
+		arg.ArtifactSha256,
+		arg.SourceClosureRowID,
+	)
+	var i FeatureWorkspaceAuthorityLayer
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorityRevisionRowID,
+		&i.LayerKind,
+		&i.Sequence,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.ArtifactSha256,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceAuthorityRevision = `-- name: CreateFeatureWorkspaceAuthorityRevision :one
+INSERT INTO feature_workspace_authority_revisions (
+    authority_revision_id, workspace_row_id, revision_number, source_closure_row_id
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, authority_revision_id, workspace_row_id, revision_number, source_closure_row_id, created_at
+`
+
+type CreateFeatureWorkspaceAuthorityRevisionParams struct {
+	AuthorityRevisionID string        `json:"authority_revision_id"`
+	WorkspaceRowID      int64         `json:"workspace_row_id"`
+	RevisionNumber      int64         `json:"revision_number"`
+	SourceClosureRowID  sql.NullInt64 `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceAuthorityRevision(ctx context.Context, arg CreateFeatureWorkspaceAuthorityRevisionParams) (FeatureWorkspaceAuthorityRevision, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceAuthorityRevision,
+		arg.AuthorityRevisionID,
+		arg.WorkspaceRowID,
+		arg.RevisionNumber,
+		arg.SourceClosureRowID,
+	)
+	var i FeatureWorkspaceAuthorityRevision
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorityRevisionID,
+		&i.WorkspaceRowID,
+		&i.RevisionNumber,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceDestination = `-- name: CreateFeatureWorkspaceDestination :one
+INSERT INTO feature_workspace_destinations (
+    destination_id, workspace_row_id, sequence, destination_kind, destination_key,
+    repo_target, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, destination_id, workspace_row_id, sequence, destination_kind, destination_key, repo_target, source_closure_row_id, created_at
+`
+
+type CreateFeatureWorkspaceDestinationParams struct {
+	DestinationID      string         `json:"destination_id"`
+	WorkspaceRowID     int64          `json:"workspace_row_id"`
+	Sequence           int64          `json:"sequence"`
+	DestinationKind    string         `json:"destination_kind"`
+	DestinationKey     string         `json:"destination_key"`
+	RepoTarget         sql.NullString `json:"repo_target"`
+	SourceClosureRowID sql.NullInt64  `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceDestination(ctx context.Context, arg CreateFeatureWorkspaceDestinationParams) (FeatureWorkspaceDestination, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceDestination,
+		arg.DestinationID,
+		arg.WorkspaceRowID,
+		arg.Sequence,
+		arg.DestinationKind,
+		arg.DestinationKey,
+		arg.RepoTarget,
+		arg.SourceClosureRowID,
+	)
+	var i FeatureWorkspaceDestination
+	err := row.Scan(
+		&i.ID,
+		&i.DestinationID,
+		&i.WorkspaceRowID,
+		&i.Sequence,
+		&i.DestinationKind,
+		&i.DestinationKey,
+		&i.RepoTarget,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceDiscoveryTicket = `-- name: CreateFeatureWorkspaceDiscoveryTicket :one
+INSERT INTO feature_workspace_discovery_tickets (
+    discovery_ticket_id, workspace_row_id, ticket_key, subject
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, discovery_ticket_id, workspace_row_id, ticket_key, subject, state, version, created_at, updated_at
+`
+
+type CreateFeatureWorkspaceDiscoveryTicketParams struct {
+	DiscoveryTicketID string `json:"discovery_ticket_id"`
+	WorkspaceRowID    int64  `json:"workspace_row_id"`
+	TicketKey         string `json:"ticket_key"`
+	Subject           string `json:"subject"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceDiscoveryTicket(ctx context.Context, arg CreateFeatureWorkspaceDiscoveryTicketParams) (FeatureWorkspaceDiscoveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceDiscoveryTicket,
+		arg.DiscoveryTicketID,
+		arg.WorkspaceRowID,
+		arg.TicketKey,
+		arg.Subject,
+	)
+	var i FeatureWorkspaceDiscoveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.DiscoveryTicketID,
+		&i.WorkspaceRowID,
+		&i.TicketKey,
+		&i.Subject,
+		&i.State,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceInvestigation = `-- name: CreateFeatureWorkspaceInvestigation :one
+INSERT INTO feature_workspace_investigations (
+    investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind,
+    artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+`
+
+type CreateFeatureWorkspaceInvestigationParams struct {
+	InvestigationID       string        `json:"investigation_id"`
+	WorkspaceRowID        int64         `json:"workspace_row_id"`
+	TicketRowID           sql.NullInt64 `json:"ticket_row_id"`
+	Sequence              int64         `json:"sequence"`
+	InvestigationKind     string        `json:"investigation_kind"`
+	ArtifactRowID         sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64 `json:"retained_artifact_row_id"`
+	ArtifactSha256        string        `json:"artifact_sha256"`
+	SourceClosureRowID    sql.NullInt64 `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceInvestigation(ctx context.Context, arg CreateFeatureWorkspaceInvestigationParams) (FeatureWorkspaceInvestigation, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceInvestigation,
+		arg.InvestigationID,
+		arg.WorkspaceRowID,
+		arg.TicketRowID,
+		arg.Sequence,
+		arg.InvestigationKind,
+		arg.ArtifactRowID,
+		arg.RetainedArtifactRowID,
+		arg.ArtifactSha256,
+		arg.SourceClosureRowID,
+	)
+	var i FeatureWorkspaceInvestigation
+	err := row.Scan(
+		&i.ID,
+		&i.InvestigationID,
+		&i.WorkspaceRowID,
+		&i.TicketRowID,
+		&i.Sequence,
+		&i.InvestigationKind,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.ArtifactSha256,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceRouteState = `-- name: CreateFeatureWorkspaceRouteState :one
+INSERT INTO feature_workspace_route_states (
+    route_state_id, workspace_row_id, sequence, workspace_version, state, ticket_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, route_state_id, workspace_row_id, sequence, workspace_version, state, ticket_row_id, created_at
+`
+
+type CreateFeatureWorkspaceRouteStateParams struct {
+	RouteStateID     string        `json:"route_state_id"`
+	WorkspaceRowID   int64         `json:"workspace_row_id"`
+	Sequence         int64         `json:"sequence"`
+	WorkspaceVersion int64         `json:"workspace_version"`
+	State            string        `json:"state"`
+	TicketRowID      sql.NullInt64 `json:"ticket_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceRouteState(ctx context.Context, arg CreateFeatureWorkspaceRouteStateParams) (FeatureWorkspaceRouteState, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceRouteState,
+		arg.RouteStateID,
+		arg.WorkspaceRowID,
+		arg.Sequence,
+		arg.WorkspaceVersion,
+		arg.State,
+		arg.TicketRowID,
+	)
+	var i FeatureWorkspaceRouteState
+	err := row.Scan(
+		&i.ID,
+		&i.RouteStateID,
+		&i.WorkspaceRowID,
+		&i.Sequence,
+		&i.WorkspaceVersion,
+		&i.State,
+		&i.TicketRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceTicketDependency = `-- name: CreateFeatureWorkspaceTicketDependency :exec
+INSERT INTO feature_workspace_ticket_dependencies (
+    ticket_row_id, depends_on_ticket_row_id, dependency_kind
+)
+VALUES (?, ?, ?)
+`
+
+type CreateFeatureWorkspaceTicketDependencyParams struct {
+	TicketRowID          int64  `json:"ticket_row_id"`
+	DependsOnTicketRowID int64  `json:"depends_on_ticket_row_id"`
+	DependencyKind       string `json:"dependency_kind"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceTicketDependency(ctx context.Context, arg CreateFeatureWorkspaceTicketDependencyParams) error {
+	_, err := q.db.ExecContext(ctx, createFeatureWorkspaceTicketDependency, arg.TicketRowID, arg.DependsOnTicketRowID, arg.DependencyKind)
+	return err
+}
+
+const createFeatureWorkspaceTicketResolution = `-- name: CreateFeatureWorkspaceTicketResolution :one
+INSERT INTO feature_workspace_ticket_resolutions (
+    resolution_id, ticket_row_id, sequence, resolution_kind, artifact_row_id,
+    retained_artifact_row_id, artifact_sha256, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, resolution_id, ticket_row_id, sequence, resolution_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+`
+
+type CreateFeatureWorkspaceTicketResolutionParams struct {
+	ResolutionID          string        `json:"resolution_id"`
+	TicketRowID           int64         `json:"ticket_row_id"`
+	Sequence              int64         `json:"sequence"`
+	ResolutionKind        string        `json:"resolution_kind"`
+	ArtifactRowID         sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64 `json:"retained_artifact_row_id"`
+	ArtifactSha256        string        `json:"artifact_sha256"`
+	SourceClosureRowID    sql.NullInt64 `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceTicketResolution(ctx context.Context, arg CreateFeatureWorkspaceTicketResolutionParams) (FeatureWorkspaceTicketResolution, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceTicketResolution,
+		arg.ResolutionID,
+		arg.TicketRowID,
+		arg.Sequence,
+		arg.ResolutionKind,
+		arg.ArtifactRowID,
+		arg.RetainedArtifactRowID,
+		arg.ArtifactSha256,
+		arg.SourceClosureRowID,
+	)
+	var i FeatureWorkspaceTicketResolution
+	err := row.Scan(
+		&i.ID,
+		&i.ResolutionID,
+		&i.TicketRowID,
+		&i.Sequence,
+		&i.ResolutionKind,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.ArtifactSha256,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createPlan = `-- name: CreatePlan :one
 INSERT INTO plans (
     project_row_id,
@@ -353,7 +792,7 @@ func (q *Queries) CreatePlanRepositoryTarget(ctx context.Context, arg CreatePlan
 const createRepositoryTarget = `-- name: CreateRepositoryTarget :one
 INSERT INTO repository_targets (repo_target, local_path)
 VALUES (?, ?)
-RETURNING repo_target, local_path, created_at, updated_at
+RETURNING repo_target, local_path, created_at, updated_at, configured_branch_ref, configuration_version
 `
 
 type CreateRepositoryTargetParams struct {
@@ -369,6 +808,8 @@ func (q *Queries) CreateRepositoryTarget(ctx context.Context, arg CreateReposito
 		&i.LocalPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ConfiguredBranchRef,
+		&i.ConfigurationVersion,
 	)
 	return i, err
 }
@@ -509,6 +950,53 @@ func (q *Queries) GetExecutionAttemptByAttemptID(ctx context.Context, attemptID 
 	return i, err
 }
 
+const getFeatureWorkspaceByWorkspaceID = `-- name: GetFeatureWorkspaceByWorkspaceID :one
+SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+FROM feature_workspaces
+WHERE workspace_id = ?
+`
+
+func (q *Queries) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspaceID string) (FeatureWorkspace, error) {
+	row := q.db.QueryRowContext(ctx, getFeatureWorkspaceByWorkspaceID, workspaceID)
+	var i FeatureWorkspace
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectRowID,
+		&i.FeatureSlug,
+		&i.State,
+		&i.Version,
+		&i.CurrentRouteStateRowID,
+		&i.CurrentAuthorityRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getFeatureWorkspaceDiscoveryTicketByID = `-- name: GetFeatureWorkspaceDiscoveryTicketByID :one
+SELECT id, discovery_ticket_id, workspace_row_id, ticket_key, subject, state, version, created_at, updated_at
+FROM feature_workspace_discovery_tickets
+WHERE discovery_ticket_id = ?
+`
+
+func (q *Queries) GetFeatureWorkspaceDiscoveryTicketByID(ctx context.Context, discoveryTicketID string) (FeatureWorkspaceDiscoveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, getFeatureWorkspaceDiscoveryTicketByID, discoveryTicketID)
+	var i FeatureWorkspaceDiscoveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.DiscoveryTicketID,
+		&i.WorkspaceRowID,
+		&i.TicketKey,
+		&i.Subject,
+		&i.State,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLatestExecutionAttemptByRun = `-- name: GetLatestExecutionAttemptByRun :one
 SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json, created_at, started_at, finished_at, cancellation_requested_at
 FROM execution_attempts
@@ -641,7 +1129,7 @@ func (q *Queries) GetPlanPassByRowID(ctx context.Context, id int64) (PlanPass, e
 }
 
 const getRepositoryTarget = `-- name: GetRepositoryTarget :one
-SELECT repo_target, local_path, created_at, updated_at
+SELECT repo_target, local_path, created_at, updated_at, configured_branch_ref, configuration_version
 FROM repository_targets
 WHERE repo_target = ? COLLATE NOCASE
 `
@@ -654,6 +1142,8 @@ func (q *Queries) GetRepositoryTarget(ctx context.Context, repoTarget string) (R
 		&i.LocalPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ConfiguredBranchRef,
+		&i.ConfigurationVersion,
 	)
 	return i, err
 }
@@ -843,6 +1333,405 @@ func (q *Queries) ListArtifactsByRun(ctx context.Context, runRowID sql.NullInt64
 	return items, nil
 }
 
+const listFeatureWorkspaceAdmittedInputs = `-- name: ListFeatureWorkspaceAdmittedInputs :many
+SELECT id, admitted_input_id, workspace_row_id, sequence, input_name, input_role, source_kind, artifact_row_id, retained_artifact_row_id, source_closure_row_id, artifact_sha256, source_reference, created_at
+FROM feature_workspace_admitted_inputs
+WHERE workspace_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListFeatureWorkspaceAdmittedInputs(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceAdmittedInput, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceAdmittedInputs, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceAdmittedInput{}
+	for rows.Next() {
+		var i FeatureWorkspaceAdmittedInput
+		if err := rows.Scan(
+			&i.ID,
+			&i.AdmittedInputID,
+			&i.WorkspaceRowID,
+			&i.Sequence,
+			&i.InputName,
+			&i.InputRole,
+			&i.SourceKind,
+			&i.ArtifactRowID,
+			&i.RetainedArtifactRowID,
+			&i.SourceClosureRowID,
+			&i.ArtifactSha256,
+			&i.SourceReference,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceAuthorityLayers = `-- name: ListFeatureWorkspaceAuthorityLayers :many
+SELECT id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+FROM feature_workspace_authority_layers
+WHERE authority_revision_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, authorityRevisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceAuthorityLayers, authorityRevisionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceAuthorityLayer{}
+	for rows.Next() {
+		var i FeatureWorkspaceAuthorityLayer
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorityRevisionRowID,
+			&i.LayerKind,
+			&i.Sequence,
+			&i.ArtifactRowID,
+			&i.RetainedArtifactRowID,
+			&i.ArtifactSha256,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceAuthorityRevisions = `-- name: ListFeatureWorkspaceAuthorityRevisions :many
+SELECT id, authority_revision_id, workspace_row_id, revision_number, source_closure_row_id, created_at
+FROM feature_workspace_authority_revisions
+WHERE workspace_row_id = ?
+ORDER BY revision_number, id
+`
+
+func (q *Queries) ListFeatureWorkspaceAuthorityRevisions(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceAuthorityRevision, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceAuthorityRevisions, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceAuthorityRevision{}
+	for rows.Next() {
+		var i FeatureWorkspaceAuthorityRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorityRevisionID,
+			&i.WorkspaceRowID,
+			&i.RevisionNumber,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceDestinations = `-- name: ListFeatureWorkspaceDestinations :many
+SELECT id, destination_id, workspace_row_id, sequence, destination_kind, destination_key, repo_target, source_closure_row_id, created_at
+FROM feature_workspace_destinations
+WHERE workspace_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListFeatureWorkspaceDestinations(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceDestination, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceDestinations, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceDestination{}
+	for rows.Next() {
+		var i FeatureWorkspaceDestination
+		if err := rows.Scan(
+			&i.ID,
+			&i.DestinationID,
+			&i.WorkspaceRowID,
+			&i.Sequence,
+			&i.DestinationKind,
+			&i.DestinationKey,
+			&i.RepoTarget,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceDiscoveryTickets = `-- name: ListFeatureWorkspaceDiscoveryTickets :many
+SELECT id, discovery_ticket_id, workspace_row_id, ticket_key, subject, state, version, created_at, updated_at
+FROM feature_workspace_discovery_tickets
+WHERE workspace_row_id = ?
+ORDER BY id
+`
+
+func (q *Queries) ListFeatureWorkspaceDiscoveryTickets(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceDiscoveryTicket, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceDiscoveryTickets, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceDiscoveryTicket{}
+	for rows.Next() {
+		var i FeatureWorkspaceDiscoveryTicket
+		if err := rows.Scan(
+			&i.ID,
+			&i.DiscoveryTicketID,
+			&i.WorkspaceRowID,
+			&i.TicketKey,
+			&i.Subject,
+			&i.State,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceInvestigations = `-- name: ListFeatureWorkspaceInvestigations :many
+SELECT id, investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+FROM feature_workspace_investigations
+WHERE workspace_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListFeatureWorkspaceInvestigations(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceInvestigation, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceInvestigations, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceInvestigation{}
+	for rows.Next() {
+		var i FeatureWorkspaceInvestigation
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvestigationID,
+			&i.WorkspaceRowID,
+			&i.TicketRowID,
+			&i.Sequence,
+			&i.InvestigationKind,
+			&i.ArtifactRowID,
+			&i.RetainedArtifactRowID,
+			&i.ArtifactSha256,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceRouteStates = `-- name: ListFeatureWorkspaceRouteStates :many
+SELECT id, route_state_id, workspace_row_id, sequence, workspace_version, state, ticket_row_id, created_at
+FROM feature_workspace_route_states
+WHERE workspace_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListFeatureWorkspaceRouteStates(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceRouteState, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceRouteStates, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceRouteState{}
+	for rows.Next() {
+		var i FeatureWorkspaceRouteState
+		if err := rows.Scan(
+			&i.ID,
+			&i.RouteStateID,
+			&i.WorkspaceRowID,
+			&i.Sequence,
+			&i.WorkspaceVersion,
+			&i.State,
+			&i.TicketRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceTicketDependencies = `-- name: ListFeatureWorkspaceTicketDependencies :many
+SELECT ticket_row_id, depends_on_ticket_row_id, dependency_kind, created_at
+FROM feature_workspace_ticket_dependencies
+WHERE ticket_row_id = ?
+ORDER BY depends_on_ticket_row_id
+`
+
+func (q *Queries) ListFeatureWorkspaceTicketDependencies(ctx context.Context, ticketRowID int64) ([]FeatureWorkspaceTicketDependency, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceTicketDependencies, ticketRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceTicketDependency{}
+	for rows.Next() {
+		var i FeatureWorkspaceTicketDependency
+		if err := rows.Scan(
+			&i.TicketRowID,
+			&i.DependsOnTicketRowID,
+			&i.DependencyKind,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspaceTicketResolutions = `-- name: ListFeatureWorkspaceTicketResolutions :many
+SELECT id, resolution_id, ticket_row_id, sequence, resolution_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+FROM feature_workspace_ticket_resolutions
+WHERE ticket_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListFeatureWorkspaceTicketResolutions(ctx context.Context, ticketRowID int64) ([]FeatureWorkspaceTicketResolution, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceTicketResolutions, ticketRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceTicketResolution{}
+	for rows.Next() {
+		var i FeatureWorkspaceTicketResolution
+		if err := rows.Scan(
+			&i.ID,
+			&i.ResolutionID,
+			&i.TicketRowID,
+			&i.Sequence,
+			&i.ResolutionKind,
+			&i.ArtifactRowID,
+			&i.RetainedArtifactRowID,
+			&i.ArtifactSha256,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeatureWorkspacesByProject = `-- name: ListFeatureWorkspacesByProject :many
+SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+FROM feature_workspaces
+WHERE project_row_id = ?
+ORDER BY feature_slug, id
+`
+
+func (q *Queries) ListFeatureWorkspacesByProject(ctx context.Context, projectRowID int64) ([]FeatureWorkspace, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspacesByProject, projectRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspace{}
+	for rows.Next() {
+		var i FeatureWorkspace
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ProjectRowID,
+			&i.FeatureSlug,
+			&i.State,
+			&i.Version,
+			&i.CurrentRouteStateRowID,
+			&i.CurrentAuthorityRevisionRowID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlanPassDependencies = `-- name: ListPlanPassDependencies :many
 SELECT pass_row_id, depends_on_pass_row_id, created_at
 FROM plan_pass_dependencies
@@ -954,7 +1843,7 @@ func (q *Queries) ListPlanRepositoryTargets(ctx context.Context, planRowID int64
 }
 
 const listRepositoryTargets = `-- name: ListRepositoryTargets :many
-SELECT repo_target, local_path, created_at, updated_at
+SELECT repo_target, local_path, created_at, updated_at, configured_branch_ref, configuration_version
 FROM repository_targets
 ORDER BY repo_target COLLATE NOCASE
 `
@@ -973,6 +1862,8 @@ func (q *Queries) ListRepositoryTargets(ctx context.Context) ([]RepositoryTarget
 			&i.LocalPath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ConfiguredBranchRef,
+			&i.ConfigurationVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -1045,6 +1936,38 @@ func (q *Queries) NextExecutionAttemptNumber(ctx context.Context, runRowID int64
 	return column_1, err
 }
 
+const setFeatureWorkspaceAuthorityRevision = `-- name: SetFeatureWorkspaceAuthorityRevision :one
+UPDATE feature_workspaces
+SET current_authority_revision_row_id = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+`
+
+type SetFeatureWorkspaceAuthorityRevisionParams struct {
+	CurrentAuthorityRevisionRowID sql.NullInt64 `json:"current_authority_revision_row_id"`
+	WorkspaceID                   string        `json:"workspace_id"`
+	Version                       int64         `json:"version"`
+}
+
+func (q *Queries) SetFeatureWorkspaceAuthorityRevision(ctx context.Context, arg SetFeatureWorkspaceAuthorityRevisionParams) (FeatureWorkspace, error) {
+	row := q.db.QueryRowContext(ctx, setFeatureWorkspaceAuthorityRevision, arg.CurrentAuthorityRevisionRowID, arg.WorkspaceID, arg.Version)
+	var i FeatureWorkspace
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectRowID,
+		&i.FeatureSlug,
+		&i.State,
+		&i.Version,
+		&i.CurrentRouteStateRowID,
+		&i.CurrentAuthorityRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const transitionExecutionAttemptStatus = `-- name: TransitionExecutionAttemptStatus :one
 UPDATE execution_attempts
 SET
@@ -1094,6 +2017,42 @@ func (q *Queries) TransitionExecutionAttemptStatus(ctx context.Context, arg Tran
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.CancellationRequestedAt,
+	)
+	return i, err
+}
+
+const transitionFeatureWorkspaceDiscoveryTicket = `-- name: TransitionFeatureWorkspaceDiscoveryTicket :one
+UPDATE feature_workspace_discovery_tickets
+SET state = ?, version = version + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE discovery_ticket_id = ? AND state = ? AND version = ?
+RETURNING id, discovery_ticket_id, workspace_row_id, ticket_key, subject, state, version, created_at, updated_at
+`
+
+type TransitionFeatureWorkspaceDiscoveryTicketParams struct {
+	State             string `json:"state"`
+	DiscoveryTicketID string `json:"discovery_ticket_id"`
+	State_2           string `json:"state_2"`
+	Version           int64  `json:"version"`
+}
+
+func (q *Queries) TransitionFeatureWorkspaceDiscoveryTicket(ctx context.Context, arg TransitionFeatureWorkspaceDiscoveryTicketParams) (FeatureWorkspaceDiscoveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, transitionFeatureWorkspaceDiscoveryTicket,
+		arg.State,
+		arg.DiscoveryTicketID,
+		arg.State_2,
+		arg.Version,
+	)
+	var i FeatureWorkspaceDiscoveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.DiscoveryTicketID,
+		&i.WorkspaceRowID,
+		&i.TicketKey,
+		&i.Subject,
+		&i.State,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

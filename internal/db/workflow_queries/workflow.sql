@@ -268,3 +268,166 @@ RETURNING *;
 SELECT *
 FROM audit_decisions
 WHERE audit_decision_id = ?;
+
+-- name: CreateFeatureWorkspace :one
+INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: GetFeatureWorkspaceByWorkspaceID :one
+SELECT *
+FROM feature_workspaces
+WHERE workspace_id = ?;
+
+-- name: ListFeatureWorkspacesByProject :many
+SELECT *
+FROM feature_workspaces
+WHERE project_row_id = ?
+ORDER BY feature_slug, id;
+
+-- name: CreateFeatureWorkspaceAdmittedInput :one
+INSERT INTO feature_workspace_admitted_inputs (
+    admitted_input_id, workspace_row_id, sequence, input_name, input_role,
+    source_kind, artifact_row_id, retained_artifact_row_id, source_closure_row_id,
+    artifact_sha256, source_reference
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceAdmittedInputs :many
+SELECT *
+FROM feature_workspace_admitted_inputs
+WHERE workspace_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateFeatureWorkspaceDestination :one
+INSERT INTO feature_workspace_destinations (
+    destination_id, workspace_row_id, sequence, destination_kind, destination_key,
+    repo_target, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceDestinations :many
+SELECT *
+FROM feature_workspace_destinations
+WHERE workspace_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateFeatureWorkspaceDiscoveryTicket :one
+INSERT INTO feature_workspace_discovery_tickets (
+    discovery_ticket_id, workspace_row_id, ticket_key, subject
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetFeatureWorkspaceDiscoveryTicketByID :one
+SELECT *
+FROM feature_workspace_discovery_tickets
+WHERE discovery_ticket_id = ?;
+
+-- name: ListFeatureWorkspaceDiscoveryTickets :many
+SELECT *
+FROM feature_workspace_discovery_tickets
+WHERE workspace_row_id = ?
+ORDER BY id;
+
+-- name: TransitionFeatureWorkspaceDiscoveryTicket :one
+UPDATE feature_workspace_discovery_tickets
+SET state = ?, version = version + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE discovery_ticket_id = ? AND state = ? AND version = ?
+RETURNING *;
+
+-- name: CreateFeatureWorkspaceTicketDependency :exec
+INSERT INTO feature_workspace_ticket_dependencies (
+    ticket_row_id, depends_on_ticket_row_id, dependency_kind
+)
+VALUES (?, ?, ?);
+
+-- name: ListFeatureWorkspaceTicketDependencies :many
+SELECT *
+FROM feature_workspace_ticket_dependencies
+WHERE ticket_row_id = ?
+ORDER BY depends_on_ticket_row_id;
+
+-- name: CreateFeatureWorkspaceTicketResolution :one
+INSERT INTO feature_workspace_ticket_resolutions (
+    resolution_id, ticket_row_id, sequence, resolution_kind, artifact_row_id,
+    retained_artifact_row_id, artifact_sha256, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceTicketResolutions :many
+SELECT *
+FROM feature_workspace_ticket_resolutions
+WHERE ticket_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateFeatureWorkspaceRouteState :one
+INSERT INTO feature_workspace_route_states (
+    route_state_id, workspace_row_id, sequence, workspace_version, state, ticket_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceRouteStates :many
+SELECT *
+FROM feature_workspace_route_states
+WHERE workspace_row_id = ?
+ORDER BY sequence, id;
+
+-- name: AdvanceFeatureWorkspaceRouteState :one
+UPDATE feature_workspaces
+SET current_route_state_row_id = ?, state = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING *;
+
+-- name: CreateFeatureWorkspaceInvestigation :one
+INSERT INTO feature_workspace_investigations (
+    investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind,
+    artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceInvestigations :many
+SELECT *
+FROM feature_workspace_investigations
+WHERE workspace_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateFeatureWorkspaceAuthorityRevision :one
+INSERT INTO feature_workspace_authority_revisions (
+    authority_revision_id, workspace_row_id, revision_number, source_closure_row_id
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceAuthorityRevisions :many
+SELECT *
+FROM feature_workspace_authority_revisions
+WHERE workspace_row_id = ?
+ORDER BY revision_number, id;
+
+-- name: CreateFeatureWorkspaceAuthorityLayer :one
+INSERT INTO feature_workspace_authority_layers (
+    authority_revision_row_id, layer_kind, sequence, artifact_row_id,
+    retained_artifact_row_id, artifact_sha256, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListFeatureWorkspaceAuthorityLayers :many
+SELECT *
+FROM feature_workspace_authority_layers
+WHERE authority_revision_row_id = ?
+ORDER BY sequence, id;
+
+-- name: SetFeatureWorkspaceAuthorityRevision :one
+UPDATE feature_workspaces
+SET current_authority_revision_row_id = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING *;

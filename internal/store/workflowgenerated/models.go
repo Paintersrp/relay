@@ -66,6 +66,238 @@ type ExecutionAttempt struct {
 	CancellationRequestedAt sql.NullString `json:"cancellation_requested_at"`
 }
 
+type FeatureWorkspace struct {
+	ID                            int64         `json:"id"`
+	WorkspaceID                   string        `json:"workspace_id"`
+	ProjectRowID                  int64         `json:"project_row_id"`
+	FeatureSlug                   string        `json:"feature_slug"`
+	State                         string        `json:"state"`
+	Version                       int64         `json:"version"`
+	CurrentRouteStateRowID        sql.NullInt64 `json:"current_route_state_row_id"`
+	CurrentAuthorityRevisionRowID sql.NullInt64 `json:"current_authority_revision_row_id"`
+	CreatedAt                     string        `json:"created_at"`
+	UpdatedAt                     string        `json:"updated_at"`
+}
+
+type FeatureWorkspaceAdmittedInput struct {
+	ID                    int64          `json:"id"`
+	AdmittedInputID       string         `json:"admitted_input_id"`
+	WorkspaceRowID        int64          `json:"workspace_row_id"`
+	Sequence              int64          `json:"sequence"`
+	InputName             string         `json:"input_name"`
+	InputRole             string         `json:"input_role"`
+	SourceKind            string         `json:"source_kind"`
+	ArtifactRowID         sql.NullInt64  `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64  `json:"retained_artifact_row_id"`
+	SourceClosureRowID    sql.NullInt64  `json:"source_closure_row_id"`
+	ArtifactSha256        sql.NullString `json:"artifact_sha256"`
+	SourceReference       string         `json:"source_reference"`
+	CreatedAt             string         `json:"created_at"`
+}
+
+type FeatureWorkspaceAuthorityLayer struct {
+	ID                     int64         `json:"id"`
+	AuthorityRevisionRowID int64         `json:"authority_revision_row_id"`
+	LayerKind              string        `json:"layer_kind"`
+	Sequence               int64         `json:"sequence"`
+	ArtifactRowID          sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID  sql.NullInt64 `json:"retained_artifact_row_id"`
+	ArtifactSha256         string        `json:"artifact_sha256"`
+	SourceClosureRowID     sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt              string        `json:"created_at"`
+}
+
+type FeatureWorkspaceAuthorityRevision struct {
+	ID                  int64         `json:"id"`
+	AuthorityRevisionID string        `json:"authority_revision_id"`
+	WorkspaceRowID      int64         `json:"workspace_row_id"`
+	RevisionNumber      int64         `json:"revision_number"`
+	SourceClosureRowID  sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt           string        `json:"created_at"`
+}
+
+type FeatureWorkspaceDestination struct {
+	ID                 int64          `json:"id"`
+	DestinationID      string         `json:"destination_id"`
+	WorkspaceRowID     int64          `json:"workspace_row_id"`
+	Sequence           int64          `json:"sequence"`
+	DestinationKind    string         `json:"destination_kind"`
+	DestinationKey     string         `json:"destination_key"`
+	RepoTarget         sql.NullString `json:"repo_target"`
+	SourceClosureRowID sql.NullInt64  `json:"source_closure_row_id"`
+	CreatedAt          string         `json:"created_at"`
+}
+
+type FeatureWorkspaceDiscoveryTicket struct {
+	ID                int64  `json:"id"`
+	DiscoveryTicketID string `json:"discovery_ticket_id"`
+	WorkspaceRowID    int64  `json:"workspace_row_id"`
+	TicketKey         string `json:"ticket_key"`
+	Subject           string `json:"subject"`
+	State             string `json:"state"`
+	Version           int64  `json:"version"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+type FeatureWorkspaceInvestigation struct {
+	ID                    int64         `json:"id"`
+	InvestigationID       string        `json:"investigation_id"`
+	WorkspaceRowID        int64         `json:"workspace_row_id"`
+	TicketRowID           sql.NullInt64 `json:"ticket_row_id"`
+	Sequence              int64         `json:"sequence"`
+	InvestigationKind     string        `json:"investigation_kind"`
+	ArtifactRowID         sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64 `json:"retained_artifact_row_id"`
+	ArtifactSha256        string        `json:"artifact_sha256"`
+	SourceClosureRowID    sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt             string        `json:"created_at"`
+}
+
+type FeatureWorkspaceRouteState struct {
+	ID               int64         `json:"id"`
+	RouteStateID     string        `json:"route_state_id"`
+	WorkspaceRowID   int64         `json:"workspace_row_id"`
+	Sequence         int64         `json:"sequence"`
+	WorkspaceVersion int64         `json:"workspace_version"`
+	State            string        `json:"state"`
+	TicketRowID      sql.NullInt64 `json:"ticket_row_id"`
+	CreatedAt        string        `json:"created_at"`
+}
+
+type FeatureWorkspaceTicketDependency struct {
+	TicketRowID          int64  `json:"ticket_row_id"`
+	DependsOnTicketRowID int64  `json:"depends_on_ticket_row_id"`
+	DependencyKind       string `json:"dependency_kind"`
+	CreatedAt            string `json:"created_at"`
+}
+
+type FeatureWorkspaceTicketResolution struct {
+	ID                    int64         `json:"id"`
+	ResolutionID          string        `json:"resolution_id"`
+	TicketRowID           int64         `json:"ticket_row_id"`
+	Sequence              int64         `json:"sequence"`
+	ResolutionKind        string        `json:"resolution_kind"`
+	ArtifactRowID         sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64 `json:"retained_artifact_row_id"`
+	ArtifactSha256        string        `json:"artifact_sha256"`
+	SourceClosureRowID    sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt             string        `json:"created_at"`
+}
+
+type McpMutationResult struct {
+	ID                      int64  `json:"id"`
+	SurfaceContractID       string `json:"surface_contract_id"`
+	ToolName                string `json:"tool_name"`
+	MutationID              string `json:"mutation_id"`
+	SurfaceManifestSha256   string `json:"surface_manifest_sha256"`
+	SemanticIdentityVersion string `json:"semantic_identity_version"`
+	SemanticRequestSha256   string `json:"semantic_request_sha256"`
+	ResultKind              string `json:"result_kind"`
+	ResultIdentityJson      string `json:"result_identity_json"`
+	ResultSha256            string `json:"result_sha256"`
+	CommittedAt             string `json:"committed_at"`
+}
+
+type OperationPacket struct {
+	ID                       int64          `json:"id"`
+	PacketID                 string         `json:"packet_id"`
+	PacketSha256             string         `json:"packet_sha256"`
+	SchemaVersion            string         `json:"schema_version"`
+	Role                     string         `json:"role"`
+	OperationID              string         `json:"operation_id"`
+	SurfaceContractID        string         `json:"surface_contract_id"`
+	ProjectID                string         `json:"project_id"`
+	ReadinessState           string         `json:"readiness_state"`
+	LifecycleState           string         `json:"lifecycle_state"`
+	PriorPacketRowID         sql.NullInt64  `json:"prior_packet_row_id"`
+	ReplacementPacketRowID   sql.NullInt64  `json:"replacement_packet_row_id"`
+	CreatedAt                string         `json:"created_at"`
+	SupersededAt             sql.NullString `json:"superseded_at"`
+	ClosedAt                 sql.NullString `json:"closed_at"`
+	PacketArtifactRowID      int64          `json:"packet_artifact_row_id"`
+	CoordinatedPublicationID sql.NullString `json:"coordinated_publication_id"`
+}
+
+type OperationPacketArtifact struct {
+	ID           int64  `json:"id"`
+	ArtifactID   string `json:"artifact_id"`
+	Kind         string `json:"kind"`
+	RelativePath string `json:"relative_path"`
+	MediaType    string `json:"media_type"`
+	Sha256       string `json:"sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type OperationPacketArtifactBinding struct {
+	ID                    int64         `json:"id"`
+	PublicationID         string        `json:"publication_id"`
+	PacketRowID           int64         `json:"packet_row_id"`
+	Sequence              int64         `json:"sequence"`
+	DependencyClass       string        `json:"dependency_class"`
+	DependencyKey         string        `json:"dependency_key"`
+	PacketArtifactRowID   sql.NullInt64 `json:"packet_artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64 `json:"retained_artifact_row_id"`
+	CreatedAt             string        `json:"created_at"`
+}
+
+type OperationPacketPublication struct {
+	ID                             int64  `json:"id"`
+	PublicationID                  string `json:"publication_id"`
+	PacketRowID                    int64  `json:"packet_row_id"`
+	PacketArtifactRowID            int64  `json:"packet_artifact_row_id"`
+	MutationResultRowID            int64  `json:"mutation_result_row_id"`
+	Namespace                      string `json:"namespace"`
+	ManifestSha256                 string `json:"manifest_sha256"`
+	ExpectedRetainedArtifactCount  int64  `json:"expected_retained_artifact_count"`
+	ExpectedBindingCount           int64  `json:"expected_binding_count"`
+	ExpectedDependencyCount        int64  `json:"expected_dependency_count"`
+	ExpectedVaultRelationshipCount int64  `json:"expected_vault_relationship_count"`
+	State                          string `json:"state"`
+	CreatedAt                      string `json:"created_at"`
+}
+
+type OperationPacketRetainedArtifact struct {
+	ID            int64  `json:"id"`
+	PublicationID string `json:"publication_id"`
+	ArtifactID    string `json:"artifact_id"`
+	Kind          string `json:"kind"`
+	RelativePath  string `json:"relative_path"`
+	MediaType     string `json:"media_type"`
+	Sha256        string `json:"sha256"`
+	SizeBytes     int64  `json:"size_bytes"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type OperationPacketRetentionDependency struct {
+	ID              int64          `json:"id"`
+	PacketRowID     int64          `json:"packet_row_id"`
+	DependencyClass string         `json:"dependency_class"`
+	DependencyKey   string         `json:"dependency_key"`
+	Required        int64          `json:"required"`
+	Attached        int64          `json:"attached"`
+	Retained        int64          `json:"retained"`
+	OwnerIdentity   sql.NullString `json:"owner_identity"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
+}
+
+type OperationPacketVaultRelationship struct {
+	ID              int64  `json:"id"`
+	PublicationID   string `json:"publication_id"`
+	PacketRowID     int64  `json:"packet_row_id"`
+	DependencyClass string `json:"dependency_class"`
+	DependencyKey   string `json:"dependency_key"`
+	OwnerIdentity   string `json:"owner_identity"`
+	RetentionRowID  int64  `json:"retention_row_id"`
+	ClosureRowID    int64  `json:"closure_row_id"`
+	VaultRowID      int64  `json:"vault_row_id"`
+	CommitOid       string `json:"commit_oid"`
+	TreeOid         string `json:"tree_oid"`
+	CreatedAt       string `json:"created_at"`
+}
+
 type Plan struct {
 	ID              int64          `json:"id"`
 	ProjectRowID    int64          `json:"project_row_id"`
@@ -136,10 +368,12 @@ type ProjectRepositoryTarget struct {
 }
 
 type RepositoryTarget struct {
-	RepoTarget string `json:"repo_target"`
-	LocalPath  string `json:"local_path"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	RepoTarget           string         `json:"repo_target"`
+	LocalPath            string         `json:"local_path"`
+	CreatedAt            string         `json:"created_at"`
+	UpdatedAt            string         `json:"updated_at"`
+	ConfiguredBranchRef  sql.NullString `json:"configured_branch_ref"`
+	ConfigurationVersion int64          `json:"configuration_version"`
 }
 
 type Run struct {
@@ -157,4 +391,42 @@ type Run struct {
 	CreatedAt          string         `json:"created_at"`
 	UpdatedAt          string         `json:"updated_at"`
 	CompletedAt        sql.NullString `json:"completed_at"`
+}
+
+type SourceVault struct {
+	ID           int64  `json:"id"`
+	VaultID      string `json:"vault_id"`
+	RepoTarget   string `json:"repo_target"`
+	RelativePath string `json:"relative_path"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type SourceVaultClosure struct {
+	ID              int64          `json:"id"`
+	ClosureID       string         `json:"closure_id"`
+	VaultRowID      int64          `json:"vault_row_id"`
+	CommitOid       string         `json:"commit_oid"`
+	TreeOid         string         `json:"tree_oid"`
+	Generation      int64          `json:"generation"`
+	RefName         string         `json:"ref_name"`
+	State           string         `json:"state"`
+	FailureReason   sql.NullString `json:"failure_reason"`
+	ImportStartedAt string         `json:"import_started_at"`
+	VerifiedAt      sql.NullString `json:"verified_at"`
+	ReleasedAt      sql.NullString `json:"released_at"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
+}
+
+type SourceVaultRetention struct {
+	ID            int64          `json:"id"`
+	RetentionID   string         `json:"retention_id"`
+	ClosureRowID  int64          `json:"closure_row_id"`
+	OwnerClass    string         `json:"owner_class"`
+	OwnerIdentity string         `json:"owner_identity"`
+	State         string         `json:"state"`
+	CreatedAt     string         `json:"created_at"`
+	UpdatedAt     string         `json:"updated_at"`
+	ReleasedAt    sql.NullString `json:"released_at"`
 }
