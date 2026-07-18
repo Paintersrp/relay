@@ -85,3 +85,11 @@ func NewFeatureWorkspaceRouteStateID() string {
 func NewFeatureWorkspaceAuthorityRevisionID() string {
 	return "authority-" + uuid.NewString()
 }
+
+func NewDeliveryTicketSelectionID() string {
+	return "selection-" + uuid.NewString()
+}
+
+func NewDeliveryTicketApprovalID() string {
+	return "approval-" + uuid.NewString()
+}

@@ -198,6 +198,277 @@ func (q *Queries) CreateAuditDecision(ctx context.Context, arg CreateAuditDecisi
 	return i, err
 }
 
+const createDeliveryTicket = `-- name: CreateDeliveryTicket :one
+INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority)
+VALUES (?, ?, ?)
+RETURNING id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+`
+
+type CreateDeliveryTicketParams struct {
+	TicketID         string `json:"ticket_id"`
+	WorkspaceRowID   int64  `json:"workspace_row_id"`
+	ExternalPriority int64  `json:"external_priority"`
+}
+
+func (q *Queries) CreateDeliveryTicket(ctx context.Context, arg CreateDeliveryTicketParams) (DeliveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicket, arg.TicketID, arg.WorkspaceRowID, arg.ExternalPriority)
+	var i DeliveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.TicketID,
+		&i.WorkspaceRowID,
+		&i.ExternalPriority,
+		&i.CurrentRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketRevision = `-- name: CreateDeliveryTicketRevision :one
+INSERT INTO delivery_ticket_revisions (
+    delivery_ticket_row_id, revision_number, replaces_revision_row_id,
+    cancellation_reason, repo_target, branch, base_commit, source_closure_row_id,
+    source_path, goal, context, transition_applicability
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, delivery_ticket_row_id, revision_number, replaces_revision_row_id, cancellation_reason, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability, created_at
+`
+
+type CreateDeliveryTicketRevisionParams struct {
+	DeliveryTicketRowID     int64          `json:"delivery_ticket_row_id"`
+	RevisionNumber          int64          `json:"revision_number"`
+	ReplacesRevisionRowID   sql.NullInt64  `json:"replaces_revision_row_id"`
+	CancellationReason      sql.NullString `json:"cancellation_reason"`
+	RepoTarget              string         `json:"repo_target"`
+	Branch                  string         `json:"branch"`
+	BaseCommit              string         `json:"base_commit"`
+	SourceClosureRowID      int64          `json:"source_closure_row_id"`
+	SourcePath              string         `json:"source_path"`
+	Goal                    string         `json:"goal"`
+	Context                 string         `json:"context"`
+	TransitionApplicability string         `json:"transition_applicability"`
+}
+
+func (q *Queries) CreateDeliveryTicketRevision(ctx context.Context, arg CreateDeliveryTicketRevisionParams) (DeliveryTicketRevision, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketRevision,
+		arg.DeliveryTicketRowID,
+		arg.RevisionNumber,
+		arg.ReplacesRevisionRowID,
+		arg.CancellationReason,
+		arg.RepoTarget,
+		arg.Branch,
+		arg.BaseCommit,
+		arg.SourceClosureRowID,
+		arg.SourcePath,
+		arg.Goal,
+		arg.Context,
+		arg.TransitionApplicability,
+	)
+	var i DeliveryTicketRevision
+	err := row.Scan(
+		&i.ID,
+		&i.DeliveryTicketRowID,
+		&i.RevisionNumber,
+		&i.ReplacesRevisionRowID,
+		&i.CancellationReason,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.SourceClosureRowID,
+		&i.SourcePath,
+		&i.Goal,
+		&i.Context,
+		&i.TransitionApplicability,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketRevisionApproval = `-- name: CreateDeliveryTicketRevisionApproval :one
+INSERT INTO delivery_ticket_revision_approvals (
+    approval_id, revision_row_id, approval_kind, approval_state, rationale,
+    source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at
+`
+
+type CreateDeliveryTicketRevisionApprovalParams struct {
+	ApprovalID         string `json:"approval_id"`
+	RevisionRowID      int64  `json:"revision_row_id"`
+	ApprovalKind       string `json:"approval_kind"`
+	ApprovalState      string `json:"approval_state"`
+	Rationale          string `json:"rationale"`
+	SourceClosureRowID int64  `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateDeliveryTicketRevisionApproval(ctx context.Context, arg CreateDeliveryTicketRevisionApprovalParams) (DeliveryTicketRevisionApproval, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketRevisionApproval,
+		arg.ApprovalID,
+		arg.RevisionRowID,
+		arg.ApprovalKind,
+		arg.ApprovalState,
+		arg.Rationale,
+		arg.SourceClosureRowID,
+	)
+	var i DeliveryTicketRevisionApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.RevisionRowID,
+		&i.ApprovalKind,
+		&i.ApprovalState,
+		&i.Rationale,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketRevisionDependency = `-- name: CreateDeliveryTicketRevisionDependency :one
+INSERT INTO delivery_ticket_revision_dependencies (
+    revision_row_id, sequence, depends_on_revision_row_id, outcome
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, revision_row_id, sequence, depends_on_revision_row_id, outcome, created_at
+`
+
+type CreateDeliveryTicketRevisionDependencyParams struct {
+	RevisionRowID          int64  `json:"revision_row_id"`
+	Sequence               int64  `json:"sequence"`
+	DependsOnRevisionRowID int64  `json:"depends_on_revision_row_id"`
+	Outcome                string `json:"outcome"`
+}
+
+func (q *Queries) CreateDeliveryTicketRevisionDependency(ctx context.Context, arg CreateDeliveryTicketRevisionDependencyParams) (DeliveryTicketRevisionDependency, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketRevisionDependency,
+		arg.RevisionRowID,
+		arg.Sequence,
+		arg.DependsOnRevisionRowID,
+		arg.Outcome,
+	)
+	var i DeliveryTicketRevisionDependency
+	err := row.Scan(
+		&i.ID,
+		&i.RevisionRowID,
+		&i.Sequence,
+		&i.DependsOnRevisionRowID,
+		&i.Outcome,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketRevisionMember = `-- name: CreateDeliveryTicketRevisionMember :one
+INSERT INTO delivery_ticket_revision_members (
+    revision_row_id, sequence, member_kind, member_path, member_text
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, revision_row_id, sequence, member_kind, member_path, member_text, created_at
+`
+
+type CreateDeliveryTicketRevisionMemberParams struct {
+	RevisionRowID int64          `json:"revision_row_id"`
+	Sequence      int64          `json:"sequence"`
+	MemberKind    string         `json:"member_kind"`
+	MemberPath    sql.NullString `json:"member_path"`
+	MemberText    string         `json:"member_text"`
+}
+
+func (q *Queries) CreateDeliveryTicketRevisionMember(ctx context.Context, arg CreateDeliveryTicketRevisionMemberParams) (DeliveryTicketRevisionMember, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketRevisionMember,
+		arg.RevisionRowID,
+		arg.Sequence,
+		arg.MemberKind,
+		arg.MemberPath,
+		arg.MemberText,
+	)
+	var i DeliveryTicketRevisionMember
+	err := row.Scan(
+		&i.ID,
+		&i.RevisionRowID,
+		&i.Sequence,
+		&i.MemberKind,
+		&i.MemberPath,
+		&i.MemberText,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketSelection = `-- name: CreateDeliveryTicketSelection :one
+INSERT INTO delivery_ticket_selections (
+    selection_id, workspace_row_id, state, rationale, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+`
+
+type CreateDeliveryTicketSelectionParams struct {
+	SelectionID        string        `json:"selection_id"`
+	WorkspaceRowID     int64         `json:"workspace_row_id"`
+	State              string        `json:"state"`
+	Rationale          string        `json:"rationale"`
+	SourceClosureRowID sql.NullInt64 `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateDeliveryTicketSelection(ctx context.Context, arg CreateDeliveryTicketSelectionParams) (DeliveryTicketSelection, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketSelection,
+		arg.SelectionID,
+		arg.WorkspaceRowID,
+		arg.State,
+		arg.Rationale,
+		arg.SourceClosureRowID,
+	)
+	var i DeliveryTicketSelection
+	err := row.Scan(
+		&i.ID,
+		&i.SelectionID,
+		&i.WorkspaceRowID,
+		&i.State,
+		&i.Rationale,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketSelectionMember = `-- name: CreateDeliveryTicketSelectionMember :one
+INSERT INTO delivery_ticket_selection_members (
+    selection_row_id, sequence, revision_row_id, approval_row_id
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, selection_row_id, sequence, revision_row_id, approval_row_id, created_at
+`
+
+type CreateDeliveryTicketSelectionMemberParams struct {
+	SelectionRowID int64 `json:"selection_row_id"`
+	Sequence       int64 `json:"sequence"`
+	RevisionRowID  int64 `json:"revision_row_id"`
+	ApprovalRowID  int64 `json:"approval_row_id"`
+}
+
+func (q *Queries) CreateDeliveryTicketSelectionMember(ctx context.Context, arg CreateDeliveryTicketSelectionMemberParams) (DeliveryTicketSelectionMember, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketSelectionMember,
+		arg.SelectionRowID,
+		arg.Sequence,
+		arg.RevisionRowID,
+		arg.ApprovalRowID,
+	)
+	var i DeliveryTicketSelectionMember
+	err := row.Scan(
+		&i.ID,
+		&i.SelectionRowID,
+		&i.Sequence,
+		&i.RevisionRowID,
+		&i.ApprovalRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createExecutionAttempt = `-- name: CreateExecutionAttempt :one
 INSERT INTO execution_attempts (
     attempt_id,
@@ -924,6 +1195,77 @@ func (q *Queries) GetAuditDecisionByDecisionID(ctx context.Context, auditDecisio
 	return i, err
 }
 
+const getDeliveryTicketByTicketID = `-- name: GetDeliveryTicketByTicketID :one
+SELECT id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+FROM delivery_tickets
+WHERE ticket_id = ?
+`
+
+func (q *Queries) GetDeliveryTicketByTicketID(ctx context.Context, ticketID string) (DeliveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketByTicketID, ticketID)
+	var i DeliveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.TicketID,
+		&i.WorkspaceRowID,
+		&i.ExternalPriority,
+		&i.CurrentRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketRevisionByRowID = `-- name: GetDeliveryTicketRevisionByRowID :one
+SELECT id, delivery_ticket_row_id, revision_number, replaces_revision_row_id, cancellation_reason, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability, created_at
+FROM delivery_ticket_revisions
+WHERE id = ?
+`
+
+func (q *Queries) GetDeliveryTicketRevisionByRowID(ctx context.Context, id int64) (DeliveryTicketRevision, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketRevisionByRowID, id)
+	var i DeliveryTicketRevision
+	err := row.Scan(
+		&i.ID,
+		&i.DeliveryTicketRowID,
+		&i.RevisionNumber,
+		&i.ReplacesRevisionRowID,
+		&i.CancellationReason,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.SourceClosureRowID,
+		&i.SourcePath,
+		&i.Goal,
+		&i.Context,
+		&i.TransitionApplicability,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketSelectionBySelectionID = `-- name: GetDeliveryTicketSelectionBySelectionID :one
+SELECT id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+FROM delivery_ticket_selections
+WHERE selection_id = ?
+`
+
+func (q *Queries) GetDeliveryTicketSelectionBySelectionID(ctx context.Context, selectionID string) (DeliveryTicketSelection, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketSelectionBySelectionID, selectionID)
+	var i DeliveryTicketSelection
+	err := row.Scan(
+		&i.ID,
+		&i.SelectionID,
+		&i.WorkspaceRowID,
+		&i.State,
+		&i.Rationale,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getExecutionAttemptByAttemptID = `-- name: GetExecutionAttemptByAttemptID :one
 SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json, created_at, started_at, finished_at, cancellation_requested_at
 FROM execution_attempts
@@ -1344,6 +1686,279 @@ func (q *Queries) ListArtifactsByRun(ctx context.Context, runRowID sql.NullInt64
 			&i.Sha256,
 			&i.SizeBytes,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketRevisionApprovals = `-- name: ListDeliveryTicketRevisionApprovals :many
+SELECT id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at
+FROM delivery_ticket_revision_approvals
+WHERE revision_row_id = ?
+ORDER BY id
+`
+
+func (q *Queries) ListDeliveryTicketRevisionApprovals(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionApproval, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketRevisionApprovals, revisionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketRevisionApproval{}
+	for rows.Next() {
+		var i DeliveryTicketRevisionApproval
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApprovalID,
+			&i.RevisionRowID,
+			&i.ApprovalKind,
+			&i.ApprovalState,
+			&i.Rationale,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketRevisionDependencies = `-- name: ListDeliveryTicketRevisionDependencies :many
+SELECT id, revision_row_id, sequence, depends_on_revision_row_id, outcome, created_at
+FROM delivery_ticket_revision_dependencies
+WHERE revision_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListDeliveryTicketRevisionDependencies(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionDependency, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketRevisionDependencies, revisionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketRevisionDependency{}
+	for rows.Next() {
+		var i DeliveryTicketRevisionDependency
+		if err := rows.Scan(
+			&i.ID,
+			&i.RevisionRowID,
+			&i.Sequence,
+			&i.DependsOnRevisionRowID,
+			&i.Outcome,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketRevisionMembers = `-- name: ListDeliveryTicketRevisionMembers :many
+SELECT id, revision_row_id, sequence, member_kind, member_path, member_text, created_at
+FROM delivery_ticket_revision_members
+WHERE revision_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListDeliveryTicketRevisionMembers(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionMember, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketRevisionMembers, revisionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketRevisionMember{}
+	for rows.Next() {
+		var i DeliveryTicketRevisionMember
+		if err := rows.Scan(
+			&i.ID,
+			&i.RevisionRowID,
+			&i.Sequence,
+			&i.MemberKind,
+			&i.MemberPath,
+			&i.MemberText,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketRevisions = `-- name: ListDeliveryTicketRevisions :many
+SELECT id, delivery_ticket_row_id, revision_number, replaces_revision_row_id, cancellation_reason, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability, created_at
+FROM delivery_ticket_revisions
+WHERE delivery_ticket_row_id = ?
+ORDER BY revision_number, id
+`
+
+func (q *Queries) ListDeliveryTicketRevisions(ctx context.Context, deliveryTicketRowID int64) ([]DeliveryTicketRevision, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketRevisions, deliveryTicketRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketRevision{}
+	for rows.Next() {
+		var i DeliveryTicketRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeliveryTicketRowID,
+			&i.RevisionNumber,
+			&i.ReplacesRevisionRowID,
+			&i.CancellationReason,
+			&i.RepoTarget,
+			&i.Branch,
+			&i.BaseCommit,
+			&i.SourceClosureRowID,
+			&i.SourcePath,
+			&i.Goal,
+			&i.Context,
+			&i.TransitionApplicability,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketSelectionMembers = `-- name: ListDeliveryTicketSelectionMembers :many
+SELECT id, selection_row_id, sequence, revision_row_id, approval_row_id, created_at
+FROM delivery_ticket_selection_members
+WHERE selection_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) ([]DeliveryTicketSelectionMember, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketSelectionMembers, selectionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketSelectionMember{}
+	for rows.Next() {
+		var i DeliveryTicketSelectionMember
+		if err := rows.Scan(
+			&i.ID,
+			&i.SelectionRowID,
+			&i.Sequence,
+			&i.RevisionRowID,
+			&i.ApprovalRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketSelectionsByWorkspace = `-- name: ListDeliveryTicketSelectionsByWorkspace :many
+SELECT id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+FROM delivery_ticket_selections
+WHERE workspace_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListDeliveryTicketSelectionsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicketSelection, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketSelectionsByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketSelection{}
+	for rows.Next() {
+		var i DeliveryTicketSelection
+		if err := rows.Scan(
+			&i.ID,
+			&i.SelectionID,
+			&i.WorkspaceRowID,
+			&i.State,
+			&i.Rationale,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketsByWorkspace = `-- name: ListDeliveryTicketsByWorkspace :many
+SELECT id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+FROM delivery_tickets
+WHERE workspace_row_id = ?
+ORDER BY external_priority DESC, ticket_id, id
+`
+
+func (q *Queries) ListDeliveryTicketsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicket, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketsByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicket{}
+	for rows.Next() {
+		var i DeliveryTicket
+		if err := rows.Scan(
+			&i.ID,
+			&i.TicketID,
+			&i.WorkspaceRowID,
+			&i.ExternalPriority,
+			&i.CurrentRevisionRowID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1961,6 +2576,33 @@ func (q *Queries) NextExecutionAttemptNumber(ctx context.Context, runRowID int64
 	return column_1, err
 }
 
+const setDeliveryTicketCurrentRevision = `-- name: SetDeliveryTicketCurrentRevision :one
+UPDATE delivery_tickets
+SET current_revision_row_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE ticket_id = ?
+RETURNING id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+`
+
+type SetDeliveryTicketCurrentRevisionParams struct {
+	CurrentRevisionRowID sql.NullInt64 `json:"current_revision_row_id"`
+	TicketID             string        `json:"ticket_id"`
+}
+
+func (q *Queries) SetDeliveryTicketCurrentRevision(ctx context.Context, arg SetDeliveryTicketCurrentRevisionParams) (DeliveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, setDeliveryTicketCurrentRevision, arg.CurrentRevisionRowID, arg.TicketID)
+	var i DeliveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.TicketID,
+		&i.WorkspaceRowID,
+		&i.ExternalPriority,
+		&i.CurrentRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setFeatureWorkspaceAuthorityRevision = `-- name: SetFeatureWorkspaceAuthorityRevision :one
 UPDATE feature_workspaces
 SET current_authority_revision_row_id = ?, version = version + 1,
@@ -1987,6 +2629,34 @@ func (q *Queries) SetFeatureWorkspaceAuthorityRevision(ctx context.Context, arg 
 		&i.Version,
 		&i.CurrentRouteStateRowID,
 		&i.CurrentAuthorityRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const transitionDeliveryTicketSelection = `-- name: TransitionDeliveryTicketSelection :one
+UPDATE delivery_ticket_selections
+SET state = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE selection_id = ? AND state = 'active'
+RETURNING id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+`
+
+type TransitionDeliveryTicketSelectionParams struct {
+	State       string `json:"state"`
+	SelectionID string `json:"selection_id"`
+}
+
+func (q *Queries) TransitionDeliveryTicketSelection(ctx context.Context, arg TransitionDeliveryTicketSelectionParams) (DeliveryTicketSelection, error) {
+	row := q.db.QueryRowContext(ctx, transitionDeliveryTicketSelection, arg.State, arg.SelectionID)
+	var i DeliveryTicketSelection
+	err := row.Scan(
+		&i.ID,
+		&i.SelectionID,
+		&i.WorkspaceRowID,
+		&i.State,
+		&i.Rationale,
+		&i.SourceClosureRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2175,6 +2845,33 @@ func (q *Queries) TransitionRunStatus(ctx context.Context, arg TransitionRunStat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const updateDeliveryTicketExternalPriority = `-- name: UpdateDeliveryTicketExternalPriority :one
+UPDATE delivery_tickets
+SET external_priority = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE ticket_id = ?
+RETURNING id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+`
+
+type UpdateDeliveryTicketExternalPriorityParams struct {
+	ExternalPriority int64  `json:"external_priority"`
+	TicketID         string `json:"ticket_id"`
+}
+
+func (q *Queries) UpdateDeliveryTicketExternalPriority(ctx context.Context, arg UpdateDeliveryTicketExternalPriorityParams) (DeliveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, updateDeliveryTicketExternalPriority, arg.ExternalPriority, arg.TicketID)
+	var i DeliveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.TicketID,
+		&i.WorkspaceRowID,
+		&i.ExternalPriority,
+		&i.CurrentRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

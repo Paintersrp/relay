@@ -51,6 +51,83 @@ type AuditPacket struct {
 	SupersededAt            sql.NullString `json:"superseded_at"`
 }
 
+type DeliveryTicket struct {
+	ID                   int64         `json:"id"`
+	TicketID             string        `json:"ticket_id"`
+	WorkspaceRowID       int64         `json:"workspace_row_id"`
+	ExternalPriority     int64         `json:"external_priority"`
+	CurrentRevisionRowID sql.NullInt64 `json:"current_revision_row_id"`
+	CreatedAt            string        `json:"created_at"`
+	UpdatedAt            string        `json:"updated_at"`
+}
+
+type DeliveryTicketRevision struct {
+	ID                      int64          `json:"id"`
+	DeliveryTicketRowID     int64          `json:"delivery_ticket_row_id"`
+	RevisionNumber          int64          `json:"revision_number"`
+	ReplacesRevisionRowID   sql.NullInt64  `json:"replaces_revision_row_id"`
+	CancellationReason      sql.NullString `json:"cancellation_reason"`
+	RepoTarget              string         `json:"repo_target"`
+	Branch                  string         `json:"branch"`
+	BaseCommit              string         `json:"base_commit"`
+	SourceClosureRowID      int64          `json:"source_closure_row_id"`
+	SourcePath              string         `json:"source_path"`
+	Goal                    string         `json:"goal"`
+	Context                 string         `json:"context"`
+	TransitionApplicability string         `json:"transition_applicability"`
+	CreatedAt               string         `json:"created_at"`
+}
+
+type DeliveryTicketRevisionApproval struct {
+	ID                 int64  `json:"id"`
+	ApprovalID         string `json:"approval_id"`
+	RevisionRowID      int64  `json:"revision_row_id"`
+	ApprovalKind       string `json:"approval_kind"`
+	ApprovalState      string `json:"approval_state"`
+	Rationale          string `json:"rationale"`
+	SourceClosureRowID int64  `json:"source_closure_row_id"`
+	CreatedAt          string `json:"created_at"`
+}
+
+type DeliveryTicketRevisionDependency struct {
+	ID                     int64  `json:"id"`
+	RevisionRowID          int64  `json:"revision_row_id"`
+	Sequence               int64  `json:"sequence"`
+	DependsOnRevisionRowID int64  `json:"depends_on_revision_row_id"`
+	Outcome                string `json:"outcome"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type DeliveryTicketRevisionMember struct {
+	ID            int64          `json:"id"`
+	RevisionRowID int64          `json:"revision_row_id"`
+	Sequence      int64          `json:"sequence"`
+	MemberKind    string         `json:"member_kind"`
+	MemberPath    sql.NullString `json:"member_path"`
+	MemberText    string         `json:"member_text"`
+	CreatedAt     string         `json:"created_at"`
+}
+
+type DeliveryTicketSelection struct {
+	ID                 int64         `json:"id"`
+	SelectionID        string        `json:"selection_id"`
+	WorkspaceRowID     int64         `json:"workspace_row_id"`
+	State              string        `json:"state"`
+	Rationale          string        `json:"rationale"`
+	SourceClosureRowID sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt          string        `json:"created_at"`
+	UpdatedAt          string        `json:"updated_at"`
+}
+
+type DeliveryTicketSelectionMember struct {
+	ID             int64  `json:"id"`
+	SelectionRowID int64  `json:"selection_row_id"`
+	Sequence       int64  `json:"sequence"`
+	RevisionRowID  int64  `json:"revision_row_id"`
+	ApprovalRowID  int64  `json:"approval_row_id"`
+	CreatedAt      string `json:"created_at"`
+}
+
 type ExecutionAttempt struct {
 	ID                      int64          `json:"id"`
 	AttemptID               string         `json:"attempt_id"`

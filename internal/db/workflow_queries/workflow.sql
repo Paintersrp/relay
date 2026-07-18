@@ -436,3 +436,128 @@ SET current_authority_revision_row_id = ?, version = version + 1,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
 RETURNING *;
+
+-- name: CreateDeliveryTicket :one
+INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: GetDeliveryTicketByTicketID :one
+SELECT *
+FROM delivery_tickets
+WHERE ticket_id = ?;
+
+-- name: ListDeliveryTicketsByWorkspace :many
+SELECT *
+FROM delivery_tickets
+WHERE workspace_row_id = ?
+ORDER BY external_priority DESC, ticket_id, id;
+
+-- name: UpdateDeliveryTicketExternalPriority :one
+UPDATE delivery_tickets
+SET external_priority = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE ticket_id = ?
+RETURNING *;
+
+-- name: CreateDeliveryTicketRevision :one
+INSERT INTO delivery_ticket_revisions (
+    delivery_ticket_row_id, revision_number, replaces_revision_row_id,
+    cancellation_reason, repo_target, branch, base_commit, source_closure_row_id,
+    source_path, goal, context, transition_applicability
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetDeliveryTicketRevisionByRowID :one
+SELECT *
+FROM delivery_ticket_revisions
+WHERE id = ?;
+
+-- name: ListDeliveryTicketRevisions :many
+SELECT *
+FROM delivery_ticket_revisions
+WHERE delivery_ticket_row_id = ?
+ORDER BY revision_number, id;
+
+-- name: SetDeliveryTicketCurrentRevision :one
+UPDATE delivery_tickets
+SET current_revision_row_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE ticket_id = ?
+RETURNING *;
+
+-- name: CreateDeliveryTicketRevisionMember :one
+INSERT INTO delivery_ticket_revision_members (
+    revision_row_id, sequence, member_kind, member_path, member_text
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListDeliveryTicketRevisionMembers :many
+SELECT *
+FROM delivery_ticket_revision_members
+WHERE revision_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateDeliveryTicketRevisionDependency :one
+INSERT INTO delivery_ticket_revision_dependencies (
+    revision_row_id, sequence, depends_on_revision_row_id, outcome
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListDeliveryTicketRevisionDependencies :many
+SELECT *
+FROM delivery_ticket_revision_dependencies
+WHERE revision_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateDeliveryTicketRevisionApproval :one
+INSERT INTO delivery_ticket_revision_approvals (
+    approval_id, revision_row_id, approval_kind, approval_state, rationale,
+    source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListDeliveryTicketRevisionApprovals :many
+SELECT *
+FROM delivery_ticket_revision_approvals
+WHERE revision_row_id = ?
+ORDER BY id;
+
+-- name: CreateDeliveryTicketSelection :one
+INSERT INTO delivery_ticket_selections (
+    selection_id, workspace_row_id, state, rationale, source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetDeliveryTicketSelectionBySelectionID :one
+SELECT *
+FROM delivery_ticket_selections
+WHERE selection_id = ?;
+
+-- name: ListDeliveryTicketSelectionsByWorkspace :many
+SELECT *
+FROM delivery_ticket_selections
+WHERE workspace_row_id = ?
+ORDER BY created_at, id;
+
+-- name: TransitionDeliveryTicketSelection :one
+UPDATE delivery_ticket_selections
+SET state = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE selection_id = ? AND state = 'active'
+RETURNING *;
+
+-- name: CreateDeliveryTicketSelectionMember :one
+INSERT INTO delivery_ticket_selection_members (
+    selection_row_id, sequence, revision_row_id, approval_row_id
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListDeliveryTicketSelectionMembers :many
+SELECT *
+FROM delivery_ticket_selection_members
+WHERE selection_row_id = ?
+ORDER BY sequence, id;
