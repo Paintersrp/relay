@@ -171,6 +171,27 @@ FROM operation_packet_publications
 WHERE packet_row_id = (SELECT id FROM operation_packets WHERE packet_id = ?)`, packetID))
 }
 
+func (s *Store) GetOperationPacketPublicationIntegrityByMutationKey(ctx context.Context, key MCPMutationKey) (OperationPacketPublicationIntegrity, error) {
+	publication, err := scanOperationPacketPublication(s.db.QueryRowContext(ctx, `
+SELECT `+operationPacketPublicationColumns+`
+FROM operation_packet_publications
+WHERE mutation_result_row_id = (
+    SELECT id
+    FROM mcp_mutation_results
+    WHERE surface_contract_id = ?
+      AND tool_name = ?
+      AND mutation_id = ?
+)`,
+		key.SurfaceContractID,
+		key.ToolName,
+		key.MutationID,
+	))
+	if err != nil {
+		return OperationPacketPublicationIntegrity{}, err
+	}
+	return s.GetOperationPacketPublicationIntegrity(ctx, publication.PublicationID)
+}
+
 func (s *Store) ListOperationPacketPublications(ctx context.Context) ([]OperationPacketPublication, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT `+operationPacketPublicationColumns+`

@@ -18,6 +18,8 @@ const (
 	CodeRetainedAuthorityUnavailable = "retained_authority_unavailable"
 	CodeInvalidPacketDocument        = "invalid_packet_document"
 	CodePacketArtifactMismatch       = "packet_artifact_mismatch"
+	CodeAuthorityPublicationConflict = "authority_publication_conflict"
+	CodeAuthorityPublicationFailure  = "authority_publication_failure"
 	CodeInternalFailure              = "internal_failure"
 )
 

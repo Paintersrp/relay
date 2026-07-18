@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,11 +9,12 @@ import (
 	"relay/internal/app/idempotency"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/mcp/semanticidentity"
+	"relay/internal/operations/registry"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
-var ErrAuthorityPublication = errors.New("operation packet authority publication failed")
+var ErrAuthorityPublication = &Error{Code: CodeAuthorityPublicationFailure}
 
 type PublicationArtifactInput struct {
 	ArtifactID   string
@@ -197,6 +199,9 @@ func (s *AuthorityPublicationService) Publish(ctx context.Context, input Authori
 		if err != nil {
 			return err
 		}
+		if err := validatePublicationMutationAuthority(input, result.Packet, mutationRow); err != nil {
+			return err
+		}
 
 		if _, err := tx.AttachOperationPacketDependency(ctx, workflowstore.AttachOperationPacketDependencyParams{
 			PacketRowID:     result.Packet.ID,
@@ -299,13 +304,92 @@ func (s *AuthorityPublicationService) Publish(ctx context.Context, input Authori
 		if idempotency.IsConcurrentWinner(err) {
 			stored, replay, recoveryErr := s.idempotency.ResolveAfterRollback(ctx, input.Idempotency, err)
 			if recoveryErr != nil {
-				return AuthorityPublicationResult{}, recoveryErr
+				return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(recoveryErr)
 			}
-			return AuthorityPublicationResult{Mutation: stored, Replay: replay}, nil
+			return s.resolveCommittedPublicationWinner(ctx, input, stored, replay)
 		}
-		return AuthorityPublicationResult{}, err
+		return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)
 	}
 	return result, nil
+}
+
+func validatePublicationMutationAuthority(input AuthorityPublicationInput, packet workflowstore.OperationPacket, mutation workflowstore.MCPMutationResult) error {
+	operation, ok := registry.Lookup(registry.OperationID(packet.OperationID))
+	if !ok ||
+		packet.PacketID != input.PacketID ||
+		string(operation.Role) != packet.Role ||
+		string(operation.SurfaceContract) != packet.SurfaceContractID ||
+		packet.SurfaceContractID != string(input.Idempotency.Key.SurfaceContractID) ||
+		!containsAction(operation.AllowedNonSourceActions, registry.AllowedAction(input.Idempotency.Key.Tool)) ||
+		mutation.SurfaceContractID != packet.SurfaceContractID ||
+		mutation.ToolName != string(input.Idempotency.Key.Tool) ||
+		mutation.MutationID != input.Idempotency.Key.MutationID ||
+		mutation.SurfaceManifestSHA256 != input.Idempotency.SurfaceManifestSHA256 ||
+		mutation.SemanticIdentityVersion != input.Idempotency.Fingerprint.SemanticIdentityVersion() ||
+		mutation.SemanticRequestSHA256 != input.Idempotency.Fingerprint.SemanticRequestSHA256() {
+		return &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	return nil
+}
+
+func (s *AuthorityPublicationService) resolveCommittedPublicationWinner(ctx context.Context, input AuthorityPublicationInput, stored idempotency.StoredResult, replay bool) (AuthorityPublicationResult, error) {
+	integrity, err := s.store.GetOperationPacketPublicationIntegrityByMutationKey(ctx, workflowstore.MCPMutationKey{
+		SurfaceContractID: string(input.Idempotency.Key.SurfaceContractID),
+		ToolName:          string(input.Idempotency.Key.Tool),
+		MutationID:        input.Idempotency.Key.MutationID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return AuthorityPublicationResult{}, &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	if err != nil {
+		return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)
+	}
+	if err := validatePublicationMutationAuthority(input, integrity.Packet, integrity.MutationResult); err != nil {
+		return AuthorityPublicationResult{}, err
+	}
+	if integrity.MutationResult.ResultKind != string(stored.ResultKind) ||
+		integrity.MutationResult.ResultSHA256 != stored.ResultSHA256 ||
+		integrity.MutationResult.CommittedAt != stored.CommittedAt ||
+		!bytes.Equal([]byte(integrity.MutationResult.ResultIdentityJSON), stored.ResultIdentityJSON) {
+		return AuthorityPublicationResult{}, &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	verified, err := s.store.ArtifactStore().VerifyPublication(integrity.Publication.PublicationID)
+	if err != nil ||
+		verified.ManifestSHA256 != integrity.Publication.ManifestSHA256 ||
+		verified.Manifest.Namespace != integrity.Publication.Namespace ||
+		verifyPublicationIntegrity(verified.Manifest, integrity) != nil {
+		return AuthorityPublicationResult{}, ErrAuthorityPublication
+	}
+	for _, relationship := range integrity.VaultRelationships {
+		if err := s.vaults.VerifyActiveRetentionEdge(ctx, relationship); err != nil {
+			return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)
+		}
+	}
+	return AuthorityPublicationResult{
+		Publication: integrity.Publication,
+		Packet:      integrity.Packet,
+		Mutation:    stored,
+		Replay:      replay,
+	}, nil
+}
+
+func normalizeAuthorityPublicationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var operationErr *Error
+	if errors.As(err, &operationErr) {
+		return err
+	}
+	var vaultErr *sourcevault.Error
+	if errors.As(err, &vaultErr) {
+		return err
+	}
+	var mutationErr *idempotency.Error
+	if errors.As(err, &mutationErr) {
+		return err
+	}
+	return ErrAuthorityPublication
 }
 
 func (s *AuthorityPublicationService) Reconcile(ctx context.Context) error {

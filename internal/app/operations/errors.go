@@ -33,6 +33,10 @@ func (e *Error) Error() string {
 		return "operation packet document is invalid"
 	case CodePacketArtifactMismatch:
 		return "operation packet artifact identity does not match"
+	case CodeAuthorityPublicationConflict:
+		return "operation packet authority publication conflicts with committed authority"
+	case CodeAuthorityPublicationFailure:
+		return "operation packet authority publication failed"
 	default:
 		return "operation packet persistence failed"
 	}
