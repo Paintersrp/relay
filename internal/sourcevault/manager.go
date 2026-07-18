@@ -195,36 +195,56 @@ func (m *Manager) currentImportAuthority(
 	ctx context.Context,
 	revision workflowrepos.ResolvedRevision,
 ) (workflowstore.SourceVault, workflowstore.SourceVaultClosureAcquisition, error) {
-	vault, err := m.store.GetSourceVaultByRepositoryTarget(ctx, revision.RepositoryTarget.RepoTarget)
-	if err != nil {
-		return workflowstore.SourceVault{}, workflowstore.SourceVaultClosureAcquisition{}, err
-	}
-	closure, err := m.store.GetCurrentSourceVaultClosureByIdentity(
-		ctx,
-		vault.ID,
-		revision.CommitOID,
-		revision.TreeOID,
-	)
-	if err != nil {
-		return workflowstore.SourceVault{}, workflowstore.SourceVaultClosureAcquisition{}, err
-	}
-	disposition := ""
-	switch closure.State {
-	case workflowstore.SourceVaultClosureStateReady:
-		disposition = workflowstore.SourceVaultClosureAcquisitionReady
-	case workflowstore.SourceVaultClosureStateImporting:
-		disposition = workflowstore.SourceVaultClosureAcquisitionImporting
-	case workflowstore.SourceVaultClosureStateReleasing:
-		disposition = workflowstore.SourceVaultClosureAcquisitionReleasing
-	case workflowstore.SourceVaultClosureStateUnavailable:
-		return workflowstore.SourceVault{}, workflowstore.SourceVaultClosureAcquisition{}, sql.ErrNoRows
-	default:
-		return workflowstore.SourceVault{}, workflowstore.SourceVaultClosureAcquisition{}, workflowstore.ErrSourceVaultStateConflict
-	}
-	return vault, workflowstore.SourceVaultClosureAcquisition{
-		Closure:     closure,
-		Disposition: disposition,
-	}, nil
+	var vault workflowstore.SourceVault
+	var acquisition workflowstore.SourceVaultClosureAcquisition
+	err := m.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		current, err := tx.GetRepositoryTarget(ctx, revision.RepositoryTarget.RepoTarget)
+		if errors.Is(err, sql.ErrNoRows) {
+			return &Error{Code: CodeRepositoryMismatch}
+		}
+		if err != nil {
+			return fmt.Errorf("load registered repository target: %w", err)
+		}
+		if err := validateRepositoryAuthority(current, revision); err != nil {
+			return err
+		}
+		vault, err = tx.GetSourceVaultByRepositoryTarget(ctx, current.RepoTarget)
+		if err != nil {
+			return err
+		}
+		closure, err := tx.GetCurrentSourceVaultClosureByIdentity(
+			ctx,
+			vault.ID,
+			revision.CommitOID,
+			revision.TreeOID,
+		)
+		if err != nil {
+			return err
+		}
+		switch closure.State {
+		case workflowstore.SourceVaultClosureStateReady:
+			acquisition = workflowstore.SourceVaultClosureAcquisition{
+				Closure:     closure,
+				Disposition: workflowstore.SourceVaultClosureAcquisitionReady,
+			}
+		case workflowstore.SourceVaultClosureStateImporting:
+			acquisition = workflowstore.SourceVaultClosureAcquisition{
+				Closure:     closure,
+				Disposition: workflowstore.SourceVaultClosureAcquisitionImporting,
+			}
+		case workflowstore.SourceVaultClosureStateReleasing:
+			acquisition = workflowstore.SourceVaultClosureAcquisition{
+				Closure:     closure,
+				Disposition: workflowstore.SourceVaultClosureAcquisitionReleasing,
+			}
+		case workflowstore.SourceVaultClosureStateUnavailable:
+			return sql.ErrNoRows
+		default:
+			return workflowstore.ErrSourceVaultStateConflict
+		}
+		return nil
+	})
+	return vault, acquisition, err
 }
 
 func (m *Manager) ImportClosure(ctx context.Context, request ImportRequest) (ImportResult, error) {

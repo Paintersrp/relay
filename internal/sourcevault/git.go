@@ -77,7 +77,11 @@ func (g *commandGit) ValidateRepositorySeparation(ctx context.Context, localPath
 	if err != nil {
 		return false, &Error{Code: CodeRepositoryMismatch}
 	}
-	if pathWithin(g.root, storedPath) {
+	managedRoot := filepath.Join(g.root, "repositories")
+	overlapsVaultStorage := func(candidate string) bool {
+		return pathsOverlap(g.root, candidate) || pathsOverlap(managedRoot, candidate)
+	}
+	if overlapsVaultStorage(storedPath) {
 		return false, &Error{Code: CodeUnsafeVaultRoot}
 	}
 	info, err := os.Stat(storedPath)
@@ -95,9 +99,9 @@ func (g *commandGit) ValidateRepositorySeparation(ctx context.Context, localPath
 	if err != nil {
 		return false, err
 	}
-	if pathWithin(g.root, sourcePath) ||
-		pathWithin(g.root, gitDirectory) ||
-		pathWithin(g.root, commonDirectory) {
+	if overlapsVaultStorage(sourcePath) ||
+		overlapsVaultStorage(gitDirectory) ||
+		overlapsVaultStorage(commonDirectory) {
 		return false, &Error{Code: CodeUnsafeVaultRoot}
 	}
 	return true, nil
@@ -192,6 +196,10 @@ func pathWithin(candidate, protected string) bool {
 		return false
 	}
 	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
+}
+
+func pathsOverlap(left, right string) bool {
+	return pathWithin(left, right) || pathWithin(right, left)
 }
 
 func (g *commandGit) VaultPath(relativePath string) (string, error) {
@@ -577,7 +585,7 @@ func gitCommand(ctx context.Context, path string, bare bool, args ...string) *ex
 }
 
 func controlledGitEnvironment() []string {
-	values := make([]string, 0, len(os.Environ())+4)
+	values := make([]string, 0, len(os.Environ())+5)
 	for _, value := range os.Environ() {
 		key, _, ok := strings.Cut(value, "=")
 		if !ok || strings.HasPrefix(strings.ToUpper(key), "GIT_") {
@@ -587,6 +595,7 @@ func controlledGitEnvironment() []string {
 	}
 	return append(
 		values,
+		"GIT_NO_LAZY_FETCH=1",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
