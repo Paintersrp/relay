@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -229,6 +230,87 @@ func TestInvalidExecutionPassQualifiersBlockRendering(t *testing.T) {
 func TestFilenameMustBeBasename(t *testing.T) {
 	result := Compile("dir/compiler-fixture.plan.json", readFixture(t, "valid.plan.json"))
 	assertFailureCode(t, result, "invalid_filename_basename")
+}
+
+func TestParseFilenameRecognizesTicketArtifactKinds(t *testing.T) {
+	tests := []struct {
+		filename string
+		kind     ArtifactKind
+		slug     string
+		ticketID string
+		revision int64
+	}{
+		{filename: "checkout.ticket-P2-T2.r1.delivery-ticket.json", kind: ArtifactDeliveryTicket, slug: "checkout", ticketID: "P2-T2", revision: 1},
+		{filename: "checkout.ticket-P2-T2.r1.delivery-ticket.md", kind: ArtifactDeliveryTicket, slug: "checkout", ticketID: "P2-T2", revision: 1},
+		{filename: "checkout.ticket-P2-T2.r1.transition-plan.json", kind: ArtifactTransitionPlan, slug: "checkout", ticketID: "P2-T2", revision: 1},
+		{filename: "checkout.ticket-P2-T2.r1.transition-plan.md", kind: ArtifactTransitionPlan, slug: "checkout", ticketID: "P2-T2", revision: 1},
+		{filename: "checkout.ticket-P2-T2.r1.design-brief.md", kind: ArtifactTicketDesignBrief, slug: "checkout", ticketID: "P2-T2", revision: 1},
+		{filename: "checkout.requirements.md", kind: ArtifactRequirements, slug: "checkout"},
+		{filename: "checkout.design.md", kind: ArtifactSharedDesign, slug: "checkout"},
+	}
+	for _, test := range tests {
+		t.Run(test.filename, func(t *testing.T) {
+			got, diagnostics := ParseFilename(test.filename)
+			if len(diagnostics) != 0 {
+				t.Fatalf("ParseFilename(%q) diagnostics = %+v", test.filename, diagnostics)
+			}
+			outputStem := test.slug
+			if test.ticketID != "" {
+				outputStem = test.slug + ".ticket-" + test.ticketID + ".r" + strconv.FormatInt(test.revision, 10)
+			}
+			want := FilenameInfo{Kind: test.kind, FeatureSlug: test.slug, TicketID: test.ticketID, Revision: test.revision, OutputStem: outputStem}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("ParseFilename(%q) = %+v, want %+v", test.filename, got, want)
+			}
+		})
+	}
+}
+
+func TestTicketArtifactFilenameValidation(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		filename string
+		code     string
+	}{
+		{name: "unqualified delivery ticket", filename: "checkout.delivery-ticket.json", code: "invalid_ticket_id"},
+		{name: "malformed ticket ID", filename: "checkout.ticket-p2-t2.r1.delivery-ticket.json", code: "invalid_ticket_id"},
+		{name: "missing ticket ID", filename: "checkout.ticket-.r1.delivery-ticket.json", code: "invalid_ticket_id"},
+		{name: "missing revision", filename: "checkout.ticket-P2-T2.delivery-ticket.json", code: "invalid_ticket_revision"},
+		{name: "malformed revision", filename: "checkout.ticket-P2-T2.rx.delivery-ticket.json", code: "invalid_ticket_revision"},
+		{name: "zero revision", filename: "checkout.ticket-P2-T2.r0.delivery-ticket.json", code: "invalid_ticket_revision"},
+		{name: "leading zero revision", filename: "checkout.ticket-P2-T2.r01.delivery-ticket.json", code: "invalid_ticket_revision"},
+		{name: "revision suffix", filename: "checkout.ticket-P2-T2.r1.extra.delivery-ticket.json", code: "invalid_ticket_revision"},
+		{name: "unsafe slug", filename: "Checkout.ticket-P2-T2.r1.delivery-ticket.json", code: "invalid_feature_slug"},
+		{name: "path separator", filename: "nested/checkout.ticket-P2-T2.r1.delivery-ticket.json", code: "invalid_filename_basename"},
+		{name: "wrong extension", filename: "checkout.ticket-P2-T2.r1.delivery-ticket.yaml", code: "unsupported_artifact_filename"},
+		{name: "old unqualified shared design", filename: "checkout.shared-design.md", code: "unsupported_artifact_filename"},
+		{name: "old selected pass ticket brief", filename: "checkout.pass-1.design-brief.md", code: "invalid_feature_slug"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, diagnostics := ParseFilename(test.filename)
+			if len(diagnostics) == 0 || diagnostics[0].Code != test.code {
+				t.Fatalf("ParseFilename(%q) diagnostics = %+v, want code %q", test.filename, diagnostics, test.code)
+			}
+		})
+	}
+}
+
+func TestCompileDoesNotRenderTicketArtifactKindsYet(t *testing.T) {
+	for _, filename := range []string{
+		"checkout.ticket-P2-T2.r1.delivery-ticket.json",
+		"checkout.ticket-P2-T2.r1.transition-plan.json",
+		"checkout.requirements.md",
+		"checkout.design.md",
+		"checkout.ticket-P2-T2.r1.design-brief.md",
+	} {
+		t.Run(filename, func(t *testing.T) {
+			result := Compile(filename, []byte(`not json`))
+			assertFailureCode(t, result, "unsupported_artifact_kind")
+			if len(result.Errors) != 1 {
+				t.Fatalf("ticket artifact dispatch should stop before parsing: %+v", result.Errors)
+			}
+		})
+	}
 }
 
 func TestSourceProvenanceIsPinned(t *testing.T) {

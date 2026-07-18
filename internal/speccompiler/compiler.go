@@ -2,6 +2,7 @@ package speccompiler
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,16 +14,49 @@ const (
 	RelaySpecsRepo   = artifactschema.AuthorityRepository
 	RelaySpecsCommit = artifactschema.AuthorityCommit
 
-	planSuffix          = ".plan.json"
-	executionSpecSuffix = ".execution-spec.json"
+	planSuffix                   = ".plan.json"
+	executionSpecSuffix          = ".execution-spec.json"
+	deliveryTicketJSONSuffix     = ".delivery-ticket.json"
+	deliveryTicketMarkdownSuffix = ".delivery-ticket.md"
+	transitionPlanJSONSuffix     = ".transition-plan.json"
+	transitionPlanMarkdownSuffix = ".transition-plan.md"
+	requirementsSuffix           = ".requirements.md"
+	sharedDesignSuffix           = ".design.md"
+	ticketDesignBriefSuffix      = ".design-brief.md"
 )
 
 type ArtifactKind string
 
 const (
-	ArtifactPlan          ArtifactKind = "plan"
-	ArtifactExecutionSpec ArtifactKind = "execution_spec"
+	ArtifactPlan              ArtifactKind = "plan"
+	ArtifactExecutionSpec     ArtifactKind = "execution_spec"
+	ArtifactDeliveryTicket    ArtifactKind = "delivery_ticket"
+	ArtifactTransitionPlan    ArtifactKind = "transition_plan"
+	ArtifactRequirements      ArtifactKind = "requirements"
+	ArtifactSharedDesign      ArtifactKind = "shared_design"
+	ArtifactTicketDesignBrief ArtifactKind = "ticket_design_brief"
 )
+
+type filenameRule struct {
+	suffix             string
+	kind               ArtifactKind
+	allowPassQualifier bool
+	ticketQualified    bool
+}
+
+var canonicalFilenameRules = []filenameRule{
+	{suffix: executionSpecSuffix, kind: ArtifactExecutionSpec, allowPassQualifier: true},
+	{suffix: planSuffix, kind: ArtifactPlan},
+	{suffix: deliveryTicketJSONSuffix, kind: ArtifactDeliveryTicket, ticketQualified: true},
+	{suffix: deliveryTicketMarkdownSuffix, kind: ArtifactDeliveryTicket, ticketQualified: true},
+	{suffix: transitionPlanJSONSuffix, kind: ArtifactTransitionPlan, ticketQualified: true},
+	{suffix: transitionPlanMarkdownSuffix, kind: ArtifactTransitionPlan, ticketQualified: true},
+	{suffix: requirementsSuffix, kind: ArtifactRequirements},
+	{suffix: sharedDesignSuffix, kind: ArtifactSharedDesign},
+	{suffix: ticketDesignBriefSuffix, kind: ArtifactTicketDesignBrief, ticketQualified: true},
+}
+
+var ticketIDPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$`)
 
 type ReplaySemantics string
 
@@ -52,6 +86,8 @@ func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
 type FilenameInfo struct {
 	Kind             ArtifactKind
 	FeatureSlug      string
+	TicketID         string
+	Revision         int64
 	PassNumber       int64
 	HasPassQualifier bool
 	OutputStem       string
@@ -98,11 +134,15 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 	if len(filenameErrors) != 0 {
 		return failed(filenameErrors, nil)
 	}
-	if filename.Kind == ArtifactExecutionSpec {
+	switch filename.Kind {
+	case ArtifactExecutionSpec:
 		result, _ := CompileExecutionSpec(filenameBasename, rawJSON)
 		return result
+	case ArtifactPlan:
+		return compilePlan(filename, rawJSON)
+	default:
+		return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
 	}
-	return compilePlan(filename, rawJSON)
 }
 
 func CompileExecutionSpec(filenameBasename string, rawJSON []byte) (Result, *ExecutionDocument) {
@@ -193,34 +233,78 @@ func ParseFilename(filename string) (FilenameInfo, []Diagnostic) {
 		return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "invalid_filename_basename", Path: "", Message: "Filename must be a basename without path separators."}}
 	}
 
-	switch {
-	case strings.HasSuffix(filename, executionSpecSuffix):
-		stem := strings.TrimSuffix(filename, executionSpecSuffix)
-		info := FilenameInfo{Kind: ArtifactExecutionSpec, FeatureSlug: stem, OutputStem: stem}
-		if qualifierIndex := strings.LastIndex(stem, ".pass-"); qualifierIndex >= 0 {
-			featureSlug := stem[:qualifierIndex]
-			qualifier := stem[qualifierIndex+len(".pass-"):]
-			passNumber, ok := parsePassQualifier(qualifier)
-			if !ok || featureSlug == "" || strings.Contains(featureSlug, ".pass-") {
-				return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "invalid_pass_qualifier", Path: "", Message: "Execution Spec pass qualifier must be one terminal .pass-<number> segment using a positive decimal number without leading zeros."}}
+	for _, rule := range canonicalFilenameRules {
+		if !strings.HasSuffix(filename, rule.suffix) {
+			continue
+		}
+
+		stem := strings.TrimSuffix(filename, rule.suffix)
+		info := FilenameInfo{Kind: rule.kind, FeatureSlug: stem, OutputStem: stem}
+		if rule.ticketQualified {
+			featureSlug, ticketID, revision, diagnostic := parseTicketQualifiedStem(stem)
+			if diagnostic != nil {
+				return FilenameInfo{}, []Diagnostic{*diagnostic}
 			}
 			info.FeatureSlug = featureSlug
-			info.PassNumber = passNumber
-			info.HasPassQualifier = true
+			info.TicketID = ticketID
+			info.Revision = revision
+		} else if rule.allowPassQualifier {
+			if qualifierIndex := strings.LastIndex(stem, ".pass-"); qualifierIndex >= 0 {
+				featureSlug := stem[:qualifierIndex]
+				qualifier := stem[qualifierIndex+len(".pass-"):]
+				passNumber, ok := parsePassQualifier(qualifier)
+				if !ok || featureSlug == "" || strings.Contains(featureSlug, ".pass-") {
+					return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "invalid_pass_qualifier", Path: "", Message: "Execution Spec pass qualifier must be one terminal .pass-<number> segment using a positive decimal number without leading zeros."}}
+				}
+				info.FeatureSlug = featureSlug
+				info.PassNumber = passNumber
+				info.HasPassQualifier = true
+			}
+		} else if strings.Contains(stem, ".pass-") {
+			return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "invalid_pass_qualifier", Path: "", Message: "Pass qualifiers are supported only by Execution Spec filenames."}}
 		}
 		if !validFeatureSlug(info.FeatureSlug) {
 			return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}}
 		}
 		return info, nil
-	case strings.HasSuffix(filename, planSuffix):
-		slug := strings.TrimSuffix(filename, planSuffix)
-		if !validFeatureSlug(slug) {
-			return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}}
-		}
-		return FilenameInfo{Kind: ArtifactPlan, FeatureSlug: slug, OutputStem: slug}, nil
-	default:
-		return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "unsupported_artifact_filename", Path: "", Message: "Filename must end with .execution-spec.json or .plan.json."}}
 	}
+	return FilenameInfo{}, []Diagnostic{Diagnostic{Code: "unsupported_artifact_filename", Path: "", Message: "Filename does not identify a supported canonical artifact kind."}}
+}
+
+func parseTicketQualifiedStem(stem string) (string, string, int64, *Diagnostic) {
+	const ticketMarker = ".ticket-"
+
+	ticketIndex := strings.Index(stem, ticketMarker)
+	if ticketIndex <= 0 {
+		if !validFeatureSlug(stem) {
+			return "", "", 0, &Diagnostic{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}
+		}
+		return "", "", 0, &Diagnostic{Code: "invalid_ticket_id", Path: "/ticket_id", Message: "Ticket artifact filename must include a canonical ticket ID."}
+	}
+	featureSlug := stem[:ticketIndex]
+	if !validFeatureSlug(featureSlug) {
+		return "", "", 0, &Diagnostic{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}
+	}
+	qualified := stem[ticketIndex+len(ticketMarker):]
+	revisionIndex := strings.IndexByte(qualified, '.')
+	ticketID := qualified
+	revisionText := ""
+	if revisionIndex >= 0 {
+		ticketID = qualified[:revisionIndex]
+		revisionText = qualified[revisionIndex+1:]
+	}
+	if !ticketIDPattern.MatchString(ticketID) {
+		return "", "", 0, &Diagnostic{Code: "invalid_ticket_id", Path: "/ticket_id", Message: "Ticket artifact filename ticket ID must be uppercase canonical ticket syntax."}
+	}
+	if !strings.HasPrefix(revisionText, "r") {
+		return "", "", 0, &Diagnostic{Code: "invalid_ticket_revision", Path: "/revision", Message: "Ticket artifact filename revision must use a terminal .r<positive-number> segment."}
+	}
+	revisionText = strings.TrimPrefix(revisionText, "r")
+	revision, ok := parsePassQualifier(revisionText)
+	if !ok {
+		return "", "", 0, &Diagnostic{Code: "invalid_ticket_revision", Path: "/revision", Message: "Ticket artifact filename revision must be a positive decimal number without leading zeros."}
+	}
+	return featureSlug, ticketID, revision, nil
 }
 
 func parsePassQualifier(value string) (int64, bool) {
