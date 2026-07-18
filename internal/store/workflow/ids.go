@@ -57,3 +57,31 @@ func NewAuditPacketID() string {
 func NewAuditDecisionID() string {
 	return "audit-" + uuid.NewString()
 }
+
+func NewFeatureWorkspaceID() string {
+	return "workspace-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceInputID() string {
+	return "input-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceDestinationID() string {
+	return "destination-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceDiscoveryTicketID() string {
+	return "discovery-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceResolutionID() string {
+	return "resolution-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceRouteStateID() string {
+	return "route-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceAuthorityRevisionID() string {
+	return "authority-" + uuid.NewString()
+}
