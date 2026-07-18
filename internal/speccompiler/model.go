@@ -71,6 +71,39 @@ type ExecutionValidationCommand struct {
 	Expected         string `json:"expected"`
 }
 
+type DeliveryTicketDocument struct {
+	FeatureSlug               string                      `json:"feature_slug"`
+	TicketID                  string                      `json:"ticket_id"`
+	Revision                  int64                       `json:"revision"`
+	ReplacesRevision          *int64                      `json:"replaces_revision"`
+	RepoTarget                string                      `json:"repo_target"`
+	Branch                    string                      `json:"branch"`
+	BaseCommit                string                      `json:"base_commit"`
+	Goal                      string                      `json:"goal"`
+	Context                   string                      `json:"context"`
+	Scope                     scopeModel                  `json:"scope"`
+	DependsOn                 []DeliveryTicketDependency  `json:"depends_on"`
+	ImplementationObligations []DeliveryTicketObligation  `json:"implementation_obligations"`
+	ValidationIntent          []string                    `json:"validation_intent"`
+	TransitionApplicability   string                      `json:"transition_applicability"`
+	Cancellation              *DeliveryTicketCancellation `json:"cancellation,omitempty"`
+	Completion                []string                    `json:"completion_criteria"`
+}
+
+type DeliveryTicketDependency struct {
+	TicketID string `json:"ticket_id"`
+	Revision int64  `json:"revision"`
+}
+
+type DeliveryTicketObligation struct {
+	Path       string `json:"path"`
+	Obligation string `json:"obligation"`
+}
+
+type DeliveryTicketCancellation struct {
+	Reason string `json:"reason"`
+}
+
 type EffectiveBriefMode string
 
 const (
@@ -87,6 +120,14 @@ type EffectiveBriefSelection struct {
 
 func decodeExecutionDocument(raw []byte) (*ExecutionDocument, error) {
 	var document ExecutionDocument
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	return &document, nil
+}
+
+func decodeDeliveryTicketDocument(raw []byte) (*DeliveryTicketDocument, error) {
+	var document DeliveryTicketDocument
 	if err := json.Unmarshal(raw, &document); err != nil {
 		return nil, err
 	}

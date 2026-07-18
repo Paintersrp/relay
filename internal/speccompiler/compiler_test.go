@@ -297,7 +297,6 @@ func TestTicketArtifactFilenameValidation(t *testing.T) {
 
 func TestCompileDoesNotRenderTicketArtifactKindsYet(t *testing.T) {
 	for _, filename := range []string{
-		"checkout.ticket-P2-T2.r1.delivery-ticket.json",
 		"checkout.ticket-P2-T2.r1.transition-plan.json",
 		"checkout.requirements.md",
 		"checkout.design.md",
@@ -313,6 +312,93 @@ func TestCompileDoesNotRenderTicketArtifactKindsYet(t *testing.T) {
 	}
 }
 
+func TestCompileDeliveryTicketMatchesGolden(t *testing.T) {
+	raw := readFixture(t, "compiler-ticket-fixture.delivery-ticket.json")
+	golden := string(readFixture(t, "compiler-ticket-fixture.delivery-ticket.md"))
+	result, document := CompileDeliveryTicket("compiler-ticket-fixture.ticket-P2-T3.r1.delivery-ticket.json", raw)
+	assertSuccess(t, result)
+	if document == nil || document.TicketID != "P2-T3" || document.Revision != 1 {
+		t.Fatalf("unexpected decoded ticket document: %+v", document)
+	}
+	if result.OutputFilename == nil || *result.OutputFilename != "compiler-ticket-fixture.ticket-P2-T3.r1.delivery-ticket.md" {
+		t.Fatalf("unexpected output filename: %#v", result.OutputFilename)
+	}
+	if result.Markdown == nil || *result.Markdown != golden {
+		t.Fatalf("rendered ticket does not match golden\n--- got ---\n%s\n--- want ---\n%s", dereference(result.Markdown), golden)
+	}
+	for _, required := range []string{
+		"## Identity\n\n- Ticket: `P2-T3`\n- Revision: 1\n\n## Target\n",
+		"## Transition Applicability\n\nnot_required\n\n## Replacement\n\nNone\n\n## Cancellation\n\nNone\n\n## Completion Criteria\n",
+	} {
+		if !strings.Contains(*result.Markdown, required) {
+			t.Fatalf("rendered ticket is missing contract output %q", required)
+		}
+	}
+	for _, forbidden := range []string{"- Feature:", "- Replaces revision:"} {
+		if strings.Contains(*result.Markdown, forbidden) {
+			t.Fatalf("rendered ticket contains removed identity output %q", forbidden)
+		}
+	}
+	assertOneFinalNewline(t, *result.Markdown)
+}
+
+func TestRenderDeliveryTicketReplacementUsesContractPunctuation(t *testing.T) {
+	replacesRevision := int64(1)
+	markdown, err := renderDeliveryTicket(&DeliveryTicketDocument{
+		TicketID:                "P2-T3",
+		Revision:                2,
+		ReplacesRevision:        &replacesRevision,
+		RepoTarget:              "relay",
+		Branch:                  "main",
+		BaseCommit:              strings.Repeat("a", 40),
+		Goal:                    "Render the replacement section.",
+		Context:                 "Replacement punctuation.",
+		Scope:                   scopeModel{InScope: []string{"Render."}, OutOfScope: []string{"Mutate."}},
+		TransitionApplicability: "not_required",
+		Completion:              []string{"Rendered."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown, "## Transition Applicability\n\nnot_required\n\n## Replacement\n\nReplaces revision 1.\n\n## Cancellation\n\nNone\n") {
+		t.Fatalf("replacement output does not match contract:\n%s", markdown)
+	}
+}
+
+func TestCompileDeliveryTicketIsDeterministic(t *testing.T) {
+	raw := readFixture(t, "compiler-ticket-fixture.delivery-ticket.json")
+	first := Compile("compiler-ticket-fixture.ticket-P2-T3.r1.delivery-ticket.json", raw)
+	second := Compile("compiler-ticket-fixture.ticket-P2-T3.r1.delivery-ticket.json", append([]byte(nil), raw...))
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("identical ticket input produced different results\nfirst=%+v\nsecond=%+v", first, second)
+	}
+}
+
+func TestDeliveryTicketStructuralDiagnosticsAreStable(t *testing.T) {
+	base := readFixture(t, "compiler-ticket-fixture.delivery-ticket.json")
+	cases := []struct {
+		name string
+		raw  []byte
+		code string
+	}{
+		{name: "noncanonical root order", raw: replaceOnce(t, base, []byte("  \"ticket_id\": \"P2-T3\",\n  \"revision\": 1,\n"), []byte("  \"revision\": 1,\n  \"ticket_id\": \"P2-T3\",\n")), code: "noncanonical_property_order"},
+		{name: "ticket identity", raw: replaceOnce(t, base, []byte(`"ticket_id": "P2-T3"`), []byte(`"ticket_id": "P2-T4"`)), code: "ticket_id_mismatch"},
+		{name: "revision identity", raw: replaceOnce(t, base, []byte("  \"revision\": 1,\n  \"replaces_revision\": null,\n"), []byte("  \"revision\": 2,\n  \"replaces_revision\": null,\n")), code: "revision_mismatch"},
+		{name: "duplicate dependency", raw: bytes.Replace(base, []byte("    {\n      \"ticket_id\": \"P2-T2\",\n      \"revision\": 1\n    }"), []byte("    {\n      \"ticket_id\": \"P2-T2\",\n      \"revision\": 1\n    },\n    {\n      \"ticket_id\": \"P2-T2\",\n      \"revision\": 1\n    }"), 1), code: "duplicate_dependency"},
+		{name: "unsafe obligation path", raw: replaceOnce(t, base, []byte(`"path": "internal/speccompiler/compiler.go"`), []byte(`"path": "../compiler.go"`)), code: "unsafe_repository_path"},
+		{name: "missing validation intent", raw: replaceOnce(t, base, []byte("  \"validation_intent\": [\n    \"Focused compiler tests pass.\"\n  ],\n"), []byte("  \"validation_intent\": [],\n")), code: "empty_required_value"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Compile("compiler-ticket-fixture.ticket-P2-T3.r1.delivery-ticket.json", tc.raw)
+			assertFailureCode(t, result, tc.code)
+			if result.OutputFilename != nil || result.Markdown != nil {
+				t.Fatalf("invalid ticket returned partial output: %+v", result)
+			}
+		})
+	}
+}
+
 func TestSourceProvenanceIsPinned(t *testing.T) {
 	want := Provenance{
 		Repository:       "Paintersrp/relay-specs",
@@ -321,6 +407,7 @@ func TestSourceProvenanceIsPinned(t *testing.T) {
 		Schemas: []SchemaProvenance{
 			{ArtifactKind: ArtifactPlan, Version: "1.0", Path: "schemas/plan.schema.json"},
 			{ArtifactKind: ArtifactExecutionSpec, Version: "2.0", Path: "schemas/execution-spec.schema.json"},
+			{ArtifactKind: ArtifactDeliveryTicket, Version: "1.0", Path: "schemas/delivery-ticket.schema.json"},
 		},
 	}
 	if got := SourceProvenance(); !reflect.DeepEqual(got, want) {

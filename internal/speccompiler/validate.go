@@ -633,6 +633,171 @@ func (v *validator) validateScope(node *jsonNode, path string) {
 	}
 }
 
+func validateDeliveryTicket(root *jsonNode, filename FilenameInfo) []Diagnostic {
+	v := &validator{}
+	order := []string{
+		"schema_version", "feature_slug", "ticket_id", "revision", "replaces_revision",
+		"repo_target", "branch", "base_commit", "goal", "context", "scope", "depends_on",
+		"implementation_obligations", "validation_intent", "transition_applicability",
+		"cancellation", "completion_criteria",
+	}
+	required := []string{
+		"feature_slug", "ticket_id", "revision", "replaces_revision", "repo_target", "branch",
+		"base_commit", "goal", "context", "scope", "depends_on", "implementation_obligations",
+		"validation_intent", "transition_applicability", "completion_criteria",
+	}
+	if !v.objectShape(root, "", order, required) {
+		return v.diagnostics
+	}
+
+	if slug, ok := v.stringMember(root, "feature_slug", "/feature_slug", stringFeatureSlug); ok && slug != filename.FeatureSlug {
+		v.add("filename_slug_mismatch", "/feature_slug", fmt.Sprintf("feature_slug %q does not match filename slug %q.", slug, filename.FeatureSlug))
+	}
+	if ticketID, ok := v.stringMember(root, "ticket_id", "/ticket_id", stringTicketID); ok && ticketID != filename.TicketID {
+		v.add("ticket_id_mismatch", "/ticket_id", fmt.Sprintf("ticket_id %q does not match filename ticket ID %q.", ticketID, filename.TicketID))
+	}
+	revision, revisionOK := v.integerMemberWithCode(root, "revision", "/revision", 1, "invalid_ticket_revision")
+	if revisionOK && int64(revision) != filename.Revision {
+		v.add("revision_mismatch", "/revision", fmt.Sprintf("revision %d does not match filename revision %d.", revision, filename.Revision))
+	}
+	v.validateReplacesRevision(root, "/replaces_revision", revision, revisionOK)
+	v.stringMember(root, "repo_target", "/repo_target", stringRepositoryKey)
+	v.stringMember(root, "branch", "/branch", stringBranch)
+	v.stringMember(root, "base_commit", "/base_commit", stringCommit)
+	v.stringMember(root, "goal", "/goal", stringSingleLine)
+	v.stringMember(root, "context", "/context", stringMultiline)
+	if member, ok := root.objectMember("scope"); ok {
+		v.validateScope(member.value, "/scope")
+	}
+	cancelled := false
+	if member, ok := root.objectMember("cancellation"); ok {
+		cancelled = member.value.kind == nodeObject
+		v.validateCancellation(member.value, "/cancellation")
+	}
+	v.validateDeliveryTicketDependencies(root, filename.TicketID, &cancelled)
+	v.validateDeliveryTicketObligations(root, cancelled)
+	v.validateDeliveryTicketValidation(root, cancelled)
+	if member, ok := root.objectMember("transition_applicability"); ok {
+		if value, ok := v.stringNode(member.value, "/transition_applicability", stringSingleLine); ok && value != "not_required" && value != "required" {
+			v.add("invalid_transition_applicability", "/transition_applicability", "Value must be either not_required or required.")
+		} else if cancelled && value == "required" {
+			v.add("cancellation_requires_no_transition", "/transition_applicability", "Cancelled tickets must use not_required transition applicability.")
+		}
+	}
+	if member, ok := root.objectMember("completion_criteria"); ok {
+		v.validateStringArray(member.value, "/completion_criteria", false)
+	}
+	return v.diagnostics
+}
+
+func (v *validator) validateReplacesRevision(node *jsonNode, path string, revision int, revisionOK bool) {
+	member, ok := node.objectMember("replaces_revision")
+	if !ok || member.value.kind == nodeNull {
+		return
+	}
+	if member.value.kind != nodeNumber {
+		v.add("invalid_ticket_revision", path, "Value must be an integer of at least 1 or null.")
+		return
+	}
+	value, err := member.value.number.Int64()
+	if err != nil || value < 1 {
+		v.add("invalid_ticket_revision", path, "Value must be an integer of at least 1 or null.")
+		return
+	}
+	if revisionOK && value >= int64(revision) {
+		v.add("invalid_revision_replacement", path, "replaces_revision must be lower than revision.")
+	}
+}
+
+func (v *validator) validateDeliveryTicketDependencies(node *jsonNode, ticketID string, cancelled *bool) {
+	member, ok := node.objectMember("depends_on")
+	if !ok {
+		return
+	}
+	if member.value.kind != nodeArray {
+		v.add("invalid_value_type", "/depends_on", "Value must be an array.")
+		return
+	}
+	if *cancelled && len(member.value.array) != 0 {
+		v.add("cancellation_has_dependencies", "/depends_on", "Cancelled tickets must not declare dependencies.")
+	}
+	seen := map[string]struct{}{}
+	for index, dependency := range member.value.array {
+		path := joinPointer("/depends_on", strconv.Itoa(index))
+		if !v.objectShape(dependency, path, []string{"ticket_id", "revision"}, []string{"ticket_id", "revision"}) {
+			continue
+		}
+		dependencyID, idOK := v.stringMember(dependency, "ticket_id", path+"/ticket_id", stringTicketID)
+		dependencyRevision, revisionOK := v.integerMemberWithCode(dependency, "revision", path+"/revision", 1, "invalid_ticket_revision")
+		if idOK && revisionOK {
+			key := dependencyID + "\x00" + strconv.Itoa(dependencyRevision)
+			if _, duplicate := seen[key]; duplicate {
+				v.add("duplicate_dependency", path, "Dependency appears more than once.")
+			}
+			seen[key] = struct{}{}
+		}
+	}
+}
+
+func (v *validator) validateDeliveryTicketObligations(node *jsonNode, cancelled bool) {
+	member, ok := node.objectMember("implementation_obligations")
+	if !ok {
+		return
+	}
+	if member.value.kind != nodeArray {
+		v.add("invalid_value_type", "/implementation_obligations", "Value must be an array.")
+		return
+	}
+	if len(member.value.array) == 0 && !cancelled {
+		v.add("empty_required_value", "/implementation_obligations", "Array must not be empty.")
+	}
+	if cancelled && len(member.value.array) != 0 {
+		v.add("cancellation_has_obligations", "/implementation_obligations", "Cancelled tickets must not declare implementation obligations.")
+	}
+	seenPaths := map[string]struct{}{}
+	for index, obligation := range member.value.array {
+		path := joinPointer("/implementation_obligations", strconv.Itoa(index))
+		if !v.objectShape(obligation, path, []string{"path", "obligation"}, []string{"path", "obligation"}) {
+			continue
+		}
+		obligationPath, pathOK := v.stringMember(obligation, "path", path+"/path", stringRepositoryPath)
+		v.stringMember(obligation, "obligation", path+"/obligation", stringSingleLine)
+		if pathOK {
+			if _, duplicate := seenPaths[obligationPath]; duplicate {
+				v.add("duplicate_obligation_path", path+"/path", fmt.Sprintf("Implementation obligation path %q is duplicated.", obligationPath))
+			}
+			seenPaths[obligationPath] = struct{}{}
+		}
+	}
+}
+
+func (v *validator) validateDeliveryTicketValidation(node *jsonNode, cancelled bool) {
+	member, ok := node.objectMember("validation_intent")
+	if !ok {
+		return
+	}
+	if member.value.kind != nodeArray {
+		v.add("invalid_value_type", "/validation_intent", "Value must be an array.")
+		return
+	}
+	if len(member.value.array) == 0 && !cancelled {
+		v.add("empty_required_value", "/validation_intent", "Array must not be empty.")
+	}
+	if cancelled && len(member.value.array) != 0 {
+		v.add("cancellation_has_validation", "/validation_intent", "Cancelled tickets must not declare validation intent.")
+	}
+	for index, item := range member.value.array {
+		v.stringNode(item, joinPointer("/validation_intent", strconv.Itoa(index)), stringSingleLine)
+	}
+}
+
+func (v *validator) validateCancellation(node *jsonNode, path string) {
+	if !v.objectShape(node, path, []string{"reason"}, []string{"reason"}) {
+		return
+	}
+	v.stringMember(node, "reason", path+"/reason", stringSingleLine)
+}
+
 func (v *validator) objectShape(node *jsonNode, path string, order, required []string) bool {
 	if node == nil || node.kind != nodeObject {
 		v.add("invalid_value_type", path, "Value must be an object.")
@@ -672,6 +837,7 @@ const (
 	stringSingleLine stringKind = iota
 	stringMultiline
 	stringFeatureSlug
+	stringTicketID
 	stringRepositoryKey
 	stringBranch
 	stringCommit
@@ -704,6 +870,10 @@ func (v *validator) stringNode(node *jsonNode, path string, kind stringKind) (st
 	case stringFeatureSlug:
 		if !validFeatureSlug(value) {
 			v.add("invalid_feature_slug", path, "Value must be lowercase kebab-case.")
+		}
+	case stringTicketID:
+		if !ticketIDPattern.MatchString(value) {
+			v.add("invalid_ticket_id", path, "Value must use uppercase canonical ticket syntax.")
 		}
 	case stringRepositoryKey:
 		if !validMachineString(value) {

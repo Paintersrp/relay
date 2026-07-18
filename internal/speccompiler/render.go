@@ -440,6 +440,66 @@ func renderPlan(raw []byte) (string, error) {
 	return oneFinalNewline(b.String()), nil
 }
 
+func renderDeliveryTicket(ticket *DeliveryTicketDocument) (string, error) {
+	if ticket == nil {
+		return "", fmt.Errorf("delivery ticket document is required")
+	}
+	var b strings.Builder
+	b.WriteString("# Delivery Ticket\n\n")
+	b.WriteString(derivedNotice)
+	b.WriteString("\n\n")
+
+	b.WriteString("## Identity\n\n")
+	fmt.Fprintf(&b, "- Ticket: `%s`\n", ticket.TicketID)
+	fmt.Fprintf(&b, "- Revision: %d\n\n", ticket.Revision)
+
+	b.WriteString("## Target\n\n")
+	fmt.Fprintf(&b, "- Repository: `%s`\n", ticket.RepoTarget)
+	fmt.Fprintf(&b, "- Branch: `%s`\n", ticket.Branch)
+	fmt.Fprintf(&b, "- Base commit: `%s`\n\n", ticket.BaseCommit)
+	writeTextSection(&b, "## Goal", ticket.Goal)
+	writeTextSection(&b, "## Context", ticket.Context)
+
+	b.WriteString("## Scope\n\n")
+	writeBulletSection(&b, "### In Scope", ticket.Scope.InScope)
+	writeBulletSection(&b, "### Out of Scope", ticket.Scope.OutOfScope)
+
+	b.WriteString("## Dependencies\n\n")
+	if len(ticket.DependsOn) == 0 {
+		b.WriteString("None\n\n")
+	} else {
+		for _, dependency := range ticket.DependsOn {
+			fmt.Fprintf(&b, "- `%s` revision %d\n", dependency.TicketID, dependency.Revision)
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("## Implementation Obligations\n\n")
+	for _, obligation := range ticket.ImplementationObligations {
+		fmt.Fprintf(&b, "- `%s` - %s\n", obligation.Path, trimHuman(obligation.Obligation))
+	}
+	b.WriteString("\n")
+
+	writeBulletSection(&b, "## Validation Intent", ticket.ValidationIntent)
+	b.WriteString("## Transition Applicability\n\n")
+	fmt.Fprintf(&b, "%s\n\n", ticket.TransitionApplicability)
+	b.WriteString("## Replacement\n\n")
+	if ticket.ReplacesRevision == nil {
+		b.WriteString("None\n\n")
+	} else {
+		fmt.Fprintf(&b, "Replaces revision %d.\n\n", *ticket.ReplacesRevision)
+	}
+	b.WriteString("## Cancellation\n\n")
+	if ticket.Cancellation == nil {
+		b.WriteString("None\n\n")
+	} else {
+		b.WriteString(trimHuman(ticket.Cancellation.Reason))
+		b.WriteString("\n\n")
+	}
+	writeBulletSection(&b, "## Completion Criteria", ticket.Completion)
+	return oneFinalNewline(b.String()), nil
+}
+
 func writeTextSection(b *strings.Builder, heading, text string) {
 	b.WriteString(heading)
 	b.WriteString("\n\n")

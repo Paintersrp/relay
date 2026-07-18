@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "compiler-ticket-fixture",
+  "ticket_id": "P2-T3",
+  "revision": 1,
+  "replaces_revision": null,
+  "repo_target": "Paintersrp/relay",
+  "branch": "main",
+  "base_commit": "bea7c45781bc3b6b306c6f9cf75e5cbe58ba2690",
+  "goal": "Compile and render a Delivery Ticket.",
+  "context": "The fixture covers the canonical Delivery Ticket sections.",
+  "scope": {
+    "in_scope": [
+      "Validate the ticket structure."
+    ],
+    "out_of_scope": [
+      "Mutate workflow state."
+    ]
+  },
+  "depends_on": [
+    {
+      "ticket_id": "P2-T1",
+      "revision": 1
+    },
+    {
+      "ticket_id": "P2-T2",
+      "revision": 1
+    }
+  ],
+  "implementation_obligations": [
+    {
+      "path": "internal/speccompiler/compiler.go",
+      "obligation": "Compile canonical Delivery Ticket JSON."
+    },
+    {
+      "path": "internal/speccompiler/render.go",
+      "obligation": "Render deterministic Delivery Ticket Markdown."
+    }
+  ],
+  "validation_intent": [
+    "Focused compiler tests pass."
+  ],
+  "transition_applicability": "not_required",
+  "completion_criteria": [
+    "Valid ticket output is byte-identical across repeated compilation."
+  ]
+}
