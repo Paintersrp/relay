@@ -276,25 +276,29 @@ func (s *Service) Read(ctx context.Context, ticketID string) (TicketDetail, erro
 }
 
 func (s *Service) deriveReadiness(ctx context.Context, detail TicketDetail) (Readiness, error) {
+	return deriveTicketReadiness(ctx, s.store, detail)
+}
+
+func deriveTicketReadiness(ctx context.Context, reader ticketReadStore, detail TicketDetail) (Readiness, error) {
 	reasons := make([]string, 0)
 	if detail.Revision.CancellationReason.Valid {
 		reasons = append(reasons, "cancelled")
 	}
-	closure, err := s.store.GetSourceVaultClosureByRowID(ctx, detail.Revision.SourceClosureRowID)
+	closure, err := reader.GetSourceVaultClosureByRowID(ctx, detail.Revision.SourceClosureRowID)
 	if err != nil {
 		return Readiness{}, err
 	}
 	if closure.State != workflowstore.SourceVaultClosureStateReady {
 		reasons = append(reasons, "source_not_current")
 	}
-	workspace, err := s.store.GetFeatureWorkspaceByRowID(ctx, detail.Ticket.WorkspaceRowID)
+	workspace, err := reader.GetFeatureWorkspaceByRowID(ctx, detail.Ticket.WorkspaceRowID)
 	if err != nil {
 		return Readiness{}, err
 	}
 	if !workspace.CurrentAuthorityRevisionRowID.Valid {
 		reasons = append(reasons, "authority_missing")
 	} else {
-		authority, err := s.store.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+		authority, err := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
 		if err != nil {
 			return Readiness{}, err
 		}
@@ -320,11 +324,11 @@ func (s *Service) deriveReadiness(ctx context.Context, detail TicketDetail) (Rea
 			reasons = append(reasons, "dependency_outcome_not_satisfied")
 			continue
 		}
-		dependencyRevision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, dependency.DependsOnRevisionRowID)
+		dependencyRevision, err := reader.GetDeliveryTicketRevisionByRowID(ctx, dependency.DependsOnRevisionRowID)
 		if err != nil {
 			return Readiness{}, err
 		}
-		dependencyTicket, err := s.store.GetDeliveryTicketByRowID(ctx, dependencyRevision.DeliveryTicketRowID)
+		dependencyTicket, err := reader.GetDeliveryTicketByRowID(ctx, dependencyRevision.DeliveryTicketRowID)
 		if err != nil {
 			return Readiness{}, err
 		}
@@ -334,7 +338,7 @@ func (s *Service) deriveReadiness(ctx context.Context, detail TicketDetail) (Rea
 	}
 
 	selected := false
-	selections, err := s.store.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
+	selections, err := reader.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
 	if err != nil {
 		return Readiness{}, err
 	}
@@ -342,7 +346,7 @@ func (s *Service) deriveReadiness(ctx context.Context, detail TicketDetail) (Rea
 		if selection.State != "active" {
 			continue
 		}
-		members, err := s.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+		members, err := reader.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
 		if err != nil {
 			return Readiness{}, err
 		}

@@ -97,12 +97,24 @@ WHERE id = ?`, rowID).Scan(
 	return value, err
 }
 
+func (tx *Tx) ListDeliveryTicketsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicket, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketsByWorkspace(ctx, workspaceRowID)
+}
+
 func (tx *Tx) GetDeliveryTicketRevisionByRowID(ctx context.Context, revisionRowID int64) (DeliveryTicketRevision, error) {
 	return workflowgenerated.New(tx.tx).GetDeliveryTicketRevisionByRowID(ctx, revisionRowID)
 }
 
 func (tx *Tx) ListDeliveryTicketRevisions(ctx context.Context, ticketRowID int64) ([]DeliveryTicketRevision, error) {
 	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisions(ctx, ticketRowID)
+}
+
+func (tx *Tx) ListDeliveryTicketRevisionMembers(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionMember, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisionMembers(ctx, revisionRowID)
+}
+
+func (tx *Tx) ListDeliveryTicketRevisionDependencies(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionDependency, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisionDependencies(ctx, revisionRowID)
 }
 
 func (tx *Tx) ListDeliveryTicketRevisionApprovals(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionApproval, error) {
@@ -147,6 +159,14 @@ func (tx *Tx) TransitionDeliveryTicketSelection(ctx context.Context, selectionID
 	})
 }
 
+func (tx *Tx) ListDeliveryTicketSelectionsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicketSelection, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketSelectionsByWorkspace(ctx, workspaceRowID)
+}
+
 func (tx *Tx) CreateDeliveryTicketSelectionMember(ctx context.Context, params CreateDeliveryTicketSelectionMemberParams) (DeliveryTicketSelectionMember, error) {
 	return workflowgenerated.New(tx.tx).CreateDeliveryTicketSelectionMember(ctx, params)
+}
+
+func (tx *Tx) ListDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) ([]DeliveryTicketSelectionMember, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketSelectionMembers(ctx, selectionRowID)
 }
