@@ -77,7 +77,7 @@ func TestAuthorityPublicationReconcileRemovesResidueAndPreservesLegacyRetention(
 	if _, err := orphan.Stage("operation_packet_document", "operation-packet.json", "application/json", []byte("{}\n")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := orphan.Seal(workflowPublicationExpectations()); err != nil {
+	if _, err := orphan.Seal(workflowartifacts.PublicationExpectations{BindingCount: 1, DependencyCount: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if err := orphan.Promote(); err != nil {
@@ -106,8 +106,4 @@ func TestAuthorityPublicationReconcileRemovesResidueAndPreservesLegacyRetention(
 	}
 	_ = staging.Rollback()
 	_ = orphan.Rollback()
-}
-
-func workflowPublicationExpectations() workflowartifacts.PublicationExpectations {
-	return workflowartifacts.PublicationExpectations{BindingCount: 1, DependencyCount: 1}
 }
