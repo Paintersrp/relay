@@ -23,8 +23,12 @@ func TestRecordSuccessInTxCommitsAndRollsBackWithPublicationTransaction(t *testi
 	var packet workflowstore.OperationPacket
 	var err error
 	err = store.CommitOperationPacketPublication(ctx, batch, func(tx *workflowstore.Tx) error {
+		artifact, err = createPublicationArtifact(ctx, tx, packetFile, "artifact-publication-idempotency-success")
+		if err != nil {
+			return err
+		}
 		stored, err := service.RecordSuccessInTx(ctx, tx, success, func(ctx context.Context, tx *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
-			artifact, packet, err = createPublicationPacket(ctx, tx, batch, packetFile, "artifact-publication-idempotency-success", "opkt-publication-idempotency-success", "2026-07-18T00:00:00.000000000Z")
+			packet, err = createPublicationPacket(ctx, tx, batch, artifact, "opkt-publication-idempotency-success", "2026-07-18T00:00:00.000000000Z")
 			if err != nil {
 				return nil, err
 			}
@@ -71,8 +75,12 @@ func TestRecordSuccessInTxCommitsAndRollsBackWithPublicationTransaction(t *testi
 	rollback := validSubmitInput(t, "mutation-publication-rollback", validSubmitRequest("rollback.plan.json"))
 	rollbackBatch, rollbackFile := publicationBatch(t, store, "publication-idempotency-rollback")
 	err = store.CommitOperationPacketPublication(ctx, rollbackBatch, func(tx *workflowstore.Tx) error {
+		rollbackArtifact, err := createPublicationArtifact(ctx, tx, rollbackFile, "artifact-publication-idempotency-rollback")
+		if err != nil {
+			return err
+		}
 		_, err = service.RecordSuccessInTx(ctx, tx, rollback, func(ctx context.Context, tx *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
-			_, _, err := createPublicationPacket(ctx, tx, rollbackBatch, rollbackFile, "artifact-publication-idempotency-rollback", "opkt-publication-idempotency-rollback", "2026-07-18T00:00:01.000000000Z")
+			_, err := createPublicationPacket(ctx, tx, rollbackBatch, rollbackArtifact, "opkt-publication-idempotency-rollback", "2026-07-18T00:00:01.000000000Z")
 			if err != nil {
 				return nil, err
 			}
@@ -140,14 +148,18 @@ func publicationBatch(t *testing.T, store *workflowstore.Store, publicationID st
 	return batch, file
 }
 
-func createPublicationPacket(ctx context.Context, tx *workflowstore.Tx, batch *workflowartifacts.PublicationBatch, file workflowartifacts.File, artifactID, packetID, createdAt string) (workflowstore.OperationPacketArtifact, workflowstore.OperationPacket, error) {
+func createPublicationArtifact(ctx context.Context, tx *workflowstore.Tx, file workflowartifacts.File, artifactID string) (workflowstore.OperationPacketArtifact, error) {
 	artifact, err := tx.CreateOperationPacketArtifact(ctx, workflowstore.CreateOperationPacketArtifactParams{
 		ArtifactID: artifactID, Kind: file.Kind, RelativePath: file.RelativePath, MediaType: file.MediaType,
 		SHA256: file.SHA256, SizeBytes: file.SizeBytes,
 	})
 	if err != nil {
-		return workflowstore.OperationPacketArtifact{}, workflowstore.OperationPacket{}, err
+		return workflowstore.OperationPacketArtifact{}, err
 	}
+	return artifact, nil
+}
+
+func createPublicationPacket(ctx context.Context, tx *workflowstore.Tx, batch *workflowartifacts.PublicationBatch, artifact workflowstore.OperationPacketArtifact, packetID, createdAt string) (workflowstore.OperationPacket, error) {
 	packet, err := tx.CreateOperationPacket(ctx, workflowstore.CreateOperationPacketParams{
 		PacketID: packetID, PacketSHA256: artifact.SHA256, SchemaVersion: workflowstore.OperationPacketSchemaVersion,
 		Role: "planner", OperationID: "planner.plan", SurfaceContractID: "planner-plan.v1", ProjectID: "project-test",
@@ -155,7 +167,7 @@ func createPublicationPacket(ctx context.Context, tx *workflowstore.Tx, batch *w
 		CoordinatedPublicationID: sql.NullString{String: batch.PublicationID(), Valid: true},
 	})
 	if err != nil {
-		return workflowstore.OperationPacketArtifact{}, workflowstore.OperationPacket{}, err
+		return workflowstore.OperationPacket{}, err
 	}
-	return artifact, packet, nil
+	return packet, nil
 }
