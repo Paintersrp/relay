@@ -79,14 +79,15 @@ type DeliveryTicketRevision struct {
 }
 
 type DeliveryTicketRevisionApproval struct {
-	ID                 int64  `json:"id"`
-	ApprovalID         string `json:"approval_id"`
-	RevisionRowID      int64  `json:"revision_row_id"`
-	ApprovalKind       string `json:"approval_kind"`
-	ApprovalState      string `json:"approval_state"`
-	Rationale          string `json:"rationale"`
-	SourceClosureRowID int64  `json:"source_closure_row_id"`
-	CreatedAt          string `json:"created_at"`
+	ID                     int64         `json:"id"`
+	ApprovalID             string        `json:"approval_id"`
+	RevisionRowID          int64         `json:"revision_row_id"`
+	ApprovalKind           string        `json:"approval_kind"`
+	ApprovalState          string        `json:"approval_state"`
+	Rationale              string        `json:"rationale"`
+	SourceClosureRowID     int64         `json:"source_closure_row_id"`
+	CreatedAt              string        `json:"created_at"`
+	AuthorityRevisionRowID sql.NullInt64 `json:"authority_revision_row_id"`
 }
 
 type DeliveryTicketRevisionDependency struct {

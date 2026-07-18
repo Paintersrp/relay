@@ -514,9 +514,9 @@ ORDER BY sequence, id;
 -- name: CreateDeliveryTicketRevisionApproval :one
 INSERT INTO delivery_ticket_revision_approvals (
     approval_id, revision_row_id, approval_kind, approval_state, rationale,
-    source_closure_row_id
+    source_closure_row_id, authority_revision_row_id
 )
-VALUES (?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListDeliveryTicketRevisionApprovals :many

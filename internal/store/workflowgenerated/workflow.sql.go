@@ -288,19 +288,20 @@ func (q *Queries) CreateDeliveryTicketRevision(ctx context.Context, arg CreateDe
 const createDeliveryTicketRevisionApproval = `-- name: CreateDeliveryTicketRevisionApproval :one
 INSERT INTO delivery_ticket_revision_approvals (
     approval_id, revision_row_id, approval_kind, approval_state, rationale,
-    source_closure_row_id
+    source_closure_row_id, authority_revision_row_id
 )
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at, authority_revision_row_id
 `
 
 type CreateDeliveryTicketRevisionApprovalParams struct {
-	ApprovalID         string `json:"approval_id"`
-	RevisionRowID      int64  `json:"revision_row_id"`
-	ApprovalKind       string `json:"approval_kind"`
-	ApprovalState      string `json:"approval_state"`
-	Rationale          string `json:"rationale"`
-	SourceClosureRowID int64  `json:"source_closure_row_id"`
+	ApprovalID             string        `json:"approval_id"`
+	RevisionRowID          int64         `json:"revision_row_id"`
+	ApprovalKind           string        `json:"approval_kind"`
+	ApprovalState          string        `json:"approval_state"`
+	Rationale              string        `json:"rationale"`
+	SourceClosureRowID     int64         `json:"source_closure_row_id"`
+	AuthorityRevisionRowID sql.NullInt64 `json:"authority_revision_row_id"`
 }
 
 func (q *Queries) CreateDeliveryTicketRevisionApproval(ctx context.Context, arg CreateDeliveryTicketRevisionApprovalParams) (DeliveryTicketRevisionApproval, error) {
@@ -311,6 +312,7 @@ func (q *Queries) CreateDeliveryTicketRevisionApproval(ctx context.Context, arg 
 		arg.ApprovalState,
 		arg.Rationale,
 		arg.SourceClosureRowID,
+		arg.AuthorityRevisionRowID,
 	)
 	var i DeliveryTicketRevisionApproval
 	err := row.Scan(
@@ -322,6 +324,7 @@ func (q *Queries) CreateDeliveryTicketRevisionApproval(ctx context.Context, arg 
 		&i.Rationale,
 		&i.SourceClosureRowID,
 		&i.CreatedAt,
+		&i.AuthorityRevisionRowID,
 	)
 	return i, err
 }
@@ -1701,7 +1704,7 @@ func (q *Queries) ListArtifactsByRun(ctx context.Context, runRowID sql.NullInt64
 }
 
 const listDeliveryTicketRevisionApprovals = `-- name: ListDeliveryTicketRevisionApprovals :many
-SELECT id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at
+SELECT id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at, authority_revision_row_id
 FROM delivery_ticket_revision_approvals
 WHERE revision_row_id = ?
 ORDER BY id
@@ -1725,6 +1728,7 @@ func (q *Queries) ListDeliveryTicketRevisionApprovals(ctx context.Context, revis
 			&i.Rationale,
 			&i.SourceClosureRowID,
 			&i.CreatedAt,
+			&i.AuthorityRevisionRowID,
 		); err != nil {
 			return nil, err
 		}

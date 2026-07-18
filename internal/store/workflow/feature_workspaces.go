@@ -36,6 +36,14 @@ func (s *Store) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspaceI
 	return workflowgenerated.New(s.db).GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
 }
 
+func (s *Store) GetFeatureWorkspaceByRowID(ctx context.Context, rowID int64) (FeatureWorkspace, error) {
+	return getFeatureWorkspaceByRowID(ctx, s.db, rowID)
+}
+
+func (s *Store) GetFeatureWorkspaceAuthorityRevisionByRowID(ctx context.Context, rowID int64) (FeatureWorkspaceAuthorityRevision, error) {
+	return getFeatureWorkspaceAuthorityRevisionByRowID(ctx, s.db, rowID)
+}
+
 func (s *Store) ListFeatureWorkspaceAdmittedInputs(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceAdmittedInput, error) {
 	return workflowgenerated.New(s.db).ListFeatureWorkspaceAdmittedInputs(ctx, workspaceRowID)
 }
@@ -79,6 +87,14 @@ func (s *Store) ListFeatureWorkspaceTicketResolutions(ctx context.Context, ticke
 
 func (tx *Tx) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspaceID string) (FeatureWorkspace, error) {
 	return workflowgenerated.New(tx.tx).GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+}
+
+func (tx *Tx) GetFeatureWorkspaceByRowID(ctx context.Context, rowID int64) (FeatureWorkspace, error) {
+	return getFeatureWorkspaceByRowID(ctx, tx.tx, rowID)
+}
+
+func (tx *Tx) GetFeatureWorkspaceAuthorityRevisionByRowID(ctx context.Context, rowID int64) (FeatureWorkspaceAuthorityRevision, error) {
+	return getFeatureWorkspaceAuthorityRevisionByRowID(ctx, tx.tx, rowID)
 }
 
 func (tx *Tx) GetFeatureWorkspaceDiscoveryTicketByID(ctx context.Context, ticketID string) (FeatureWorkspaceDiscoveryTicket, error) {
@@ -155,6 +171,35 @@ RETURNING id, workspace_id, project_row_id, feature_slug, state, version,
           current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at`, workspaceID, expectedVersion).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
 		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
+	)
+	return value, err
+}
+
+type featureWorkspaceQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func getFeatureWorkspaceByRowID(ctx context.Context, queryer featureWorkspaceQueryer, rowID int64) (FeatureWorkspace, error) {
+	var value FeatureWorkspace
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, workspace_id, project_row_id, feature_slug, state, version,
+       current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+FROM feature_workspaces
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
+		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
+	)
+	return value, err
+}
+
+func getFeatureWorkspaceAuthorityRevisionByRowID(ctx context.Context, queryer featureWorkspaceQueryer, rowID int64) (FeatureWorkspaceAuthorityRevision, error) {
+	var value FeatureWorkspaceAuthorityRevision
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, authority_revision_id, workspace_row_id, revision_number, source_closure_row_id, created_at
+FROM feature_workspace_authority_revisions
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.AuthorityRevisionID, &value.WorkspaceRowID, &value.RevisionNumber,
+		&value.SourceClosureRowID, &value.CreatedAt,
 	)
 	return value, err
 }

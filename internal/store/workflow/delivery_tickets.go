@@ -29,6 +29,18 @@ func (s *Store) GetDeliveryTicketByTicketID(ctx context.Context, ticketID string
 	return workflowgenerated.New(s.db).GetDeliveryTicketByTicketID(ctx, ticketID)
 }
 
+func (s *Store) GetDeliveryTicketByRowID(ctx context.Context, rowID int64) (DeliveryTicket, error) {
+	var value DeliveryTicket
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+FROM delivery_tickets
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.TicketID, &value.WorkspaceRowID, &value.ExternalPriority,
+		&value.CurrentRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
+	)
+	return value, err
+}
+
 func (s *Store) ListDeliveryTicketsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicket, error) {
 	return workflowgenerated.New(s.db).ListDeliveryTicketsByWorkspace(ctx, workspaceRowID)
 }
@@ -67,6 +79,34 @@ func (s *Store) ListDeliveryTicketSelectionMembers(ctx context.Context, selectio
 
 func (tx *Tx) CreateDeliveryTicket(ctx context.Context, params CreateDeliveryTicketParams) (DeliveryTicket, error) {
 	return workflowgenerated.New(tx.tx).CreateDeliveryTicket(ctx, params)
+}
+
+func (tx *Tx) GetDeliveryTicketByTicketID(ctx context.Context, ticketID string) (DeliveryTicket, error) {
+	return workflowgenerated.New(tx.tx).GetDeliveryTicketByTicketID(ctx, ticketID)
+}
+
+func (tx *Tx) GetDeliveryTicketByRowID(ctx context.Context, rowID int64) (DeliveryTicket, error) {
+	var value DeliveryTicket
+	err := tx.tx.QueryRowContext(ctx, `
+SELECT id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
+FROM delivery_tickets
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.TicketID, &value.WorkspaceRowID, &value.ExternalPriority,
+		&value.CurrentRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
+	)
+	return value, err
+}
+
+func (tx *Tx) GetDeliveryTicketRevisionByRowID(ctx context.Context, revisionRowID int64) (DeliveryTicketRevision, error) {
+	return workflowgenerated.New(tx.tx).GetDeliveryTicketRevisionByRowID(ctx, revisionRowID)
+}
+
+func (tx *Tx) ListDeliveryTicketRevisions(ctx context.Context, ticketRowID int64) ([]DeliveryTicketRevision, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisions(ctx, ticketRowID)
+}
+
+func (tx *Tx) ListDeliveryTicketRevisionApprovals(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionApproval, error) {
+	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisionApprovals(ctx, revisionRowID)
 }
 
 func (tx *Tx) UpdateDeliveryTicketExternalPriority(ctx context.Context, ticketID string, externalPriority int64) (DeliveryTicket, error) {
