@@ -29,11 +29,11 @@ func (f *fakeWorkflow) Publish(_ context.Context, input appoperations.TicketPubl
 func (f *fakeWorkflow) ReplaceDependencies(context.Context, appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error) {
 	return apptickets.PublishedRevision{}, f.err
 }
-func (f *fakeWorkflow) Approve(context.Context, appoperations.TicketApprovalOperationInput) (workflowstore.DeliveryTicketRevisionApproval, error) {
-	return workflowstore.DeliveryTicketRevisionApproval{}, f.err
+func (f *fakeWorkflow) Approve(context.Context, appoperations.TicketApprovalOperationInput) (RevisionApproval, error) {
+	return RevisionApproval{}, f.err
 }
-func (f *fakeWorkflow) UpdatePriority(context.Context, appoperations.TicketOperationRequest) (workflowstore.DeliveryTicket, error) {
-	return workflowstore.DeliveryTicket{}, f.err
+func (f *fakeWorkflow) UpdatePriority(context.Context, appoperations.TicketOperationRequest) (DeliveryTicket, error) {
+	return DeliveryTicket{}, f.err
 }
 func (f *fakeWorkflow) ListFrontier(_ context.Context, request appoperations.TicketOperationRequest) (apptickets.Frontier, error) {
 	if request.Action != "read_ticket_frontier" {
@@ -48,14 +48,14 @@ func (f *fakeWorkflow) Select(_ context.Context, input appoperations.TicketSelec
 
 type fakeRead struct {
 	detail  apptickets.TicketDetail
-	history []workflowstore.DeliveryTicketRevision
+	history []RevisionHistory
 	err     error
 }
 
 func (f *fakeRead) Read(context.Context, string) (apptickets.TicketDetail, error) {
 	return f.detail, f.err
 }
-func (f *fakeRead) ListHistory(context.Context, string) ([]workflowstore.DeliveryTicketRevision, error) {
+func (f *fakeRead) ListHistory(context.Context, string) ([]RevisionHistory, error) {
 	return f.history, f.err
 }
 

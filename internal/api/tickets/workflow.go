@@ -14,7 +14,6 @@ import (
 	appoperations "relay/internal/app/operations"
 	apptickets "relay/internal/app/tickets"
 	"relay/internal/operations/registry"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -22,15 +21,43 @@ import (
 type WorkflowService interface {
 	Publish(context.Context, appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error)
 	ReplaceDependencies(context.Context, appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error)
-	Approve(context.Context, appoperations.TicketApprovalOperationInput) (workflowstore.DeliveryTicketRevisionApproval, error)
-	UpdatePriority(context.Context, appoperations.TicketOperationRequest) (workflowstore.DeliveryTicket, error)
+	Approve(context.Context, appoperations.TicketApprovalOperationInput) (RevisionApproval, error)
+	UpdatePriority(context.Context, appoperations.TicketOperationRequest) (DeliveryTicket, error)
 	ListFrontier(context.Context, appoperations.TicketOperationRequest) (apptickets.Frontier, error)
 	Select(context.Context, appoperations.TicketSelectionOperationInput) (apptickets.SelectionResult, error)
 }
 
 type ReadService interface {
 	Read(context.Context, string) (apptickets.TicketDetail, error)
-	ListHistory(context.Context, string) ([]workflowstore.DeliveryTicketRevision, error)
+	ListHistory(context.Context, string) ([]RevisionHistory, error)
+}
+
+type DeliveryTicket struct {
+	TicketID         string
+	ExternalPriority int64
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+type RevisionApproval struct {
+	ApprovalID             string
+	RevisionRowID          int64
+	ApprovalKind           string
+	ApprovalState          string
+	AuthorityRevisionRowID sql.NullInt64
+	SourceClosureRowID     int64
+	Rationale              string
+	CreatedAt              string
+}
+
+type RevisionHistory struct {
+	RowID                 int64
+	RevisionNumber        int64
+	ReplacesRevisionRowID sql.NullInt64
+	SourceClosureRowID    int64
+	CreatedAt             string
+	Goal                  string
+	CancellationReason    sql.NullString
 }
 
 type WorkflowHandler struct {
@@ -40,6 +67,42 @@ type WorkflowHandler struct {
 
 func NewWorkflowHandler(workflow WorkflowService, read ReadService) *WorkflowHandler {
 	return &WorkflowHandler{workflow: workflow, read: read}
+}
+
+// NewWorkflowHandlerFromServices binds application owners to the ticket HTTP
+// projection boundary without exposing persistence models from this package.
+func NewWorkflowHandlerFromServices(workflow *appoperations.TicketWorkflowService, read ReadService) *WorkflowHandler {
+	return NewWorkflowHandler(appWorkflowAdapter{service: workflow}, read)
+}
+
+type appWorkflowAdapter struct {
+	service *appoperations.TicketWorkflowService
+}
+
+func (a appWorkflowAdapter) Publish(ctx context.Context, input appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error) {
+	return a.service.Publish(ctx, input)
+}
+
+func (a appWorkflowAdapter) ReplaceDependencies(ctx context.Context, input appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error) {
+	return a.service.ReplaceDependencies(ctx, input)
+}
+
+func (a appWorkflowAdapter) Approve(ctx context.Context, input appoperations.TicketApprovalOperationInput) (RevisionApproval, error) {
+	value, err := a.service.Approve(ctx, input)
+	return RevisionApproval{ApprovalID: value.ApprovalID, RevisionRowID: value.RevisionRowID, ApprovalKind: value.ApprovalKind, ApprovalState: value.ApprovalState, AuthorityRevisionRowID: value.AuthorityRevisionRowID, SourceClosureRowID: value.SourceClosureRowID, Rationale: value.Rationale, CreatedAt: value.CreatedAt}, err
+}
+
+func (a appWorkflowAdapter) UpdatePriority(ctx context.Context, input appoperations.TicketOperationRequest) (DeliveryTicket, error) {
+	value, err := a.service.UpdatePriority(ctx, input)
+	return DeliveryTicket{TicketID: value.TicketID, ExternalPriority: value.ExternalPriority, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}, err
+}
+
+func (a appWorkflowAdapter) ListFrontier(ctx context.Context, input appoperations.TicketOperationRequest) (apptickets.Frontier, error) {
+	return a.service.ListFrontier(ctx, input)
+}
+
+func (a appWorkflowAdapter) Select(ctx context.Context, input appoperations.TicketSelectionOperationInput) (apptickets.SelectionResult, error) {
+	return a.service.Select(ctx, input)
 }
 
 type dependencyRequest struct {
@@ -330,23 +393,23 @@ func ticketDTO(detail apptickets.TicketDetail) map[string]any {
 		}
 		approvals := make([]map[string]any, 0, len(detail.Approvals))
 		for _, approval := range detail.Approvals {
-			approvals = append(approvals, approvalDTO(approval))
+			approvals = append(approvals, approvalDTO(RevisionApproval{ApprovalID: approval.ApprovalID, RevisionRowID: approval.RevisionRowID, ApprovalKind: approval.ApprovalKind, ApprovalState: approval.ApprovalState, AuthorityRevisionRowID: approval.AuthorityRevisionRowID, SourceClosureRowID: approval.SourceClosureRowID, Rationale: approval.Rationale, CreatedAt: approval.CreatedAt}))
 		}
 		value["revision"] = map[string]any{"rowId": detail.Revision.ID, "number": detail.Revision.RevisionNumber, "replacesRevisionRowId": nullableInt(detail.Revision.ReplacesRevisionRowID), "repoTarget": detail.Revision.RepoTarget, "branch": detail.Revision.Branch, "baseCommit": detail.Revision.BaseCommit, "sourceClosureRowId": detail.Revision.SourceClosureRowID, "sourcePath": detail.Revision.SourcePath, "goal": detail.Revision.Goal, "context": detail.Revision.Context, "transitionApplicability": detail.Revision.TransitionApplicability, "cancellationReason": nullableString(detail.Revision.CancellationReason), "canonical": detail.Canonical, "rendered": detail.Rendered, "members": members, "dependencies": dependencies, "approvals": approvals}
 	}
 	return value
 }
 
-func ticketIdentityDTO(value workflowstore.DeliveryTicket) map[string]any {
+func ticketIdentityDTO(value DeliveryTicket) map[string]any {
 	return map[string]any{"ticketId": value.TicketID, "externalPriority": value.ExternalPriority, "createdAt": value.CreatedAt, "updatedAt": value.UpdatedAt}
 }
-func approvalDTO(value workflowstore.DeliveryTicketRevisionApproval) map[string]any {
+func approvalDTO(value RevisionApproval) map[string]any {
 	return map[string]any{"approvalId": value.ApprovalID, "revisionRowId": value.RevisionRowID, "kind": value.ApprovalKind, "state": value.ApprovalState, "authorityRevisionId": nullableInt(value.AuthorityRevisionRowID), "sourceClosureRowId": value.SourceClosureRowID, "rationale": value.Rationale, "createdAt": value.CreatedAt}
 }
-func revisionHistoryDTO(values []workflowstore.DeliveryTicketRevision) []map[string]any {
+func revisionHistoryDTO(values []RevisionHistory) []map[string]any {
 	result := make([]map[string]any, 0, len(values))
 	for _, value := range values {
-		result = append(result, map[string]any{"rowId": value.ID, "number": value.RevisionNumber, "replacesRevisionRowId": nullableInt(value.ReplacesRevisionRowID), "sourceClosureRowId": value.SourceClosureRowID, "createdAt": value.CreatedAt, "goal": value.Goal, "cancellationReason": nullableString(value.CancellationReason)})
+		result = append(result, map[string]any{"rowId": value.RowID, "number": value.RevisionNumber, "replacesRevisionRowId": nullableInt(value.ReplacesRevisionRowID), "sourceClosureRowId": value.SourceClosureRowID, "createdAt": value.CreatedAt, "goal": value.Goal, "cancellationReason": nullableString(value.CancellationReason)})
 	}
 	return result
 }

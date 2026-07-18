@@ -13,24 +13,96 @@ import (
 	"relay/internal/api/shared"
 	featureapp "relay/internal/app/features"
 	wayfinder "relay/internal/app/wayfinder"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type WayfinderService interface {
-	CreateWorkspace(context.Context, wayfinder.CreateWorkspaceInput) (workflowstore.FeatureWorkspace, error)
+	CreateWorkspace(context.Context, wayfinder.CreateWorkspaceInput) (Workspace, error)
 	ReadWorkspace(context.Context, string) (wayfinder.WorkspaceDetail, error)
-	AdmitInput(context.Context, wayfinder.AdmitInputInput) (workflowstore.FeatureWorkspaceAdmittedInput, workflowstore.FeatureWorkspace, error)
-	AddDestination(context.Context, wayfinder.AddDestinationInput) (workflowstore.FeatureWorkspaceDestination, workflowstore.FeatureWorkspace, error)
-	CreateDiscoveryTicket(context.Context, wayfinder.CreateDiscoveryTicketInput) (workflowstore.FeatureWorkspaceDiscoveryTicket, workflowstore.FeatureWorkspace, error)
-	ResolveDiscoveryTicket(context.Context, wayfinder.ResolveDiscoveryTicketInput) (workflowstore.FeatureWorkspaceTicketResolution, workflowstore.FeatureWorkspaceDiscoveryTicket, workflowstore.FeatureWorkspace, error)
-	RouteWorkspace(context.Context, wayfinder.RouteWorkspaceInput) (workflowstore.FeatureWorkspaceRouteState, workflowstore.FeatureWorkspace, error)
+	AdmitInput(context.Context, wayfinder.AdmitInputInput) (AdmittedInput, Workspace, error)
+	AddDestination(context.Context, wayfinder.AddDestinationInput) (Destination, Workspace, error)
+	CreateDiscoveryTicket(context.Context, wayfinder.CreateDiscoveryTicketInput) (DiscoveryTicket, Workspace, error)
+	ResolveDiscoveryTicket(context.Context, wayfinder.ResolveDiscoveryTicketInput) (Resolution, DiscoveryTicket, Workspace, error)
+	RouteWorkspace(context.Context, wayfinder.RouteWorkspaceInput) (RouteState, Workspace, error)
 }
 
 type AuthorityService interface {
 	ReadAuthority(context.Context, string) ([]featureapp.AuthorityRevisionDetail, error)
-	PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, workflowstore.FeatureWorkspace, error)
+	PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error)
+}
+
+type Workspace struct {
+	WorkspaceID string
+	FeatureSlug string
+	State       string
+	Version     int64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+type AdmittedInput struct {
+	AdmittedInputID       string
+	Sequence              int64
+	InputName             string
+	InputRole             string
+	SourceKind            string
+	ArtifactRowID         sql.NullInt64
+	RetainedArtifactRowID sql.NullInt64
+	SourceClosureRowID    sql.NullInt64
+	ArtifactSha256        sql.NullString
+	SourceReference       string
+	CreatedAt             string
+}
+
+type Destination struct {
+	DestinationID      string
+	Sequence           int64
+	DestinationKind    string
+	DestinationKey     string
+	RepoTarget         sql.NullString
+	SourceClosureRowID sql.NullInt64
+	CreatedAt          string
+}
+
+type DiscoveryTicket struct {
+	DiscoveryTicketID string
+	TicketKey         string
+	Subject           string
+	State             string
+	Version           int64
+	CreatedAt         string
+	UpdatedAt         string
+}
+
+type Resolution struct {
+	ResolutionID          string
+	Sequence              int64
+	ResolutionKind        string
+	ArtifactRowID         sql.NullInt64
+	RetainedArtifactRowID sql.NullInt64
+	ArtifactSha256        string
+	SourceClosureRowID    sql.NullInt64
+	CreatedAt             string
+}
+
+type RouteState struct {
+	RouteStateID     string
+	Sequence         int64
+	WorkspaceVersion int64
+	State            string
+	CreatedAt        string
+}
+
+type TicketDependency struct {
+	DependsOnTicketRowID int64
+	DependencyKind       string
+}
+
+type TicketDetail struct {
+	Ticket       DiscoveryTicket
+	Dependencies []TicketDependency
+	Resolutions  []Resolution
 }
 
 type WorkspaceHandler struct {
@@ -40,6 +112,59 @@ type WorkspaceHandler struct {
 
 func NewWorkspaceHandler(wayfinderService WayfinderService, authorityService AuthorityService) *WorkspaceHandler {
 	return &WorkspaceHandler{wayfinder: wayfinderService, authority: authorityService}
+}
+
+// NewWorkspaceHandlerFromServices binds the application owners to the HTTP
+// projection boundary without exposing persistence models from this package.
+func NewWorkspaceHandlerFromServices(wayfinderService *wayfinder.Service, authorityService *featureapp.Service) *WorkspaceHandler {
+	return NewWorkspaceHandler(appWayfinderAdapter{service: wayfinderService}, appAuthorityAdapter{service: authorityService})
+}
+
+type appWayfinderAdapter struct{ service *wayfinder.Service }
+
+func (a appWayfinderAdapter) CreateWorkspace(ctx context.Context, input wayfinder.CreateWorkspaceInput) (Workspace, error) {
+	value, err := a.service.CreateWorkspace(ctx, input)
+	return Workspace{WorkspaceID: value.WorkspaceID, FeatureSlug: value.FeatureSlug, State: value.State, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}, err
+}
+
+func (a appWayfinderAdapter) ReadWorkspace(ctx context.Context, workspaceID string) (wayfinder.WorkspaceDetail, error) {
+	return a.service.ReadWorkspace(ctx, workspaceID)
+}
+
+func (a appWayfinderAdapter) AdmitInput(ctx context.Context, input wayfinder.AdmitInputInput) (AdmittedInput, Workspace, error) {
+	value, workspace, err := a.service.AdmitInput(ctx, input)
+	return AdmittedInput{AdmittedInputID: value.AdmittedInputID, Sequence: value.Sequence, InputName: value.InputName, InputRole: value.InputRole, SourceKind: value.SourceKind, ArtifactRowID: value.ArtifactRowID, RetainedArtifactRowID: value.RetainedArtifactRowID, SourceClosureRowID: value.SourceClosureRowID, ArtifactSha256: value.ArtifactSha256, SourceReference: value.SourceReference, CreatedAt: value.CreatedAt}, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
+}
+
+func (a appWayfinderAdapter) AddDestination(ctx context.Context, input wayfinder.AddDestinationInput) (Destination, Workspace, error) {
+	value, workspace, err := a.service.AddDestination(ctx, input)
+	return Destination{DestinationID: value.DestinationID, Sequence: value.Sequence, DestinationKind: value.DestinationKind, DestinationKey: value.DestinationKey, RepoTarget: value.RepoTarget, SourceClosureRowID: value.SourceClosureRowID, CreatedAt: value.CreatedAt}, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
+}
+
+func (a appWayfinderAdapter) CreateDiscoveryTicket(ctx context.Context, input wayfinder.CreateDiscoveryTicketInput) (DiscoveryTicket, Workspace, error) {
+	value, workspace, err := a.service.CreateDiscoveryTicket(ctx, input)
+	return DiscoveryTicket{DiscoveryTicketID: value.DiscoveryTicketID, TicketKey: value.TicketKey, Subject: value.Subject, State: value.State, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
+}
+
+func (a appWayfinderAdapter) ResolveDiscoveryTicket(ctx context.Context, input wayfinder.ResolveDiscoveryTicketInput) (Resolution, DiscoveryTicket, Workspace, error) {
+	value, ticket, workspace, err := a.service.ResolveDiscoveryTicket(ctx, input)
+	return Resolution{ResolutionID: value.ResolutionID, Sequence: value.Sequence, ResolutionKind: value.ResolutionKind, ArtifactRowID: value.ArtifactRowID, RetainedArtifactRowID: value.RetainedArtifactRowID, ArtifactSha256: value.ArtifactSha256, SourceClosureRowID: value.SourceClosureRowID, CreatedAt: value.CreatedAt}, DiscoveryTicket{DiscoveryTicketID: ticket.DiscoveryTicketID, TicketKey: ticket.TicketKey, Subject: ticket.Subject, State: ticket.State, Version: ticket.Version, CreatedAt: ticket.CreatedAt, UpdatedAt: ticket.UpdatedAt}, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
+}
+
+func (a appWayfinderAdapter) RouteWorkspace(ctx context.Context, input wayfinder.RouteWorkspaceInput) (RouteState, Workspace, error) {
+	value, workspace, err := a.service.RouteWorkspace(ctx, input)
+	return RouteState{RouteStateID: value.RouteStateID, Sequence: value.Sequence, WorkspaceVersion: value.WorkspaceVersion, State: value.State, CreatedAt: value.CreatedAt}, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
+}
+
+type appAuthorityAdapter struct{ service *featureapp.Service }
+
+func (a appAuthorityAdapter) ReadAuthority(ctx context.Context, workspaceID string) ([]featureapp.AuthorityRevisionDetail, error) {
+	return a.service.ReadAuthority(ctx, workspaceID)
+}
+
+func (a appAuthorityAdapter) PublishAuthority(ctx context.Context, input featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error) {
+	value, workspace, err := a.service.PublishAuthority(ctx, input)
+	return value, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
 }
 
 type createWorkspaceRequest struct {
@@ -172,7 +297,7 @@ func (h *WorkspaceHandler) CreateTicket(w http.ResponseWriter, r *http.Request) 
 		writeWorkspaceError(w, err)
 		return
 	}
-	shared.JSON(w, http.StatusCreated, map[string]any{"ticket": ticketDTO(wayfinder.TicketDetail{Ticket: ticket}), "workspace": workspaceDTO(workspace)})
+	shared.JSON(w, http.StatusCreated, map[string]any{"ticket": ticketDTO(TicketDetail{Ticket: ticket}), "workspace": workspaceDTO(workspace)})
 }
 
 func (h *WorkspaceHandler) ResolveTicket(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +311,7 @@ func (h *WorkspaceHandler) ResolveTicket(w http.ResponseWriter, r *http.Request)
 		writeWorkspaceError(w, err)
 		return
 	}
-	shared.JSON(w, http.StatusCreated, map[string]any{"resolution": resolutionDTO(resolution), "ticket": ticketDTO(wayfinder.TicketDetail{Ticket: ticket}), "workspace": workspaceDTO(workspace)})
+	shared.JSON(w, http.StatusCreated, map[string]any{"resolution": resolutionDTO(resolution), "ticket": ticketDTO(TicketDetail{Ticket: ticket}), "workspace": workspaceDTO(workspace)})
 }
 
 func (h *WorkspaceHandler) Route(w http.ResponseWriter, r *http.Request) {
@@ -247,22 +372,22 @@ func nullableStringDTO(value sql.NullString) any {
 	return value.String
 }
 
-func workspaceDTO(value workflowstore.FeatureWorkspace) map[string]any {
+func workspaceDTO(value Workspace) map[string]any {
 	return map[string]any{"workspaceId": value.WorkspaceID, "featureSlug": value.FeatureSlug, "state": value.State, "version": value.Version, "createdAt": value.CreatedAt, "updatedAt": value.UpdatedAt}
 }
-func admittedInputDTO(value workflowstore.FeatureWorkspaceAdmittedInput) map[string]any {
+func admittedInputDTO(value AdmittedInput) map[string]any {
 	return map[string]any{"inputId": value.AdmittedInputID, "sequence": value.Sequence, "name": value.InputName, "role": value.InputRole, "sourceKind": value.SourceKind, "artifactRowId": nullableIntDTO(value.ArtifactRowID), "retainedArtifactRowId": nullableIntDTO(value.RetainedArtifactRowID), "sourceClosureRowId": nullableIntDTO(value.SourceClosureRowID), "artifactSha256": nullableStringDTO(value.ArtifactSha256), "sourceReference": value.SourceReference, "createdAt": value.CreatedAt}
 }
-func destinationDTO(value workflowstore.FeatureWorkspaceDestination) map[string]any {
+func destinationDTO(value Destination) map[string]any {
 	return map[string]any{"destinationId": value.DestinationID, "sequence": value.Sequence, "kind": value.DestinationKind, "key": value.DestinationKey, "repoTarget": nullableStringDTO(value.RepoTarget), "sourceClosureRowId": nullableIntDTO(value.SourceClosureRowID), "createdAt": value.CreatedAt}
 }
-func resolutionDTO(value workflowstore.FeatureWorkspaceTicketResolution) map[string]any {
+func resolutionDTO(value Resolution) map[string]any {
 	return map[string]any{"resolutionId": value.ResolutionID, "sequence": value.Sequence, "kind": value.ResolutionKind, "artifactRowId": nullableIntDTO(value.ArtifactRowID), "retainedArtifactRowId": nullableIntDTO(value.RetainedArtifactRowID), "artifactSha256": value.ArtifactSha256, "sourceClosureRowId": nullableIntDTO(value.SourceClosureRowID), "createdAt": value.CreatedAt}
 }
-func routeDTO(value workflowstore.FeatureWorkspaceRouteState) map[string]any {
+func routeDTO(value RouteState) map[string]any {
 	return map[string]any{"routeId": value.RouteStateID, "sequence": value.Sequence, "workspaceVersion": value.WorkspaceVersion, "state": value.State, "createdAt": value.CreatedAt}
 }
-func ticketDTO(value wayfinder.TicketDetail) map[string]any {
+func ticketDTO(value TicketDetail) map[string]any {
 	dependencies := make([]map[string]any, 0, len(value.Dependencies))
 	for _, item := range value.Dependencies {
 		dependencies = append(dependencies, map[string]any{"dependsOnTicketRowId": item.DependsOnTicketRowID, "kind": item.DependencyKind})
@@ -283,19 +408,19 @@ func authorityDTO(value featureapp.AuthorityRevisionDetail) map[string]any {
 func workspaceDetailDTO(detail wayfinder.WorkspaceDetail, authority []featureapp.AuthorityRevisionDetail) map[string]any {
 	inputs := make([]map[string]any, 0, len(detail.Inputs))
 	for _, item := range detail.Inputs {
-		inputs = append(inputs, admittedInputDTO(item))
+		inputs = append(inputs, admittedInputDTO(AdmittedInput{AdmittedInputID: item.AdmittedInputID, Sequence: item.Sequence, InputName: item.InputName, InputRole: item.InputRole, SourceKind: item.SourceKind, ArtifactRowID: item.ArtifactRowID, RetainedArtifactRowID: item.RetainedArtifactRowID, SourceClosureRowID: item.SourceClosureRowID, ArtifactSha256: item.ArtifactSha256, SourceReference: item.SourceReference, CreatedAt: item.CreatedAt}))
 	}
 	destinations := make([]map[string]any, 0, len(detail.Destinations))
 	for _, item := range detail.Destinations {
-		destinations = append(destinations, destinationDTO(item))
+		destinations = append(destinations, destinationDTO(Destination{DestinationID: item.DestinationID, Sequence: item.Sequence, DestinationKind: item.DestinationKind, DestinationKey: item.DestinationKey, RepoTarget: item.RepoTarget, SourceClosureRowID: item.SourceClosureRowID, CreatedAt: item.CreatedAt}))
 	}
 	tickets := make([]map[string]any, 0, len(detail.Tickets))
 	for _, item := range detail.Tickets {
-		tickets = append(tickets, ticketDTO(item))
+		tickets = append(tickets, ticketDTO(ticketDetailProjection(item)))
 	}
 	routes := make([]map[string]any, 0, len(detail.Routes))
 	for _, item := range detail.Routes {
-		routes = append(routes, routeDTO(item))
+		routes = append(routes, routeDTO(RouteState{RouteStateID: item.RouteStateID, Sequence: item.Sequence, WorkspaceVersion: item.WorkspaceVersion, State: item.State, CreatedAt: item.CreatedAt}))
 	}
 	revisions := make([]map[string]any, 0, len(authority))
 	for _, item := range authority {
@@ -305,7 +430,20 @@ func workspaceDetailDTO(detail wayfinder.WorkspaceDetail, authority []featureapp
 	for _, item := range detail.Investigations {
 		recorded = recorded || item.SourceClosureRowID.Valid
 	}
-	return map[string]any{"workspace": workspaceDTO(detail.Workspace), "inputs": inputs, "destinations": destinations, "tickets": tickets, "routes": routes, "authorityRevisions": revisions, "sourceBasis": map[string]any{"status": sourceBasisStatus(recorded), "investigationCount": len(detail.Investigations)}}
+	return map[string]any{"workspace": workspaceDTO(Workspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, State: detail.Workspace.State, Version: detail.Workspace.Version, CreatedAt: detail.Workspace.CreatedAt, UpdatedAt: detail.Workspace.UpdatedAt}), "inputs": inputs, "destinations": destinations, "tickets": tickets, "routes": routes, "authorityRevisions": revisions, "sourceBasis": map[string]any{"status": sourceBasisStatus(recorded), "investigationCount": len(detail.Investigations)}}
+}
+
+func ticketDetailProjection(value wayfinder.TicketDetail) TicketDetail {
+	result := TicketDetail{Ticket: DiscoveryTicket{DiscoveryTicketID: value.Ticket.DiscoveryTicketID, TicketKey: value.Ticket.TicketKey, Subject: value.Ticket.Subject, State: value.Ticket.State, Version: value.Ticket.Version, CreatedAt: value.Ticket.CreatedAt, UpdatedAt: value.Ticket.UpdatedAt}}
+	result.Dependencies = make([]TicketDependency, 0, len(value.Dependencies))
+	for _, item := range value.Dependencies {
+		result.Dependencies = append(result.Dependencies, TicketDependency{DependsOnTicketRowID: item.DependsOnTicketRowID, DependencyKind: item.DependencyKind})
+	}
+	result.Resolutions = make([]Resolution, 0, len(value.Resolutions))
+	for _, item := range value.Resolutions {
+		result.Resolutions = append(result.Resolutions, Resolution{ResolutionID: item.ResolutionID, Sequence: item.Sequence, ResolutionKind: item.ResolutionKind, ArtifactRowID: item.ArtifactRowID, RetainedArtifactRowID: item.RetainedArtifactRowID, ArtifactSha256: item.ArtifactSha256, SourceClosureRowID: item.SourceClosureRowID, CreatedAt: item.CreatedAt})
+	}
+	return result
 }
 func sourceBasisStatus(recorded bool) string {
 	if recorded {

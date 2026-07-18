@@ -93,8 +93,8 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	executionHandler := runsapi.NewWorkflowExecutionHandler(executionService)
 	artifactHandler := artifactsapi.NewWorkflowHandler(readService)
 	auditHandler := auditsapi.NewWorkflowHandler(auditService)
-	featureWorkspaceHandler := featuresapi.NewWorkspaceHandler(wayfinderService, featureAuthorityService)
-	ticketHandler := ticketsapi.NewWorkflowHandler(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
+	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService)
+	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -158,12 +158,20 @@ func (s ticketReadService) Read(ctx context.Context, ticketID string) (appticket
 	return s.service.Read(ctx, ticketID)
 }
 
-func (s ticketReadService) ListHistory(ctx context.Context, ticketID string) ([]workflowstore.DeliveryTicketRevision, error) {
+func (s ticketReadService) ListHistory(ctx context.Context, ticketID string) ([]ticketsapi.RevisionHistory, error) {
 	ticket, err := s.store.GetDeliveryTicketByTicketID(ctx, ticketID)
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListDeliveryTicketRevisions(ctx, ticket.ID)
+	values, err := s.store.ListDeliveryTicketRevisions(ctx, ticket.ID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ticketsapi.RevisionHistory, 0, len(values))
+	for _, value := range values {
+		result = append(result, ticketsapi.RevisionHistory{RowID: value.ID, RevisionNumber: value.RevisionNumber, ReplacesRevisionRowID: value.ReplacesRevisionRowID, SourceClosureRowID: value.SourceClosureRowID, CreatedAt: value.CreatedAt, Goal: value.Goal, CancellationReason: value.CancellationReason})
+	}
+	return result, nil
 }
 
 func resolveWorkflowRunStage(status string) (string, error) {

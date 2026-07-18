@@ -20,26 +20,26 @@ type fakeWayfinder struct {
 	err    error
 }
 
-func (f *fakeWayfinder) CreateWorkspace(context.Context, wayfinder.CreateWorkspaceInput) (workflowstore.FeatureWorkspace, error) {
-	return f.detail.Workspace, f.err
+func (f *fakeWayfinder) CreateWorkspace(context.Context, wayfinder.CreateWorkspaceInput) (Workspace, error) {
+	return Workspace{WorkspaceID: f.detail.Workspace.WorkspaceID, FeatureSlug: f.detail.Workspace.FeatureSlug, State: f.detail.Workspace.State, Version: f.detail.Workspace.Version, CreatedAt: f.detail.Workspace.CreatedAt, UpdatedAt: f.detail.Workspace.UpdatedAt}, f.err
 }
 func (f *fakeWayfinder) ReadWorkspace(context.Context, string) (wayfinder.WorkspaceDetail, error) {
 	return f.detail, f.err
 }
-func (f *fakeWayfinder) AdmitInput(context.Context, wayfinder.AdmitInputInput) (workflowstore.FeatureWorkspaceAdmittedInput, workflowstore.FeatureWorkspace, error) {
-	return workflowstore.FeatureWorkspaceAdmittedInput{}, f.detail.Workspace, f.err
+func (f *fakeWayfinder) AdmitInput(context.Context, wayfinder.AdmitInputInput) (AdmittedInput, Workspace, error) {
+	return AdmittedInput{}, Workspace{WorkspaceID: f.detail.Workspace.WorkspaceID, FeatureSlug: f.detail.Workspace.FeatureSlug, State: f.detail.Workspace.State, Version: f.detail.Workspace.Version, CreatedAt: f.detail.Workspace.CreatedAt, UpdatedAt: f.detail.Workspace.UpdatedAt}, f.err
 }
-func (f *fakeWayfinder) AddDestination(context.Context, wayfinder.AddDestinationInput) (workflowstore.FeatureWorkspaceDestination, workflowstore.FeatureWorkspace, error) {
-	return workflowstore.FeatureWorkspaceDestination{}, f.detail.Workspace, f.err
+func (f *fakeWayfinder) AddDestination(context.Context, wayfinder.AddDestinationInput) (Destination, Workspace, error) {
+	return Destination{}, Workspace{WorkspaceID: f.detail.Workspace.WorkspaceID, FeatureSlug: f.detail.Workspace.FeatureSlug, State: f.detail.Workspace.State, Version: f.detail.Workspace.Version, CreatedAt: f.detail.Workspace.CreatedAt, UpdatedAt: f.detail.Workspace.UpdatedAt}, f.err
 }
-func (f *fakeWayfinder) CreateDiscoveryTicket(context.Context, wayfinder.CreateDiscoveryTicketInput) (workflowstore.FeatureWorkspaceDiscoveryTicket, workflowstore.FeatureWorkspace, error) {
-	return workflowstore.FeatureWorkspaceDiscoveryTicket{}, f.detail.Workspace, f.err
+func (f *fakeWayfinder) CreateDiscoveryTicket(context.Context, wayfinder.CreateDiscoveryTicketInput) (DiscoveryTicket, Workspace, error) {
+	return DiscoveryTicket{}, Workspace{WorkspaceID: f.detail.Workspace.WorkspaceID, FeatureSlug: f.detail.Workspace.FeatureSlug, State: f.detail.Workspace.State, Version: f.detail.Workspace.Version, CreatedAt: f.detail.Workspace.CreatedAt, UpdatedAt: f.detail.Workspace.UpdatedAt}, f.err
 }
-func (f *fakeWayfinder) ResolveDiscoveryTicket(context.Context, wayfinder.ResolveDiscoveryTicketInput) (workflowstore.FeatureWorkspaceTicketResolution, workflowstore.FeatureWorkspaceDiscoveryTicket, workflowstore.FeatureWorkspace, error) {
-	return workflowstore.FeatureWorkspaceTicketResolution{}, workflowstore.FeatureWorkspaceDiscoveryTicket{}, f.detail.Workspace, f.err
+func (f *fakeWayfinder) ResolveDiscoveryTicket(context.Context, wayfinder.ResolveDiscoveryTicketInput) (Resolution, DiscoveryTicket, Workspace, error) {
+	return Resolution{}, DiscoveryTicket{}, Workspace{WorkspaceID: f.detail.Workspace.WorkspaceID, FeatureSlug: f.detail.Workspace.FeatureSlug, State: f.detail.Workspace.State, Version: f.detail.Workspace.Version, CreatedAt: f.detail.Workspace.CreatedAt, UpdatedAt: f.detail.Workspace.UpdatedAt}, f.err
 }
-func (f *fakeWayfinder) RouteWorkspace(context.Context, wayfinder.RouteWorkspaceInput) (workflowstore.FeatureWorkspaceRouteState, workflowstore.FeatureWorkspace, error) {
-	return workflowstore.FeatureWorkspaceRouteState{}, f.detail.Workspace, f.err
+func (f *fakeWayfinder) RouteWorkspace(context.Context, wayfinder.RouteWorkspaceInput) (RouteState, Workspace, error) {
+	return RouteState{}, Workspace{WorkspaceID: f.detail.Workspace.WorkspaceID, FeatureSlug: f.detail.Workspace.FeatureSlug, State: f.detail.Workspace.State, Version: f.detail.Workspace.Version, CreatedAt: f.detail.Workspace.CreatedAt, UpdatedAt: f.detail.Workspace.UpdatedAt}, f.err
 }
 
 type fakeAuthority struct {
@@ -50,8 +50,8 @@ type fakeAuthority struct {
 func (f *fakeAuthority) ReadAuthority(context.Context, string) ([]featureapp.AuthorityRevisionDetail, error) {
 	return f.revisions, f.err
 }
-func (f *fakeAuthority) PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, workflowstore.FeatureWorkspace, error) {
-	return featureapp.AuthorityRevisionDetail{}, workflowstore.FeatureWorkspace{}, f.err
+func (f *fakeAuthority) PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error) {
+	return featureapp.AuthorityRevisionDetail{}, Workspace{}, f.err
 }
 
 func workspaceRouter(wayfinderService WayfinderService, authorityService AuthorityService) http.Handler {
