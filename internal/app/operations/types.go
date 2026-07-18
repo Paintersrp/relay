@@ -8,19 +8,21 @@ import (
 )
 
 const (
-	CodePacketNotFound               = "packet_not_found"
-	CodePacketNotReady               = "packet_not_ready"
-	CodePacketSuperseded             = "packet_superseded"
-	CodePacketClosed                 = "packet_closed"
-	CodePacketRouteMismatch          = "packet_route_mismatch"
-	CodePacketActionNotAllowed       = "packet_action_not_allowed"
-	CodePacketRefreshConflict        = "packet_refresh_conflict"
-	CodeRetainedAuthorityUnavailable = "retained_authority_unavailable"
-	CodeInvalidPacketDocument        = "invalid_packet_document"
-	CodePacketArtifactMismatch       = "packet_artifact_mismatch"
-	CodeAuthorityPublicationConflict = "authority_publication_conflict"
-	CodeAuthorityPublicationFailure  = "authority_publication_failure"
-	CodeInternalFailure              = "internal_failure"
+	CodePacketNotFound                 = "packet_not_found"
+	CodePacketNotReady                 = "packet_not_ready"
+	CodePacketSuperseded               = "packet_superseded"
+	CodePacketClosed                   = "packet_closed"
+	CodePacketRouteMismatch            = "packet_route_mismatch"
+	CodePacketActionNotAllowed         = "packet_action_not_allowed"
+	CodePacketRefreshConflict          = "packet_refresh_conflict"
+	CodeRetainedAuthorityUnavailable   = "retained_authority_unavailable"
+	CodeInvalidPacketDocument          = "invalid_packet_document"
+	CodePacketArtifactMismatch         = "packet_artifact_mismatch"
+	CodeAuthorityPublicationConflict   = "authority_publication_conflict"
+	CodeAuthorityPublicationFailure    = "authority_publication_failure"
+	CodeCompleteLifecycleRequired      = "complete_lifecycle_required"
+	CodeRepositoryAuthorityUnavailable = "repository_authority_unavailable"
+	CodeInternalFailure                = "internal_failure"
 )
 
 type IDGenerator interface {

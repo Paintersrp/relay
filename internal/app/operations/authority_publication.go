@@ -85,6 +85,81 @@ func NewAuthorityPublicationService(store *workflowstore.Store, vaults *sourceva
 	return &AuthorityPublicationService{store: store, vaults: vaults, idempotency: mutationService}, nil
 }
 
+type AuthorityPublicationResolutionKind string
+
+const (
+	AuthorityPublicationResolutionMiss   AuthorityPublicationResolutionKind = "miss"
+	AuthorityPublicationResolutionReplay AuthorityPublicationResolutionKind = "replay"
+)
+
+type AuthorityPublicationResolveInput struct {
+	PriorPacketID   string
+	RequestIdentity semanticidentity.RequestIdentity
+	Idempotency     idempotency.RecordSuccessInput
+}
+
+type AuthorityPublicationResolution struct {
+	Kind   AuthorityPublicationResolutionKind
+	Result AuthorityPublicationResult
+}
+
+func (s *AuthorityPublicationService) Resolve(ctx context.Context, input AuthorityPublicationResolveInput) (AuthorityPublicationResolution, error) {
+	if err := validateAuthorityPublicationResolveInput(input); err != nil {
+		return AuthorityPublicationResolution{}, normalizeAuthorityPublicationError(err)
+	}
+	resolution, err := s.idempotency.Resolve(ctx, input.Idempotency.Key, input.Idempotency.Fingerprint)
+	if err != nil {
+		return AuthorityPublicationResolution{}, normalizeAuthorityPublicationError(err)
+	}
+	switch resolution.Kind {
+	case idempotency.ResolutionMiss:
+		return AuthorityPublicationResolution{Kind: AuthorityPublicationResolutionMiss}, nil
+	case idempotency.ResolutionConflict:
+		return AuthorityPublicationResolution{}, &idempotency.Error{Code: idempotency.ErrorMutationConflict}
+	case idempotency.ResolutionReplay:
+		winner, err := s.resolveCommittedPublicationWinner(ctx, AuthorityPublicationInput{
+			PriorPacketID:   input.PriorPacketID,
+			RequestIdentity: input.RequestIdentity,
+			Idempotency:     input.Idempotency,
+		}, resolution.Result, true)
+		if err != nil {
+			return AuthorityPublicationResolution{}, err
+		}
+		return AuthorityPublicationResolution{Kind: AuthorityPublicationResolutionReplay, Result: winner}, nil
+	default:
+		return AuthorityPublicationResolution{}, ErrAuthorityPublication
+	}
+}
+
+func validateAuthorityPublicationResolveInput(input AuthorityPublicationResolveInput) error {
+	if input.RequestIdentity == nil {
+		return ErrAuthorityPublication
+	}
+	fingerprint, err := semanticidentity.BuildFingerprint(input.RequestIdentity)
+	if err != nil ||
+		fingerprint.SurfaceContractID() != input.Idempotency.Fingerprint.SurfaceContractID() ||
+		fingerprint.Tool() != input.Idempotency.Fingerprint.Tool() ||
+		fingerprint.SemanticIdentityVersion() != input.Idempotency.Fingerprint.SemanticIdentityVersion() ||
+		fingerprint.SemanticRequestSHA256() != input.Idempotency.Fingerprint.SemanticRequestSHA256() ||
+		fingerprint.SurfaceContractID() != input.Idempotency.Key.SurfaceContractID ||
+		fingerprint.Tool() != input.Idempotency.Key.Tool {
+		return &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	switch request := input.RequestIdentity.(type) {
+	case semanticidentity.CreateOperationPacket:
+		if input.PriorPacketID != "" || input.Idempotency.Key.Tool != request.MutationTool() || request.SurfaceContract != input.Idempotency.Key.SurfaceContractID {
+			return &Error{Code: CodeAuthorityPublicationConflict}
+		}
+	case semanticidentity.RefreshOperationPacket:
+		if input.PriorPacketID == "" || request.ExpectedPacketID != input.PriorPacketID || input.Idempotency.Key.Tool != request.MutationTool() || request.SurfaceContract != input.Idempotency.Key.SurfaceContractID {
+			return &Error{Code: CodeAuthorityPublicationConflict}
+		}
+	default:
+		return &Error{Code: CodeAuthorityPublicationConflict}
+	}
+	return nil
+}
+
 func (s *AuthorityPublicationService) Publish(ctx context.Context, input AuthorityPublicationInput) (AuthorityPublicationResult, error) {
 	if err := validateAuthorityPublicationInput(input); err != nil {
 		return AuthorityPublicationResult{}, normalizeAuthorityPublicationError(err)

@@ -49,7 +49,14 @@ func NewServiceWithDependencies(store *workflowstore.Store, ids IDGenerator, clo
 	return &Service{store: store, ids: ids, clock: clock}, nil
 }
 
+// completePacketLifecycleRequired is intentionally non-constant so legacy method
+// signatures remain source-compatible while every runtime call fails closed.
+func completePacketLifecycleRequired() bool { return true }
+
 func (s *Service) Create(ctx context.Context, input CreateInput) (PacketView, error) {
+	if completePacketLifecycleRequired() {
+		return PacketView{}, &Error{Code: CodeCompleteLifecycleRequired}
+	}
 	if input.Document.PriorPacket != nil {
 		return PacketView{}, &Error{Code: CodeInvalidPacketDocument}
 	}
@@ -81,6 +88,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (PacketView, er
 }
 
 func (s *Service) Refresh(ctx context.Context, input RefreshInput) (PacketView, error) {
+	if completePacketLifecycleRequired() {
+		return PacketView{}, &Error{Code: CodeCompleteLifecycleRequired}
+	}
 	priorID := strings.TrimSpace(input.PriorPacketID)
 	if priorID == "" {
 		return PacketView{}, &Error{Code: CodePacketNotFound}
@@ -149,6 +159,9 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (PacketView, 
 }
 
 func (s *Service) Close(ctx context.Context, input CloseInput) (PacketSummary, error) {
+	if completePacketLifecycleRequired() {
+		return PacketSummary{}, &Error{Code: CodeCompleteLifecycleRequired}
+	}
 	packetID := strings.TrimSpace(input.PacketID)
 	if packetID == "" {
 		return PacketSummary{}, &Error{Code: CodePacketNotFound}

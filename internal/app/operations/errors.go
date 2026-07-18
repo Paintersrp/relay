@@ -37,6 +37,10 @@ func (e *Error) Error() string {
 		return "operation packet authority publication conflicts with committed authority"
 	case CodeAuthorityPublicationFailure:
 		return "operation packet authority publication failed"
+	case CodeCompleteLifecycleRequired:
+		return "complete operation packet lifecycle is required"
+	case CodeRepositoryAuthorityUnavailable:
+		return "operation packet repository authority is unavailable"
 	default:
 		return "operation packet persistence failed"
 	}

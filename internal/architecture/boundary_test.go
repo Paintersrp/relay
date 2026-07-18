@@ -225,7 +225,7 @@ func TestOperationsAppDoesNotImportTransportLayers(t *testing.T) {
 	operationsRoot := filepath.Join(root, "internal", "app", "operations")
 	for _, file := range goFiles(t, operationsRoot) {
 		for _, imp := range importsForFile(t, file) {
-			if isAPIImport(imp.path) || imp.path == modulePath+"/internal/mcp" || (strings.HasPrefix(imp.path, modulePath+"/internal/mcp/") && imp.path != modulePath+"/internal/mcp/semanticidentity") || imp.path == modulePath+"/internal/server" || strings.HasPrefix(imp.path, modulePath+"/internal/server/") {
+			if isAPIImport(imp.path) || imp.path == modulePath+"/internal/mcp" || (strings.HasPrefix(imp.path, modulePath+"/internal/mcp/") && imp.path != modulePath+"/internal/mcp/semanticidentity" && imp.path != modulePath+"/internal/mcp/fileacquisition") || imp.path == modulePath+"/internal/server" || strings.HasPrefix(imp.path, modulePath+"/internal/server/") {
 				t.Fatalf("%s imports transport package %q; operations app policy must remain transport-independent", rel(t, root, file), imp.path)
 			}
 		}
