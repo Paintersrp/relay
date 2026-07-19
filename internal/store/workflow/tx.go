@@ -334,7 +334,7 @@ INSERT INTO runs (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id,
           remediates_run_row_id, status, branch, base_commit, canonical_sha256,
-          created_at, updated_at, completed_at, execution_package_row_id`,
+          created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id`,
 		params.RunID,
 		params.FeatureSlug,
 		params.RepoTarget,
@@ -361,6 +361,7 @@ RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id,
 		&value.UpdatedAt,
 		&value.CompletedAt,
 		&value.ExecutionPackageRowID,
+		&value.PackageApprovalRowID,
 	)
 	return value, err
 }
@@ -387,7 +388,7 @@ SET
 WHERE run_id = ? AND status = ?
 RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id,
           remediates_run_row_id, status, branch, base_commit, canonical_sha256,
-          created_at, updated_at, completed_at, execution_package_row_id`,
+          created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id`,
 		nextStatus,
 		nextStatus,
 		runID,
@@ -408,6 +409,7 @@ RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id,
 		&value.UpdatedAt,
 		&value.CompletedAt,
 		&value.ExecutionPackageRowID,
+		&value.PackageApprovalRowID,
 	)
 	return value, err
 }

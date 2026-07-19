@@ -271,6 +271,11 @@ func workflowAuditTicketPackageDTO(value appaudits.WorkflowAuditTicketPackageEvi
 			"authorityRevisionId": value.Package.Authority.AuthorityRevisionID,
 			"authoritySha256":     value.Package.Authority.SHA256, "sourceClosureId": value.Package.Source.ClosureID,
 			"sourceCommit": value.Package.Source.CommitOID,
+			"packageApproval": map[string]any{
+				"approvalId":                  value.Package.PackageApproval.ApprovalID,
+				"approvedPackageSha256":        value.Package.PackageApproval.ApprovedPackageSha256,
+				"operatorConfirmationEvidence": value.Package.PackageApproval.OperatorConfirmationEvidence,
+			},
 		},
 		"tickets": tickets, "mutationLeases": leases,
 		"bundleIntegration": map[string]any{

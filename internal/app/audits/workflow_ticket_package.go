@@ -47,8 +47,18 @@ func resolveWorkflowAuditTicketPackage(
 	if !run.ExecutionPackageRowID.Valid {
 		return nil, nil
 	}
+	if !run.PackageApprovalRowID.Valid {
+		return nil, fmt.Errorf("ticket audit Run has no package approval")
+	}
 	if store == nil {
 		return nil, fmt.Errorf("ticket audit package dependencies are required")
+	}
+	approval, err := store.GetRunExecutionPackageApproval(ctx, run.ID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ticket audit package approval: %w", err)
+	}
+	if approval.PackageRowID != run.ExecutionPackageRowID.Int64 {
+		return nil, fmt.Errorf("ticket audit package approval does not match the Run execution package")
 	}
 	if implementation.Executor != nil && (!implementation.Executor.AttemptResult.TerminationVerified || implementation.Executor.AttemptResult.CleanupPending) {
 		return nil, fmt.Errorf("ticket package executor termination evidence is incomplete")
@@ -139,6 +149,13 @@ func resolveWorkflowAuditTicketPackage(
 			ExecutionSpec: WorkflowAuditPacketArtifact{
 				ArtifactType: workflowAuditArtifactTypeApprovedExecutionSpec, SHA256: pkg.ExecutionSpecSha256,
 				Description: "Immutable copy of the approved package Execution Spec.",
+			},
+			PackageApproval: WorkflowAuditPackageApprovalEvidence{
+				ApprovalRowID:              approval.ID,
+				ApprovalID:                 approval.ApprovalID,
+				PackageRowID:               approval.PackageRowID,
+				ApprovedPackageSha256:       approval.PackageSha256,
+				OperatorConfirmationEvidence: approval.OperatorConfirmationEvidence,
 			},
 		},
 		BundleIntegration: WorkflowAuditBundleIntegrationEvidence{

@@ -52,15 +52,17 @@ type AuditPacket struct {
 }
 
 type AuditPacketTicketObligation struct {
-	ID                          int64  `json:"id"`
-	AuditPacketRowID            int64  `json:"audit_packet_row_id"`
-	ExecutionPackageRowID       int64  `json:"execution_package_row_id"`
-	ExecutionPackageMemberRowID int64  `json:"execution_package_member_row_id"`
-	DeliveryTicketRowID         int64  `json:"delivery_ticket_row_id"`
-	DeliveryTicketRevisionRowID int64  `json:"delivery_ticket_revision_row_id"`
-	AuthorityRevisionRowID      int64  `json:"authority_revision_row_id"`
-	SourceClosureRowID          int64  `json:"source_closure_row_id"`
-	CreatedAt                   string `json:"created_at"`
+	ID                          int64          `json:"id"`
+	AuditPacketRowID            int64          `json:"audit_packet_row_id"`
+	ExecutionPackageRowID       int64          `json:"execution_package_row_id"`
+	ExecutionPackageMemberRowID int64          `json:"execution_package_member_row_id"`
+	DeliveryTicketRowID         int64          `json:"delivery_ticket_row_id"`
+	DeliveryTicketRevisionRowID int64          `json:"delivery_ticket_revision_row_id"`
+	AuthorityRevisionRowID      int64          `json:"authority_revision_row_id"`
+	SourceClosureRowID          int64          `json:"source_closure_row_id"`
+	CreatedAt                   string         `json:"created_at"`
+	PackageApprovalRowID        sql.NullInt64  `json:"package_approval_row_id"`
+	ApprovedPackageSha256       sql.NullString `json:"approved_package_sha256"`
 }
 
 type AuditRemediationSeed struct {
@@ -94,10 +96,12 @@ type AuditRemediationSeedReopening struct {
 }
 
 type AuditTicketRevisionDecision struct {
-	ID                               int64  `json:"id"`
-	AuditDecisionRowID               int64  `json:"audit_decision_row_id"`
-	AuditPacketTicketObligationRowID int64  `json:"audit_packet_ticket_obligation_row_id"`
-	CreatedAt                        string `json:"created_at"`
+	ID                               int64          `json:"id"`
+	AuditDecisionRowID               int64          `json:"audit_decision_row_id"`
+	AuditPacketTicketObligationRowID int64          `json:"audit_packet_ticket_obligation_row_id"`
+	CreatedAt                        string         `json:"created_at"`
+	PackageApprovalRowID             sql.NullInt64  `json:"package_approval_row_id"`
+	ApprovedPackageSha256            sql.NullString `json:"approved_package_sha256"`
 }
 
 type CutoverActivation struct {

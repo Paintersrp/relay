@@ -877,9 +877,11 @@ INSERT INTO audit_packet_ticket_obligations (
     delivery_ticket_row_id,
     delivery_ticket_revision_row_id,
     authority_revision_row_id,
-    source_closure_row_id
+    source_closure_row_id,
+    package_approval_row_id,
+    approved_package_sha256
 )
-VALUES (?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListAuditPacketTicketObligations :many
@@ -891,9 +893,11 @@ ORDER BY execution_package_member_row_id, id;
 -- name: CreateAuditTicketRevisionDecision :one
 INSERT INTO audit_ticket_revision_decisions (
     audit_decision_row_id,
-    audit_packet_ticket_obligation_row_id
+    audit_packet_ticket_obligation_row_id,
+    package_approval_row_id,
+    approved_package_sha256
 )
-VALUES (?, ?)
+VALUES (?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListAuditTicketRevisionDecisions :many
@@ -1066,3 +1070,12 @@ UPDATE runs
 SET package_approval_row_id = ?
 WHERE run_id = ? AND package_approval_row_id IS NULL
 RETURNING *;
+
+-- name: GetRunExecutionPackageApproval :one
+SELECT approval.*
+FROM execution_package_approvals AS approval
+JOIN runs AS run ON run.package_approval_row_id = approval.id
+JOIN execution_packages AS package ON package.id = approval.package_row_id
+WHERE run.id = ?
+  AND run.execution_package_row_id = approval.package_row_id
+  AND approval.package_sha256 = package.package_sha256;

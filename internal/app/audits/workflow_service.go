@@ -240,6 +240,17 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "repository_state_changed")
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
+	if run.ExecutionPackageRowID.Valid {
+		if !run.PackageApprovalRowID.Valid {
+			_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "package_approval_missing")
+			return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
+		}
+		approval, approvalErr := s.store.GetRunExecutionPackageApproval(ctx, run.ID)
+		if approvalErr != nil || approval.PackageRowID != run.ExecutionPackageRowID.Int64 {
+			_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "package_approval_changed")
+			return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
+		}
+	}
 	artifact, err := s.store.GetArtifactByRowID(ctx, packet.ArtifactRowID)
 	if err != nil {
 		return GetWorkflowAuditPacketResult{}, err
@@ -539,6 +550,15 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		}
 		if _, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, input.AuditedCommit); err != nil {
 			return ErrWorkflowAuditPacketStale
+		}
+		if run.ExecutionPackageRowID.Valid {
+			if !run.PackageApprovalRowID.Valid {
+				return ErrWorkflowAuditPacketStale
+			}
+			approval, approvalErr := tx.GetRunExecutionPackageApproval(ctx, run.ID)
+			if approvalErr != nil || approval.PackageRowID != run.ExecutionPackageRowID.Int64 {
+				return ErrWorkflowAuditPacketStale
+			}
 		}
 		packetArtifact, err := tx.GetArtifactByRowID(ctx, packet.ArtifactRowID)
 		if err != nil ||

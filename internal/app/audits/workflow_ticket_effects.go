@@ -24,9 +24,19 @@ func bindWorkflowAuditPacketTicketObligations(
 	if !run.ExecutionPackageRowID.Valid {
 		return nil
 	}
+	if !run.PackageApprovalRowID.Valid {
+		return ErrWorkflowAuditPacketStale
+	}
+	approval, err := tx.GetRunExecutionPackageApproval(ctx, run.ID)
+	if err != nil {
+		return ErrWorkflowAuditPacketStale
+	}
 	pkg, err := tx.GetExecutionPackageByRowID(ctx, run.ExecutionPackageRowID.Int64)
 	if err != nil || pkg.ID != run.ExecutionPackageRowID.Int64 || pkg.RepoTarget != run.RepoTarget ||
 		pkg.Branch != run.Branch || pkg.BaseCommit != run.BaseCommit || packet.BaseCommit != pkg.BaseCommit {
+		return ErrWorkflowAuditPacketStale
+	}
+	if approval.PackageRowID != pkg.ID || approval.PackageSha256 != pkg.PackageSha256 {
 		return ErrWorkflowAuditPacketStale
 	}
 	selection, err := tx.GetDeliveryTicketSelectionByRowID(ctx, pkg.SelectionRowID)
@@ -67,6 +77,8 @@ func bindWorkflowAuditPacketTicketObligations(
 			DeliveryTicketRevisionRowID: revision.ID,
 			AuthorityRevisionRowID:      authority.ID,
 			SourceClosureRowID:          closure.ID,
+			PackageApprovalRowID:        sql.NullInt64{Int64: approval.ID, Valid: true},
+			ApprovedPackageSha256:       sql.NullString{String: approval.PackageSha256, Valid: true},
 		}); err != nil {
 			return err
 		}
@@ -127,6 +139,8 @@ func applyWorkflowAuditTicketDecisionEffects(
 	for _, obligation := range obligations {
 		revisionDecision, err := tx.CreateAuditTicketRevisionDecision(ctx, workflowstore.CreateAuditTicketRevisionDecisionParams{
 			AuditDecisionRowID: decision.ID, AuditPacketTicketObligationRowID: obligation.ID,
+			PackageApprovalRowID:  obligation.PackageApprovalRowID,
+			ApprovedPackageSha256: obligation.ApprovedPackageSha256,
 		})
 		if err != nil {
 			return nil, nil, nil, err

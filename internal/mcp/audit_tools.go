@@ -199,6 +199,11 @@ func (s *Server) HandleRecordWorkflowAuditDecision(rawArgs json.RawMessage) Tool
 			"audited_commit":           seed.AuditedCommit,
 		})
 	}
+	if result.Run.PackageApprovalRowID.Valid {
+		out["package_approval"] = map[string]any{
+			"package_approval_row_id": result.Run.PackageApprovalRowID.Int64,
+		}
+	}
 	out["ticket_effects"] = map[string]any{
 		"ticket_revision_decisions": ticketDecisions,
 		"ticket_satisfactions":      satisfactions,

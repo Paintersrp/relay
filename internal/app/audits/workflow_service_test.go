@@ -1608,7 +1608,7 @@ func newTicketPackageAuditFixture(t *testing.T) *auditFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := packageService.Approve(ctx, workflowpackages.ApproveInput{PackageID: prepared.Package.PackageID})
+	approved, err := packageService.Approve(ctx, workflowpackages.ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "operator confirms audit test package approval"})
 	if err != nil {
 		t.Fatal(err)
 	}

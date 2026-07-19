@@ -152,3 +152,18 @@ The React cutover workbench at `/cutover` displays server-owned readiness, lifec
 Changes to a feature should use the narrowest current package tests, then broader proof when the shared boundary requires it. Repository-wide closeout uses `npm run release:smoke`.
 
 The current browser/API contract is documented in [../api/frontend-api-contract.md](../api/frontend-api-contract.md). The canonical MCP contract is documented in [../mcp.md](../mcp.md).
+
+## Ticket-Audit Package Approval Proof Chain
+
+Ticket-oriented audit evidence carries an exact package approval chain from the audited commit back through every authority:
+
+1. `audited_commit` → repository package evidence.
+2. Package member → `delivery_ticket_revision` → `delivery_ticket` → `feature_workspace`.
+3. Ticket revision approval → `authority_revision` / `source_closure`.
+4. `execution_package` → `execution_package_approval` (immutable, once per package).
+5. `execution_package_approval.package_sha256` = `execution_package.package_sha256`.
+6. `runs.package_approval_row_id` = `execution_package_approval.id`.
+
+The audit packet artifact `ticket_package_evidence` captures the package approval identity (`approval_id`, `approved_package_sha256`, `operator_confirmation_evidence`) in its Package section. Audit obligations and decision-effect rows independently store the same approval identity as `package_approval_row_id` and `approved_package_sha256` columns. Database triggers enforce that these values match the Run's linked approval and the execution package SHA transactionally.
+
+Preparation, readback, and decision recording each re-resolve the package approval. Stale or missing approval blocks all ticket-aware effects. Successful accepted and needs-revision decisions retain the exact approval basis in the revision-decision row.

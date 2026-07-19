@@ -150,6 +150,14 @@ func (tx *Tx) LinkRunToExecutionPackage(ctx context.Context, runID string, packa
 	}, err
 }
 
+func (tx *Tx) GetRunExecutionPackageApproval(ctx context.Context, runRowID int64) (ExecutionPackageApproval, error) {
+	return workflowgenerated.New(tx.tx).GetRunExecutionPackageApproval(ctx, runRowID)
+}
+
+func (s *Store) GetRunExecutionPackageApproval(ctx context.Context, runRowID int64) (ExecutionPackageApproval, error) {
+	return workflowgenerated.New(s.db).GetRunExecutionPackageApproval(ctx, runRowID)
+}
+
 type runExecutionPackageQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }

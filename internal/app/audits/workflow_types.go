@@ -163,6 +163,14 @@ type WorkflowAuditTicketPackageEvidence struct {
 	Validation        []WorkflowAuditValidationResult          `json:"validation"`
 }
 
+type WorkflowAuditPackageApprovalEvidence struct {
+	ApprovalRowID              int64  `json:"approval_row_id"`
+	ApprovalID                 string `json:"approval_id"`
+	PackageRowID               int64  `json:"package_row_id"`
+	ApprovedPackageSha256      string `json:"approved_package_sha256"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+}
+
 type WorkflowAuditExecutionPackageEvidence struct {
 	PackageRowID        int64                               `json:"package_row_id"`
 	PackageID           string                              `json:"package_id"`
@@ -181,6 +189,7 @@ type WorkflowAuditExecutionPackageEvidence struct {
 	DesignBriefSHA256   string                              `json:"design_brief_sha256"`
 	ExecutionSpecSHA256 string                              `json:"execution_spec_sha256"`
 	ExecutionSpec       WorkflowAuditPacketArtifact         `json:"execution_spec"`
+	PackageApproval     WorkflowAuditPackageApprovalEvidence `json:"package_approval,omitempty"`
 }
 
 type WorkflowAuditAuthorityBasisEvidence struct {

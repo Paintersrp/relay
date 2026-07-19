@@ -80,10 +80,12 @@ func (tx *Tx) CreateAuditTicketRevisionDecision(ctx context.Context, params Crea
 func (tx *Tx) GetAuditTicketRevisionDecisionByRowID(ctx context.Context, decisionRowID int64) (AuditTicketRevisionDecision, error) {
 	var value AuditTicketRevisionDecision
 	err := tx.tx.QueryRowContext(ctx, `
-SELECT id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at
+SELECT id, audit_decision_row_id, audit_packet_ticket_obligation_row_id,
+       package_approval_row_id, approved_package_sha256, created_at
 FROM audit_ticket_revision_decisions
 WHERE id = ?`, decisionRowID).Scan(
-		&value.ID, &value.AuditDecisionRowID, &value.AuditPacketTicketObligationRowID, &value.CreatedAt,
+		&value.ID, &value.AuditDecisionRowID, &value.AuditPacketTicketObligationRowID,
+		&value.PackageApprovalRowID, &value.ApprovedPackageSha256, &value.CreatedAt,
 	)
 	return value, err
 }
@@ -143,12 +145,12 @@ func getAuditPacketTicketObligationByRowID(ctx context.Context, queryer interfac
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id,
        delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id,
-       source_closure_row_id, created_at
+       source_closure_row_id, package_approval_row_id, approved_package_sha256, created_at
 FROM audit_packet_ticket_obligations
 WHERE id = ?`, obligationRowID).Scan(
 		&value.ID, &value.AuditPacketRowID, &value.ExecutionPackageRowID, &value.ExecutionPackageMemberRowID,
 		&value.DeliveryTicketRowID, &value.DeliveryTicketRevisionRowID, &value.AuthorityRevisionRowID,
-		&value.SourceClosureRowID, &value.CreatedAt,
+		&value.SourceClosureRowID, &value.PackageApprovalRowID, &value.ApprovedPackageSha256, &value.CreatedAt,
 	)
 	return value, err
 }

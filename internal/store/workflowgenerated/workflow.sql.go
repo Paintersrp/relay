@@ -346,20 +346,24 @@ INSERT INTO audit_packet_ticket_obligations (
     delivery_ticket_row_id,
     delivery_ticket_revision_row_id,
     authority_revision_row_id,
-    source_closure_row_id
+    source_closure_row_id,
+    package_approval_row_id,
+    approved_package_sha256
 )
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id, delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id, source_closure_row_id, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id, delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id, source_closure_row_id, created_at, package_approval_row_id, approved_package_sha256
 `
 
 type CreateAuditPacketTicketObligationParams struct {
-	AuditPacketRowID            int64 `json:"audit_packet_row_id"`
-	ExecutionPackageRowID       int64 `json:"execution_package_row_id"`
-	ExecutionPackageMemberRowID int64 `json:"execution_package_member_row_id"`
-	DeliveryTicketRowID         int64 `json:"delivery_ticket_row_id"`
-	DeliveryTicketRevisionRowID int64 `json:"delivery_ticket_revision_row_id"`
-	AuthorityRevisionRowID      int64 `json:"authority_revision_row_id"`
-	SourceClosureRowID          int64 `json:"source_closure_row_id"`
+	AuditPacketRowID            int64          `json:"audit_packet_row_id"`
+	ExecutionPackageRowID       int64          `json:"execution_package_row_id"`
+	ExecutionPackageMemberRowID int64          `json:"execution_package_member_row_id"`
+	DeliveryTicketRowID         int64          `json:"delivery_ticket_row_id"`
+	DeliveryTicketRevisionRowID int64          `json:"delivery_ticket_revision_row_id"`
+	AuthorityRevisionRowID      int64          `json:"authority_revision_row_id"`
+	SourceClosureRowID          int64          `json:"source_closure_row_id"`
+	PackageApprovalRowID        sql.NullInt64  `json:"package_approval_row_id"`
+	ApprovedPackageSha256       sql.NullString `json:"approved_package_sha256"`
 }
 
 func (q *Queries) CreateAuditPacketTicketObligation(ctx context.Context, arg CreateAuditPacketTicketObligationParams) (AuditPacketTicketObligation, error) {
@@ -371,6 +375,8 @@ func (q *Queries) CreateAuditPacketTicketObligation(ctx context.Context, arg Cre
 		arg.DeliveryTicketRevisionRowID,
 		arg.AuthorityRevisionRowID,
 		arg.SourceClosureRowID,
+		arg.PackageApprovalRowID,
+		arg.ApprovedPackageSha256,
 	)
 	var i AuditPacketTicketObligation
 	err := row.Scan(
@@ -383,6 +389,8 @@ func (q *Queries) CreateAuditPacketTicketObligation(ctx context.Context, arg Cre
 		&i.AuthorityRevisionRowID,
 		&i.SourceClosureRowID,
 		&i.CreatedAt,
+		&i.PackageApprovalRowID,
+		&i.ApprovedPackageSha256,
 	)
 	return i, err
 }
@@ -509,25 +517,36 @@ func (q *Queries) CreateAuditRemediationSeedReopening(ctx context.Context, arg C
 const createAuditTicketRevisionDecision = `-- name: CreateAuditTicketRevisionDecision :one
 INSERT INTO audit_ticket_revision_decisions (
     audit_decision_row_id,
-    audit_packet_ticket_obligation_row_id
+    audit_packet_ticket_obligation_row_id,
+    package_approval_row_id,
+    approved_package_sha256
 )
-VALUES (?, ?)
-RETURNING id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at
+VALUES (?, ?, ?, ?)
+RETURNING id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at, package_approval_row_id, approved_package_sha256
 `
 
 type CreateAuditTicketRevisionDecisionParams struct {
-	AuditDecisionRowID               int64 `json:"audit_decision_row_id"`
-	AuditPacketTicketObligationRowID int64 `json:"audit_packet_ticket_obligation_row_id"`
+	AuditDecisionRowID               int64          `json:"audit_decision_row_id"`
+	AuditPacketTicketObligationRowID int64          `json:"audit_packet_ticket_obligation_row_id"`
+	PackageApprovalRowID             sql.NullInt64  `json:"package_approval_row_id"`
+	ApprovedPackageSha256            sql.NullString `json:"approved_package_sha256"`
 }
 
 func (q *Queries) CreateAuditTicketRevisionDecision(ctx context.Context, arg CreateAuditTicketRevisionDecisionParams) (AuditTicketRevisionDecision, error) {
-	row := q.db.QueryRowContext(ctx, createAuditTicketRevisionDecision, arg.AuditDecisionRowID, arg.AuditPacketTicketObligationRowID)
+	row := q.db.QueryRowContext(ctx, createAuditTicketRevisionDecision,
+		arg.AuditDecisionRowID,
+		arg.AuditPacketTicketObligationRowID,
+		arg.PackageApprovalRowID,
+		arg.ApprovedPackageSha256,
+	)
 	var i AuditTicketRevisionDecision
 	err := row.Scan(
 		&i.ID,
 		&i.AuditDecisionRowID,
 		&i.AuditPacketTicketObligationRowID,
 		&i.CreatedAt,
+		&i.PackageApprovalRowID,
+		&i.ApprovedPackageSha256,
 	)
 	return i, err
 }
@@ -2924,6 +2943,30 @@ func (q *Queries) GetRunByRunID(ctx context.Context, runID string) (Run, error) 
 	return i, err
 }
 
+const getRunExecutionPackageApproval = `-- name: GetRunExecutionPackageApproval :one
+SELECT approval.id, approval.approval_id, approval.package_row_id, approval.package_sha256, approval.operator_confirmation_evidence, approval.created_at
+FROM execution_package_approvals AS approval
+JOIN runs AS run ON run.package_approval_row_id = approval.id
+JOIN execution_packages AS package ON package.id = approval.package_row_id
+WHERE run.id = ?
+  AND run.execution_package_row_id = approval.package_row_id
+  AND approval.package_sha256 = package.package_sha256
+`
+
+func (q *Queries) GetRunExecutionPackageApproval(ctx context.Context, id int64) (ExecutionPackageApproval, error) {
+	row := q.db.QueryRowContext(ctx, getRunExecutionPackageApproval, id)
+	var i ExecutionPackageApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.PackageRowID,
+		&i.PackageSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getValidGoverningArtifactApproval = `-- name: GetValidGoverningArtifactApproval :one
 SELECT id, approval_id, workspace_row_id, artifact_row_id, retained_artifact_row_id, family, artifact_sha256, operator_confirmation_evidence, invalidated_by_approval_row_id, superseded_by_approval_row_id, created_at
 FROM governing_artifact_approvals
@@ -3174,7 +3217,7 @@ func (q *Queries) ListArtifactsByRun(ctx context.Context, runRowID sql.NullInt64
 }
 
 const listAuditPacketTicketObligations = `-- name: ListAuditPacketTicketObligations :many
-SELECT id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id, delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id, source_closure_row_id, created_at
+SELECT id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id, delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id, source_closure_row_id, created_at, package_approval_row_id, approved_package_sha256
 FROM audit_packet_ticket_obligations
 WHERE audit_packet_row_id = ?
 ORDER BY execution_package_member_row_id, id
@@ -3199,6 +3242,8 @@ func (q *Queries) ListAuditPacketTicketObligations(ctx context.Context, auditPac
 			&i.AuthorityRevisionRowID,
 			&i.SourceClosureRowID,
 			&i.CreatedAt,
+			&i.PackageApprovalRowID,
+			&i.ApprovedPackageSha256,
 		); err != nil {
 			return nil, err
 		}
@@ -3297,7 +3342,7 @@ func (q *Queries) ListAuditRemediationSeedsByWorkspace(ctx context.Context, work
 }
 
 const listAuditTicketRevisionDecisions = `-- name: ListAuditTicketRevisionDecisions :many
-SELECT id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at
+SELECT id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at, package_approval_row_id, approved_package_sha256
 FROM audit_ticket_revision_decisions
 WHERE audit_decision_row_id = ?
 ORDER BY id
@@ -3317,6 +3362,8 @@ func (q *Queries) ListAuditTicketRevisionDecisions(ctx context.Context, auditDec
 			&i.AuditDecisionRowID,
 			&i.AuditPacketTicketObligationRowID,
 			&i.CreatedAt,
+			&i.PackageApprovalRowID,
+			&i.ApprovedPackageSha256,
 		); err != nil {
 			return nil, err
 		}

@@ -155,7 +155,7 @@ func (s *Store) ListRuns(ctx context.Context, query RunListQuery) ([]Run, error)
 	sqlText.WriteString(`
 SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id,
        status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at,
-       execution_package_row_id
+       execution_package_row_id, package_approval_row_id
 FROM runs`)
 	conditions := make([]string, 0, 3)
 	args := make([]any, 0, 4)
@@ -274,6 +274,7 @@ func scanRun(row rowScanner) (Run, error) {
 		&value.UpdatedAt,
 		&value.CompletedAt,
 		&value.ExecutionPackageRowID,
+		&value.PackageApprovalRowID,
 	)
 	return value, err
 }
