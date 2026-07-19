@@ -51,6 +51,55 @@ type AuditPacket struct {
 	SupersededAt            sql.NullString `json:"superseded_at"`
 }
 
+type AuditPacketTicketObligation struct {
+	ID                          int64  `json:"id"`
+	AuditPacketRowID            int64  `json:"audit_packet_row_id"`
+	ExecutionPackageRowID       int64  `json:"execution_package_row_id"`
+	ExecutionPackageMemberRowID int64  `json:"execution_package_member_row_id"`
+	DeliveryTicketRowID         int64  `json:"delivery_ticket_row_id"`
+	DeliveryTicketRevisionRowID int64  `json:"delivery_ticket_revision_row_id"`
+	AuthorityRevisionRowID      int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID          int64  `json:"source_closure_row_id"`
+	CreatedAt                   string `json:"created_at"`
+}
+
+type AuditRemediationSeed struct {
+	ID                               int64  `json:"id"`
+	RemediationSeedID                string `json:"remediation_seed_id"`
+	AuditTicketRevisionDecisionRowID int64  `json:"audit_ticket_revision_decision_row_id"`
+	AuditPacketRowID                 int64  `json:"audit_packet_row_id"`
+	ExecutionPackageRowID            int64  `json:"execution_package_row_id"`
+	AuditedCommit                    string `json:"audited_commit"`
+	DecisionRationale                string `json:"decision_rationale"`
+	CreatedAt                        string `json:"created_at"`
+}
+
+type AuditRemediationSeedFinding struct {
+	ID                     int64  `json:"id"`
+	RemediationSeedRowID   int64  `json:"remediation_seed_row_id"`
+	Sequence               int64  `json:"sequence"`
+	UpstreamClassification string `json:"upstream_classification"`
+	Summary                string `json:"summary"`
+	Evidence               string `json:"evidence"`
+	RequiredRemediation    string `json:"required_remediation"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type AuditRemediationSeedReopening struct {
+	ID                     int64  `json:"id"`
+	RemediationSeedRowID   int64  `json:"remediation_seed_row_id"`
+	ReopeningRevisionRowID int64  `json:"reopening_revision_row_id"`
+	ReopeningKind          string `json:"reopening_kind"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type AuditTicketRevisionDecision struct {
+	ID                               int64  `json:"id"`
+	AuditDecisionRowID               int64  `json:"audit_decision_row_id"`
+	AuditPacketTicketObligationRowID int64  `json:"audit_packet_ticket_obligation_row_id"`
+	CreatedAt                        string `json:"created_at"`
+}
+
 type DeliveryTicket struct {
 	ID                   int64         `json:"id"`
 	TicketID             string        `json:"ticket_id"`
@@ -107,6 +156,13 @@ type DeliveryTicketRevisionMember struct {
 	MemberPath    sql.NullString `json:"member_path"`
 	MemberText    string         `json:"member_text"`
 	CreatedAt     string         `json:"created_at"`
+}
+
+type DeliveryTicketRevisionSatisfaction struct {
+	ID                               int64  `json:"id"`
+	DeliveryTicketRevisionRowID      int64  `json:"delivery_ticket_revision_row_id"`
+	AuditTicketRevisionDecisionRowID int64  `json:"audit_ticket_revision_decision_row_id"`
+	CreatedAt                        string `json:"created_at"`
 }
 
 type DeliveryTicketSelection struct {
@@ -231,6 +287,26 @@ type FeatureWorkspaceAuthorityRevision struct {
 	RevisionNumber      int64         `json:"revision_number"`
 	SourceClosureRowID  sql.NullInt64 `json:"source_closure_row_id"`
 	CreatedAt           string        `json:"created_at"`
+}
+
+type FeatureWorkspaceCompletionDecision struct {
+	ID                     int64  `json:"id"`
+	CompletionDecisionID   string `json:"completion_decision_id"`
+	WorkspaceRowID         int64  `json:"workspace_row_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+	Decision               string `json:"decision"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type FeatureWorkspaceCompletionReopening struct {
+	ID                              int64         `json:"id"`
+	CompletionDecisionRowID         int64         `json:"completion_decision_row_id"`
+	ReopeningKind                   string        `json:"reopening_kind"`
+	ReopeningTicketRevisionRowID    sql.NullInt64 `json:"reopening_ticket_revision_row_id"`
+	ReopeningAuthorityRevisionRowID sql.NullInt64 `json:"reopening_authority_revision_row_id"`
+	ReopeningRemediationSeedRowID   sql.NullInt64 `json:"reopening_remediation_seed_row_id"`
+	CreatedAt                       string        `json:"created_at"`
 }
 
 type FeatureWorkspaceDestination struct {

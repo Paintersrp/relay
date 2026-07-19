@@ -221,6 +221,200 @@ func (q *Queries) CreateAuditDecision(ctx context.Context, arg CreateAuditDecisi
 	return i, err
 }
 
+const createAuditPacketTicketObligation = `-- name: CreateAuditPacketTicketObligation :one
+INSERT INTO audit_packet_ticket_obligations (
+    audit_packet_row_id,
+    execution_package_row_id,
+    execution_package_member_row_id,
+    delivery_ticket_row_id,
+    delivery_ticket_revision_row_id,
+    authority_revision_row_id,
+    source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id, delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id, source_closure_row_id, created_at
+`
+
+type CreateAuditPacketTicketObligationParams struct {
+	AuditPacketRowID            int64 `json:"audit_packet_row_id"`
+	ExecutionPackageRowID       int64 `json:"execution_package_row_id"`
+	ExecutionPackageMemberRowID int64 `json:"execution_package_member_row_id"`
+	DeliveryTicketRowID         int64 `json:"delivery_ticket_row_id"`
+	DeliveryTicketRevisionRowID int64 `json:"delivery_ticket_revision_row_id"`
+	AuthorityRevisionRowID      int64 `json:"authority_revision_row_id"`
+	SourceClosureRowID          int64 `json:"source_closure_row_id"`
+}
+
+func (q *Queries) CreateAuditPacketTicketObligation(ctx context.Context, arg CreateAuditPacketTicketObligationParams) (AuditPacketTicketObligation, error) {
+	row := q.db.QueryRowContext(ctx, createAuditPacketTicketObligation,
+		arg.AuditPacketRowID,
+		arg.ExecutionPackageRowID,
+		arg.ExecutionPackageMemberRowID,
+		arg.DeliveryTicketRowID,
+		arg.DeliveryTicketRevisionRowID,
+		arg.AuthorityRevisionRowID,
+		arg.SourceClosureRowID,
+	)
+	var i AuditPacketTicketObligation
+	err := row.Scan(
+		&i.ID,
+		&i.AuditPacketRowID,
+		&i.ExecutionPackageRowID,
+		&i.ExecutionPackageMemberRowID,
+		&i.DeliveryTicketRowID,
+		&i.DeliveryTicketRevisionRowID,
+		&i.AuthorityRevisionRowID,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createAuditRemediationSeed = `-- name: CreateAuditRemediationSeed :one
+INSERT INTO audit_remediation_seeds (
+    remediation_seed_id,
+    audit_ticket_revision_decision_row_id,
+    audit_packet_row_id,
+    execution_package_row_id,
+    audited_commit,
+    decision_rationale
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, remediation_seed_id, audit_ticket_revision_decision_row_id, audit_packet_row_id, execution_package_row_id, audited_commit, decision_rationale, created_at
+`
+
+type CreateAuditRemediationSeedParams struct {
+	RemediationSeedID                string `json:"remediation_seed_id"`
+	AuditTicketRevisionDecisionRowID int64  `json:"audit_ticket_revision_decision_row_id"`
+	AuditPacketRowID                 int64  `json:"audit_packet_row_id"`
+	ExecutionPackageRowID            int64  `json:"execution_package_row_id"`
+	AuditedCommit                    string `json:"audited_commit"`
+	DecisionRationale                string `json:"decision_rationale"`
+}
+
+func (q *Queries) CreateAuditRemediationSeed(ctx context.Context, arg CreateAuditRemediationSeedParams) (AuditRemediationSeed, error) {
+	row := q.db.QueryRowContext(ctx, createAuditRemediationSeed,
+		arg.RemediationSeedID,
+		arg.AuditTicketRevisionDecisionRowID,
+		arg.AuditPacketRowID,
+		arg.ExecutionPackageRowID,
+		arg.AuditedCommit,
+		arg.DecisionRationale,
+	)
+	var i AuditRemediationSeed
+	err := row.Scan(
+		&i.ID,
+		&i.RemediationSeedID,
+		&i.AuditTicketRevisionDecisionRowID,
+		&i.AuditPacketRowID,
+		&i.ExecutionPackageRowID,
+		&i.AuditedCommit,
+		&i.DecisionRationale,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createAuditRemediationSeedFinding = `-- name: CreateAuditRemediationSeedFinding :one
+INSERT INTO audit_remediation_seed_findings (
+    remediation_seed_row_id,
+    sequence,
+    upstream_classification,
+    summary,
+    evidence,
+    required_remediation
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, remediation_seed_row_id, sequence, upstream_classification, summary, evidence, required_remediation, created_at
+`
+
+type CreateAuditRemediationSeedFindingParams struct {
+	RemediationSeedRowID   int64  `json:"remediation_seed_row_id"`
+	Sequence               int64  `json:"sequence"`
+	UpstreamClassification string `json:"upstream_classification"`
+	Summary                string `json:"summary"`
+	Evidence               string `json:"evidence"`
+	RequiredRemediation    string `json:"required_remediation"`
+}
+
+func (q *Queries) CreateAuditRemediationSeedFinding(ctx context.Context, arg CreateAuditRemediationSeedFindingParams) (AuditRemediationSeedFinding, error) {
+	row := q.db.QueryRowContext(ctx, createAuditRemediationSeedFinding,
+		arg.RemediationSeedRowID,
+		arg.Sequence,
+		arg.UpstreamClassification,
+		arg.Summary,
+		arg.Evidence,
+		arg.RequiredRemediation,
+	)
+	var i AuditRemediationSeedFinding
+	err := row.Scan(
+		&i.ID,
+		&i.RemediationSeedRowID,
+		&i.Sequence,
+		&i.UpstreamClassification,
+		&i.Summary,
+		&i.Evidence,
+		&i.RequiredRemediation,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createAuditRemediationSeedReopening = `-- name: CreateAuditRemediationSeedReopening :one
+INSERT INTO audit_remediation_seed_reopenings (
+    remediation_seed_row_id,
+    reopening_revision_row_id,
+    reopening_kind
+)
+VALUES (?, ?, ?)
+RETURNING id, remediation_seed_row_id, reopening_revision_row_id, reopening_kind, created_at
+`
+
+type CreateAuditRemediationSeedReopeningParams struct {
+	RemediationSeedRowID   int64  `json:"remediation_seed_row_id"`
+	ReopeningRevisionRowID int64  `json:"reopening_revision_row_id"`
+	ReopeningKind          string `json:"reopening_kind"`
+}
+
+func (q *Queries) CreateAuditRemediationSeedReopening(ctx context.Context, arg CreateAuditRemediationSeedReopeningParams) (AuditRemediationSeedReopening, error) {
+	row := q.db.QueryRowContext(ctx, createAuditRemediationSeedReopening, arg.RemediationSeedRowID, arg.ReopeningRevisionRowID, arg.ReopeningKind)
+	var i AuditRemediationSeedReopening
+	err := row.Scan(
+		&i.ID,
+		&i.RemediationSeedRowID,
+		&i.ReopeningRevisionRowID,
+		&i.ReopeningKind,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createAuditTicketRevisionDecision = `-- name: CreateAuditTicketRevisionDecision :one
+INSERT INTO audit_ticket_revision_decisions (
+    audit_decision_row_id,
+    audit_packet_ticket_obligation_row_id
+)
+VALUES (?, ?)
+RETURNING id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at
+`
+
+type CreateAuditTicketRevisionDecisionParams struct {
+	AuditDecisionRowID               int64 `json:"audit_decision_row_id"`
+	AuditPacketTicketObligationRowID int64 `json:"audit_packet_ticket_obligation_row_id"`
+}
+
+func (q *Queries) CreateAuditTicketRevisionDecision(ctx context.Context, arg CreateAuditTicketRevisionDecisionParams) (AuditTicketRevisionDecision, error) {
+	row := q.db.QueryRowContext(ctx, createAuditTicketRevisionDecision, arg.AuditDecisionRowID, arg.AuditPacketTicketObligationRowID)
+	var i AuditTicketRevisionDecision
+	err := row.Scan(
+		&i.ID,
+		&i.AuditDecisionRowID,
+		&i.AuditPacketTicketObligationRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createDeliveryTicket = `-- name: CreateDeliveryTicket :one
 INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority)
 VALUES (?, ?, ?)
@@ -418,6 +612,32 @@ func (q *Queries) CreateDeliveryTicketRevisionMember(ctx context.Context, arg Cr
 		&i.MemberKind,
 		&i.MemberPath,
 		&i.MemberText,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketRevisionSatisfaction = `-- name: CreateDeliveryTicketRevisionSatisfaction :one
+INSERT INTO delivery_ticket_revision_satisfactions (
+    delivery_ticket_revision_row_id,
+    audit_ticket_revision_decision_row_id
+)
+VALUES (?, ?)
+RETURNING id, delivery_ticket_revision_row_id, audit_ticket_revision_decision_row_id, created_at
+`
+
+type CreateDeliveryTicketRevisionSatisfactionParams struct {
+	DeliveryTicketRevisionRowID      int64 `json:"delivery_ticket_revision_row_id"`
+	AuditTicketRevisionDecisionRowID int64 `json:"audit_ticket_revision_decision_row_id"`
+}
+
+func (q *Queries) CreateDeliveryTicketRevisionSatisfaction(ctx context.Context, arg CreateDeliveryTicketRevisionSatisfactionParams) (DeliveryTicketRevisionSatisfaction, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketRevisionSatisfaction, arg.DeliveryTicketRevisionRowID, arg.AuditTicketRevisionDecisionRowID)
+	var i DeliveryTicketRevisionSatisfaction
+	err := row.Scan(
+		&i.ID,
+		&i.DeliveryTicketRevisionRowID,
+		&i.AuditTicketRevisionDecisionRowID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -861,6 +1081,88 @@ func (q *Queries) CreateFeatureWorkspaceAuthorityRevision(ctx context.Context, a
 		&i.WorkspaceRowID,
 		&i.RevisionNumber,
 		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceCompletionDecision = `-- name: CreateFeatureWorkspaceCompletionDecision :one
+INSERT INTO feature_workspace_completion_decisions (
+    completion_decision_id,
+    workspace_row_id,
+    authority_revision_row_id,
+    source_closure_row_id,
+    decision
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, decision, created_at
+`
+
+type CreateFeatureWorkspaceCompletionDecisionParams struct {
+	CompletionDecisionID   string `json:"completion_decision_id"`
+	WorkspaceRowID         int64  `json:"workspace_row_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+	Decision               string `json:"decision"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceCompletionDecision(ctx context.Context, arg CreateFeatureWorkspaceCompletionDecisionParams) (FeatureWorkspaceCompletionDecision, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceCompletionDecision,
+		arg.CompletionDecisionID,
+		arg.WorkspaceRowID,
+		arg.AuthorityRevisionRowID,
+		arg.SourceClosureRowID,
+		arg.Decision,
+	)
+	var i FeatureWorkspaceCompletionDecision
+	err := row.Scan(
+		&i.ID,
+		&i.CompletionDecisionID,
+		&i.WorkspaceRowID,
+		&i.AuthorityRevisionRowID,
+		&i.SourceClosureRowID,
+		&i.Decision,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createFeatureWorkspaceCompletionReopening = `-- name: CreateFeatureWorkspaceCompletionReopening :one
+INSERT INTO feature_workspace_completion_reopenings (
+    completion_decision_row_id,
+    reopening_kind,
+    reopening_ticket_revision_row_id,
+    reopening_authority_revision_row_id,
+    reopening_remediation_seed_row_id
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, completion_decision_row_id, reopening_kind, reopening_ticket_revision_row_id, reopening_authority_revision_row_id, reopening_remediation_seed_row_id, created_at
+`
+
+type CreateFeatureWorkspaceCompletionReopeningParams struct {
+	CompletionDecisionRowID         int64         `json:"completion_decision_row_id"`
+	ReopeningKind                   string        `json:"reopening_kind"`
+	ReopeningTicketRevisionRowID    sql.NullInt64 `json:"reopening_ticket_revision_row_id"`
+	ReopeningAuthorityRevisionRowID sql.NullInt64 `json:"reopening_authority_revision_row_id"`
+	ReopeningRemediationSeedRowID   sql.NullInt64 `json:"reopening_remediation_seed_row_id"`
+}
+
+func (q *Queries) CreateFeatureWorkspaceCompletionReopening(ctx context.Context, arg CreateFeatureWorkspaceCompletionReopeningParams) (FeatureWorkspaceCompletionReopening, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceCompletionReopening,
+		arg.CompletionDecisionRowID,
+		arg.ReopeningKind,
+		arg.ReopeningTicketRevisionRowID,
+		arg.ReopeningAuthorityRevisionRowID,
+		arg.ReopeningRemediationSeedRowID,
+	)
+	var i FeatureWorkspaceCompletionReopening
+	err := row.Scan(
+		&i.ID,
+		&i.CompletionDecisionRowID,
+		&i.ReopeningKind,
+		&i.ReopeningTicketRevisionRowID,
+		&i.ReopeningAuthorityRevisionRowID,
+		&i.ReopeningRemediationSeedRowID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1489,6 +1791,75 @@ func (q *Queries) GetAuditDecisionByDecisionID(ctx context.Context, auditDecisio
 	return i, err
 }
 
+const getAuditRemediationSeedBySeedID = `-- name: GetAuditRemediationSeedBySeedID :one
+SELECT id, remediation_seed_id, audit_ticket_revision_decision_row_id, audit_packet_row_id, execution_package_row_id, audited_commit, decision_rationale, created_at
+FROM audit_remediation_seeds
+WHERE remediation_seed_id = ?
+`
+
+func (q *Queries) GetAuditRemediationSeedBySeedID(ctx context.Context, remediationSeedID string) (AuditRemediationSeed, error) {
+	row := q.db.QueryRowContext(ctx, getAuditRemediationSeedBySeedID, remediationSeedID)
+	var i AuditRemediationSeed
+	err := row.Scan(
+		&i.ID,
+		&i.RemediationSeedID,
+		&i.AuditTicketRevisionDecisionRowID,
+		&i.AuditPacketRowID,
+		&i.ExecutionPackageRowID,
+		&i.AuditedCommit,
+		&i.DecisionRationale,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAuditRemediationSeedReopening = `-- name: GetAuditRemediationSeedReopening :one
+SELECT id, remediation_seed_row_id, reopening_revision_row_id, reopening_kind, created_at
+FROM audit_remediation_seed_reopenings
+WHERE remediation_seed_row_id = ?
+`
+
+func (q *Queries) GetAuditRemediationSeedReopening(ctx context.Context, remediationSeedRowID int64) (AuditRemediationSeedReopening, error) {
+	row := q.db.QueryRowContext(ctx, getAuditRemediationSeedReopening, remediationSeedRowID)
+	var i AuditRemediationSeedReopening
+	err := row.Scan(
+		&i.ID,
+		&i.RemediationSeedRowID,
+		&i.ReopeningRevisionRowID,
+		&i.ReopeningKind,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCurrentFeatureWorkspaceCompletionDecision = `-- name: GetCurrentFeatureWorkspaceCompletionDecision :one
+SELECT completion.id, completion.completion_decision_id, completion.workspace_row_id, completion.authority_revision_row_id, completion.source_closure_row_id, completion.decision, completion.created_at
+FROM feature_workspace_completion_decisions AS completion
+WHERE completion.workspace_row_id = ?
+  AND NOT EXISTS (
+      SELECT 1
+      FROM feature_workspace_completion_reopenings AS reopening
+      WHERE reopening.completion_decision_row_id = completion.id
+  )
+ORDER BY completion.created_at DESC, completion.id DESC
+LIMIT 1
+`
+
+func (q *Queries) GetCurrentFeatureWorkspaceCompletionDecision(ctx context.Context, workspaceRowID int64) (FeatureWorkspaceCompletionDecision, error) {
+	row := q.db.QueryRowContext(ctx, getCurrentFeatureWorkspaceCompletionDecision, workspaceRowID)
+	var i FeatureWorkspaceCompletionDecision
+	err := row.Scan(
+		&i.ID,
+		&i.CompletionDecisionID,
+		&i.WorkspaceRowID,
+		&i.AuthorityRevisionRowID,
+		&i.SourceClosureRowID,
+		&i.Decision,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getDeliveryTicketByTicketID = `-- name: GetDeliveryTicketByTicketID :one
 SELECT id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
 FROM delivery_tickets
@@ -1533,6 +1904,24 @@ func (q *Queries) GetDeliveryTicketRevisionByRowID(ctx context.Context, id int64
 		&i.Goal,
 		&i.Context,
 		&i.TransitionApplicability,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketRevisionSatisfaction = `-- name: GetDeliveryTicketRevisionSatisfaction :one
+SELECT id, delivery_ticket_revision_row_id, audit_ticket_revision_decision_row_id, created_at
+FROM delivery_ticket_revision_satisfactions
+WHERE delivery_ticket_revision_row_id = ?
+`
+
+func (q *Queries) GetDeliveryTicketRevisionSatisfaction(ctx context.Context, deliveryTicketRevisionRowID int64) (DeliveryTicketRevisionSatisfaction, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketRevisionSatisfaction, deliveryTicketRevisionRowID)
+	var i DeliveryTicketRevisionSatisfaction
+	err := row.Scan(
+		&i.ID,
+		&i.DeliveryTicketRevisionRowID,
+		&i.AuditTicketRevisionDecisionRowID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2105,6 +2494,164 @@ func (q *Queries) ListArtifactsByRun(ctx context.Context, runRowID sql.NullInt64
 			&i.MediaType,
 			&i.Sha256,
 			&i.SizeBytes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditPacketTicketObligations = `-- name: ListAuditPacketTicketObligations :many
+SELECT id, audit_packet_row_id, execution_package_row_id, execution_package_member_row_id, delivery_ticket_row_id, delivery_ticket_revision_row_id, authority_revision_row_id, source_closure_row_id, created_at
+FROM audit_packet_ticket_obligations
+WHERE audit_packet_row_id = ?
+ORDER BY execution_package_member_row_id, id
+`
+
+func (q *Queries) ListAuditPacketTicketObligations(ctx context.Context, auditPacketRowID int64) ([]AuditPacketTicketObligation, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditPacketTicketObligations, auditPacketRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditPacketTicketObligation{}
+	for rows.Next() {
+		var i AuditPacketTicketObligation
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuditPacketRowID,
+			&i.ExecutionPackageRowID,
+			&i.ExecutionPackageMemberRowID,
+			&i.DeliveryTicketRowID,
+			&i.DeliveryTicketRevisionRowID,
+			&i.AuthorityRevisionRowID,
+			&i.SourceClosureRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditRemediationSeedFindings = `-- name: ListAuditRemediationSeedFindings :many
+SELECT id, remediation_seed_row_id, sequence, upstream_classification, summary, evidence, required_remediation, created_at
+FROM audit_remediation_seed_findings
+WHERE remediation_seed_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListAuditRemediationSeedFindings(ctx context.Context, remediationSeedRowID int64) ([]AuditRemediationSeedFinding, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditRemediationSeedFindings, remediationSeedRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditRemediationSeedFinding{}
+	for rows.Next() {
+		var i AuditRemediationSeedFinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.RemediationSeedRowID,
+			&i.Sequence,
+			&i.UpstreamClassification,
+			&i.Summary,
+			&i.Evidence,
+			&i.RequiredRemediation,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditRemediationSeedsByWorkspace = `-- name: ListAuditRemediationSeedsByWorkspace :many
+SELECT seed.id, seed.remediation_seed_id, seed.audit_ticket_revision_decision_row_id, seed.audit_packet_row_id, seed.execution_package_row_id, seed.audited_commit, seed.decision_rationale, seed.created_at
+FROM audit_remediation_seeds AS seed
+JOIN audit_ticket_revision_decisions AS revision_decision
+  ON revision_decision.id = seed.audit_ticket_revision_decision_row_id
+JOIN audit_packet_ticket_obligations AS obligation
+  ON obligation.id = revision_decision.audit_packet_ticket_obligation_row_id
+JOIN delivery_tickets AS ticket ON ticket.id = obligation.delivery_ticket_row_id
+WHERE ticket.workspace_row_id = ?
+ORDER BY seed.created_at, seed.id
+`
+
+func (q *Queries) ListAuditRemediationSeedsByWorkspace(ctx context.Context, workspaceRowID int64) ([]AuditRemediationSeed, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditRemediationSeedsByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditRemediationSeed{}
+	for rows.Next() {
+		var i AuditRemediationSeed
+		if err := rows.Scan(
+			&i.ID,
+			&i.RemediationSeedID,
+			&i.AuditTicketRevisionDecisionRowID,
+			&i.AuditPacketRowID,
+			&i.ExecutionPackageRowID,
+			&i.AuditedCommit,
+			&i.DecisionRationale,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditTicketRevisionDecisions = `-- name: ListAuditTicketRevisionDecisions :many
+SELECT id, audit_decision_row_id, audit_packet_ticket_obligation_row_id, created_at
+FROM audit_ticket_revision_decisions
+WHERE audit_decision_row_id = ?
+ORDER BY id
+`
+
+func (q *Queries) ListAuditTicketRevisionDecisions(ctx context.Context, auditDecisionRowID int64) ([]AuditTicketRevisionDecision, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditTicketRevisionDecisions, auditDecisionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditTicketRevisionDecision{}
+	for rows.Next() {
+		var i AuditTicketRevisionDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuditDecisionRowID,
+			&i.AuditPacketTicketObligationRowID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

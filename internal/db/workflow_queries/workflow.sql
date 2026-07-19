@@ -702,3 +702,143 @@ SET
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE lease_id = ? AND state = 'active'
 RETURNING *;
+
+-- name: CreateAuditPacketTicketObligation :one
+INSERT INTO audit_packet_ticket_obligations (
+    audit_packet_row_id,
+    execution_package_row_id,
+    execution_package_member_row_id,
+    delivery_ticket_row_id,
+    delivery_ticket_revision_row_id,
+    authority_revision_row_id,
+    source_closure_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListAuditPacketTicketObligations :many
+SELECT *
+FROM audit_packet_ticket_obligations
+WHERE audit_packet_row_id = ?
+ORDER BY execution_package_member_row_id, id;
+
+-- name: CreateAuditTicketRevisionDecision :one
+INSERT INTO audit_ticket_revision_decisions (
+    audit_decision_row_id,
+    audit_packet_ticket_obligation_row_id
+)
+VALUES (?, ?)
+RETURNING *;
+
+-- name: ListAuditTicketRevisionDecisions :many
+SELECT *
+FROM audit_ticket_revision_decisions
+WHERE audit_decision_row_id = ?
+ORDER BY id;
+
+-- name: CreateDeliveryTicketRevisionSatisfaction :one
+INSERT INTO delivery_ticket_revision_satisfactions (
+    delivery_ticket_revision_row_id,
+    audit_ticket_revision_decision_row_id
+)
+VALUES (?, ?)
+RETURNING *;
+
+-- name: GetDeliveryTicketRevisionSatisfaction :one
+SELECT *
+FROM delivery_ticket_revision_satisfactions
+WHERE delivery_ticket_revision_row_id = ?;
+
+-- name: CreateAuditRemediationSeed :one
+INSERT INTO audit_remediation_seeds (
+    remediation_seed_id,
+    audit_ticket_revision_decision_row_id,
+    audit_packet_row_id,
+    execution_package_row_id,
+    audited_commit,
+    decision_rationale
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetAuditRemediationSeedBySeedID :one
+SELECT *
+FROM audit_remediation_seeds
+WHERE remediation_seed_id = ?;
+
+-- name: ListAuditRemediationSeedsByWorkspace :many
+SELECT seed.*
+FROM audit_remediation_seeds AS seed
+JOIN audit_ticket_revision_decisions AS revision_decision
+  ON revision_decision.id = seed.audit_ticket_revision_decision_row_id
+JOIN audit_packet_ticket_obligations AS obligation
+  ON obligation.id = revision_decision.audit_packet_ticket_obligation_row_id
+JOIN delivery_tickets AS ticket ON ticket.id = obligation.delivery_ticket_row_id
+WHERE ticket.workspace_row_id = ?
+ORDER BY seed.created_at, seed.id;
+
+-- name: CreateAuditRemediationSeedFinding :one
+INSERT INTO audit_remediation_seed_findings (
+    remediation_seed_row_id,
+    sequence,
+    upstream_classification,
+    summary,
+    evidence,
+    required_remediation
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListAuditRemediationSeedFindings :many
+SELECT *
+FROM audit_remediation_seed_findings
+WHERE remediation_seed_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateAuditRemediationSeedReopening :one
+INSERT INTO audit_remediation_seed_reopenings (
+    remediation_seed_row_id,
+    reopening_revision_row_id,
+    reopening_kind
+)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: GetAuditRemediationSeedReopening :one
+SELECT *
+FROM audit_remediation_seed_reopenings
+WHERE remediation_seed_row_id = ?;
+
+-- name: CreateFeatureWorkspaceCompletionDecision :one
+INSERT INTO feature_workspace_completion_decisions (
+    completion_decision_id,
+    workspace_row_id,
+    authority_revision_row_id,
+    source_closure_row_id,
+    decision
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetCurrentFeatureWorkspaceCompletionDecision :one
+SELECT completion.*
+FROM feature_workspace_completion_decisions AS completion
+WHERE completion.workspace_row_id = ?
+  AND NOT EXISTS (
+      SELECT 1
+      FROM feature_workspace_completion_reopenings AS reopening
+      WHERE reopening.completion_decision_row_id = completion.id
+  )
+ORDER BY completion.created_at DESC, completion.id DESC
+LIMIT 1;
+
+-- name: CreateFeatureWorkspaceCompletionReopening :one
+INSERT INTO feature_workspace_completion_reopenings (
+    completion_decision_row_id,
+    reopening_kind,
+    reopening_ticket_revision_row_id,
+    reopening_authority_revision_row_id,
+    reopening_remediation_seed_row_id
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING *;
