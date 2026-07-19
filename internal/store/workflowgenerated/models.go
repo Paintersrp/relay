@@ -144,6 +144,45 @@ type ExecutionAttempt struct {
 	CancellationRequestedAt sql.NullString `json:"cancellation_requested_at"`
 }
 
+type ExecutionPackage struct {
+	ID                     int64  `json:"id"`
+	PackageID              string `json:"package_id"`
+	SelectionRowID         int64  `json:"selection_row_id"`
+	WorkspaceRowID         int64  `json:"workspace_row_id"`
+	RepoTarget             string `json:"repo_target"`
+	Branch                 string `json:"branch"`
+	BaseCommit             string `json:"base_commit"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	PackageSha256          string `json:"package_sha256"`
+	AuthoritySha256        string `json:"authority_sha256"`
+	SourceSha256           string `json:"source_sha256"`
+	DesignBriefSha256      string `json:"design_brief_sha256"`
+	ExecutionSpecSha256    string `json:"execution_spec_sha256"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type ExecutionPackageApprovalBinding struct {
+	ID                     int64  `json:"id"`
+	PackageRowID           int64  `json:"package_row_id"`
+	PackageMemberRowID     int64  `json:"package_member_row_id"`
+	ApprovalRowID          int64  `json:"approval_row_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+	ApprovalBasisSha256    string `json:"approval_basis_sha256"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type ExecutionPackageMember struct {
+	ID                   int64  `json:"id"`
+	PackageRowID         int64  `json:"package_row_id"`
+	SelectionMemberRowID int64  `json:"selection_member_row_id"`
+	Sequence             int64  `json:"sequence"`
+	RevisionRowID        int64  `json:"revision_row_id"`
+	MemberSha256         string `json:"member_sha256"`
+	CreatedAt            string `json:"created_at"`
+}
+
 type FeatureWorkspace struct {
 	ID                            int64         `json:"id"`
 	WorkspaceID                   string        `json:"workspace_id"`
@@ -445,6 +484,26 @@ type ProjectRepositoryTarget struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type RepositoryBranchMutationLease struct {
+	ID                      int64          `json:"id"`
+	LeaseID                 string         `json:"lease_id"`
+	RepoTarget              string         `json:"repo_target"`
+	Branch                  string         `json:"branch"`
+	OwnerKind               string         `json:"owner_kind"`
+	OwnerIdentity           string         `json:"owner_identity"`
+	State                   string         `json:"state"`
+	UncertaintyState        string         `json:"uncertainty_state"`
+	UncertaintyReason       sql.NullString `json:"uncertainty_reason"`
+	ReconciliationState     string         `json:"reconciliation_state"`
+	ReconciliationNote      sql.NullString `json:"reconciliation_note"`
+	AcquiredAt              string         `json:"acquired_at"`
+	ReleasedAt              sql.NullString `json:"released_at"`
+	ReconciliationStartedAt sql.NullString `json:"reconciliation_started_at"`
+	ReconciledAt            sql.NullString `json:"reconciled_at"`
+	CreatedAt               string         `json:"created_at"`
+	UpdatedAt               string         `json:"updated_at"`
+}
+
 type RepositoryTarget struct {
 	RepoTarget           string         `json:"repo_target"`
 	LocalPath            string         `json:"local_path"`
@@ -455,20 +514,21 @@ type RepositoryTarget struct {
 }
 
 type Run struct {
-	ID                 int64          `json:"id"`
-	RunID              string         `json:"run_id"`
-	FeatureSlug        string         `json:"feature_slug"`
-	RepoTarget         string         `json:"repo_target"`
-	PlanRowID          sql.NullInt64  `json:"plan_row_id"`
-	PlanPassRowID      sql.NullInt64  `json:"plan_pass_row_id"`
-	RemediatesRunRowID sql.NullInt64  `json:"remediates_run_row_id"`
-	Status             string         `json:"status"`
-	Branch             string         `json:"branch"`
-	BaseCommit         string         `json:"base_commit"`
-	CanonicalSha256    string         `json:"canonical_sha256"`
-	CreatedAt          string         `json:"created_at"`
-	UpdatedAt          string         `json:"updated_at"`
-	CompletedAt        sql.NullString `json:"completed_at"`
+	ID                    int64          `json:"id"`
+	RunID                 string         `json:"run_id"`
+	FeatureSlug           string         `json:"feature_slug"`
+	RepoTarget            string         `json:"repo_target"`
+	PlanRowID             sql.NullInt64  `json:"plan_row_id"`
+	PlanPassRowID         sql.NullInt64  `json:"plan_pass_row_id"`
+	RemediatesRunRowID    sql.NullInt64  `json:"remediates_run_row_id"`
+	Status                string         `json:"status"`
+	Branch                string         `json:"branch"`
+	BaseCommit            string         `json:"base_commit"`
+	CanonicalSha256       string         `json:"canonical_sha256"`
+	CreatedAt             string         `json:"created_at"`
+	UpdatedAt             string         `json:"updated_at"`
+	CompletedAt           sql.NullString `json:"completed_at"`
+	ExecutionPackageRowID sql.NullInt64  `json:"execution_package_row_id"`
 }
 
 type SourceVault struct {

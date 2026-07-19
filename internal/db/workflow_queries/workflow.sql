@@ -561,3 +561,144 @@ SELECT *
 FROM delivery_ticket_selection_members
 WHERE selection_row_id = ?
 ORDER BY sequence, id;
+
+-- name: CreateExecutionPackage :one
+INSERT INTO execution_packages (
+    package_id,
+    selection_row_id,
+    workspace_row_id,
+    repo_target,
+    branch,
+    base_commit,
+    source_closure_row_id,
+    authority_revision_row_id,
+    package_sha256,
+    authority_sha256,
+    source_sha256,
+    design_brief_sha256,
+    execution_spec_sha256
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetExecutionPackageByPackageID :one
+SELECT *
+FROM execution_packages
+WHERE package_id = ?;
+
+-- name: GetExecutionPackageBySelectionRowID :one
+SELECT *
+FROM execution_packages
+WHERE selection_row_id = ?;
+
+-- name: ListExecutionPackagesByWorkspace :many
+SELECT *
+FROM execution_packages
+WHERE workspace_row_id = ?
+ORDER BY created_at, id;
+
+-- name: CreateExecutionPackageMember :one
+INSERT INTO execution_package_members (
+    package_row_id,
+    selection_member_row_id,
+    sequence,
+    revision_row_id,
+    member_sha256
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListExecutionPackageMembers :many
+SELECT *
+FROM execution_package_members
+WHERE package_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateExecutionPackageApprovalBinding :one
+INSERT INTO execution_package_approval_bindings (
+    package_row_id,
+    package_member_row_id,
+    approval_row_id,
+    authority_revision_row_id,
+    source_closure_row_id,
+    approval_basis_sha256
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListExecutionPackageApprovalBindings :many
+SELECT *
+FROM execution_package_approval_bindings
+WHERE package_row_id = ?
+ORDER BY package_member_row_id, id;
+
+-- name: ConsumeDeliveryTicketSelection :one
+UPDATE delivery_ticket_selections
+SET state = 'consumed', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE selection_id = ? AND state = 'active'
+RETURNING *;
+
+-- name: LinkRunToExecutionPackage :one
+UPDATE runs
+SET execution_package_row_id = ?
+WHERE run_id = ? AND execution_package_row_id IS NULL
+RETURNING *;
+
+-- name: CreateRepositoryBranchMutationLease :one
+INSERT INTO repository_branch_mutation_leases (
+    lease_id,
+    repo_target,
+    branch,
+    owner_kind,
+    owner_identity,
+    state,
+    uncertainty_state,
+    uncertainty_reason,
+    reconciliation_state,
+    reconciliation_note,
+    reconciliation_started_at,
+    reconciled_at
+)
+VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetRepositoryBranchMutationLeaseByLeaseID :one
+SELECT *
+FROM repository_branch_mutation_leases
+WHERE lease_id = ?;
+
+-- name: GetActiveRepositoryBranchMutationLease :one
+SELECT *
+FROM repository_branch_mutation_leases
+WHERE repo_target = ? COLLATE NOCASE
+  AND branch = ?
+  AND state = 'active';
+
+-- name: ListRepositoryBranchMutationLeases :many
+SELECT *
+FROM repository_branch_mutation_leases
+WHERE repo_target = ? COLLATE NOCASE
+  AND branch = ?
+ORDER BY acquired_at, id;
+
+-- name: UpdateRepositoryBranchMutationLeaseFacts :one
+UPDATE repository_branch_mutation_leases
+SET
+    uncertainty_state = ?,
+    uncertainty_reason = ?,
+    reconciliation_state = ?,
+    reconciliation_note = ?,
+    reconciliation_started_at = ?,
+    reconciled_at = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE lease_id = ? AND state = ?
+RETURNING *;
+
+-- name: ReleaseRepositoryBranchMutationLease :one
+UPDATE repository_branch_mutation_leases
+SET
+    state = 'released',
+    released_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE lease_id = ? AND state = 'active'
+RETURNING *;

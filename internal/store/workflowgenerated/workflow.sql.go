@@ -75,6 +75,29 @@ func (q *Queries) CompletePlan(ctx context.Context, id int64) (Plan, error) {
 	return i, err
 }
 
+const consumeDeliveryTicketSelection = `-- name: ConsumeDeliveryTicketSelection :one
+UPDATE delivery_ticket_selections
+SET state = 'consumed', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE selection_id = ? AND state = 'active'
+RETURNING id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+`
+
+func (q *Queries) ConsumeDeliveryTicketSelection(ctx context.Context, selectionID string) (DeliveryTicketSelection, error) {
+	row := q.db.QueryRowContext(ctx, consumeDeliveryTicketSelection, selectionID)
+	var i DeliveryTicketSelection
+	err := row.Scan(
+		&i.ID,
+		&i.SelectionID,
+		&i.WorkspaceRowID,
+		&i.State,
+		&i.Rationale,
+		&i.SourceClosureRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countIncompletePlanPasses = `-- name: CountIncompletePlanPasses :one
 SELECT COUNT(*)
 FROM plan_passes
@@ -515,6 +538,165 @@ func (q *Queries) CreateExecutionAttempt(ctx context.Context, arg CreateExecutio
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.CancellationRequestedAt,
+	)
+	return i, err
+}
+
+const createExecutionPackage = `-- name: CreateExecutionPackage :one
+INSERT INTO execution_packages (
+    package_id,
+    selection_row_id,
+    workspace_row_id,
+    repo_target,
+    branch,
+    base_commit,
+    source_closure_row_id,
+    authority_revision_row_id,
+    package_sha256,
+    authority_sha256,
+    source_sha256,
+    design_brief_sha256,
+    execution_spec_sha256
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+`
+
+type CreateExecutionPackageParams struct {
+	PackageID              string `json:"package_id"`
+	SelectionRowID         int64  `json:"selection_row_id"`
+	WorkspaceRowID         int64  `json:"workspace_row_id"`
+	RepoTarget             string `json:"repo_target"`
+	Branch                 string `json:"branch"`
+	BaseCommit             string `json:"base_commit"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	PackageSha256          string `json:"package_sha256"`
+	AuthoritySha256        string `json:"authority_sha256"`
+	SourceSha256           string `json:"source_sha256"`
+	DesignBriefSha256      string `json:"design_brief_sha256"`
+	ExecutionSpecSha256    string `json:"execution_spec_sha256"`
+}
+
+func (q *Queries) CreateExecutionPackage(ctx context.Context, arg CreateExecutionPackageParams) (ExecutionPackage, error) {
+	row := q.db.QueryRowContext(ctx, createExecutionPackage,
+		arg.PackageID,
+		arg.SelectionRowID,
+		arg.WorkspaceRowID,
+		arg.RepoTarget,
+		arg.Branch,
+		arg.BaseCommit,
+		arg.SourceClosureRowID,
+		arg.AuthorityRevisionRowID,
+		arg.PackageSha256,
+		arg.AuthoritySha256,
+		arg.SourceSha256,
+		arg.DesignBriefSha256,
+		arg.ExecutionSpecSha256,
+	)
+	var i ExecutionPackage
+	err := row.Scan(
+		&i.ID,
+		&i.PackageID,
+		&i.SelectionRowID,
+		&i.WorkspaceRowID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.SourceClosureRowID,
+		&i.AuthorityRevisionRowID,
+		&i.PackageSha256,
+		&i.AuthoritySha256,
+		&i.SourceSha256,
+		&i.DesignBriefSha256,
+		&i.ExecutionSpecSha256,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createExecutionPackageApprovalBinding = `-- name: CreateExecutionPackageApprovalBinding :one
+INSERT INTO execution_package_approval_bindings (
+    package_row_id,
+    package_member_row_id,
+    approval_row_id,
+    authority_revision_row_id,
+    source_closure_row_id,
+    approval_basis_sha256
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, package_row_id, package_member_row_id, approval_row_id, authority_revision_row_id, source_closure_row_id, approval_basis_sha256, created_at
+`
+
+type CreateExecutionPackageApprovalBindingParams struct {
+	PackageRowID           int64  `json:"package_row_id"`
+	PackageMemberRowID     int64  `json:"package_member_row_id"`
+	ApprovalRowID          int64  `json:"approval_row_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+	ApprovalBasisSha256    string `json:"approval_basis_sha256"`
+}
+
+func (q *Queries) CreateExecutionPackageApprovalBinding(ctx context.Context, arg CreateExecutionPackageApprovalBindingParams) (ExecutionPackageApprovalBinding, error) {
+	row := q.db.QueryRowContext(ctx, createExecutionPackageApprovalBinding,
+		arg.PackageRowID,
+		arg.PackageMemberRowID,
+		arg.ApprovalRowID,
+		arg.AuthorityRevisionRowID,
+		arg.SourceClosureRowID,
+		arg.ApprovalBasisSha256,
+	)
+	var i ExecutionPackageApprovalBinding
+	err := row.Scan(
+		&i.ID,
+		&i.PackageRowID,
+		&i.PackageMemberRowID,
+		&i.ApprovalRowID,
+		&i.AuthorityRevisionRowID,
+		&i.SourceClosureRowID,
+		&i.ApprovalBasisSha256,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createExecutionPackageMember = `-- name: CreateExecutionPackageMember :one
+INSERT INTO execution_package_members (
+    package_row_id,
+    selection_member_row_id,
+    sequence,
+    revision_row_id,
+    member_sha256
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, package_row_id, selection_member_row_id, sequence, revision_row_id, member_sha256, created_at
+`
+
+type CreateExecutionPackageMemberParams struct {
+	PackageRowID         int64  `json:"package_row_id"`
+	SelectionMemberRowID int64  `json:"selection_member_row_id"`
+	Sequence             int64  `json:"sequence"`
+	RevisionRowID        int64  `json:"revision_row_id"`
+	MemberSha256         string `json:"member_sha256"`
+}
+
+func (q *Queries) CreateExecutionPackageMember(ctx context.Context, arg CreateExecutionPackageMemberParams) (ExecutionPackageMember, error) {
+	row := q.db.QueryRowContext(ctx, createExecutionPackageMember,
+		arg.PackageRowID,
+		arg.SelectionMemberRowID,
+		arg.Sequence,
+		arg.RevisionRowID,
+		arg.MemberSha256,
+	)
+	var i ExecutionPackageMember
+	err := row.Scan(
+		&i.ID,
+		&i.PackageRowID,
+		&i.SelectionMemberRowID,
+		&i.Sequence,
+		&i.RevisionRowID,
+		&i.MemberSha256,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1063,6 +1245,76 @@ func (q *Queries) CreatePlanRepositoryTarget(ctx context.Context, arg CreatePlan
 	return i, err
 }
 
+const createRepositoryBranchMutationLease = `-- name: CreateRepositoryBranchMutationLease :one
+INSERT INTO repository_branch_mutation_leases (
+    lease_id,
+    repo_target,
+    branch,
+    owner_kind,
+    owner_identity,
+    state,
+    uncertainty_state,
+    uncertainty_reason,
+    reconciliation_state,
+    reconciliation_note,
+    reconciliation_started_at,
+    reconciled_at
+)
+VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
+RETURNING id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
+`
+
+type CreateRepositoryBranchMutationLeaseParams struct {
+	LeaseID                 string         `json:"lease_id"`
+	RepoTarget              string         `json:"repo_target"`
+	Branch                  string         `json:"branch"`
+	OwnerKind               string         `json:"owner_kind"`
+	OwnerIdentity           string         `json:"owner_identity"`
+	UncertaintyState        string         `json:"uncertainty_state"`
+	UncertaintyReason       sql.NullString `json:"uncertainty_reason"`
+	ReconciliationState     string         `json:"reconciliation_state"`
+	ReconciliationNote      sql.NullString `json:"reconciliation_note"`
+	ReconciliationStartedAt sql.NullString `json:"reconciliation_started_at"`
+	ReconciledAt            sql.NullString `json:"reconciled_at"`
+}
+
+func (q *Queries) CreateRepositoryBranchMutationLease(ctx context.Context, arg CreateRepositoryBranchMutationLeaseParams) (RepositoryBranchMutationLease, error) {
+	row := q.db.QueryRowContext(ctx, createRepositoryBranchMutationLease,
+		arg.LeaseID,
+		arg.RepoTarget,
+		arg.Branch,
+		arg.OwnerKind,
+		arg.OwnerIdentity,
+		arg.UncertaintyState,
+		arg.UncertaintyReason,
+		arg.ReconciliationState,
+		arg.ReconciliationNote,
+		arg.ReconciliationStartedAt,
+		arg.ReconciledAt,
+	)
+	var i RepositoryBranchMutationLease
+	err := row.Scan(
+		&i.ID,
+		&i.LeaseID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.OwnerKind,
+		&i.OwnerIdentity,
+		&i.State,
+		&i.UncertaintyState,
+		&i.UncertaintyReason,
+		&i.ReconciliationState,
+		&i.ReconciliationNote,
+		&i.AcquiredAt,
+		&i.ReleasedAt,
+		&i.ReconciliationStartedAt,
+		&i.ReconciledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createRepositoryTarget = `-- name: CreateRepositoryTarget :one
 INSERT INTO repository_targets (repo_target, local_path)
 VALUES (?, ?)
@@ -1102,7 +1354,7 @@ INSERT INTO runs (
     canonical_sha256
 )
 VALUES (?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
-RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
 `
 
 type CreateRunParams struct {
@@ -1145,6 +1397,45 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.ExecutionPackageRowID,
+	)
+	return i, err
+}
+
+const getActiveRepositoryBranchMutationLease = `-- name: GetActiveRepositoryBranchMutationLease :one
+SELECT id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
+FROM repository_branch_mutation_leases
+WHERE repo_target = ? COLLATE NOCASE
+  AND branch = ?
+  AND state = 'active'
+`
+
+type GetActiveRepositoryBranchMutationLeaseParams struct {
+	RepoTarget string `json:"repo_target"`
+	Branch     string `json:"branch"`
+}
+
+func (q *Queries) GetActiveRepositoryBranchMutationLease(ctx context.Context, arg GetActiveRepositoryBranchMutationLeaseParams) (RepositoryBranchMutationLease, error) {
+	row := q.db.QueryRowContext(ctx, getActiveRepositoryBranchMutationLease, arg.RepoTarget, arg.Branch)
+	var i RepositoryBranchMutationLease
+	err := row.Scan(
+		&i.ID,
+		&i.LeaseID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.OwnerKind,
+		&i.OwnerIdentity,
+		&i.State,
+		&i.UncertaintyState,
+		&i.UncertaintyReason,
+		&i.ReconciliationState,
+		&i.ReconciliationNote,
+		&i.AcquiredAt,
+		&i.ReleasedAt,
+		&i.ReconciliationStartedAt,
+		&i.ReconciledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1291,6 +1582,64 @@ func (q *Queries) GetExecutionAttemptByAttemptID(ctx context.Context, attemptID 
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.CancellationRequestedAt,
+	)
+	return i, err
+}
+
+const getExecutionPackageByPackageID = `-- name: GetExecutionPackageByPackageID :one
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+FROM execution_packages
+WHERE package_id = ?
+`
+
+func (q *Queries) GetExecutionPackageByPackageID(ctx context.Context, packageID string) (ExecutionPackage, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionPackageByPackageID, packageID)
+	var i ExecutionPackage
+	err := row.Scan(
+		&i.ID,
+		&i.PackageID,
+		&i.SelectionRowID,
+		&i.WorkspaceRowID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.SourceClosureRowID,
+		&i.AuthorityRevisionRowID,
+		&i.PackageSha256,
+		&i.AuthoritySha256,
+		&i.SourceSha256,
+		&i.DesignBriefSha256,
+		&i.ExecutionSpecSha256,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getExecutionPackageBySelectionRowID = `-- name: GetExecutionPackageBySelectionRowID :one
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+FROM execution_packages
+WHERE selection_row_id = ?
+`
+
+func (q *Queries) GetExecutionPackageBySelectionRowID(ctx context.Context, selectionRowID int64) (ExecutionPackage, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionPackageBySelectionRowID, selectionRowID)
+	var i ExecutionPackage
+	err := row.Scan(
+		&i.ID,
+		&i.PackageID,
+		&i.SelectionRowID,
+		&i.WorkspaceRowID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.SourceClosureRowID,
+		&i.AuthorityRevisionRowID,
+		&i.PackageSha256,
+		&i.AuthoritySha256,
+		&i.SourceSha256,
+		&i.DesignBriefSha256,
+		&i.ExecutionSpecSha256,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1498,6 +1847,37 @@ func (q *Queries) GetPlanPassByRowID(ctx context.Context, id int64) (PlanPass, e
 	return i, err
 }
 
+const getRepositoryBranchMutationLeaseByLeaseID = `-- name: GetRepositoryBranchMutationLeaseByLeaseID :one
+SELECT id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
+FROM repository_branch_mutation_leases
+WHERE lease_id = ?
+`
+
+func (q *Queries) GetRepositoryBranchMutationLeaseByLeaseID(ctx context.Context, leaseID string) (RepositoryBranchMutationLease, error) {
+	row := q.db.QueryRowContext(ctx, getRepositoryBranchMutationLeaseByLeaseID, leaseID)
+	var i RepositoryBranchMutationLease
+	err := row.Scan(
+		&i.ID,
+		&i.LeaseID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.OwnerKind,
+		&i.OwnerIdentity,
+		&i.State,
+		&i.UncertaintyState,
+		&i.UncertaintyReason,
+		&i.ReconciliationState,
+		&i.ReconciliationNote,
+		&i.AcquiredAt,
+		&i.ReleasedAt,
+		&i.ReconciliationStartedAt,
+		&i.ReconciledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRepositoryTarget = `-- name: GetRepositoryTarget :one
 SELECT repo_target, local_path, created_at, updated_at, configured_branch_ref, configuration_version
 FROM repository_targets
@@ -1519,7 +1899,7 @@ func (q *Queries) GetRepositoryTarget(ctx context.Context, repoTarget string) (R
 }
 
 const getRunByRowID = `-- name: GetRunByRowID :one
-SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
 FROM runs
 WHERE id = ?
 `
@@ -1542,12 +1922,13 @@ func (q *Queries) GetRunByRowID(ctx context.Context, id int64) (Run, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.ExecutionPackageRowID,
 	)
 	return i, err
 }
 
 const getRunByRunID = `-- name: GetRunByRunID :one
-SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
 FROM runs
 WHERE run_id = ?
 `
@@ -1570,6 +1951,42 @@ func (q *Queries) GetRunByRunID(ctx context.Context, runID string) (Run, error) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.ExecutionPackageRowID,
+	)
+	return i, err
+}
+
+const linkRunToExecutionPackage = `-- name: LinkRunToExecutionPackage :one
+UPDATE runs
+SET execution_package_row_id = ?
+WHERE run_id = ? AND execution_package_row_id IS NULL
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+`
+
+type LinkRunToExecutionPackageParams struct {
+	ExecutionPackageRowID sql.NullInt64 `json:"execution_package_row_id"`
+	RunID                 string        `json:"run_id"`
+}
+
+func (q *Queries) LinkRunToExecutionPackage(ctx context.Context, arg LinkRunToExecutionPackageParams) (Run, error) {
+	row := q.db.QueryRowContext(ctx, linkRunToExecutionPackage, arg.ExecutionPackageRowID, arg.RunID)
+	var i Run
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.FeatureSlug,
+		&i.RepoTarget,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
+		&i.RemediatesRunRowID,
+		&i.Status,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.CanonicalSha256,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.ExecutionPackageRowID,
 	)
 	return i, err
 }
@@ -1963,6 +2380,129 @@ func (q *Queries) ListDeliveryTicketsByWorkspace(ctx context.Context, workspaceR
 			&i.CurrentRevisionRowID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExecutionPackageApprovalBindings = `-- name: ListExecutionPackageApprovalBindings :many
+SELECT id, package_row_id, package_member_row_id, approval_row_id, authority_revision_row_id, source_closure_row_id, approval_basis_sha256, created_at
+FROM execution_package_approval_bindings
+WHERE package_row_id = ?
+ORDER BY package_member_row_id, id
+`
+
+func (q *Queries) ListExecutionPackageApprovalBindings(ctx context.Context, packageRowID int64) ([]ExecutionPackageApprovalBinding, error) {
+	rows, err := q.db.QueryContext(ctx, listExecutionPackageApprovalBindings, packageRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExecutionPackageApprovalBinding{}
+	for rows.Next() {
+		var i ExecutionPackageApprovalBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.PackageRowID,
+			&i.PackageMemberRowID,
+			&i.ApprovalRowID,
+			&i.AuthorityRevisionRowID,
+			&i.SourceClosureRowID,
+			&i.ApprovalBasisSha256,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExecutionPackageMembers = `-- name: ListExecutionPackageMembers :many
+SELECT id, package_row_id, selection_member_row_id, sequence, revision_row_id, member_sha256, created_at
+FROM execution_package_members
+WHERE package_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListExecutionPackageMembers(ctx context.Context, packageRowID int64) ([]ExecutionPackageMember, error) {
+	rows, err := q.db.QueryContext(ctx, listExecutionPackageMembers, packageRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExecutionPackageMember{}
+	for rows.Next() {
+		var i ExecutionPackageMember
+		if err := rows.Scan(
+			&i.ID,
+			&i.PackageRowID,
+			&i.SelectionMemberRowID,
+			&i.Sequence,
+			&i.RevisionRowID,
+			&i.MemberSha256,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExecutionPackagesByWorkspace = `-- name: ListExecutionPackagesByWorkspace :many
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+FROM execution_packages
+WHERE workspace_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListExecutionPackagesByWorkspace(ctx context.Context, workspaceRowID int64) ([]ExecutionPackage, error) {
+	rows, err := q.db.QueryContext(ctx, listExecutionPackagesByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExecutionPackage{}
+	for rows.Next() {
+		var i ExecutionPackage
+		if err := rows.Scan(
+			&i.ID,
+			&i.PackageID,
+			&i.SelectionRowID,
+			&i.WorkspaceRowID,
+			&i.RepoTarget,
+			&i.Branch,
+			&i.BaseCommit,
+			&i.SourceClosureRowID,
+			&i.AuthorityRevisionRowID,
+			&i.PackageSha256,
+			&i.AuthoritySha256,
+			&i.SourceSha256,
+			&i.DesignBriefSha256,
+			&i.ExecutionSpecSha256,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2486,6 +3026,60 @@ func (q *Queries) ListPlanRepositoryTargets(ctx context.Context, planRowID int64
 	return items, nil
 }
 
+const listRepositoryBranchMutationLeases = `-- name: ListRepositoryBranchMutationLeases :many
+SELECT id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
+FROM repository_branch_mutation_leases
+WHERE repo_target = ? COLLATE NOCASE
+  AND branch = ?
+ORDER BY acquired_at, id
+`
+
+type ListRepositoryBranchMutationLeasesParams struct {
+	RepoTarget string `json:"repo_target"`
+	Branch     string `json:"branch"`
+}
+
+func (q *Queries) ListRepositoryBranchMutationLeases(ctx context.Context, arg ListRepositoryBranchMutationLeasesParams) ([]RepositoryBranchMutationLease, error) {
+	rows, err := q.db.QueryContext(ctx, listRepositoryBranchMutationLeases, arg.RepoTarget, arg.Branch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryBranchMutationLease{}
+	for rows.Next() {
+		var i RepositoryBranchMutationLease
+		if err := rows.Scan(
+			&i.ID,
+			&i.LeaseID,
+			&i.RepoTarget,
+			&i.Branch,
+			&i.OwnerKind,
+			&i.OwnerIdentity,
+			&i.State,
+			&i.UncertaintyState,
+			&i.UncertaintyReason,
+			&i.ReconciliationState,
+			&i.ReconciliationNote,
+			&i.AcquiredAt,
+			&i.ReleasedAt,
+			&i.ReconciliationStartedAt,
+			&i.ReconciledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepositoryTargets = `-- name: ListRepositoryTargets :many
 SELECT repo_target, local_path, created_at, updated_at, configured_branch_ref, configuration_version
 FROM repository_targets
@@ -2523,7 +3117,7 @@ func (q *Queries) ListRepositoryTargets(ctx context.Context) ([]RepositoryTarget
 }
 
 const listRunsByPlanPass = `-- name: ListRunsByPlanPass :many
-SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
 FROM runs
 WHERE plan_pass_row_id = ?
 ORDER BY created_at, id
@@ -2553,6 +3147,7 @@ func (q *Queries) ListRunsByPlanPass(ctx context.Context, planPassRowID sql.Null
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CompletedAt,
+			&i.ExecutionPackageRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -2578,6 +3173,41 @@ func (q *Queries) NextExecutionAttemptNumber(ctx context.Context, runRowID int64
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const releaseRepositoryBranchMutationLease = `-- name: ReleaseRepositoryBranchMutationLease :one
+UPDATE repository_branch_mutation_leases
+SET
+    state = 'released',
+    released_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE lease_id = ? AND state = 'active'
+RETURNING id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
+`
+
+func (q *Queries) ReleaseRepositoryBranchMutationLease(ctx context.Context, leaseID string) (RepositoryBranchMutationLease, error) {
+	row := q.db.QueryRowContext(ctx, releaseRepositoryBranchMutationLease, leaseID)
+	var i RepositoryBranchMutationLease
+	err := row.Scan(
+		&i.ID,
+		&i.LeaseID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.OwnerKind,
+		&i.OwnerIdentity,
+		&i.State,
+		&i.UncertaintyState,
+		&i.UncertaintyReason,
+		&i.ReconciliationState,
+		&i.ReconciliationNote,
+		&i.AcquiredAt,
+		&i.ReleasedAt,
+		&i.ReconciliationStartedAt,
+		&i.ReconciledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const setDeliveryTicketCurrentRevision = `-- name: SetDeliveryTicketCurrentRevision :one
@@ -2816,7 +3446,7 @@ SET
     END,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE run_id = ? AND status = ?
-RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
 `
 
 type TransitionRunStatusParams struct {
@@ -2849,6 +3479,7 @@ func (q *Queries) TransitionRunStatus(ctx context.Context, arg TransitionRunStat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.ExecutionPackageRowID,
 	)
 	return i, err
 }
@@ -2874,6 +3505,65 @@ func (q *Queries) UpdateDeliveryTicketExternalPriority(ctx context.Context, arg 
 		&i.WorkspaceRowID,
 		&i.ExternalPriority,
 		&i.CurrentRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateRepositoryBranchMutationLeaseFacts = `-- name: UpdateRepositoryBranchMutationLeaseFacts :one
+UPDATE repository_branch_mutation_leases
+SET
+    uncertainty_state = ?,
+    uncertainty_reason = ?,
+    reconciliation_state = ?,
+    reconciliation_note = ?,
+    reconciliation_started_at = ?,
+    reconciled_at = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE lease_id = ? AND state = ?
+RETURNING id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
+`
+
+type UpdateRepositoryBranchMutationLeaseFactsParams struct {
+	UncertaintyState        string         `json:"uncertainty_state"`
+	UncertaintyReason       sql.NullString `json:"uncertainty_reason"`
+	ReconciliationState     string         `json:"reconciliation_state"`
+	ReconciliationNote      sql.NullString `json:"reconciliation_note"`
+	ReconciliationStartedAt sql.NullString `json:"reconciliation_started_at"`
+	ReconciledAt            sql.NullString `json:"reconciled_at"`
+	LeaseID                 string         `json:"lease_id"`
+	State                   string         `json:"state"`
+}
+
+func (q *Queries) UpdateRepositoryBranchMutationLeaseFacts(ctx context.Context, arg UpdateRepositoryBranchMutationLeaseFactsParams) (RepositoryBranchMutationLease, error) {
+	row := q.db.QueryRowContext(ctx, updateRepositoryBranchMutationLeaseFacts,
+		arg.UncertaintyState,
+		arg.UncertaintyReason,
+		arg.ReconciliationState,
+		arg.ReconciliationNote,
+		arg.ReconciliationStartedAt,
+		arg.ReconciledAt,
+		arg.LeaseID,
+		arg.State,
+	)
+	var i RepositoryBranchMutationLease
+	err := row.Scan(
+		&i.ID,
+		&i.LeaseID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.OwnerKind,
+		&i.OwnerIdentity,
+		&i.State,
+		&i.UncertaintyState,
+		&i.UncertaintyReason,
+		&i.ReconciliationState,
+		&i.ReconciliationNote,
+		&i.AcquiredAt,
+		&i.ReleasedAt,
+		&i.ReconciliationStartedAt,
+		&i.ReconciledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
