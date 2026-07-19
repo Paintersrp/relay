@@ -73,7 +73,7 @@ Use `/runs/new` or `create_run`.
 
 - Managed Run: submit `<feature-slug>.pass-<number>.execution-spec.json` with matching `plan_id` and positive `pass_number`.
 - Standalone Run: submit `<feature-slug>.execution-spec.json` without a Plan/pass association.
-- Remediation Run: use the normal standalone Execution Spec family and `remediates_run_id` when current audit state permits it.
+- Remediation Run: create a remediation Delivery Ticket revision through the ordinary Planner ticket route. The Auditor issues `needs_revision` decisions that produce immutable remediation seeds, not standalone remediation Execution Specs.
 
 Relay verifies the exact SHA-256, validates the Execution Spec, renders the Executor Brief, and creates a setup-ready Run. Run creation does not start execution.
 

@@ -25,11 +25,11 @@ func TestCorrectedPublicContractIdentityAndRefreshSchemas(t *testing.T) {
 	}
 
 	registryRaw := RawRegistryDocument()
-	if len(registryRaw) != 24114 {
-		t.Fatalf("operation registry bytes = %d, want 24114", len(registryRaw))
+	if len(registryRaw) != 24150 {
+		t.Fatalf("operation registry bytes = %d, want 24150", len(registryRaw))
 	}
 	registrySum := sha256.Sum256(registryRaw)
-	if got := hex.EncodeToString(registrySum[:]); got != "3f9d3c0ab4814c40c3f33f2f868914a8e37d20da0af3eb2bd38acda23252e57e" {
+	if got := hex.EncodeToString(registrySum[:]); got != "6cb73de11e0f8f7f7903b7de0105f9dd139e324f25d71d98059512ff42b4622a" {
 		t.Fatalf("operation registry sha256 = %s", got)
 	}
 

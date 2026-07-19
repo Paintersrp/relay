@@ -32,8 +32,6 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 		"auditor.one_shot_execution_spec_review":      "a93e98ea0e22061c8ca9162e7560ab322cb267b46c73ddeadca8e84c9393e58e",
 		"auditor.selected_pass_execution_spec_review": "f716e4336b395b9b6780517c5ca5724360104c455b49f880bb067e2423a2d2d2",
 		"auditor.audit":                               "61e248d33ff3048dada12de4c6257e254cdc110a33e35eb701df6f69120f10ad",
-		"auditor.remediation_execution_spec":          "ec23cd557822760da04cddeaa8b0e21c782c5ee0df935023920c2a79d134ef9a",
-		"auditor.remediation_execution_spec_review":   "dfcf373618a6055a805e1dcf81a08aa37e7f700d591f274da11271b373d27a78",
 	}
 	if len(operations) != len(golden) {
 		t.Fatalf("operation count = %d, golden count = %d", len(operations), len(golden))

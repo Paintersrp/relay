@@ -19,8 +19,8 @@ const (
 	PublicContractSHA256  = "662b4055b5ae188c52bd8d5114af84cfda9aa0d7e5621586217b3dc38a8c42a4"
 
 	RegistryVersion         = "relay.operation-registry.v1"
-	OperationRegistryBytes  = 24114
-	OperationRegistrySHA256 = "3f9d3c0ab4814c40c3f33f2f868914a8e37d20da0af3eb2bd38acda23252e57e"
+	OperationRegistryBytes  = 24150
+	OperationRegistrySHA256 = "6cb73de11e0f8f7f7903b7de0105f9dd139e324f25d71d98059512ff42b4622a"
 )
 
 type Role string
@@ -61,6 +61,7 @@ type OperationDefinition struct {
 	HistoricalAuthority      HistoricalAuthorityPolicy `json:"historical_authority"`
 	AllowedNonSourceActions  []AllowedAction           `json:"allowed_non_source_actions"`
 	PacketSemanticProjection string                    `json:"packet_semantic_projection"`
+	Status                   string                    `json:"status,omitempty"`
 }
 
 type registryDocument struct {
@@ -121,7 +122,11 @@ func All() ([]OperationDefinition, error) {
 	}
 	out := make([]OperationDefinition, 0, len(loaded.OperationOrder))
 	for _, id := range loaded.OperationOrder {
-		out = append(out, cloneOperation(loaded.Operations[id]))
+		op := loaded.Operations[id]
+		if op.Status == "legacy" {
+			continue
+		}
+		out = append(out, cloneOperation(op))
 	}
 	return out, nil
 }
@@ -149,14 +154,15 @@ func Lookup(id OperationID) (OperationDefinition, bool) {
 }
 
 func OperationsForSurface(surface SurfaceContractID) ([]OperationDefinition, error) {
-	all, err := All()
-	if err != nil {
-		return nil, err
+	load()
+	if loadErr != nil {
+		return nil, loadErr
 	}
 	out := make([]OperationDefinition, 0)
-	for _, operation := range all {
-		if operation.SurfaceContract == surface {
-			out = append(out, operation)
+	for _, id := range loaded.OperationOrder {
+		op := loaded.Operations[id]
+		if op.SurfaceContract == surface {
+			out = append(out, cloneOperation(op))
 		}
 	}
 	for _, operation := range WayfinderOperations() {
