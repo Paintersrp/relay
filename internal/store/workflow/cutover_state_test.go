@@ -534,6 +534,14 @@ func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, s
 		if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
 			return err
 		}
+		if _, err := queries.CreateExecutionPackageApproval(ctx, workflowgenerated.CreateExecutionPackageApprovalParams{
+			ApprovalID:                  "pkg-approval-cutover-boundary",
+			PackageRowID:                executionPackage.ID,
+			PackageSha256:               workflowHash('1'),
+			OperatorConfirmationEvidence: "package approved for cutover boundary crossing test",
+		}); err != nil {
+			return err
+		}
 		run, err = tx.CreateRun(ctx, CreateRunParams{
 			RunID:           "run-cutover-boundary",
 			FeatureSlug:     seed.workspace.FeatureSlug,
@@ -556,4 +564,446 @@ func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, s
 
 func workflowHash(character rune) string {
 	return strings.Repeat(string(character), 64)
+}
+
+func TestOrdinaryTicketRunCrossesBoundaryWithoutTransitionPlanMember(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, criterion := activateCutoverState(t, ctx, store, seed, "cutover-ordinary", "eligible")
+	queries := workflowgenerated.New(store.DB())
+
+	ordinaryRun := createOrdinaryTicketRun(t, ctx, store, seed, "run-ordinary-ticket")
+	boundary, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: ordinaryRun.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	})
+	if err != nil {
+		t.Fatalf("ordinary ticket run failed to cross: %v", err)
+	}
+	if boundary.ExecutionBoundaryStatus != "crossed" || boundary.RollbackStatus != "forbidden" {
+		t.Fatalf("ordinary ticket boundary crossing = %#v", boundary)
+	}
+
+	_ = criterion
+}
+
+func TestPackageApprovedSetupReadyRunLeavesBoundaryOpen(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, _ := activateCutoverState(t, ctx, store, seed, "cutover-setup-ready", "eligible")
+	queries := workflowgenerated.New(store.DB())
+
+	setupReadyRun := createOrdinaryTicketRun(t, ctx, store, seed, "run-setup-ready-open")
+	current, err := queries.GetCurrentCutoverActivation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ExecutionBoundaryStatus != "open" {
+		t.Fatalf("boundary crossed at setup-ready: %s", current.ExecutionBoundaryStatus)
+	}
+	if current.RollbackStatus != "available" {
+		t.Fatalf("rollback not eligible after setup-ready: %s", current.RollbackStatus)
+	}
+	_ = activation
+	_ = setupReadyRun
+}
+
+func TestInvalidCandidateRunFailsCrossing(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, _ := activateCutoverState(t, ctx, store, seed, "cutover-invalid", "eligible")
+	queries := workflowgenerated.New(store.DB())
+
+	runWithoutApproval := createOrdinaryTicketRunWithoutApproval(t, ctx, store, seed, "run-no-approval")
+	if _, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: runWithoutApproval.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	}); err == nil {
+		t.Fatal("run without package approval crossed the boundary")
+	}
+
+	legacyRun := createLegacyRun(t, ctx, store, seed, "run-legacy-plain")
+	if _, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: legacyRun.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	}); err == nil {
+		t.Fatal("legacy run without execution package crossed the boundary")
+	}
+}
+
+func TestTwoConcurrentRunsOneWinner(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, _ := activateCutoverState(t, ctx, store, seed, "cutover-concurrent", "eligible")
+	queries := workflowgenerated.New(store.DB())
+
+	first := createOrdinaryTicketRun(t, ctx, store, seed, "run-first-winner")
+	second := createOrdinaryTicketRun(t, ctx, store, seed, "run-second-loser")
+
+	boundary, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: first.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boundary.ExecutionBoundaryStatus != "crossed" {
+		t.Fatalf("first run failed to cross: %#v", boundary)
+	}
+
+	if _, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: second.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second run crossed already-crossed boundary: want sql.ErrNoRows, got %v", err)
+	}
+}
+
+func TestAtomicRollbackRevocationAfterCrossing(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, _ := activateCutoverState(t, ctx, store, seed, "cutover-rollback-revoke", "eligible")
+	queries := workflowgenerated.New(store.DB())
+
+	run := createOrdinaryTicketRun(t, ctx, store, seed, "run-atomic-rollback")
+	_, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: run.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := queries.RollbackCutoverActivation(ctx, activation.CutoverActivationID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("rollback after boundary crossing should fail, got %v", err)
+	}
+
+	current, err := queries.GetCurrentCutoverActivation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.RollbackStatus != "forbidden" {
+		t.Fatalf("rollback status not forbidden after crossing: %s", current.RollbackStatus)
+	}
+}
+
+func TestCrossingMonotonicBoundary(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, _ := activateCutoverState(t, ctx, store, seed, "cutover-monotonic", "eligible")
+
+	run := createOrdinaryTicketRun(t, ctx, store, seed, "run-monotonic-boundary")
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.ConditionalCrossCutoverExecutionBoundary(ctx, activation.CutoverActivationID, run.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	current, found, err := store.GetCurrentCutoverActivation(ctx)
+	if err != nil || !found {
+		t.Fatalf("current cutover activation: found=%v err=%v", found, err)
+	}
+	if current.ExecutionBoundaryStatus != "crossed" {
+		t.Fatalf("boundary not crossed: %s", current.ExecutionBoundaryStatus)
+	}
+	if current.RollbackStatus != "forbidden" {
+		t.Fatalf("rollback not forbidden: %s", current.RollbackStatus)
+	}
+}
+
+func createOrdinaryTicketRun(t *testing.T, ctx context.Context, store *Store, seed cutoverStateSeed, runID string) Run {
+	t.Helper()
+	var run Run
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		return createOrdinaryTicketRunTx(t, ctx, tx, seed, runID, &run)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func createOrdinaryTicketRunTx(t *testing.T, ctx context.Context, tx *Tx, seed cutoverStateSeed, runID string, run *Run) error {
+	t.Helper()
+	_ = runID
+
+	ordTicketID := "P7-T2-9"
+	if runID == "run-first-winner" {
+		ordTicketID = "P7-T2-1"
+	} else if runID == "run-second-loser" {
+		ordTicketID = "P7-T2-2"
+	}
+
+	ordinaryTicket, err := tx.CreateDeliveryTicket(ctx, CreateDeliveryTicketParams{
+		TicketID: ordTicketID, WorkspaceRowID: seed.workspace.ID, ExternalPriority: 30,
+	})
+	if err != nil {
+		return err
+	}
+	ordinaryRevision, err := tx.CreateDeliveryTicketRevision(ctx, CreateDeliveryTicketRevisionParams{
+		DeliveryTicketRowID:     ordinaryTicket.ID,
+		RevisionNumber:          1,
+		RepoTarget:              "relay",
+		Branch:                  "main",
+		BaseCommit:              seed.closure.CommitOID,
+		SourceClosureRowID:      seed.closure.ID,
+		SourcePath:              "tickets/p7-t2.r1.delivery-ticket.json",
+		Goal:                    "Ordinary delivery ticket for cutover boundary crossing.",
+		Context:                 "This is a non-Transition Plan ticket.",
+		TransitionApplicability: "not_required",
+	})
+	if err != nil {
+		return err
+	}
+	approval, err := tx.CreateDeliveryTicketRevisionApproval(ctx, CreateDeliveryTicketRevisionApprovalParams{
+		ApprovalID:             "approval-ordinary-" + runID,
+		RevisionRowID:          ordinaryRevision.ID,
+		ApprovalKind:           "delivery",
+		ApprovalState:          "approved",
+		Rationale:              "The ordinary delivery ticket is approved.",
+		SourceClosureRowID:     seed.closure.ID,
+		AuthorityRevisionRowID: sql.NullInt64{Int64: seed.authority.ID, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	selection, err := tx.CreateDeliveryTicketSelection(ctx, CreateDeliveryTicketSelectionParams{
+		SelectionID:        "selection-ordinary-" + runID,
+		WorkspaceRowID:     seed.workspace.ID,
+		State:              "active",
+		Rationale:          "Select ordinary ticket for cutover boundary crossing.",
+		SourceClosureRowID: sql.NullInt64{Int64: seed.closure.ID, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	selectionMember, err := tx.CreateDeliveryTicketSelectionMember(ctx, CreateDeliveryTicketSelectionMemberParams{
+		SelectionRowID: selection.ID,
+		Sequence:       1,
+		RevisionRowID:  ordinaryRevision.ID,
+		ApprovalRowID:  approval.ID,
+	})
+	if err != nil {
+		return err
+	}
+	queries := workflowgenerated.New(tx.tx)
+	executionPackage, err := queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
+		PackageID:              "package-ordinary-" + runID,
+		SelectionRowID:         selection.ID,
+		WorkspaceRowID:         seed.workspace.ID,
+		RepoTarget:             "relay",
+		Branch:                 "main",
+		BaseCommit:             seed.closure.CommitOID,
+		SourceClosureRowID:     seed.closure.ID,
+		AuthorityRevisionRowID: seed.authority.ID,
+		PackageSha256:          workflowHash('0'),
+		AuthoritySha256:        seed.authoritySHA256,
+		SourceSha256:           workflowHash('1'),
+		DesignBriefSha256:      workflowHash('2'),
+		ExecutionSpecSha256:    workflowHash('3'),
+	})
+	if err != nil {
+		return err
+	}
+	member, err := queries.CreateExecutionPackageMember(ctx, workflowgenerated.CreateExecutionPackageMemberParams{
+		PackageRowID:         executionPackage.ID,
+		SelectionMemberRowID: selectionMember.ID,
+		Sequence:             1,
+		RevisionRowID:        ordinaryRevision.ID,
+		MemberSha256:         workflowHash('e'),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := queries.CreateExecutionPackageApprovalBinding(ctx, workflowgenerated.CreateExecutionPackageApprovalBindingParams{
+		PackageRowID:           executionPackage.ID,
+		PackageMemberRowID:     member.ID,
+		ApprovalRowID:          approval.ID,
+		AuthorityRevisionRowID: seed.authority.ID,
+		SourceClosureRowID:     seed.closure.ID,
+		ApprovalBasisSha256:    workflowHash('f'),
+	}); err != nil {
+		return err
+	}
+	if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
+		return err
+	}
+	if _, err := queries.CreateExecutionPackageApproval(ctx, workflowgenerated.CreateExecutionPackageApprovalParams{
+		ApprovalID:                  "pkg-approval-" + runID,
+		PackageRowID:                executionPackage.ID,
+		PackageSha256:               workflowHash('a'),
+		OperatorConfirmationEvidence: "package approved for ordinary ticket cutover boundary crossing",
+	}); err != nil {
+		return err
+	}
+	created, err := tx.CreateRun(ctx, CreateRunParams{
+		RunID:           runID,
+		FeatureSlug:     seed.workspace.FeatureSlug,
+		RepoTarget:      "relay",
+		Status:          RunStatusCreated,
+		Branch:          "main",
+		BaseCommit:      seed.closure.CommitOID,
+		CanonicalSHA256: workflowHash('8'),
+	})
+	if err != nil {
+		return err
+	}
+	linked, err := tx.LinkRunToExecutionPackage(ctx, created.RunID, executionPackage.ID)
+	if err != nil {
+		return err
+	}
+	*run = linked
+	return nil
+}
+
+func createOrdinaryTicketRunWithoutApproval(t *testing.T, ctx context.Context, store *Store, seed cutoverStateSeed, runID string) Run {
+	t.Helper()
+	var run Run
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		ordinaryTicket, err := tx.CreateDeliveryTicket(ctx, CreateDeliveryTicketParams{
+			TicketID: "P7-T3-NOAPPR", WorkspaceRowID: seed.workspace.ID, ExternalPriority: 20,
+		})
+		if err != nil {
+			return err
+		}
+		ordinaryRevision, err := tx.CreateDeliveryTicketRevision(ctx, CreateDeliveryTicketRevisionParams{
+			DeliveryTicketRowID:     ordinaryTicket.ID,
+			RevisionNumber:          1,
+			RepoTarget:              "relay",
+			Branch:                  "main",
+			BaseCommit:              seed.closure.CommitOID,
+			SourceClosureRowID:      seed.closure.ID,
+			SourcePath:              "tickets/p7-t3.r1.delivery-ticket.json",
+			Goal:                    "Ordinary ticket without package approval.",
+			Context:                 "No package approval exists.",
+			TransitionApplicability: "not_required",
+		})
+		if err != nil {
+			return err
+		}
+		approval, err := tx.CreateDeliveryTicketRevisionApproval(ctx, CreateDeliveryTicketRevisionApprovalParams{
+			ApprovalID:             "approval-noappr-" + runID,
+			RevisionRowID:          ordinaryRevision.ID,
+			ApprovalKind:           "delivery",
+			ApprovalState:          "approved",
+			Rationale:              "The ticket revision is approved.",
+			SourceClosureRowID:     seed.closure.ID,
+			AuthorityRevisionRowID: sql.NullInt64{Int64: seed.authority.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		selection, err := tx.CreateDeliveryTicketSelection(ctx, CreateDeliveryTicketSelectionParams{
+			SelectionID:        "selection-noappr-" + runID,
+			WorkspaceRowID:     seed.workspace.ID,
+			State:              "active",
+			Rationale:          "Select ticket without package approval.",
+			SourceClosureRowID: sql.NullInt64{Int64: seed.closure.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		selectionMember, err := tx.CreateDeliveryTicketSelectionMember(ctx, CreateDeliveryTicketSelectionMemberParams{
+			SelectionRowID: selection.ID,
+			Sequence:       1,
+			RevisionRowID:  ordinaryRevision.ID,
+			ApprovalRowID:  approval.ID,
+		})
+		if err != nil {
+			return err
+		}
+		queries := workflowgenerated.New(tx.tx)
+		executionPackage, err := queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
+			PackageID:              "package-noappr-" + runID,
+			SelectionRowID:         selection.ID,
+			WorkspaceRowID:         seed.workspace.ID,
+			RepoTarget:             "relay",
+			Branch:                 "main",
+			BaseCommit:             seed.closure.CommitOID,
+			SourceClosureRowID:     seed.closure.ID,
+			AuthorityRevisionRowID: seed.authority.ID,
+		PackageSha256:          workflowHash('8'),
+		AuthoritySha256:        seed.authoritySHA256,
+		SourceSha256:           workflowHash('9'),
+		DesignBriefSha256:      workflowHash('0'),
+		ExecutionSpecSha256:    workflowHash('1'),
+	})
+	if err != nil {
+		return err
+	}
+	member, err := queries.CreateExecutionPackageMember(ctx, workflowgenerated.CreateExecutionPackageMemberParams{
+		PackageRowID:         executionPackage.ID,
+		SelectionMemberRowID: selectionMember.ID,
+		Sequence:             1,
+		RevisionRowID:        ordinaryRevision.ID,
+		MemberSha256:         workflowHash('2'),
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := queries.CreateExecutionPackageApprovalBinding(ctx, workflowgenerated.CreateExecutionPackageApprovalBindingParams{
+		PackageRowID:           executionPackage.ID,
+		PackageMemberRowID:     member.ID,
+		ApprovalRowID:          approval.ID,
+		AuthorityRevisionRowID: seed.authority.ID,
+		SourceClosureRowID:     seed.closure.ID,
+		ApprovalBasisSha256:    workflowHash('3'),
+	}); err != nil {
+		return err
+	}
+	if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
+		return err
+	}
+	created, err := tx.CreateRun(ctx, CreateRunParams{
+		RunID:           runID,
+		FeatureSlug:     seed.workspace.FeatureSlug,
+		RepoTarget:      "relay",
+		Status:          RunStatusCreated,
+		Branch:          "main",
+		BaseCommit:      seed.closure.CommitOID,
+		CanonicalSHA256: workflowHash('4'),
+		})
+		if err != nil {
+			return err
+		}
+		linked, err := tx.LinkRunToExecutionPackage(ctx, created.RunID, executionPackage.ID)
+		if err != nil {
+			return err
+		}
+		run = linked
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func createLegacyRun(t *testing.T, ctx context.Context, store *Store, seed cutoverStateSeed, runID string) Run {
+	t.Helper()
+	var run Run
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		created, err := tx.CreateRun(ctx, CreateRunParams{
+			RunID:           runID,
+			FeatureSlug:     seed.workspace.FeatureSlug,
+			RepoTarget:      "relay",
+			Status:          RunStatusCreated,
+			Branch:          "main",
+			BaseCommit:      seed.closure.CommitOID,
+			CanonicalSHA256: workflowHash('5'),
+		})
+		if err != nil {
+			return err
+		}
+		run = created
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return run
 }

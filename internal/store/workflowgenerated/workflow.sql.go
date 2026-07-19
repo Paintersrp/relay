@@ -2121,6 +2121,70 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 	return i, err
 }
 
+const crossCutoverBoundary = `-- name: CrossCutoverBoundary :one
+UPDATE cutover_activations
+SET execution_boundary_status = 'crossed',
+    first_new_execution_run_row_id = ?,
+    first_new_execution_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    rollback_status = 'forbidden',
+    roll_forward_status = 'required'
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'open'
+  AND EXISTS (
+      SELECT 1
+      FROM runs AS run
+      JOIN execution_packages AS package ON package.id = run.execution_package_row_id
+      WHERE run.id = ?
+        AND run.created_at >= activated_at
+        AND package.authority_revision_row_id = authority_revision_row_id
+        AND EXISTS (
+            SELECT 1 FROM execution_package_approvals
+            WHERE execution_package_approvals.package_row_id = package.id
+        )
+  )
+RETURNING id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+`
+
+type CrossCutoverBoundaryParams struct {
+	FirstNewExecutionRunRowID sql.NullInt64 `json:"first_new_execution_run_row_id"`
+	CutoverActivationID       string        `json:"cutover_activation_id"`
+	ID                        int64         `json:"id"`
+}
+
+// Conditionally cross the active cutover boundary for a qualifying ticket-oriented Run.
+// Validates route (execution package), post-activation timing, matching package authority,
+// immutable package approval, and unset boundary before atomically recording the first Run.
+func (q *Queries) CrossCutoverBoundary(ctx context.Context, arg CrossCutoverBoundaryParams) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, crossCutoverBoundary, arg.FirstNewExecutionRunRowID, arg.CutoverActivationID, arg.ID)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getActiveRepositoryBranchMutationLease = `-- name: GetActiveRepositoryBranchMutationLease :one
 SELECT id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
 FROM repository_branch_mutation_leases

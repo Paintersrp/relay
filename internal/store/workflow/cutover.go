@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	workflowgenerated "relay/internal/store/workflowgenerated"
 )
 
 type CutoverActivation struct {
@@ -305,6 +307,63 @@ RETURNING `+cutoverActivationColumns,
 		return CutoverActivation{}, ErrCutoverStateConflict
 	}
 	return value, err
+}
+
+func (tx *Tx) ConditionalCrossCutoverExecutionBoundary(ctx context.Context, activationID string, runRowID int64) (CutoverActivation, error) {
+	value, err := workflowgenerated.New(tx.tx).CrossCutoverBoundary(ctx, workflowgenerated.CrossCutoverBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: runRowID, Valid: true},
+		CutoverActivationID:       activationID,
+		ID:                        runRowID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return CutoverActivation{}, ErrCutoverStateConflict
+	}
+	return toCutoverActivation(value), err
+}
+
+func (tx *Tx) AttemptCrossCutoverBoundaryForRun(ctx context.Context, runRowID int64, runExecutionPackageRowID sql.NullInt64) error {
+	if !runExecutionPackageRowID.Valid {
+		return nil
+	}
+	current, err := workflowgenerated.New(tx.tx).GetCurrentCutoverActivation(ctx)
+	if err != nil {
+		return nil
+	}
+	if current.ExecutionBoundaryStatus == "crossed" {
+		return nil
+	}
+	_, err = tx.ConditionalCrossCutoverExecutionBoundary(ctx, current.CutoverActivationID, runRowID)
+	if errors.Is(err, ErrCutoverStateConflict) {
+		return nil
+	}
+	return err
+}
+
+func toCutoverActivation(g workflowgenerated.CutoverActivation) CutoverActivation {
+	return CutoverActivation{
+		ID:                                g.ID,
+		CutoverActivationID:               g.CutoverActivationID,
+		WorkspaceRowID:                    g.WorkspaceRowID,
+		TransitionPlanTicketRevisionRowID: g.TransitionPlanTicketRevisionRowID,
+		TransitionPlanTicketID:            g.TransitionPlanTicketID,
+		TransitionPlanTicketRevision:      g.TransitionPlanTicketRevision,
+		TransitionPlanAuthorityLayerRowID: g.TransitionPlanAuthorityLayerRowID,
+		TransitionPlanSHA256:              g.TransitionPlanSha256,
+		AuthorityRevisionRowID:            g.AuthorityRevisionRowID,
+		AuthorityRevisionID:               g.AuthorityRevisionID,
+		AuthorityRevisionNumber:           g.AuthorityRevisionNumber,
+		AuthoritySHA256:                   g.AuthoritySha256,
+		RollbackEligibility:               g.RollbackEligibility,
+		ActivationStatus:                  g.ActivationStatus,
+		ActivatedAt:                       g.ActivatedAt,
+		ExecutionBoundaryStatus:           g.ExecutionBoundaryStatus,
+		FirstNewExecutionRunRowID:         g.FirstNewExecutionRunRowID,
+		FirstNewExecutionAt:               g.FirstNewExecutionAt,
+		RollbackStatus:                    g.RollbackStatus,
+		RollForwardStatus:                 g.RollForwardStatus,
+		RolledBackAt:                      g.RolledBackAt,
+		CreatedAt:                         g.CreatedAt,
+	}
 }
 
 func (tx *Tx) CompleteCutoverRollForward(ctx context.Context, activationID string) (CutoverActivation, error) {

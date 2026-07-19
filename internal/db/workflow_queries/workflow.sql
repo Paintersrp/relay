@@ -610,6 +610,33 @@ WHERE cutover_activation_id = ?
   AND execution_boundary_status = 'open'
 RETURNING *;
 
+-- name: CrossCutoverBoundary :one
+-- Conditionally cross the active cutover boundary for a qualifying ticket-oriented Run.
+-- Validates route (execution package), post-activation timing, matching package authority,
+-- immutable package approval, and unset boundary before atomically recording the first Run.
+UPDATE cutover_activations
+SET execution_boundary_status = 'crossed',
+    first_new_execution_run_row_id = ?,
+    first_new_execution_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    rollback_status = 'forbidden',
+    roll_forward_status = 'required'
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'open'
+  AND EXISTS (
+      SELECT 1
+      FROM runs AS run
+      JOIN execution_packages AS package ON package.id = run.execution_package_row_id
+      WHERE run.id = ?
+        AND run.created_at >= activated_at
+        AND package.authority_revision_row_id = authority_revision_row_id
+        AND EXISTS (
+            SELECT 1 FROM execution_package_approvals
+            WHERE execution_package_approvals.package_row_id = package.id
+        )
+  )
+RETURNING *;
+
 -- name: CompleteCutoverRollForward :one
 UPDATE cutover_activations
 SET roll_forward_status = 'completed'

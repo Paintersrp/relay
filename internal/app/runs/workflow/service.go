@@ -356,6 +356,9 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		if err != nil {
 			return fmt.Errorf("start run execution: %w", err)
 		}
+		if err := tx.AttemptCrossCutoverBoundaryForRun(ctx, run.ID, run.ExecutionPackageRowID); err != nil {
+			return fmt.Errorf("cross cutover boundary: %w", err)
+		}
 		number, err := tx.NextExecutionAttemptNumber(ctx, run.ID)
 		if err != nil {
 			return fmt.Errorf("select execution attempt number: %w", err)

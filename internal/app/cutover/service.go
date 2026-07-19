@@ -158,18 +158,27 @@ func (s *Service) Rollback(ctx context.Context, request RollbackRequest) (*State
 	return &state, nil
 }
 
-// CrossExecutionBoundary records the first ticket-oriented Run execution crossing.
+// CrossExecutionBoundary atomically records the first qualifying ticket-oriented Run
+// execution crossing. It validates the activation is active with an open boundary,
+// the Run is ticket-oriented (has an execution package), and the conditional crossing
+// query enforces post-activation timing, matching authority, and immutable package approval.
 func (s *Service) CrossExecutionBoundary(ctx context.Context, request BoundaryRequest) error {
 	request.ActivationID = strings.TrimSpace(request.ActivationID)
-	if request.ActivationID == "" || request.RunRowID < 1 || request.CrossedAt == "" {
+	if request.ActivationID == "" || request.RunRowID < 1 {
 		return fmt.Errorf("invalid boundary crossing request")
 	}
-	_, err := s.store.GetCutoverActivationByID(ctx, request.ActivationID)
+	activation, err := s.store.GetCutoverActivationByID(ctx, request.ActivationID)
 	if err != nil {
 		return err
 	}
+	if activation.ActivationStatus != "active" {
+		return ErrCutoverNotActive
+	}
+	if activation.ExecutionBoundaryStatus == "crossed" {
+		return ErrCutoverBoundaryCrossed
+	}
 	return s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		_, err := tx.CrossCutoverExecutionBoundary(ctx, request.ActivationID, request.RunRowID, request.CrossedAt)
+		_, err := tx.ConditionalCrossCutoverExecutionBoundary(ctx, request.ActivationID, request.RunRowID)
 		return err
 	})
 }

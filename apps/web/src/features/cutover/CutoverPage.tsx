@@ -21,7 +21,7 @@ export function CutoverPage() {
   const currentState = state?.state;
 
   return (
-    <AppPageFrame title="Cutover" description="Manage the ticket-oriented admission cutover lifecycle.">
+    <AppPageFrame title="Cutover" description="The Transition Plan Ticket authorizes activation. The first qualifying ordinary ticket-oriented execution crosses the boundary.">
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -66,6 +66,11 @@ export function CutoverPage() {
                     <span className="font-medium">Activated:</span>
                     <span>{currentState.activatedAt}</span>
                   </div>
+                )}
+                {currentState.boundaryStatus === "crossed" && (
+                  <p className="text-sm text-muted-foreground pt-2">
+                    The first qualifying ticket-oriented Run crossed the boundary. Rollback is permanently unavailable.
+                  </p>
                 )}
                 <div className="flex gap-2 pt-4">
                   {currentState.status === "active" && currentState.boundaryStatus === "open" &&

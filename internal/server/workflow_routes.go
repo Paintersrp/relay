@@ -120,7 +120,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err != nil {
 		panic(err)
 	}
-	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService)
+	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService, workflowStore)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)

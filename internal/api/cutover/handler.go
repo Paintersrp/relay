@@ -11,6 +11,7 @@ import (
 
 	"relay/internal/api/shared"
 	appcutover "relay/internal/app/cutover"
+	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -28,13 +29,18 @@ type WorkflowService interface {
 	RecordRollForwardEvidence(ctx context.Context, request appcutover.RollForwardEvidenceRequest) error
 }
 
-type WorkflowHandler struct {
-	read      ReadService
-	mutations WorkflowService
+type RunResolver interface {
+	GetRunByRunID(ctx context.Context, runID string) (workflowstore.Run, error)
 }
 
-func NewWorkflowHandler(read ReadService, mutations WorkflowService) *WorkflowHandler {
-	return &WorkflowHandler{read: read, mutations: mutations}
+type WorkflowHandler struct {
+	read       ReadService
+	mutations  WorkflowService
+	runStore   RunResolver
+}
+
+func NewWorkflowHandler(read ReadService, mutations WorkflowService, runStore RunResolver) *WorkflowHandler {
+	return &WorkflowHandler{read: read, mutations: mutations, runStore: runStore}
 }
 
 func (h *WorkflowHandler) State(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +122,25 @@ func (h *WorkflowHandler) Boundary(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid cutover boundary request")
 		return
 	}
-	shared.JSON(w, http.StatusOK, map[string]any{"acknowledged": true})
+	if h.runStore == nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Cutover boundary crossing is not available")
+		return
+	}
+	run, err := h.runStore.GetRunByRunID(r.Context(), request.RunID)
+	if err != nil {
+		writeCutoverError(w, err)
+		return
+	}
+	err = h.mutations.CrossExecutionBoundary(r.Context(), appcutover.BoundaryRequest{
+		ActivationID: request.ActivationID,
+		RunID:        request.RunID,
+		RunRowID:     run.ID,
+	})
+	if err != nil {
+		writeCutoverError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{"crossed": true})
 }
 
 type rollForwardEvidenceRequest struct {
