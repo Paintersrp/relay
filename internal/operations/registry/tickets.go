@@ -21,7 +21,9 @@ const (
 	PackageActionPrepare            AllowedAction = "prepare_execution_package"
 	PackageActionApprove            AllowedAction = "approve_execution_package"
 	MutationLeaseActionReconcile    AllowedAction = "reconcile_mutation_lease"
-	FeatureCompletionActionComplete AllowedAction = "complete_feature_workspace"
+	FeatureCompletionActionComplete     AllowedAction = "complete_feature_workspace"
+	FeatureAuthorityActionRecordApproval AllowedAction = "record_authority_approval"
+	FeatureAuthorityActionPublishApproved AllowedAction = "publish_approved_authority"
 )
 
 // TicketRoleProfile is the closed operation inventory for the ticket route.

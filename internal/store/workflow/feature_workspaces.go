@@ -20,6 +20,7 @@ type (
 	FeatureWorkspaceTicketResolution  = workflowgenerated.FeatureWorkspaceTicketResolution
 	FeatureWorkspaceAuthorityRevision = workflowgenerated.FeatureWorkspaceAuthorityRevision
 	FeatureWorkspaceAuthorityLayer    = workflowgenerated.FeatureWorkspaceAuthorityLayer
+	GoverningArtifactApproval         = workflowgenerated.GoverningArtifactApproval
 
 	CreateFeatureWorkspaceParams                  = workflowgenerated.CreateFeatureWorkspaceParams
 	CreateFeatureWorkspaceAdmittedInputParams     = workflowgenerated.CreateFeatureWorkspaceAdmittedInputParams
@@ -30,6 +31,8 @@ type (
 	CreateFeatureWorkspaceTicketResolutionParams  = workflowgenerated.CreateFeatureWorkspaceTicketResolutionParams
 	CreateFeatureWorkspaceAuthorityRevisionParams = workflowgenerated.CreateFeatureWorkspaceAuthorityRevisionParams
 	CreateFeatureWorkspaceAuthorityLayerParams    = workflowgenerated.CreateFeatureWorkspaceAuthorityLayerParams
+	CreateGoverningArtifactApprovalParams         = workflowgenerated.CreateGoverningArtifactApprovalParams
+	GetValidGoverningArtifactApprovalParams       = workflowgenerated.GetValidGoverningArtifactApprovalParams
 )
 
 func (s *Store) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspaceID string) (FeatureWorkspace, error) {
@@ -71,10 +74,6 @@ func (s *Store) ListFeatureWorkspaceInvestigations(ctx context.Context, workspac
 
 func (s *Store) ListFeatureWorkspaceAuthorityRevisions(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceAuthorityRevision, error) {
 	return workflowgenerated.New(s.db).ListFeatureWorkspaceAuthorityRevisions(ctx, workspaceRowID)
-}
-
-func (s *Store) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, revisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
-	return workflowgenerated.New(s.db).ListFeatureWorkspaceAuthorityLayers(ctx, revisionRowID)
 }
 
 func (s *Store) ListFeatureWorkspaceTicketDependencies(ctx context.Context, ticketRowID int64) ([]FeatureWorkspaceTicketDependency, error) {
@@ -165,6 +164,42 @@ func (tx *Tx) TransitionFeatureWorkspaceDiscoveryTicket(ctx context.Context, tic
 
 // BumpFeatureWorkspaceVersion provides optimistic concurrency for immutable
 // child-history writes that do not otherwise update the workspace row.
+func (s *Store) CreateGoverningArtifactApproval(ctx context.Context, params CreateGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
+	return workflowgenerated.New(s.db).CreateGoverningArtifactApproval(ctx, params)
+}
+
+func (s *Store) GetGoverningArtifactApprovalByApprovalID(ctx context.Context, approvalID string) (GoverningArtifactApproval, error) {
+	return workflowgenerated.New(s.db).GetGoverningArtifactApprovalByApprovalID(ctx, approvalID)
+}
+
+func (s *Store) GetValidGoverningArtifactApproval(ctx context.Context, params GetValidGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
+	return workflowgenerated.New(s.db).GetValidGoverningArtifactApproval(ctx, params)
+}
+
+func (s *Store) ListGoverningArtifactApprovalsByWorkspace(ctx context.Context, workspaceRowID int64) ([]GoverningArtifactApproval, error) {
+	return workflowgenerated.New(s.db).ListGoverningArtifactApprovalsByWorkspace(ctx, workspaceRowID)
+}
+
+func (s *Store) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, revisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
+	return workflowgenerated.New(s.db).ListFeatureWorkspaceAuthorityLayers(ctx, revisionRowID)
+}
+
+func (tx *Tx) CreateGoverningArtifactApproval(ctx context.Context, params CreateGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
+	return workflowgenerated.New(tx.tx).CreateGoverningArtifactApproval(ctx, params)
+}
+
+func (tx *Tx) GetGoverningArtifactApprovalByApprovalID(ctx context.Context, approvalID string) (GoverningArtifactApproval, error) {
+	return workflowgenerated.New(tx.tx).GetGoverningArtifactApprovalByApprovalID(ctx, approvalID)
+}
+
+func (tx *Tx) GetValidGoverningArtifactApproval(ctx context.Context, params GetValidGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
+	return workflowgenerated.New(tx.tx).GetValidGoverningArtifactApproval(ctx, params)
+}
+
+func (tx *Tx) ListGoverningArtifactApprovalsByWorkspace(ctx context.Context, workspaceRowID int64) ([]GoverningArtifactApproval, error) {
+	return workflowgenerated.New(tx.tx).ListGoverningArtifactApprovalsByWorkspace(ctx, workspaceRowID)
+}
+
 func (tx *Tx) BumpFeatureWorkspaceVersion(ctx context.Context, workspaceID string, expectedVersion int64) (FeatureWorkspace, error) {
 	var value FeatureWorkspace
 	err := tx.tx.QueryRowContext(ctx, `

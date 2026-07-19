@@ -419,9 +419,9 @@ ORDER BY revision_number, id;
 -- name: CreateFeatureWorkspaceAuthorityLayer :one
 INSERT INTO feature_workspace_authority_layers (
     authority_revision_row_id, layer_kind, sequence, artifact_row_id,
-    retained_artifact_row_id, artifact_sha256, source_closure_row_id
+    retained_artifact_row_id, artifact_sha256, source_closure_row_id, approval_row_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListFeatureWorkspaceAuthorityLayers :many
@@ -990,3 +990,35 @@ INSERT INTO feature_workspace_completion_reopenings (
 )
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
+
+-- name: CreateGoverningArtifactApproval :one
+INSERT INTO governing_artifact_approvals (
+    approval_id, workspace_row_id, artifact_row_id,
+    retained_artifact_row_id, family, artifact_sha256,
+    operator_confirmation_evidence
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetGoverningArtifactApprovalByApprovalID :one
+SELECT *
+FROM governing_artifact_approvals
+WHERE approval_id = ?;
+
+-- name: GetValidGoverningArtifactApproval :one
+SELECT *
+FROM governing_artifact_approvals
+WHERE workspace_row_id = ?
+  AND family = ?
+  AND artifact_sha256 = ?
+  AND ((artifact_row_id IS NOT NULL AND artifact_row_id = ?) OR (retained_artifact_row_id IS NOT NULL AND retained_artifact_row_id = ?))
+  AND invalidated_by_approval_row_id IS NULL
+  AND superseded_by_approval_row_id IS NULL
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: ListGoverningArtifactApprovalsByWorkspace :many
+SELECT *
+FROM governing_artifact_approvals
+WHERE workspace_row_id = ?
+ORDER BY created_at DESC, id DESC;

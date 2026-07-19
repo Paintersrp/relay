@@ -75,6 +75,7 @@ ORDER BY name`)
 		"feature_workspace_ticket_resolutions",
 		"feature_workspaces",
 		"goose_db_version",
+		"governing_artifact_approvals",
 		"mcp_mutation_results",
 		"operation_packet_artifact_bindings",
 		"operation_packet_artifacts",

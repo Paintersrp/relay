@@ -54,6 +54,9 @@ func (f *fakeAuthority) ReadAuthority(context.Context, string) ([]featureapp.Aut
 func (f *fakeAuthority) PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error) {
 	return featureapp.AuthorityRevisionDetail{}, Workspace{}, f.err
 }
+func (f *fakeAuthority) RecordAuthorityApproval(context.Context, featureapp.RecordAuthorityApprovalInput) (featureapp.RecordAuthorityApprovalResult, error) {
+	return featureapp.RecordAuthorityApprovalResult{}, f.err
+}
 
 type fakeCompletion struct {
 	status appoperations.FeatureCompletionStatus

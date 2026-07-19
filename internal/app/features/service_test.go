@@ -23,8 +23,22 @@ func TestAuthorityPublicationKeepsReplacementHistoryAndAllowsNoAuthority(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID: workspace.WorkspaceID, Family: "requirements",
+		ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID: workspace.WorkspaceID, Family: "design",
+		ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := service.PublishAuthority(ctx, PublishAuthorityInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Layers: []AuthorityLayerInput{
-		{Kind: "plan", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64)},
+		{Kind: "plan", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), ApprovalRowID: sql.NullInt64{Int64: firstApproval.Approval.ID, Valid: true}},
 	}}); err == nil {
 		t.Fatal("ordinary plan authority was accepted")
 	}
@@ -33,14 +47,21 @@ func TestAuthorityPublicationKeepsReplacementHistoryAndAllowsNoAuthority(t *test
 		t.Fatalf("optional authority = %#v, %v", empty, err)
 	}
 	first, workspace, err := service.PublishAuthority(ctx, PublishAuthorityInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Layers: []AuthorityLayerInput{
-		{Kind: "requirements", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64)},
-		{Kind: "design", ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64)},
+		{Kind: "requirements", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), ApprovalRowID: sql.NullInt64{Int64: firstApproval.Approval.ID, Valid: true}},
+		{Kind: "design", ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64), ApprovalRowID: sql.NullInt64{Int64: secondApproval.Approval.ID, Valid: true}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	thirdApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID: workspace.WorkspaceID, Family: "transition_plan",
+		ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	second, workspace, err := service.PublishAuthority(ctx, PublishAuthorityInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Layers: []AuthorityLayerInput{
-		{Kind: "transition_plan", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64)},
+		{Kind: "transition_plan", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), ApprovalRowID: sql.NullInt64{Int64: thirdApproval.Approval.ID, Valid: true}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -78,9 +99,16 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID: workspace.WorkspaceID, Family: "requirements",
+		ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, workspace, err = service.PublishAuthority(ctx, PublishAuthorityInput{
 		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true},
-		Layers: []AuthorityLayerInput{{Kind: "requirements", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true}}},
+		Layers: []AuthorityLayerInput{{Kind: "requirements", ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true}, ApprovalRowID: sql.NullInt64{Int64: firstApproval.Approval.ID, Valid: true}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,9 +131,16 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 	if _, err := service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale completion error = %v", err)
 	}
+	secondApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID: workspace.WorkspaceID, Family: "design",
+		ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, workspace, err = service.PublishAuthority(ctx, PublishAuthorityInput{
 		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: status.Workspace.Version, SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true},
-		Layers: []AuthorityLayerInput{{Kind: "design", ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64), SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true}}},
+		Layers: []AuthorityLayerInput{{Kind: "design", ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64), SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true}, ApprovalRowID: sql.NullInt64{Int64: secondApproval.Approval.ID, Valid: true}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +194,11 @@ func (ids *featureTestIDs) AuthorityRevisionID() string {
 func (ids *featureTestIDs) CompletionDecisionID() string {
 	ids.next++
 	return "completion-feature-" + string(rune('0'+ids.next))
+}
+
+func (ids *featureTestIDs) GoverningArtifactApprovalID() string {
+	ids.next++
+	return "ga-approval-feature-" + string(rune('0'+ids.next))
 }
 
 func openFeatureServiceStore(t *testing.T, ctx context.Context) (*workflowstore.Store, int64, int64) {

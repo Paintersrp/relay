@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { completeFeatureWorkspace, getFeatureCompletionStatus, getFeatureWorkspace, routeFeatureWorkspace } from "./api";
+import { completeFeatureWorkspace, getFeatureCompletionStatus, getFeatureWorkspace, recordFeatureAuthorityApproval, routeFeatureWorkspace } from "./api";
 
 function response(body: unknown, status = 200): Response { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }); }
 afterEach(() => vi.unstubAllGlobals());
@@ -29,5 +29,13 @@ describe("feature workspace transport", () => {
 
     expect(status.gates).toContainEqual({ name: "audit", ready: false });
     expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toMatchObject({ packetId: "packet-1", operatorConfirmed: true });
+  });
+
+  it("records an approval and returns typed fields", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ approval: { approvalId: "ga-approval-1", workspaceRowId: 1, artifactRowId: 10, retainedArtifactRowId: null, family: "requirements", artifactSha256: "a".repeat(64), operatorConfirmationEvidence: "operator confirmed", invalidatedByApprovalRowId: null, supersededByApprovalRowId: null, createdAt: "" }, workspace: { workspaceId: "workspace-1", featureSlug: "payments", state: "open", version: 3, createdAt: "", updatedAt: "" } })));
+    const approval = await recordFeatureAuthorityApproval("workspace-1", { family: "requirements", artifactRowId: 10, artifactSha256: "a".repeat(64), operatorConfirmationEvidence: "operator confirmed" });
+    expect(approval.approvalId).toBe("ga-approval-1");
+    expect(approval.family).toBe("requirements");
+    expect(approval.artifactSha256).toBe("a".repeat(64));
   });
 });

@@ -50,6 +50,20 @@ export interface AuthorityLayer {
   retainedArtifactRowId: number | null;
   artifactSha256: string;
   sourceClosureRowId: number | null;
+  approvalRowId: number | null;
+}
+
+export interface GoverningArtifactApproval {
+  approvalId: string;
+  workspaceRowId: number;
+  artifactRowId: number | null;
+  retainedArtifactRowId: number | null;
+  family: AuthorityLayerKind;
+  artifactSha256: string;
+  operatorConfirmationEvidence: string;
+  invalidatedByApprovalRowId: number | null;
+  supersededByApprovalRowId: number | null;
+  createdAt: string;
 }
 
 export interface FeatureWorkspaceDetail {
@@ -66,7 +80,8 @@ export interface CreateFeatureWorkspaceRequest { projectId: string; featureSlug:
 export interface CreateDiscoveryTicketRequest { expectedVersion: number; ticketKey: string; subject: string; dependsOnTicketIds?: string[]; dependencyKind?: "blocks" | "informs" }
 export interface ResolveDiscoveryTicketRequest { expectedVersion: number; expectedTicketVersion: number; sequence: number; kind: "resolved" | "rejected" | "deferred"; artifactRowId?: number; retainedArtifactRowId?: number; artifactSha256: string; sourceClosureRowId?: number }
 export interface RouteFeatureWorkspaceRequest { expectedVersion: number; sequence: number; state: FeatureWorkspaceRoute; ticketId?: string }
-export interface PublishAuthorityRequest { expectedVersion: number; sourceClosureRowId?: number; layers: { kind: AuthorityLayerKind; artifactRowId?: number; retainedArtifactRowId?: number; artifactSha256: string; sourceClosureRowId?: number }[] }
+export interface PublishAuthorityRequest { expectedVersion: number; sourceClosureRowId?: number; layers: { kind: AuthorityLayerKind; artifactRowId?: number; retainedArtifactRowId?: number; artifactSha256: string; sourceClosureRowId?: number; approvalRowId: number }[] }
+export interface RecordAuthorityApprovalRequest { family: AuthorityLayerKind; artifactRowId?: number; retainedArtifactRowId?: number; artifactSha256: string; operatorConfirmationEvidence: string }
 export interface FeatureCompletionStatus {
   workspace: FeatureWorkspace;
   gates: Array<{ name: "authority" | "tickets" | "integration" | "transitions" | "remediation" | "audit"; ready: boolean }>;

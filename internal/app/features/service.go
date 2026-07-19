@@ -16,11 +16,16 @@ var (
 	ErrFeatureCompletionConfirmation = errors.New("feature completion confirmation is required")
 	ErrFeatureCompletionNotReady     = errors.New("feature workspace completion gates are not satisfied")
 	ErrFeatureCompletionRecorded     = errors.New("feature workspace completion is already current")
+	ErrApprovalNotFound              = errors.New("governing artifact approval not found")
+	ErrApprovalMismatch              = errors.New("governing artifact approval does not match the layer artifact")
+	ErrApprovalInvalidated           = errors.New("governing artifact approval has been invalidated")
+	ErrInvalidApprovalInput          = errors.New("invalid approval request")
 )
 
 type IDGenerator interface {
 	AuthorityRevisionID() string
 	CompletionDecisionID() string
+	GoverningArtifactApprovalID() string
 }
 type defaultIDGenerator struct{}
 
@@ -29,6 +34,9 @@ func (defaultIDGenerator) AuthorityRevisionID() string {
 }
 func (defaultIDGenerator) CompletionDecisionID() string {
 	return workflowstore.NewFeatureWorkspaceCompletionDecisionID()
+}
+func (defaultIDGenerator) GoverningArtifactApprovalID() string {
+	return workflowstore.NewGoverningArtifactApprovalID()
 }
 
 type Service struct {
@@ -52,6 +60,7 @@ type AuthorityLayerInput struct {
 	RetainedArtifact sql.NullInt64
 	ArtifactSHA256   string
 	SourceClosureID  sql.NullInt64
+	ApprovalRowID    sql.NullInt64
 }
 
 type PublishAuthorityInput struct {
@@ -68,14 +77,15 @@ type AuthorityRevisionDetail struct {
 
 // PublishAuthority creates immutable replacement history. A workspace may
 // deliberately have no authority revision; publication itself requires the
-// selected governing layers to be exact, distinct artifacts.
+// selected governing layers to be exact, distinct artifacts with valid
+// governing-artifact approval references.
 func (s *Service) PublishAuthority(ctx context.Context, input PublishAuthorityInput) (AuthorityRevisionDetail, workflowstore.FeatureWorkspace, error) {
 	if strings.TrimSpace(input.WorkspaceID) == "" || input.ExpectedVersion < 1 || len(input.Layers) == 0 || len(input.Layers) > 3 {
 		return AuthorityRevisionDetail{}, workflowstore.FeatureWorkspace{}, ErrInvalidAuthorityRequest
 	}
 	seen := map[string]bool{}
 	for _, layer := range input.Layers {
-		if !oneOf(layer.Kind, "requirements", "design", "transition_plan") || seen[layer.Kind] || layer.ArtifactRowID.Valid == layer.RetainedArtifact.Valid || !validSHA256(layer.ArtifactSHA256) {
+		if !oneOf(layer.Kind, "requirements", "design", "transition_plan") || seen[layer.Kind] || layer.ArtifactRowID.Valid == layer.RetainedArtifact.Valid || !validSHA256(layer.ArtifactSHA256) || !layer.ApprovalRowID.Valid {
 			return AuthorityRevisionDetail{}, workflowstore.FeatureWorkspace{}, ErrInvalidAuthorityRequest
 		}
 		seen[layer.Kind] = true
@@ -103,7 +113,29 @@ func (s *Service) PublishAuthority(ctx context.Context, input PublishAuthorityIn
 		}
 		detail.Layers = make([]workflowstore.FeatureWorkspaceAuthorityLayer, 0, len(input.Layers))
 		for sequence, layer := range input.Layers {
-			created, err := tx.CreateFeatureWorkspaceAuthorityLayer(ctx, workflowstore.CreateFeatureWorkspaceAuthorityLayerParams{AuthorityRevisionRowID: detail.Revision.ID, LayerKind: storageLayerKind(layer.Kind), Sequence: int64(sequence + 1), ArtifactRowID: layer.ArtifactRowID, RetainedArtifactRowID: layer.RetainedArtifact, ArtifactSha256: layer.ArtifactSHA256, SourceClosureRowID: layer.SourceClosureID})
+			approval, err := tx.GetValidGoverningArtifactApproval(ctx, workflowstore.GetValidGoverningArtifactApprovalParams{
+				WorkspaceRowID:        workspace.ID,
+				Family:                layer.Kind,
+				ArtifactSha256:        layer.ArtifactSHA256,
+				ArtifactRowID:         layer.ArtifactRowID,
+				RetainedArtifactRowID: layer.RetainedArtifact,
+			})
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrApprovalNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if approval.ID != layer.ApprovalRowID.Int64 {
+				return ErrApprovalMismatch
+			}
+			created, err := tx.CreateFeatureWorkspaceAuthorityLayer(ctx, workflowstore.CreateFeatureWorkspaceAuthorityLayerParams{
+				AuthorityRevisionRowID: detail.Revision.ID, LayerKind: storageLayerKind(layer.Kind),
+				Sequence: int64(sequence + 1), ArtifactRowID: layer.ArtifactRowID,
+				RetainedArtifactRowID: layer.RetainedArtifact, ArtifactSha256: layer.ArtifactSHA256,
+				SourceClosureRowID: layer.SourceClosureID,
+				ApprovalRowID:      sql.NullInt64{Int64: approval.ID, Valid: true},
+			})
 			if err != nil {
 				return err
 			}
@@ -119,6 +151,44 @@ func (s *Service) PublishAuthority(ctx context.Context, input PublishAuthorityIn
 		err = ErrVersionConflict
 	}
 	return detail, updated, err
+}
+
+// RecordAuthorityApproval persists an immutable governing-artifact approval
+// bound to its exact workspace, artifact source, family, and SHA-256. The
+// approval is a separate operation from authority publication.
+func (s *Service) RecordAuthorityApproval(ctx context.Context, input RecordAuthorityApprovalInput) (RecordAuthorityApprovalResult, error) {
+	workspaceID := strings.TrimSpace(input.WorkspaceID)
+	if workspaceID == "" || input.Family == "" || !validSHA256(input.ArtifactSHA256) || input.ArtifactRowID.Valid == input.RetainedArtifact.Valid {
+		return RecordAuthorityApprovalResult{}, ErrInvalidApprovalInput
+	}
+	if !oneOf(input.Family, "requirements", "design", "transition_plan") {
+		return RecordAuthorityApprovalResult{}, ErrInvalidApprovalInput
+	}
+	var result RecordAuthorityApprovalResult
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		workspace, err := tx.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrWorkspaceNotFound
+		}
+		if err != nil {
+			return err
+		}
+		approval, err := tx.CreateGoverningArtifactApproval(ctx, workflowstore.CreateGoverningArtifactApprovalParams{
+			ApprovalID:                   s.ids.GoverningArtifactApprovalID(),
+			WorkspaceRowID:               workspace.ID,
+			ArtifactRowID:                input.ArtifactRowID,
+			RetainedArtifactRowID:        input.RetainedArtifact,
+			Family:                       input.Family,
+			ArtifactSha256:               input.ArtifactSHA256,
+			OperatorConfirmationEvidence: input.OperatorConfirmationEvidence,
+		})
+		if err != nil {
+			return err
+		}
+		result = RecordAuthorityApprovalResult{Approval: approval, Workspace: workspace}
+		return nil
+	})
+	return result, err
 }
 
 func (s *Service) ReadAuthority(ctx context.Context, workspaceID string) ([]AuthorityRevisionDetail, error) {

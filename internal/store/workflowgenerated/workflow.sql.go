@@ -1310,10 +1310,10 @@ func (q *Queries) CreateFeatureWorkspaceAdmittedInput(ctx context.Context, arg C
 const createFeatureWorkspaceAuthorityLayer = `-- name: CreateFeatureWorkspaceAuthorityLayer :one
 INSERT INTO feature_workspace_authority_layers (
     authority_revision_row_id, layer_kind, sequence, artifact_row_id,
-    retained_artifact_row_id, artifact_sha256, source_closure_row_id
+    retained_artifact_row_id, artifact_sha256, source_closure_row_id, approval_row_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id
 `
 
 type CreateFeatureWorkspaceAuthorityLayerParams struct {
@@ -1324,6 +1324,7 @@ type CreateFeatureWorkspaceAuthorityLayerParams struct {
 	RetainedArtifactRowID  sql.NullInt64 `json:"retained_artifact_row_id"`
 	ArtifactSha256         string        `json:"artifact_sha256"`
 	SourceClosureRowID     sql.NullInt64 `json:"source_closure_row_id"`
+	ApprovalRowID          sql.NullInt64 `json:"approval_row_id"`
 }
 
 func (q *Queries) CreateFeatureWorkspaceAuthorityLayer(ctx context.Context, arg CreateFeatureWorkspaceAuthorityLayerParams) (FeatureWorkspaceAuthorityLayer, error) {
@@ -1335,6 +1336,7 @@ func (q *Queries) CreateFeatureWorkspaceAuthorityLayer(ctx context.Context, arg 
 		arg.RetainedArtifactRowID,
 		arg.ArtifactSha256,
 		arg.SourceClosureRowID,
+		arg.ApprovalRowID,
 	)
 	var i FeatureWorkspaceAuthorityLayer
 	err := row.Scan(
@@ -1347,6 +1349,7 @@ func (q *Queries) CreateFeatureWorkspaceAuthorityLayer(ctx context.Context, arg 
 		&i.ArtifactSha256,
 		&i.SourceClosureRowID,
 		&i.CreatedAt,
+		&i.ApprovalRowID,
 	)
 	return i, err
 }
@@ -1698,6 +1701,53 @@ func (q *Queries) CreateFeatureWorkspaceTicketResolution(ctx context.Context, ar
 		&i.RetainedArtifactRowID,
 		&i.ArtifactSha256,
 		&i.SourceClosureRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createGoverningArtifactApproval = `-- name: CreateGoverningArtifactApproval :one
+INSERT INTO governing_artifact_approvals (
+    approval_id, workspace_row_id, artifact_row_id,
+    retained_artifact_row_id, family, artifact_sha256,
+    operator_confirmation_evidence
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, approval_id, workspace_row_id, artifact_row_id, retained_artifact_row_id, family, artifact_sha256, operator_confirmation_evidence, invalidated_by_approval_row_id, superseded_by_approval_row_id, created_at
+`
+
+type CreateGoverningArtifactApprovalParams struct {
+	ApprovalID                   string        `json:"approval_id"`
+	WorkspaceRowID               int64         `json:"workspace_row_id"`
+	ArtifactRowID                sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID        sql.NullInt64 `json:"retained_artifact_row_id"`
+	Family                       string        `json:"family"`
+	ArtifactSha256               string        `json:"artifact_sha256"`
+	OperatorConfirmationEvidence string        `json:"operator_confirmation_evidence"`
+}
+
+func (q *Queries) CreateGoverningArtifactApproval(ctx context.Context, arg CreateGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
+	row := q.db.QueryRowContext(ctx, createGoverningArtifactApproval,
+		arg.ApprovalID,
+		arg.WorkspaceRowID,
+		arg.ArtifactRowID,
+		arg.RetainedArtifactRowID,
+		arg.Family,
+		arg.ArtifactSha256,
+		arg.OperatorConfirmationEvidence,
+	)
+	var i GoverningArtifactApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.WorkspaceRowID,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.Family,
+		&i.ArtifactSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.InvalidatedByApprovalRowID,
+		&i.SupersededByApprovalRowID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2496,6 +2546,31 @@ func (q *Queries) GetFeatureWorkspaceInvestigationByID(ctx context.Context, inve
 	return i, err
 }
 
+const getGoverningArtifactApprovalByApprovalID = `-- name: GetGoverningArtifactApprovalByApprovalID :one
+SELECT id, approval_id, workspace_row_id, artifact_row_id, retained_artifact_row_id, family, artifact_sha256, operator_confirmation_evidence, invalidated_by_approval_row_id, superseded_by_approval_row_id, created_at
+FROM governing_artifact_approvals
+WHERE approval_id = ?
+`
+
+func (q *Queries) GetGoverningArtifactApprovalByApprovalID(ctx context.Context, approvalID string) (GoverningArtifactApproval, error) {
+	row := q.db.QueryRowContext(ctx, getGoverningArtifactApprovalByApprovalID, approvalID)
+	var i GoverningArtifactApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.WorkspaceRowID,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.Family,
+		&i.ArtifactSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.InvalidatedByApprovalRowID,
+		&i.SupersededByApprovalRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getLatestExecutionAttemptByRun = `-- name: GetLatestExecutionAttemptByRun :one
 SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json, created_at, started_at, finished_at, cancellation_requested_at
 FROM execution_attempts
@@ -2732,6 +2807,52 @@ func (q *Queries) GetRunByRunID(ctx context.Context, runID string) (Run, error) 
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
+	)
+	return i, err
+}
+
+const getValidGoverningArtifactApproval = `-- name: GetValidGoverningArtifactApproval :one
+SELECT id, approval_id, workspace_row_id, artifact_row_id, retained_artifact_row_id, family, artifact_sha256, operator_confirmation_evidence, invalidated_by_approval_row_id, superseded_by_approval_row_id, created_at
+FROM governing_artifact_approvals
+WHERE workspace_row_id = ?
+  AND family = ?
+  AND artifact_sha256 = ?
+  AND ((artifact_row_id IS NOT NULL AND artifact_row_id = ?) OR (retained_artifact_row_id IS NOT NULL AND retained_artifact_row_id = ?))
+  AND invalidated_by_approval_row_id IS NULL
+  AND superseded_by_approval_row_id IS NULL
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetValidGoverningArtifactApprovalParams struct {
+	WorkspaceRowID        int64         `json:"workspace_row_id"`
+	Family                string        `json:"family"`
+	ArtifactSha256        string        `json:"artifact_sha256"`
+	ArtifactRowID         sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID sql.NullInt64 `json:"retained_artifact_row_id"`
+}
+
+func (q *Queries) GetValidGoverningArtifactApproval(ctx context.Context, arg GetValidGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
+	row := q.db.QueryRowContext(ctx, getValidGoverningArtifactApproval,
+		arg.WorkspaceRowID,
+		arg.Family,
+		arg.ArtifactSha256,
+		arg.ArtifactRowID,
+		arg.RetainedArtifactRowID,
+	)
+	var i GoverningArtifactApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.WorkspaceRowID,
+		&i.ArtifactRowID,
+		&i.RetainedArtifactRowID,
+		&i.Family,
+		&i.ArtifactSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.InvalidatedByApprovalRowID,
+		&i.SupersededByApprovalRowID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -3699,7 +3820,7 @@ func (q *Queries) ListFeatureWorkspaceAdmittedInputs(ctx context.Context, worksp
 }
 
 const listFeatureWorkspaceAuthorityLayers = `-- name: ListFeatureWorkspaceAuthorityLayers :many
-SELECT id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
+SELECT id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id
 FROM feature_workspace_authority_layers
 WHERE authority_revision_row_id = ?
 ORDER BY sequence, id
@@ -3724,6 +3845,7 @@ func (q *Queries) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, autho
 			&i.ArtifactSha256,
 			&i.SourceClosureRowID,
 			&i.CreatedAt,
+			&i.ApprovalRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -4039,6 +4161,48 @@ func (q *Queries) ListFeatureWorkspacesByProject(ctx context.Context, projectRow
 			&i.CurrentAuthorityRevisionRowID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGoverningArtifactApprovalsByWorkspace = `-- name: ListGoverningArtifactApprovalsByWorkspace :many
+SELECT id, approval_id, workspace_row_id, artifact_row_id, retained_artifact_row_id, family, artifact_sha256, operator_confirmation_evidence, invalidated_by_approval_row_id, superseded_by_approval_row_id, created_at
+FROM governing_artifact_approvals
+WHERE workspace_row_id = ?
+ORDER BY created_at DESC, id DESC
+`
+
+func (q *Queries) ListGoverningArtifactApprovalsByWorkspace(ctx context.Context, workspaceRowID int64) ([]GoverningArtifactApproval, error) {
+	rows, err := q.db.QueryContext(ctx, listGoverningArtifactApprovalsByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GoverningArtifactApproval{}
+	for rows.Next() {
+		var i GoverningArtifactApproval
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApprovalID,
+			&i.WorkspaceRowID,
+			&i.ArtifactRowID,
+			&i.RetainedArtifactRowID,
+			&i.Family,
+			&i.ArtifactSha256,
+			&i.OperatorConfirmationEvidence,
+			&i.InvalidatedByApprovalRowID,
+			&i.SupersededByApprovalRowID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

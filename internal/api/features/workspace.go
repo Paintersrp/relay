@@ -32,6 +32,7 @@ type WayfinderService interface {
 type AuthorityService interface {
 	ReadAuthority(context.Context, string) ([]featureapp.AuthorityRevisionDetail, error)
 	PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error)
+	RecordAuthorityApproval(context.Context, featureapp.RecordAuthorityApprovalInput) (featureapp.RecordAuthorityApprovalResult, error)
 }
 
 type CompletionService interface {
@@ -174,6 +175,10 @@ func (a appAuthorityAdapter) PublishAuthority(ctx context.Context, input feature
 	value, workspace, err := a.service.PublishAuthority(ctx, input)
 	return value, Workspace{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt}, err
 }
+func (a appAuthorityAdapter) RecordAuthorityApproval(ctx context.Context, input featureapp.RecordAuthorityApprovalInput) (featureapp.RecordAuthorityApprovalResult, error) {
+	value, err := a.service.RecordAuthorityApproval(ctx, input)
+	return value, err
+}
 
 type createWorkspaceRequest struct {
 	ProjectID   string `json:"projectId"`
@@ -231,11 +236,19 @@ type authorityLayerRequest struct {
 	RetainedArtifactRowID *int64 `json:"retainedArtifactRowId"`
 	ArtifactSHA256        string `json:"artifactSha256"`
 	SourceClosureRowID    *int64 `json:"sourceClosureRowId"`
+	ApprovalRowID         *int64 `json:"approvalRowId"`
 }
 type publishAuthorityRequest struct {
 	ExpectedVersion    int64                   `json:"expectedVersion"`
 	SourceClosureRowID *int64                  `json:"sourceClosureRowId"`
 	Layers             []authorityLayerRequest `json:"layers"`
+}
+type recordAuthorityApprovalRequest struct {
+	Family                       string `json:"family"`
+	ArtifactRowID                *int64 `json:"artifactRowId"`
+	RetainedArtifactRowID        *int64 `json:"retainedArtifactRowId"`
+	ArtifactSHA256               string `json:"artifactSha256"`
+	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
 }
 type completionDependencyRequest struct {
 	Class string `json:"class"`
@@ -355,7 +368,7 @@ func (h *WorkspaceHandler) PublishAuthority(w http.ResponseWriter, r *http.Reque
 	}
 	layers := make([]featureapp.AuthorityLayerInput, 0, len(request.Layers))
 	for _, layer := range request.Layers {
-		layers = append(layers, featureapp.AuthorityLayerInput{Kind: layer.Kind, ArtifactRowID: nullableInt(layer.ArtifactRowID), RetainedArtifact: nullableInt(layer.RetainedArtifactRowID), ArtifactSHA256: layer.ArtifactSHA256, SourceClosureID: nullableInt(layer.SourceClosureRowID)})
+		layers = append(layers, featureapp.AuthorityLayerInput{Kind: layer.Kind, ArtifactRowID: nullableInt(layer.ArtifactRowID), RetainedArtifact: nullableInt(layer.RetainedArtifactRowID), ArtifactSHA256: layer.ArtifactSHA256, SourceClosureID: nullableInt(layer.SourceClosureRowID), ApprovalRowID: nullableInt(layer.ApprovalRowID)})
 	}
 	revision, workspace, err := h.authority.PublishAuthority(r.Context(), featureapp.PublishAuthorityInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, SourceClosureID: nullableInt(request.SourceClosureRowID), Layers: layers})
 	if err != nil {
@@ -363,6 +376,27 @@ func (h *WorkspaceHandler) PublishAuthority(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	shared.JSON(w, http.StatusCreated, map[string]any{"authorityRevision": authorityDTO(revision), "workspace": workspaceDTO(workspace)})
+}
+
+func (h *WorkspaceHandler) RecordApproval(w http.ResponseWriter, r *http.Request) {
+	var request recordAuthorityApprovalRequest
+	if !decodeStrict(r, &request) {
+		badRequest(w, "Invalid authority approval request")
+		return
+	}
+	result, err := h.authority.RecordAuthorityApproval(r.Context(), featureapp.RecordAuthorityApprovalInput{
+		WorkspaceID:                  workspaceID(r),
+		Family:                       request.Family,
+		ArtifactRowID:                nullableInt(request.ArtifactRowID),
+		RetainedArtifact:             nullableInt(request.RetainedArtifactRowID),
+		ArtifactSHA256:               request.ArtifactSHA256,
+		OperatorConfirmationEvidence: request.OperatorConfirmationEvidence,
+	})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"approval": approvalDTO(result.Approval), "workspace": workspaceDTO(Workspace{WorkspaceID: result.Workspace.WorkspaceID, FeatureSlug: result.Workspace.FeatureSlug, State: result.Workspace.State, Version: result.Workspace.Version, CreatedAt: result.Workspace.CreatedAt, UpdatedAt: result.Workspace.UpdatedAt})})
 }
 
 func (h *WorkspaceHandler) CompletionStatus(w http.ResponseWriter, r *http.Request) {
@@ -471,9 +505,24 @@ func ticketDTO(value TicketDetail) map[string]any {
 func authorityDTO(value featureapp.AuthorityRevisionDetail) map[string]any {
 	layers := make([]map[string]any, 0, len(value.Layers))
 	for _, layer := range value.Layers {
-		layers = append(layers, map[string]any{"kind": layer.LayerKind, "sequence": layer.Sequence, "artifactRowId": nullableIntDTO(layer.ArtifactRowID), "retainedArtifactRowId": nullableIntDTO(layer.RetainedArtifactRowID), "artifactSha256": layer.ArtifactSha256, "sourceClosureRowId": nullableIntDTO(layer.SourceClosureRowID)})
+		layers = append(layers, map[string]any{"kind": layer.LayerKind, "sequence": layer.Sequence, "artifactRowId": nullableIntDTO(layer.ArtifactRowID), "retainedArtifactRowId": nullableIntDTO(layer.RetainedArtifactRowID), "artifactSha256": layer.ArtifactSha256, "sourceClosureRowId": nullableIntDTO(layer.SourceClosureRowID), "approvalRowId": nullableIntDTO(layer.ApprovalRowID)})
 	}
 	return map[string]any{"authorityRevisionId": value.Revision.AuthorityRevisionID, "revisionNumber": value.Revision.RevisionNumber, "sourceClosureRowId": nullableIntDTO(value.Revision.SourceClosureRowID), "layers": layers, "createdAt": value.Revision.CreatedAt}
+}
+
+func approvalDTO(value featureapp.GoverningArtifactApproval) map[string]any {
+	return map[string]any{
+		"approvalId":                    value.ApprovalID,
+		"workspaceRowId":                value.WorkspaceRowID,
+		"artifactRowId":                 nullableIntDTO(value.ArtifactRowID),
+		"retainedArtifactRowId":         nullableIntDTO(value.RetainedArtifactRowID),
+		"family":                       value.Family,
+		"artifactSha256":                value.ArtifactSha256,
+		"operatorConfirmationEvidence": value.OperatorConfirmationEvidence,
+		"invalidatedByApprovalRowId":   nullableIntDTO(value.InvalidatedByApprovalRowID),
+		"supersededByApprovalRowId":    nullableIntDTO(value.SupersededByApprovalRowID),
+		"createdAt":                    value.CreatedAt,
+	}
 }
 func completionStatusDTO(value appoperations.FeatureCompletionStatus) map[string]any {
 	gates := make([]map[string]any, 0, len(value.Gates))
@@ -556,7 +605,7 @@ func badRequest(w http.ResponseWriter, message string) {
 }
 func writeWorkspaceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, wayfinder.ErrWorkspaceNotFound), errors.Is(err, wayfinder.ErrDiscoveryTicketNotFound), errors.Is(err, featureapp.ErrWorkspaceNotFound):
+	case errors.Is(err, wayfinder.ErrWorkspaceNotFound), errors.Is(err, wayfinder.ErrDiscoveryTicketNotFound), errors.Is(err, featureapp.ErrWorkspaceNotFound), errors.Is(err, featureapp.ErrApprovalNotFound):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Feature workspace or discovery ticket was not found")
 	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict):
 		shared.Error(w, http.StatusConflict, "VERSION_CONFLICT", "Feature workspace was changed by another operator. Reload before retrying.")
@@ -564,7 +613,7 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently authorized or eligible. Reload the completion gates and packet evidence.")
 	case errors.Is(err, featureapp.ErrFeatureCompletionConfirmation):
 		badRequest(w, err.Error())
-	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest):
+	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated):
 		badRequest(w, err.Error())
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature workspace operation failed")
@@ -580,6 +629,7 @@ func MountWorkspaceRoutes(r chi.Router, handler *WorkspaceHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/discovery-tickets/{ticketID}/resolutions", handler.ResolveTicket)
 	r.Post("/feature-workspaces/{workspaceID}/routes", handler.Route)
 	r.Post("/feature-workspaces/{workspaceID}/authority-revisions", handler.PublishAuthority)
+	r.Post("/feature-workspaces/{workspaceID}/authority-approvals", handler.RecordApproval)
 	r.Get("/feature-workspaces/{workspaceID}/completion", handler.CompletionStatus)
 	r.Post("/feature-workspaces/{workspaceID}/completion", handler.Complete)
 }

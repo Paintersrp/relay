@@ -345,6 +345,7 @@ type FeatureWorkspaceAuthorityLayer struct {
 	ArtifactSha256         string        `json:"artifact_sha256"`
 	SourceClosureRowID     sql.NullInt64 `json:"source_closure_row_id"`
 	CreatedAt              string        `json:"created_at"`
+	ApprovalRowID          sql.NullInt64 `json:"approval_row_id"`
 }
 
 type FeatureWorkspaceAuthorityRevision struct {
@@ -443,6 +444,20 @@ type FeatureWorkspaceTicketResolution struct {
 	ArtifactSha256        string        `json:"artifact_sha256"`
 	SourceClosureRowID    sql.NullInt64 `json:"source_closure_row_id"`
 	CreatedAt             string        `json:"created_at"`
+}
+
+type GoverningArtifactApproval struct {
+	ID                           int64         `json:"id"`
+	ApprovalID                   string        `json:"approval_id"`
+	WorkspaceRowID               int64         `json:"workspace_row_id"`
+	ArtifactRowID                sql.NullInt64 `json:"artifact_row_id"`
+	RetainedArtifactRowID        sql.NullInt64 `json:"retained_artifact_row_id"`
+	Family                       string        `json:"family"`
+	ArtifactSha256               string        `json:"artifact_sha256"`
+	OperatorConfirmationEvidence string        `json:"operator_confirmation_evidence"`
+	InvalidatedByApprovalRowID   sql.NullInt64 `json:"invalidated_by_approval_row_id"`
+	SupersededByApprovalRowID    sql.NullInt64 `json:"superseded_by_approval_row_id"`
+	CreatedAt                    string        `json:"created_at"`
 }
 
 type McpMutationResult struct {
