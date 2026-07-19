@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as CutoverRouteImport } from './routes/cutover'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RunsIndexRouteImport } from './routes/runs/index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories/index'
@@ -31,6 +32,11 @@ import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
 import { Route as FeatureWorkspacesWorkspaceIdTicketsRouteImport } from './routes/feature-workspaces/$workspaceId.tickets'
 import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId.passes.$passId'
 
+const CutoverRoute = CutoverRouteImport.update({
+  id: '/cutover',
+  path: '/cutover',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -142,6 +148,7 @@ const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/cutover': typeof CutoverRoute
   '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
   '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
@@ -165,6 +172,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/cutover': typeof CutoverRoute
   '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
   '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
@@ -188,6 +196,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/cutover': typeof CutoverRoute
   '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
   '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/cutover'
     | '/execution-packages/$packageId'
     | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/cutover'
     | '/execution-packages/$packageId'
     | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
@@ -258,6 +269,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/cutover'
     | '/execution-packages/$packageId'
     | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
@@ -282,6 +294,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CutoverRoute: typeof CutoverRoute
   ExecutionPackagesPackageIdRoute: typeof ExecutionPackagesPackageIdRoute
   ExecutionPackagesNewRoute: typeof ExecutionPackagesNewRoute
   FeatureWorkspacesWorkspaceIdRoute: typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
@@ -300,6 +313,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/cutover': {
+      id: '/cutover'
+      path: '/cutover'
+      fullPath: '/cutover'
+      preLoaderRoute: typeof CutoverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -497,6 +517,7 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CutoverRoute: CutoverRoute,
   ExecutionPackagesPackageIdRoute: ExecutionPackagesPackageIdRoute,
   ExecutionPackagesNewRoute: ExecutionPackagesNewRoute,
   FeatureWorkspacesWorkspaceIdRoute:

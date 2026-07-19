@@ -11,6 +11,7 @@ import (
 	artifactsapi "relay/internal/api/artifacts"
 	auditsapi "relay/internal/api/audits"
 	canonicalapi "relay/internal/api/canonical"
+	cutoverapi "relay/internal/api/cutover"
 	featuresapi "relay/internal/api/features"
 	packagesapi "relay/internal/api/packages"
 	plansapi "relay/internal/api/plans"
@@ -20,6 +21,7 @@ import (
 	"relay/internal/api/shared"
 	ticketsapi "relay/internal/api/tickets"
 	appaudits "relay/internal/app/audits"
+	appcutover "relay/internal/app/cutover"
 	appfeatures "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	apppackages "relay/internal/app/packages"
@@ -110,6 +112,15 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService, featureCompletionWorkflowService)
 	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
+	cutoverService, err := appcutover.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	cutoverWorkflowService, err := appoperations.NewCutoverWorkflowService(packetService, cutoverService)
+	if err != nil {
+		panic(err)
+	}
+	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -136,6 +147,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		featuresapi.MountWorkspaceRoutes(api, featureWorkspaceHandler)
 		ticketsapi.MountWorkflowRoutes(api, ticketHandler)
 		packagesapi.MountWorkflowRoutes(api, packageHandler)
+		cutoverapi.MountWorkflowRoutes(api, cutoverHandler)
 		api.HandleFunc("/*", workflowJSONNotFound)
 	})
 

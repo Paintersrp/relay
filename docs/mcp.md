@@ -118,6 +118,12 @@ Returns bounded UTF-8 content for an audit-declared Run artifact. The audit serv
 
 The action records one decision only against the exact current packet and audited commit. Acceptance completes the Run and managed pass; revision returns the Run to revision. Stale packets, mismatched hashes, conflicting audit state, or missing operator confirmation block before mutation.
 
+## Cutover tools
+
+Cutover readiness, prepare, activate, rollback, history, boundary, and roll-forward operations expose retained exact authority through the operation registry. Each mutation requires the exact Transition Plan ticket, authority revision, and workspace association present at preparation.
+
+The MCP surface delegates to the same `internal/app/cutover` service used by HTTP. No direct store bypass is possible.
+
 ## JSON-RPC behavior
 
 The server supports:

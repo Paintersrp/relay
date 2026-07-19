@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
+	appcutover "relay/internal/app/cutover"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -34,27 +35,45 @@ func (defaultIDGenerator) ArtifactID() string         { return workflowstore.New
 func (defaultIDGenerator) AuditDecisionID() string    { return workflowstore.NewAuditDecisionID() }
 
 type Service struct {
-	store *workflowstore.Store
-	ids   IDGenerator
+	store       *workflowstore.Store
+	ids         IDGenerator
+	cutoverGate *appcutover.LegacyGate
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})
 }
 
-func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
+func NewServiceWithGate(store *workflowstore.Store, gate *appcutover.LegacyGate) (*Service, error) {
+	return NewServiceWithIDsAndGate(store, defaultIDGenerator{}, gate)
+}
+
+func NewServiceWithIDsAndGate(store *workflowstore.Store, ids IDGenerator, gate *appcutover.LegacyGate) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
 	if ids == nil {
 		return nil, fmt.Errorf("workflow ID generator is required")
 	}
-	return &Service{store: store, ids: ids}, nil
+	return &Service{store: store, ids: ids, cutoverGate: gate}, nil
+}
+
+func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
+	return NewServiceWithIDsAndGate(store, ids, nil)
 }
 
 func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRunResult, error) {
 	if err := validateCreateRunInput(input); err != nil {
 		return CreateRunResult{}, err
+	}
+	if s.cutoverGate != nil && input.PlanID != "" {
+		decision, err := s.cutoverGate.AllowNewManagedRun(ctx)
+		if err != nil {
+			return CreateRunResult{}, fmt.Errorf("cutover service unavailable: %w", err)
+		}
+		if !decision.Allowed {
+			return CreateRunResult{}, fmt.Errorf("%w: legacy Run admission is closed; use ticket-oriented admission", ErrPlanPassAssociation)
+		}
 	}
 	runID := s.ids.RunID()
 	artifactStem := input.FeatureSlug

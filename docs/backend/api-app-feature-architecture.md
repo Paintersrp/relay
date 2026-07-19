@@ -116,6 +116,37 @@ Application errors remain typed and are translated at transport boundaries:
 
 Do not make a stale documentation claim true by adding a compatibility adapter. Correct the documentation or use the current owner.
 
+## Ticket cutover ownership
+
+The cutover lifecycle is owned by `internal/app/cutover`. The application service owns readiness evaluation, activation, rollback, boundary crossing, and roll-forward evidence recording.
+
+### Store
+
+`internal/store/workflow/cutover.go` implements the persistence layer over the `cutover_activations` and related tables. Every state transition is transactionally guarded by database triggers that enforce the exact lifecycle from the Transition Plan.
+
+### Application
+
+`internal/app/cutover/Service` owns the application boundary. It validates activation prerequisites, enforces one-at-a-time activation through the singleton current-state table, and provides typed errors to transports.
+
+### Operation-packet
+
+`internal/app/operations/cutover_workflow.go` wraps the application service for operation-packet admission. Mutations route through the same packet authorization as ticket and package operations.
+
+### Transport
+
+`internal/api/cutover` exposes HTTP read and mutation routes under `/api/cutover`. All mutation endpoints use operation-packet-backed workflow services.
+
+### UI
+
+The React cutover workbench at `/cutover` displays server-owned readiness, lifecycle state, activation controls, rollback eligibility, and historical records. The UI cannot create a mixed legacy/ticket route or bypass operation admission.
+
+### Boundaries
+
+- Historical reads and eligible legacy Run continuation are always available regardless of cutover state.
+- New legacy Plan submission and managed Run creation close atomically with cutover activation.
+- Rollback is only available before the first ticket-oriented execution crosses the boundary.
+- Roll-forward completion requires evidence for every declared criterion.
+
 ## Validation
 
 Changes to a feature should use the narrowest current package tests, then broader proof when the shared boundary requires it. Repository-wide closeout uses `npm run release:smoke`.

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	appcutover "relay/internal/app/cutover"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
 	"relay/internal/planningartifacts"
@@ -73,7 +74,8 @@ type CreateRunResult struct {
 }
 
 type Service struct {
-	store *workflowstore.Store
+	store       *workflowstore.Store
+	cutoverGate *appcutover.LegacyGate
 }
 
 type planArtifactModel struct {
@@ -99,10 +101,14 @@ type executionSpecModel struct {
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
+	return NewServiceWithGate(store, nil)
+}
+
+func NewServiceWithGate(store *workflowstore.Store, gate *appcutover.LegacyGate) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	return &Service{store: store}, nil
+	return &Service{store: store, cutoverGate: gate}, nil
 }
 
 func (s *Service) ValidateArtifact(_ context.Context, input ValidationInput) (ValidationResult, error) {
@@ -166,6 +172,15 @@ func (s *Service) SubmitPlan(ctx context.Context, input SubmitPlanInput) (Submit
 			nil,
 		)
 	}
+	if s.cutoverGate != nil {
+		decision, err := s.cutoverGate.AllowNewPlan(ctx)
+		if err != nil {
+			return SubmitPlanResult{}, applicationError(ErrorPersistence, "cutover service unavailable", "cutover", false, err)
+		}
+		if !decision.Allowed {
+			return SubmitPlanResult{}, applicationError(ErrorPersistence, "legacy Plan submission is closed; use ticket-oriented admission", "cutover", true, nil)
+		}
+	}
 	plans, err := workflowplans.NewService(s.store)
 	if err != nil {
 		return SubmitPlanResult{}, applicationError(ErrorPersistence, "workflow Plan service is unavailable", "workflow_store", false, err)
@@ -205,6 +220,16 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 			true,
 			nil,
 		)
+	}
+
+	if s.cutoverGate != nil {
+		decision, err := s.cutoverGate.AllowNewManagedRun(ctx)
+		if err != nil {
+			return CreateRunResult{}, applicationError(ErrorPersistence, "cutover service unavailable", "cutover", false, err)
+		}
+		if !decision.Allowed {
+			return CreateRunResult{}, applicationError(ErrorPersistence, "legacy Run creation is closed; use ticket-oriented admission", "cutover", true, nil)
+		}
 	}
 
 	identity, markdown, err := compileMutation(input.DisplayName, input.ExpectedSHA256, input.CanonicalBytes, speccompiler.ArtifactExecutionSpec)

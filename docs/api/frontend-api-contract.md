@@ -471,6 +471,75 @@ Audit decisions are recorded through the canonical Auditor MCP tool and require 
 
 The former local-audit, project-audit, audit submit, approve, request-revision, commit-message, and close routes do not exist.
 
+## Cutover
+
+The cutover API exposes ticket-oriented admission lifecycle state and mutations. All mutation endpoints require the cutover to be in the correct state.
+
+### `GET /api/cutover/state`
+
+Returns the current cutover mode:
+
+```json
+{
+  "active": true,
+  "state": {
+    "activationId": "cutover-*",
+    "status": "active",
+    "boundaryStatus": "open",
+    "rollbackStatus": "available",
+    "rollForwardStatus": "pending"
+  }
+}
+```
+
+When no activation is current, returns `{"active": false}` without a `state` property.
+
+### `GET /api/cutover/activations/{activationId}/readiness`
+
+Returns bounded readiness evidence for one activation: prerequisites, obligations, roll-forward criteria, and recorded evidence.
+
+### `GET /api/cutover/history`
+
+Returns all activation records ordered by creation time.
+
+### `POST /api/cutover/activate`
+
+Request:
+
+```json
+{
+  "activationId": "cutover-*"
+}
+```
+
+Atomically activates a prepared cutover when all evidence is complete. Returns `200` with the activated state or `409` when not ready.
+
+### `POST /api/cutover/rollback`
+
+Request:
+
+```json
+{
+  "activationId": "cutover-*"
+}
+```
+
+Rolls back an active, pre-boundary activation. Returns `200` or `409` when rollback is blocked.
+
+### `POST /api/cutover/roll-forward-evidence`
+
+Request:
+
+```json
+{
+  "activationId": "cutover-*",
+  "criterionSequence": 1,
+  "evidence": "..."
+}
+```
+
+Records one roll-forward evidence item. The cutover completes roll-forward when all criteria have evidence.
+
 ## MCP
 
 `POST /mcp` remains the canonical ChatGPT-facing JSON-RPC endpoint.
