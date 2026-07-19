@@ -97,3 +97,7 @@ func NewDeliveryTicketApprovalID() string {
 func NewExecutionPackageID() string {
 	return "package-" + uuid.NewString()
 }
+
+func NewRepositoryBranchMutationLeaseID() string {
+	return "lease-" + uuid.NewString()
+}
