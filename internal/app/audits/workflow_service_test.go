@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	workflowpackages "relay/internal/app/packages"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
@@ -1481,6 +1482,281 @@ func TestWorkflowAuditArtifactReadbackUsesPacketDeclaredArtifacts(t *testing.T) 
 	}
 	if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{RunID: fixture.run.RunID, ArtifactReference: "../secret"}); !errors.Is(err, ErrWorkflowAuditArtifactReference) {
 		t.Fatalf("undeclared path-like reference error = %v", err)
+	}
+}
+
+func newTicketPackageAuditFixture(t *testing.T) *auditFixture {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repoPath := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const baseCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const treeOID = "cccccccccccccccccccccccccccccccccccccccc"
+	var selection workflowstore.DeliveryTicketSelection
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		if _, err := tx.CreateRepositoryTargetWithConfiguration(ctx, workflowstore.CreateRepositoryTargetParams{
+			RepoTarget: "relay", LocalPath: repoPath, ConfiguredBranchRef: sql.NullString{String: "refs/heads/main", Valid: true},
+		}); err != nil {
+			return err
+		}
+		vault, err := tx.GetOrCreateSourceVault(ctx, workflowstore.CreateSourceVaultParams{
+			VaultID: "vault-ticket-audit", RepoTarget: "relay", RelativePath: "repositories/relay.git",
+		})
+		if err != nil {
+			return err
+		}
+		closure, err := tx.AcquireSourceVaultClosure(ctx, workflowstore.AcquireSourceVaultClosureParams{
+			VaultRowID: vault.ID, ClosureID: "closure-ticket-audit", CommitOID: baseCommit, TreeOID: treeOID,
+			RefName: "refs/relay/closures/closure-ticket-audit", StartedAt: "2026-07-18T00:00:00.000000000Z",
+		})
+		if err != nil {
+			return err
+		}
+		ready, err := tx.TransitionSourceVaultClosure(ctx, workflowstore.TransitionSourceVaultClosureParams{
+			ClosureID: closure.Closure.ClosureID, ExpectedState: workflowstore.SourceVaultClosureStateImporting,
+			NextState: workflowstore.SourceVaultClosureStateReady, TransitionAt: "2026-07-18T00:00:01.000000000Z",
+		})
+		if err != nil {
+			return err
+		}
+		project, err := tx.CreateProject(ctx, workflowstore.CreateProjectParams{ProjectID: "project-ticket-audit", Name: "Ticket audit"})
+		if err != nil {
+			return err
+		}
+		workspace, err := tx.CreateFeatureWorkspace(ctx, workflowstore.CreateFeatureWorkspaceParams{
+			WorkspaceID: "workspace-ticket-audit", ProjectRowID: project.ID, FeatureSlug: "ticket-audit",
+		})
+		if err != nil {
+			return err
+		}
+		authority, err := tx.CreateFeatureWorkspaceAuthorityRevision(ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{
+			AuthorityRevisionID: "authority-ticket-audit", WorkspaceRowID: workspace.ID, RevisionNumber: 1,
+			SourceClosureRowID: sql.NullInt64{Int64: ready.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		workspace, err = tx.SetFeatureWorkspaceAuthorityRevision(ctx, authority.ID, workspace.WorkspaceID, workspace.Version)
+		if err != nil {
+			return err
+		}
+		ticket, err := tx.CreateDeliveryTicket(ctx, workflowstore.CreateDeliveryTicketParams{
+			TicketID: "P6-T2", WorkspaceRowID: workspace.ID, ExternalPriority: 49,
+		})
+		if err != nil {
+			return err
+		}
+		revision, err := tx.CreateDeliveryTicketRevision(ctx, workflowstore.CreateDeliveryTicketRevisionParams{
+			DeliveryTicketRowID: ticket.ID, RevisionNumber: 1, RepoTarget: "relay", Branch: "main", BaseCommit: baseCommit,
+			SourceClosureRowID: ready.ID, SourcePath: "tickets/P6-T2.delivery-ticket.json",
+			Goal: "Bind exact ticket audit package evidence.", Context: "The audit packet must retain exact package provenance.",
+			TransitionApplicability: "not_required",
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.SetDeliveryTicketCurrentRevision(ctx, ticket.TicketID, revision.ID); err != nil {
+			return err
+		}
+		approval, err := tx.CreateDeliveryTicketRevisionApproval(ctx, workflowstore.CreateDeliveryTicketRevisionApprovalParams{
+			ApprovalID: "approval-ticket-audit", RevisionRowID: revision.ID, ApprovalKind: "delivery", ApprovalState: "approved",
+			Rationale: "Approve the exact ticket audit package.", SourceClosureRowID: ready.ID,
+			AuthorityRevisionRowID: sql.NullInt64{Int64: authority.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		selection, err = tx.CreateDeliveryTicketSelection(ctx, workflowstore.CreateDeliveryTicketSelectionParams{
+			SelectionID: "selection-ticket-audit", WorkspaceRowID: workspace.ID, State: "active",
+			Rationale: "Reserve the exact approved audit ticket.", SourceClosureRowID: sql.NullInt64{Int64: ready.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		_, err = tx.CreateDeliveryTicketSelectionMember(ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{
+			SelectionRowID: selection.ID, Sequence: 1, RevisionRowID: revision.ID, ApprovalRowID: approval.ID,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	packageService, err := workflowpackages.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief := []byte("# Ticket Design Brief\n\n## Ticket Identity\n\n## Context\n\n## Design\n\n## Implementation Notes\n\n## Validation\n")
+	spec := auditFixtureExecutionSpec("ticket-audit", "main", baseCommit)
+	prepared, err := packageService.Prepare(ctx, workflowpackages.PrepareInput{
+		SelectionID: selection.SelectionID,
+		TicketDesignBriefs: []workflowpackages.ArtifactInput{{
+			DisplayName: "ticket-audit.ticket-P6-T2.r1.design-brief.md", ExpectedSHA256: sha256HexBytes(brief), Bytes: brief,
+		}},
+		ExecutionSpec: workflowpackages.ArtifactInput{
+			DisplayName: "ticket-audit.execution-spec.json", ExpectedSHA256: sha256HexBytes(spec), Bytes: spec,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := packageService.Approve(ctx, workflowpackages.ApproveInput{PackageID: prepared.Package.PackageID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := workflowruns.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var effectiveBrief workflowstore.Artifact
+	for _, artifact := range approved.RunArtifacts {
+		if artifact.Kind == "executor_brief" {
+			effectiveBrief = artifact
+		}
+	}
+	if effectiveBrief.ID == 0 {
+		t.Fatal("package Run has no executor brief")
+	}
+	runtimeJSON, err := json.Marshal(map[string]any{
+		"normalized_status": "done", "termination_verified": true,
+		"effective_brief_artifact_id": effectiveBrief.ArtifactID, "effective_brief_sha256": effectiveBrief.SHA256,
+		"effective_brief_mode": "full",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	begun, err := runs.BeginExecutionAttempt(ctx, workflowruns.BeginExecutionAttemptInput{RunID: approved.Run.RunID, Adapter: "codex", Model: "test-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.MarkExecutionAttemptRunning(ctx, begun.Attempt.AttemptID, string(runtimeJSON)); err != nil {
+		t.Fatal(err)
+	}
+	finished, err := runs.FinishExecutionAttempt(ctx, workflowruns.FinishExecutionAttemptInput{
+		AttemptID: begun.Attempt.AttemptID, Status: workflowstore.AttemptStatusSucceeded, ResultJSON: string(runtimeJSON),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageAttemptEvidence(t, store, finished.Attempt, effectiveBrief)
+	fixture := &auditFixture{store: store, runs: runs, run: finished.Run, head: strings.Repeat("b", 40)}
+	fixture.service, err = NewWorkflowAuditServiceWithInspector(store, func(_ context.Context, _ string, branch, base, audited string) (workflowrepos.AuditCommitEvidence, error) {
+		if audited != fixture.head {
+			return workflowrepos.AuditCommitEvidence{}, errors.New("head_mismatch")
+		}
+		return workflowrepos.AuditCommitEvidence{
+			Branch: branch, BaseCommit: base, AuditedCommit: audited, ChangedFiles: []string{"internal/a.go"},
+			NameStatus: "M\tinternal/a.go", DiffStat: "1 file changed", CommitLog: audited + "\tDev\t2026-07-18T00:00:00Z\tchange",
+			Diff: "diff --git a/internal/a.go b/internal/a.go\n+change\n",
+		}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
+func TestWorkflowAuditTicketPackageEvidenceIsBoundedAndFresh(t *testing.T) {
+	fixture := newTicketPackageAuditFixture(t)
+	prepared, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet WorkflowAuditPacket
+	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+		t.Fatal(err)
+	}
+	packageEvidence, found, err := workflowAuditTicketPackageArtifact(packet)
+	if err != nil || !found {
+		t.Fatalf("ticket package evidence = %#v, found=%t, err=%v", packageEvidence, found, err)
+	}
+	for _, kind := range []string{workflowAuditArtifactTypeTicketPackageEvidence, workflowAuditArtifactTypeApprovedExecutionSpec, workflowAuditArtifactTypeTicketDesignBrief} {
+		matched := false
+		for _, artifact := range packet.Artifacts {
+			matched = matched || artifact.ArtifactType == kind
+		}
+		if !matched {
+			t.Fatalf("packet has no %s artifact", kind)
+		}
+	}
+	read, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+		RunID: fixture.run.RunID, ArtifactReference: packageEvidence.ArtifactReference, MaxBytes: MaxWorkflowAuditReadBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidence WorkflowAuditTicketPackageEvidence
+	if err := json.Unmarshal(read.Content, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Package.ExecutionSpec.ArtifactReference == "" || len(evidence.Tickets) != 1 ||
+		evidence.Tickets[0].TicketID != "P6-T2" || evidence.Tickets[0].DesignBrief.ArtifactReference == "" ||
+		evidence.Package.PackageRowID != fixture.run.ExecutionPackageRowID.Int64 || prepared.Packet.PacketSHA256 != current.Packet.PacketSHA256 {
+		t.Fatalf("ticket package evidence = %#v", evidence)
+	}
+
+	lease, err := fixture.runs.AcquireRunMutationLease(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.runs.MarkRunMutationLeaseUncertain(context.Background(), fixture.run.RunID, lease.LeaseID, "test uncertainty"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPacketStale) {
+		t.Fatalf("uncertain lease current packet error = %v", err)
+	}
+}
+
+func TestWorkflowAuditTicketPackageStalesWhenCurrentTicketRevisionChanges(t *testing.T) {
+	ctx := context.Background()
+	fixture := newTicketPackageAuditFixture(t)
+	if _, err := fixture.service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head}); err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := getWorkflowAuditExecutionPackageByRowID(ctx, fixture.store, fixture.run.ExecutionPackageRowID.Int64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members, err := fixture.store.ListExecutionPackageMembers(ctx, pkg.ID)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("package members = %#v, err=%v", members, err)
+	}
+	revision, err := fixture.store.GetDeliveryTicketRevisionByRowID(ctx, members[0].RevisionRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := fixture.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		replacement, err := tx.CreateDeliveryTicketRevision(ctx, workflowstore.CreateDeliveryTicketRevisionParams{
+			DeliveryTicketRowID: ticket.ID, RevisionNumber: revision.RevisionNumber + 1,
+			ReplacesRevisionRowID: sql.NullInt64{Int64: revision.ID, Valid: true}, RepoTarget: revision.RepoTarget,
+			Branch: revision.Branch, BaseCommit: revision.BaseCommit, SourceClosureRowID: revision.SourceClosureRowID,
+			SourcePath: revision.SourcePath, Goal: revision.Goal, Context: revision.Context,
+			TransitionApplicability: revision.TransitionApplicability,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = tx.SetDeliveryTicketCurrentRevision(ctx, ticket.TicketID, replacement.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.GetCurrentPacket(ctx, fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPacketStale) {
+		t.Fatalf("replaced ticket revision current packet error = %v", err)
 	}
 }
 

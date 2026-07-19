@@ -16,11 +16,12 @@ type (
 )
 
 const (
-	WorkflowAuditPacketSchemaVersion = "2.0"
-	MaxWorkflowAuditPacketBytes      = 2 * 1024 * 1024
-	MaxWorkflowAuditSourceBytes      = 512 * 1024
-	MaxWorkflowAuditEvidenceBytes    = 128 * 1024
-	MaxWorkflowAuditReadBytes        = 64 * 1024
+	WorkflowAuditPacketSchemaVersion                = "2.0"
+	WorkflowAuditTicketPackageEvidenceSchemaVersion = "relay.audit-ticket-package-evidence.v1"
+	MaxWorkflowAuditPacketBytes                     = 2 * 1024 * 1024
+	MaxWorkflowAuditSourceBytes                     = 512 * 1024
+	MaxWorkflowAuditEvidenceBytes                   = 128 * 1024
+	MaxWorkflowAuditReadBytes                       = 64 * 1024
 )
 
 var (
@@ -143,6 +144,113 @@ type WorkflowAuditPacketArtifact struct {
 	ArtifactType      string `json:"artifact_type"`
 	SHA256            string `json:"sha256"`
 	Description       string `json:"description"`
+}
+
+// WorkflowAuditTicketPackageEvidence is a bounded, immutable audit artifact
+// declared by a ticket-oriented packet. It carries the package provenance that
+// cannot fit into the legacy packet schema while remaining available through
+// the packet's ordinary artifact readback contract.
+type WorkflowAuditTicketPackageEvidence struct {
+	SchemaVersion     string                                   `json:"schema_version"`
+	Package           WorkflowAuditExecutionPackageEvidence    `json:"package"`
+	Tickets           []WorkflowAuditTicketObligationEvidence  `json:"tickets"`
+	MutationLeases    []WorkflowAuditMutationLeaseEvidence     `json:"mutation_leases"`
+	BundleIntegration WorkflowAuditBundleIntegrationEvidence   `json:"bundle_integration"`
+	Commit            WorkflowAuditTicketPackageCommitEvidence `json:"commit"`
+	Implementation    []WorkflowAuditPacketArtifact            `json:"implementation"`
+	Validation        []WorkflowAuditValidationResult          `json:"validation"`
+}
+
+type WorkflowAuditExecutionPackageEvidence struct {
+	PackageRowID        int64                               `json:"package_row_id"`
+	PackageID           string                              `json:"package_id"`
+	PackageSHA256       string                              `json:"package_sha256"`
+	RepoTarget          string                              `json:"repo_target"`
+	Branch              string                              `json:"branch"`
+	BaseCommit          string                              `json:"base_commit"`
+	SelectionRowID      int64                               `json:"selection_row_id"`
+	SelectionID         string                              `json:"selection_id"`
+	SelectionState      string                              `json:"selection_state"`
+	WorkspaceRowID      int64                               `json:"workspace_row_id"`
+	WorkspaceID         string                              `json:"workspace_id"`
+	FeatureSlug         string                              `json:"feature_slug"`
+	Authority           WorkflowAuditAuthorityBasisEvidence `json:"authority"`
+	Source              WorkflowAuditSourceBasisEvidence    `json:"source"`
+	DesignBriefSHA256   string                              `json:"design_brief_sha256"`
+	ExecutionSpecSHA256 string                              `json:"execution_spec_sha256"`
+	ExecutionSpec       WorkflowAuditPacketArtifact         `json:"execution_spec"`
+}
+
+type WorkflowAuditAuthorityBasisEvidence struct {
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	AuthorityRevisionID    string `json:"authority_revision_id"`
+	RevisionNumber         int64  `json:"revision_number"`
+	SHA256                 string `json:"sha256"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+}
+
+type WorkflowAuditSourceBasisEvidence struct {
+	SourceClosureRowID int64  `json:"source_closure_row_id"`
+	ClosureID          string `json:"closure_id"`
+	CommitOID          string `json:"commit_oid"`
+	TreeOID            string `json:"tree_oid"`
+	RefName            string `json:"ref_name"`
+	SHA256             string `json:"sha256"`
+}
+
+type WorkflowAuditTicketObligationEvidence struct {
+	PackageMemberRowID       int64                         `json:"package_member_row_id"`
+	SelectionMemberRowID     int64                         `json:"selection_member_row_id"`
+	Sequence                 int64                         `json:"sequence"`
+	DeliveryTicketRowID      int64                         `json:"delivery_ticket_row_id"`
+	TicketID                 string                        `json:"ticket_id"`
+	DeliveryTicketRevisionID int64                         `json:"delivery_ticket_revision_row_id"`
+	RevisionNumber           int64                         `json:"revision_number"`
+	SourcePath               string                        `json:"source_path"`
+	MemberSHA256             string                        `json:"member_sha256"`
+	Approval                 WorkflowAuditApprovalEvidence `json:"approval"`
+	DesignBrief              WorkflowAuditPacketArtifact   `json:"design_brief"`
+}
+
+type WorkflowAuditApprovalEvidence struct {
+	ApprovalRowID          int64  `json:"approval_row_id"`
+	ApprovalID             string `json:"approval_id"`
+	ApprovalBasisSHA256    string `json:"approval_basis_sha256"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+}
+
+type WorkflowAuditMutationLeaseEvidence struct {
+	LeaseID                 string `json:"lease_id"`
+	OwnerKind               string `json:"owner_kind"`
+	OwnerIdentity           string `json:"owner_identity"`
+	State                   string `json:"state"`
+	Certainty               string `json:"certainty"`
+	ReconciliationState     string `json:"reconciliation_state"`
+	AcquiredAt              string `json:"acquired_at"`
+	ReleasedAt              string `json:"released_at"`
+	ReconciliationStartedAt string `json:"reconciliation_started_at,omitempty"`
+	ReconciledAt            string `json:"reconciled_at,omitempty"`
+}
+
+type WorkflowAuditBundleIntegrationEvidence struct {
+	RunID                 string `json:"run_id"`
+	ExecutionPackageRowID int64  `json:"execution_package_row_id"`
+	ExecutionPackageID    string `json:"execution_package_id"`
+	SelectionID           string `json:"selection_id"`
+	SelectionState        string `json:"selection_state"`
+	ApprovedRunStatus     string `json:"approved_run_status"`
+}
+
+type WorkflowAuditTicketPackageCommitEvidence struct {
+	RepoTarget    string                      `json:"repo_target"`
+	Branch        string                      `json:"branch"`
+	BaseCommit    string                      `json:"base_commit"`
+	AuditedCommit string                      `json:"audited_commit"`
+	NameStatus    string                      `json:"name_status"`
+	DiffStat      string                      `json:"diff_stat"`
+	CommitLog     string                      `json:"commit_log"`
+	UnifiedDiff   WorkflowAuditPacketArtifact `json:"unified_diff"`
 }
 
 type WorkflowAuditRemediationContext struct {

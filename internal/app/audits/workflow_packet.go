@@ -37,6 +37,7 @@ func buildWorkflowAuditPacket(
 	implementation WorkflowImplementationEvidence,
 	commit workflowrepos.AuditCommitEvidence,
 	diffArtifact workflowstore.Artifact,
+	ticketPackageArtifacts []workflowstore.Artifact,
 ) ([]byte, error) {
 	runArtifacts, err := store.ListArtifactsByRun(ctx, run.ID)
 	if err != nil {
@@ -169,7 +170,7 @@ func buildWorkflowAuditPacket(
 		ChangedFiles:        workflowAuditChangedFiles(commit),
 		RelevantSourcePaths: workflowAuditRelevantSourcePaths(commit, selectedPass),
 		Validation:          validation,
-		Artifacts:           workflowAuditArtifacts(evidence, implementation, diffArtifact),
+		Artifacts:           workflowAuditArtifacts(evidence, implementation, diffArtifact, ticketPackageArtifacts),
 	}
 	if run.RemediatesRunRowID.Valid {
 		var specFindings struct {
@@ -299,8 +300,8 @@ func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {
 	return "Execution attempt completed with status recorded in Relay."
 }
 
-func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, implementation WorkflowImplementationEvidence, diffArtifact workflowstore.Artifact) []WorkflowAuditPacketArtifact {
-	out := make([]WorkflowAuditPacketArtifact, 0, len(evidence)+2)
+func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, implementation WorkflowImplementationEvidence, diffArtifact workflowstore.Artifact, ticketPackageArtifacts []workflowstore.Artifact) []WorkflowAuditPacketArtifact {
+	out := make([]WorkflowAuditPacketArtifact, 0, len(evidence)+len(ticketPackageArtifacts)+2)
 	out = append(out, WorkflowAuditPacketArtifact{
 		ArtifactReference: diffArtifact.ArtifactID,
 		ArtifactType:      "unified_diff",
@@ -331,6 +332,32 @@ func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, implementation
 				Description:       "Exact effective Executor Brief used by the selected model attempt.",
 			})
 		}
+	}
+	additional := append([]workflowstore.Artifact(nil), ticketPackageArtifacts...)
+	sort.Slice(additional, func(i, j int) bool {
+		if additional[i].Kind == additional[j].Kind {
+			return additional[i].ArtifactID < additional[j].ArtifactID
+		}
+		return additional[i].Kind < additional[j].Kind
+	})
+	for _, artifact := range additional {
+		if _, duplicate := seen[artifact.ArtifactID]; duplicate {
+			continue
+		}
+		seen[artifact.ArtifactID] = struct{}{}
+		description := "Immutable ticket-oriented package evidence retained for this audit packet."
+		switch artifact.Kind {
+		case workflowAuditArtifactTypeApprovedExecutionSpec:
+			description = "Immutable copy of the approved package Execution Spec."
+		case workflowAuditArtifactTypeTicketDesignBrief:
+			description = "Immutable copy of the approved Ticket Design Brief."
+		case workflowAuditArtifactTypeTicketPackageEvidence:
+			description = "Exact package, ticket, authority, source, lease, and bundle audit evidence."
+		}
+		out = append(out, WorkflowAuditPacketArtifact{
+			ArtifactReference: artifact.ArtifactID, ArtifactType: artifact.Kind,
+			SHA256: artifact.SHA256, Description: description,
+		})
 	}
 	return out
 }

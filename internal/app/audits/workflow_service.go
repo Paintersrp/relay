@@ -61,6 +61,10 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 	if err != nil {
 		return PrepareWorkflowAuditResult{}, fmt.Errorf("resolve implementation evidence: %w", err)
 	}
+	ticketPackage, err := resolveWorkflowAuditTicketPackage(ctx, s.store, run, implementation)
+	if err != nil {
+		return PrepareWorkflowAuditResult{}, fmt.Errorf("resolve ticket package evidence: %w", err)
+	}
 	repository, err := s.store.GetRepositoryTarget(ctx, run.RepoTarget)
 	if err != nil {
 		return PrepareWorkflowAuditResult{}, err
@@ -88,7 +92,15 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		return PrepareWorkflowAuditResult{}, err
 	}
 	diffArtifact := workflowstore.Artifact{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}
-	packetBytes, err := buildWorkflowAuditPacket(ctx, s.store, run, packetID, implementation, commit, diffArtifact)
+	stagedTicketPackage := workflowAuditStagedTicketPackage{}
+	if ticketPackage != nil {
+		stagedTicketPackage, err = stageWorkflowAuditTicketPackage(batch, ticketPackage, commit, diffArtifact)
+		if err != nil {
+			_ = batch.Rollback()
+			return PrepareWorkflowAuditResult{}, err
+		}
+	}
+	packetBytes, err := buildWorkflowAuditPacket(ctx, s.store, run, packetID, implementation, commit, diffArtifact, stagedTicketPackage.Artifacts)
 	if err != nil {
 		_ = batch.Rollback()
 		return PrepareWorkflowAuditResult{}, err
@@ -101,6 +113,12 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 	if !validPacket {
 		_ = batch.Rollback()
 		return PrepareWorkflowAuditResult{}, ErrWorkflowAuditPacketSchemaInvalid
+	}
+	freshTicketPackage, ticketErr := resolveWorkflowAuditTicketPackage(ctx, s.store, run, implementation)
+	if ticketErr != nil || (ticketPackage == nil) != (freshTicketPackage == nil) ||
+		(ticketPackage != nil && !sameWorkflowAuditTicketPackageBasis(ticketPackage.Evidence, freshTicketPackage.Evidence)) {
+		_ = batch.Rollback()
+		return PrepareWorkflowAuditResult{}, ErrWorkflowAuditPacketStale
 	}
 	staged, err := batch.Stage("audit_packet", "audit-packet.json", "application/json", packetBytes)
 	if err != nil {
@@ -142,6 +160,16 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		}
 		if _, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: currentRun.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}); err != nil {
 			return err
+		}
+		for _, stagedArtifact := range stagedTicketPackage.Artifacts {
+			if _, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
+				ArtifactID: stagedArtifact.ArtifactID, OwnerType: workflowstore.ArtifactOwnerRun,
+				RunRowID: sql.NullInt64{Int64: currentRun.ID, Valid: true}, Kind: stagedArtifact.Kind,
+				RelativePath: stagedArtifact.RelativePath, MediaType: stagedArtifact.MediaType,
+				SHA256: stagedArtifact.SHA256, SizeBytes: stagedArtifact.SizeBytes,
+			}); err != nil {
+				return err
+			}
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
 			ArtifactID:   workflowstore.NewArtifactID(),
@@ -220,6 +248,15 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 	}
 	if sha256HexBytes(data) != packet.PacketSHA256 || packet.PacketSHA256 != artifact.SHA256 {
 		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "packet_integrity_failed")
+		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
+	}
+	var document WorkflowAuditPacket
+	if err := json.Unmarshal(data, &document); err != nil {
+		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "packet_schema_readback_failed")
+		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
+	}
+	if err := verifyWorkflowAuditTicketPackageEvidence(ctx, s.store, run, implementation, packet, document); err != nil {
+		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "ticket_package_evidence_changed")
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
 	return GetWorkflowAuditPacketResult{
@@ -500,6 +537,9 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		}
 		packetBytes, err := readWorkflowArtifact(s.store, packetArtifact, MaxWorkflowAuditPacketBytes)
 		if err != nil || sha256HexBytes(packetBytes) != packet.PacketSHA256 {
+			return ErrWorkflowAuditPacketStale
+		}
+		if json.Unmarshal(packetBytes, &WorkflowAuditPacket{}) != nil {
 			return ErrWorkflowAuditPacketStale
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
