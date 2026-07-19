@@ -18,6 +18,9 @@ const (
 	TicketActionUpdatePriority      AllowedAction = "update_ticket_priority"
 	TicketActionReplaceDependencies AllowedAction = "replace_ticket_dependencies"
 	TicketActionSelect              AllowedAction = "select_tickets"
+	PackageActionPrepare            AllowedAction = "prepare_execution_package"
+	PackageActionApprove            AllowedAction = "approve_execution_package"
+	MutationLeaseActionReconcile    AllowedAction = "reconcile_mutation_lease"
 )
 
 // TicketRoleProfile is the closed operation inventory for the ticket route.
@@ -52,9 +55,22 @@ var ticketOperations = []OperationDefinition{
 		OutputPersistence:        "durable_workspace",
 		SourcePolicy:             "current_clean_project_required_source",
 		HistoricalAuthority:      "none",
-		AllowedNonSourceActions:  []AllowedAction{TicketActionPublish, TicketActionApprove, TicketActionUpdatePriority, TicketActionReplaceDependencies, TicketActionSelect},
+		AllowedNonSourceActions:  []AllowedAction{TicketActionPublish, TicketActionApprove, TicketActionUpdatePriority, TicketActionReplaceDependencies, TicketActionSelect, PackageActionPrepare, PackageActionApprove, MutationLeaseActionReconcile},
 		PacketSemanticProjection: "relay.semantic.ticket-mutation.v1",
 	},
+}
+
+// PackageOperationForAction returns the local-operator operation that owns
+// package composition, package approval, and durable lease recovery. These
+// actions intentionally reuse the one local-operator packet identity rather
+// than creating an alternate package or Run lifecycle.
+func PackageOperationForAction(action AllowedAction) (OperationDefinition, bool) {
+	switch action {
+	case PackageActionPrepare, PackageActionApprove, MutationLeaseActionReconcile:
+		return TicketOperationForAction(action)
+	default:
+		return OperationDefinition{}, false
+	}
 }
 
 // TicketOperations returns the stable packet-admitted ticket operation set.

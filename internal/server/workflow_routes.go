@@ -12,6 +12,7 @@ import (
 	auditsapi "relay/internal/api/audits"
 	canonicalapi "relay/internal/api/canonical"
 	featuresapi "relay/internal/api/features"
+	packagesapi "relay/internal/api/packages"
 	plansapi "relay/internal/api/plans"
 	projectsapi "relay/internal/api/projects"
 	repositoriesapi "relay/internal/api/repositories"
@@ -21,6 +22,7 @@ import (
 	appaudits "relay/internal/app/audits"
 	appfeatures "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
+	apppackages "relay/internal/app/packages"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
@@ -84,6 +86,14 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err != nil {
 		panic(err)
 	}
+	packageService, err := apppackages.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	packageWorkflowService, err := appoperations.NewPackageWorkflowService(packetService, packageService, executionService, workflowStore)
+	if err != nil {
+		panic(err)
+	}
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
 	projectHandler := projectsapi.NewWorkflowHandler(projectService)
@@ -95,6 +105,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	auditHandler := auditsapi.NewWorkflowHandler(auditService)
 	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService)
 	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
+	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -120,6 +131,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		auditsapi.MountWorkflowRoutes(api, auditHandler)
 		featuresapi.MountWorkspaceRoutes(api, featureWorkspaceHandler)
 		ticketsapi.MountWorkflowRoutes(api, ticketHandler)
+		packagesapi.MountWorkflowRoutes(api, packageHandler)
 		api.HandleFunc("/*", workflowJSONNotFound)
 	})
 

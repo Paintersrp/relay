@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
+import { RelayMutationLeaseStatus } from "@/components/relay/RelayMutationLeaseStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -398,6 +399,7 @@ function ExecutePanel({
             Durable process cleanup is pending. Reconcile the owned process before retrying.
           </p>
         ) : null}
+        <RelayMutationLeaseStatus runId={runId} />
       </section>
       <section className="min-w-0 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">

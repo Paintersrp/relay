@@ -22,6 +22,8 @@ import { Route as PlansNewRouteImport } from './routes/plans/new'
 import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
 import { Route as FeatureWorkspacesNewRouteImport } from './routes/feature-workspaces/new'
 import { Route as FeatureWorkspacesWorkspaceIdRouteImport } from './routes/feature-workspaces/$workspaceId'
+import { Route as ExecutionPackagesNewRouteImport } from './routes/execution-packages/new'
+import { Route as ExecutionPackagesPackageIdRouteImport } from './routes/execution-packages/$packageId'
 import { Route as RunsRunIdIndexRouteImport } from './routes/runs/$runId/index'
 import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
@@ -95,6 +97,17 @@ const FeatureWorkspacesWorkspaceIdRoute =
     path: '/feature-workspaces/$workspaceId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ExecutionPackagesNewRoute = ExecutionPackagesNewRouteImport.update({
+  id: '/execution-packages/new',
+  path: '/execution-packages/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExecutionPackagesPackageIdRoute =
+  ExecutionPackagesPackageIdRouteImport.update({
+    id: '/execution-packages/$packageId',
+    path: '/execution-packages/$packageId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const RunsRunIdIndexRoute = RunsRunIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -129,6 +142,8 @@ const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
+  '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
@@ -150,6 +165,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
+  '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
@@ -171,6 +188,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
+  '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
@@ -194,6 +213,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/execution-packages/$packageId'
+    | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
     | '/feature-workspaces/new'
     | '/plans/$planId'
@@ -215,6 +236,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/execution-packages/$packageId'
+    | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
     | '/feature-workspaces/new'
     | '/plans/$planId'
@@ -235,6 +258,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/execution-packages/$packageId'
+    | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
     | '/feature-workspaces/new'
     | '/plans/$planId'
@@ -257,6 +282,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ExecutionPackagesPackageIdRoute: typeof ExecutionPackagesPackageIdRoute
+  ExecutionPackagesNewRoute: typeof ExecutionPackagesNewRoute
   FeatureWorkspacesWorkspaceIdRoute: typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   FeatureWorkspacesNewRoute: typeof FeatureWorkspacesNewRoute
   PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
@@ -364,6 +391,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeatureWorkspacesWorkspaceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/execution-packages/new': {
+      id: '/execution-packages/new'
+      path: '/execution-packages/new'
+      fullPath: '/execution-packages/new'
+      preLoaderRoute: typeof ExecutionPackagesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/execution-packages/$packageId': {
+      id: '/execution-packages/$packageId'
+      path: '/execution-packages/$packageId'
+      fullPath: '/execution-packages/$packageId'
+      preLoaderRoute: typeof ExecutionPackagesPackageIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/runs/$runId/': {
       id: '/runs/$runId/'
       path: '/'
@@ -456,6 +497,8 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ExecutionPackagesPackageIdRoute: ExecutionPackagesPackageIdRoute,
+  ExecutionPackagesNewRoute: ExecutionPackagesNewRoute,
   FeatureWorkspacesWorkspaceIdRoute:
     FeatureWorkspacesWorkspaceIdRouteWithChildren,
   FeatureWorkspacesNewRoute: FeatureWorkspacesNewRoute,
