@@ -861,4 +861,38 @@ func (g *fakeGit) ReadObject(_ context.Context, _ string, oid, _ string, maxByte
 	}
 	return append([]byte(nil), value...), nil
 }
+
+func (g *fakeGit) ReadTree(_ context.Context, _ string, treeOID string) ([]RetainedTreeEntry, error) {
+	if err := g.call("read_tree"); err != nil {
+		return nil, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	value, ok := g.objects[treeOID]
+	if !ok {
+		return nil, &Error{Code: CodeObjectUnavailable}
+	}
+	return parseRawTree(strings.NewReader(string(value)))
+}
+
+func (g *fakeGit) ReadBlobRange(_ context.Context, _ string, blobOID string, offset, limit int64) (ReadRetainedBlobRangeResult, error) {
+	if err := g.call("read_blob_range"); err != nil {
+		return ReadRetainedBlobRangeResult{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	value, ok := g.objects[blobOID]
+	if !ok {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if offset < 0 || offset > int64(len(value)) || limit <= 0 {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
+	}
+	end := offset + limit
+	if end < offset || end > int64(len(value)) {
+		end = int64(len(value))
+	}
+	return ReadRetainedBlobRangeResult{BlobOID: blobOID, Offset: offset, TotalSize: int64(len(value)), Bytes: append([]byte(nil), value[offset:end]...)}, nil
+}
+
 func (g *fakeGit) GarbageCollect(context.Context, string) error { return g.call("gc") }

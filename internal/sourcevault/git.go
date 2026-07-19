@@ -1,14 +1,18 @@
 package sourcevault
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	workflowstore "relay/internal/store/workflow"
@@ -30,6 +34,8 @@ type gitClient interface {
 	CreateRef(context.Context, string, string, string) error
 	DeleteRef(context.Context, string, string, string) error
 	ReadObject(context.Context, string, string, string, int64) ([]byte, error)
+	ReadTree(context.Context, string, string) ([]RetainedTreeEntry, error)
+	ReadBlobRange(context.Context, string, string, int64, int64) (ReadRetainedBlobRangeResult, error)
 	GarbageCollect(context.Context, string) error
 }
 
@@ -490,6 +496,141 @@ func (g *commandGit) ReadObject(ctx context.Context, vaultPath, oid, expectedTyp
 	return data, nil
 }
 
+func (g *commandGit) ReadTree(ctx context.Context, vaultPath, treeOID string) ([]RetainedTreeEntry, error) {
+	if err := requireObjectType(ctx, vaultPath, true, treeOID, "tree", "", ""); err != nil {
+		return nil, &Error{Code: CodeObjectUnavailable}
+	}
+	cmd := gitCommand(ctx, vaultPath, true, "cat-file", "tree", treeOID)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, &Error{Code: CodeObjectUnavailable}
+	}
+	stderr := newLimitedBuffer(gitDiagnosticLimit)
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		return nil, &Error{Code: CodeObjectUnavailable}
+	}
+	entries, readErr := parseRawTree(stdout)
+	waitErr := cmd.Wait()
+	if readErr != nil || waitErr != nil {
+		return nil, &Error{Code: CodeObjectUnavailable}
+	}
+	return entries, nil
+}
+
+func (g *commandGit) ReadBlobRange(ctx context.Context, vaultPath, blobOID string, offset, limit int64) (ReadRetainedBlobRangeResult, error) {
+	if offset < 0 || limit <= 0 {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
+	}
+	if err := requireObjectType(ctx, vaultPath, true, blobOID, "blob", "", ""); err != nil {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	sizeText, err := runGit(ctx, workflowstore.SourceVaultFailureVaultGitStartFailed, vaultPath, true, "cat-file", "-s", blobOID)
+	if err != nil {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	totalSize, err := strconv.ParseInt(strings.TrimSpace(sizeText), 10, 64)
+	if err != nil || totalSize < 0 {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if offset > totalSize {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
+	}
+	if offset == totalSize {
+		return ReadRetainedBlobRangeResult{BlobOID: blobOID, Offset: offset, TotalSize: totalSize, Bytes: []byte{}}, nil
+	}
+	cmd := gitCommand(ctx, vaultPath, true, "cat-file", "blob", blobOID)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	stderr := newLimitedBuffer(gitDiagnosticLimit)
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if offset > 0 {
+		if _, err := io.CopyN(io.Discard, stdout, offset); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+		}
+	}
+	length := totalSize - offset
+	if length > limit {
+		length = limit
+	}
+	data := make([]byte, length)
+	if _, err := io.ReadFull(stdout, data); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if _, err := io.Copy(io.Discard, stdout); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if err := cmd.Wait(); err != nil {
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	return ReadRetainedBlobRangeResult{BlobOID: blobOID, Offset: offset, TotalSize: totalSize, Bytes: data}, nil
+}
+
+func parseRawTree(reader io.Reader) ([]RetainedTreeEntry, error) {
+	buffered := bufio.NewReader(reader)
+	entries := make([]RetainedTreeEntry, 0)
+	for {
+		modeBytes, err := buffered.ReadBytes(' ')
+		if err == io.EOF && len(modeBytes) == 0 {
+			break
+		}
+		if err != nil || len(modeBytes) < 2 || modeBytes[len(modeBytes)-1] != ' ' {
+			return nil, &Error{Code: CodeObjectUnavailable}
+		}
+		name, err := buffered.ReadBytes(0)
+		if err != nil || len(name) < 2 || name[len(name)-1] != 0 {
+			return nil, &Error{Code: CodeObjectUnavailable}
+		}
+		name = append([]byte(nil), name[:len(name)-1]...)
+		if len(name) == 0 || bytes.IndexByte(name, '/') >= 0 || bytes.Equal(name, []byte(".")) || bytes.Equal(name, []byte("..")) {
+			return nil, &Error{Code: CodeObjectUnavailable}
+		}
+		oidBytes := make([]byte, 20)
+		if _, err := io.ReadFull(buffered, oidBytes); err != nil {
+			return nil, &Error{Code: CodeObjectUnavailable}
+		}
+		mode, objectType, ok := normalizeTreeMode(string(modeBytes[:len(modeBytes)-1]))
+		if !ok {
+			return nil, &Error{Code: CodeObjectUnavailable}
+		}
+		entries = append(entries, RetainedTreeEntry{Name: name, Mode: mode, ObjectType: objectType, ObjectOID: hex.EncodeToString(oidBytes)})
+	}
+	sort.Slice(entries, func(left, right int) bool { return bytes.Compare(entries[left].Name, entries[right].Name) < 0 })
+	for index := 1; index < len(entries); index++ {
+		if bytes.Equal(entries[index-1].Name, entries[index].Name) {
+			return nil, &Error{Code: CodeObjectUnavailable}
+		}
+	}
+	return entries, nil
+}
+
+func normalizeTreeMode(value string) (string, string, bool) {
+	switch value {
+	case "40000", "040000":
+		return "040000", "tree", true
+	case "100644":
+		return "100644", "blob", true
+	case "100755":
+		return "100755", "blob", true
+	case "120000":
+		return "120000", "blob", true
+	case "160000":
+		return "160000", "commit", true
+	default:
+		return "", "", false
+	}
+}
 func (g *commandGit) GarbageCollect(ctx context.Context, vaultPath string) error {
 	_, err := runGit(ctx, workflowstore.SourceVaultFailureVaultGitStartFailed, vaultPath, true, "gc", "--prune=now")
 	return err

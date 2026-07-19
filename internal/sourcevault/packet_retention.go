@@ -193,7 +193,10 @@ func (m *Manager) RetainPreparedInvestigationInTx(ctx context.Context, tx *workf
 	return workflowstore.SourceVaultRetention{}, managerError(ctx, err, CodeDatabaseFailure)
 }
 
-func (m *Manager) VerifyActiveRetentionEdge(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship) error {
+func (m *Manager) withActiveRetentionEdge(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship, use func(string, workflowstore.SourceVaultClosure) error) error {
+	if m == nil || use == nil {
+		return &Error{Code: CodeInvalidRequest}
+	}
 	retention, err := m.store.GetSourceVaultRetentionByRowID(ctx, relationship.RetentionRowID)
 	if err != nil {
 		return managerError(ctx, err, CodeDatabaseFailure)
@@ -227,7 +230,13 @@ func (m *Manager) VerifyActiveRetentionEdge(ctx context.Context, relationship wo
 	if err := m.git.VerifyVaultClosure(ctx, vaultPath, closure.CommitOID, closure.TreeOID, closure.RefName); err != nil {
 		return managerError(ctx, err, CodeVaultUnavailable)
 	}
-	return nil
+	return use(vaultPath, closure)
+}
+
+func (m *Manager) VerifyActiveRetentionEdge(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship) error {
+	return m.withActiveRetentionEdge(ctx, relationship, func(string, workflowstore.SourceVaultClosure) error {
+		return nil
+	})
 }
 
 func validPacketRetentionDependencyClass(value string) bool {
