@@ -10,6 +10,49 @@ import (
 	"database/sql"
 )
 
+const activateCutoverActivation = `-- name: ActivateCutoverActivation :one
+UPDATE cutover_activations
+SET activation_status = 'active',
+    activated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    rollback_status = CASE rollback_eligibility
+        WHEN 'eligible' THEN 'available'
+        ELSE 'not_eligible'
+    END
+WHERE cutover_activation_id = ?
+  AND activation_status = 'prepared'
+RETURNING id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+`
+
+func (q *Queries) ActivateCutoverActivation(ctx context.Context, cutoverActivationID string) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, activateCutoverActivation, cutoverActivationID)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const advanceFeatureWorkspaceRouteState = `-- name: AdvanceFeatureWorkspaceRouteState :one
 UPDATE feature_workspaces
 SET current_route_state_row_id = ?, state = ?, version = version + 1,
@@ -44,6 +87,67 @@ func (q *Queries) AdvanceFeatureWorkspaceRouteState(ctx context.Context, arg Adv
 		&i.CurrentAuthorityRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const clearCutoverCurrentState = `-- name: ClearCutoverCurrentState :one
+UPDATE cutover_current_states
+SET activation_row_id = NULL,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE singleton_id = 1
+  AND activation_row_id = ?
+RETURNING singleton_id, activation_row_id, created_at, updated_at
+`
+
+func (q *Queries) ClearCutoverCurrentState(ctx context.Context, activationRowID sql.NullInt64) (CutoverCurrentState, error) {
+	row := q.db.QueryRowContext(ctx, clearCutoverCurrentState, activationRowID)
+	var i CutoverCurrentState
+	err := row.Scan(
+		&i.SingletonID,
+		&i.ActivationRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const completeCutoverRollForward = `-- name: CompleteCutoverRollForward :one
+UPDATE cutover_activations
+SET roll_forward_status = 'completed'
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'crossed'
+  AND roll_forward_status = 'required'
+RETURNING id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+`
+
+func (q *Queries) CompleteCutoverRollForward(ctx context.Context, cutoverActivationID string) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, completeCutoverRollForward, cutoverActivationID)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -410,6 +514,201 @@ func (q *Queries) CreateAuditTicketRevisionDecision(ctx context.Context, arg Cre
 		&i.ID,
 		&i.AuditDecisionRowID,
 		&i.AuditPacketTicketObligationRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCutoverActivation = `-- name: CreateCutoverActivation :one
+INSERT INTO cutover_activations (
+    cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id,
+    transition_plan_ticket_id, transition_plan_ticket_revision,
+    transition_plan_authority_layer_row_id, transition_plan_sha256,
+    authority_revision_row_id, authority_revision_id, authority_revision_number,
+    authority_sha256, rollback_eligibility
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+`
+
+type CreateCutoverActivationParams struct {
+	CutoverActivationID               string `json:"cutover_activation_id"`
+	WorkspaceRowID                    int64  `json:"workspace_row_id"`
+	TransitionPlanTicketRevisionRowID int64  `json:"transition_plan_ticket_revision_row_id"`
+	TransitionPlanTicketID            string `json:"transition_plan_ticket_id"`
+	TransitionPlanTicketRevision      int64  `json:"transition_plan_ticket_revision"`
+	TransitionPlanAuthorityLayerRowID int64  `json:"transition_plan_authority_layer_row_id"`
+	TransitionPlanSha256              string `json:"transition_plan_sha256"`
+	AuthorityRevisionRowID            int64  `json:"authority_revision_row_id"`
+	AuthorityRevisionID               string `json:"authority_revision_id"`
+	AuthorityRevisionNumber           int64  `json:"authority_revision_number"`
+	AuthoritySha256                   string `json:"authority_sha256"`
+	RollbackEligibility               string `json:"rollback_eligibility"`
+}
+
+func (q *Queries) CreateCutoverActivation(ctx context.Context, arg CreateCutoverActivationParams) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, createCutoverActivation,
+		arg.CutoverActivationID,
+		arg.WorkspaceRowID,
+		arg.TransitionPlanTicketRevisionRowID,
+		arg.TransitionPlanTicketID,
+		arg.TransitionPlanTicketRevision,
+		arg.TransitionPlanAuthorityLayerRowID,
+		arg.TransitionPlanSha256,
+		arg.AuthorityRevisionRowID,
+		arg.AuthorityRevisionID,
+		arg.AuthorityRevisionNumber,
+		arg.AuthoritySha256,
+		arg.RollbackEligibility,
+	)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCutoverActivationObligationEvidence = `-- name: CreateCutoverActivationObligationEvidence :one
+INSERT INTO cutover_activation_obligation_evidence (
+    activation_row_id, obligation_kind, sequence, obligation, evidence
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, activation_row_id, obligation_kind, sequence, obligation, evidence, created_at
+`
+
+type CreateCutoverActivationObligationEvidenceParams struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	ObligationKind  string `json:"obligation_kind"`
+	Sequence        int64  `json:"sequence"`
+	Obligation      string `json:"obligation"`
+	Evidence        string `json:"evidence"`
+}
+
+func (q *Queries) CreateCutoverActivationObligationEvidence(ctx context.Context, arg CreateCutoverActivationObligationEvidenceParams) (CutoverActivationObligationEvidence, error) {
+	row := q.db.QueryRowContext(ctx, createCutoverActivationObligationEvidence,
+		arg.ActivationRowID,
+		arg.ObligationKind,
+		arg.Sequence,
+		arg.Obligation,
+		arg.Evidence,
+	)
+	var i CutoverActivationObligationEvidence
+	err := row.Scan(
+		&i.ID,
+		&i.ActivationRowID,
+		&i.ObligationKind,
+		&i.Sequence,
+		&i.Obligation,
+		&i.Evidence,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCutoverActivationPrerequisiteEvidence = `-- name: CreateCutoverActivationPrerequisiteEvidence :one
+INSERT INTO cutover_activation_prerequisite_evidence (
+    activation_row_id, sequence, prerequisite, evidence
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, activation_row_id, sequence, prerequisite, evidence, created_at
+`
+
+type CreateCutoverActivationPrerequisiteEvidenceParams struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	Sequence        int64  `json:"sequence"`
+	Prerequisite    string `json:"prerequisite"`
+	Evidence        string `json:"evidence"`
+}
+
+func (q *Queries) CreateCutoverActivationPrerequisiteEvidence(ctx context.Context, arg CreateCutoverActivationPrerequisiteEvidenceParams) (CutoverActivationPrerequisiteEvidence, error) {
+	row := q.db.QueryRowContext(ctx, createCutoverActivationPrerequisiteEvidence,
+		arg.ActivationRowID,
+		arg.Sequence,
+		arg.Prerequisite,
+		arg.Evidence,
+	)
+	var i CutoverActivationPrerequisiteEvidence
+	err := row.Scan(
+		&i.ID,
+		&i.ActivationRowID,
+		&i.Sequence,
+		&i.Prerequisite,
+		&i.Evidence,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCutoverRollForwardCriterion = `-- name: CreateCutoverRollForwardCriterion :one
+INSERT INTO cutover_roll_forward_criteria (
+    activation_row_id, sequence, completion_criterion
+)
+VALUES (?, ?, ?)
+RETURNING id, activation_row_id, sequence, completion_criterion, created_at
+`
+
+type CreateCutoverRollForwardCriterionParams struct {
+	ActivationRowID     int64  `json:"activation_row_id"`
+	Sequence            int64  `json:"sequence"`
+	CompletionCriterion string `json:"completion_criterion"`
+}
+
+func (q *Queries) CreateCutoverRollForwardCriterion(ctx context.Context, arg CreateCutoverRollForwardCriterionParams) (CutoverRollForwardCriterium, error) {
+	row := q.db.QueryRowContext(ctx, createCutoverRollForwardCriterion, arg.ActivationRowID, arg.Sequence, arg.CompletionCriterion)
+	var i CutoverRollForwardCriterium
+	err := row.Scan(
+		&i.ID,
+		&i.ActivationRowID,
+		&i.Sequence,
+		&i.CompletionCriterion,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCutoverRollForwardEvidence = `-- name: CreateCutoverRollForwardEvidence :one
+INSERT INTO cutover_roll_forward_evidence (
+    activation_row_id, criterion_row_id, evidence
+)
+VALUES (?, ?, ?)
+RETURNING id, activation_row_id, criterion_row_id, evidence, created_at
+`
+
+type CreateCutoverRollForwardEvidenceParams struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	CriterionRowID  int64  `json:"criterion_row_id"`
+	Evidence        string `json:"evidence"`
+}
+
+func (q *Queries) CreateCutoverRollForwardEvidence(ctx context.Context, arg CreateCutoverRollForwardEvidenceParams) (CutoverRollForwardEvidence, error) {
+	row := q.db.QueryRowContext(ctx, createCutoverRollForwardEvidence, arg.ActivationRowID, arg.CriterionRowID, arg.Evidence)
+	var i CutoverRollForwardEvidence
+	err := row.Scan(
+		&i.ID,
+		&i.ActivationRowID,
+		&i.CriterionRowID,
+		&i.Evidence,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1832,6 +2131,44 @@ func (q *Queries) GetAuditRemediationSeedReopening(ctx context.Context, remediat
 	return i, err
 }
 
+const getCurrentCutoverActivation = `-- name: GetCurrentCutoverActivation :one
+SELECT activation.id, activation.cutover_activation_id, activation.workspace_row_id, activation.transition_plan_ticket_revision_row_id, activation.transition_plan_ticket_id, activation.transition_plan_ticket_revision, activation.transition_plan_authority_layer_row_id, activation.transition_plan_sha256, activation.authority_revision_row_id, activation.authority_revision_id, activation.authority_revision_number, activation.authority_sha256, activation.rollback_eligibility, activation.activation_status, activation.activated_at, activation.execution_boundary_status, activation.first_new_execution_run_row_id, activation.first_new_execution_at, activation.rollback_status, activation.roll_forward_status, activation.rolled_back_at, activation.created_at
+FROM cutover_current_states AS current_state
+JOIN cutover_activations AS activation ON activation.id = current_state.activation_row_id
+WHERE current_state.singleton_id = 1
+  AND activation.activation_status = 'active'
+`
+
+func (q *Queries) GetCurrentCutoverActivation(ctx context.Context) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, getCurrentCutoverActivation)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCurrentFeatureWorkspaceCompletionDecision = `-- name: GetCurrentFeatureWorkspaceCompletionDecision :one
 SELECT completion.id, completion.completion_decision_id, completion.workspace_row_id, completion.authority_revision_row_id, completion.source_closure_row_id, completion.decision, completion.created_at
 FROM feature_workspace_completion_decisions AS completion
@@ -1856,6 +2193,60 @@ func (q *Queries) GetCurrentFeatureWorkspaceCompletionDecision(ctx context.Conte
 		&i.SourceClosureRowID,
 		&i.Decision,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCutoverActivationByID = `-- name: GetCutoverActivationByID :one
+SELECT id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+FROM cutover_activations
+WHERE cutover_activation_id = ?
+`
+
+func (q *Queries) GetCutoverActivationByID(ctx context.Context, cutoverActivationID string) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, getCutoverActivationByID, cutoverActivationID)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCutoverCurrentState = `-- name: GetCutoverCurrentState :one
+SELECT singleton_id, activation_row_id, created_at, updated_at
+FROM cutover_current_states
+WHERE singleton_id = 1
+`
+
+func (q *Queries) GetCutoverCurrentState(ctx context.Context) (CutoverCurrentState, error) {
+	row := q.db.QueryRowContext(ctx, getCutoverCurrentState)
+	var i CutoverCurrentState
+	err := row.Scan(
+		&i.SingletonID,
+		&i.ActivationRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2652,6 +3043,205 @@ func (q *Queries) ListAuditTicketRevisionDecisions(ctx context.Context, auditDec
 			&i.ID,
 			&i.AuditDecisionRowID,
 			&i.AuditPacketTicketObligationRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCutoverActivationObligationEvidence = `-- name: ListCutoverActivationObligationEvidence :many
+SELECT id, activation_row_id, obligation_kind, sequence, obligation, evidence, created_at
+FROM cutover_activation_obligation_evidence
+WHERE activation_row_id = ?
+ORDER BY obligation_kind, sequence, id
+`
+
+func (q *Queries) ListCutoverActivationObligationEvidence(ctx context.Context, activationRowID int64) ([]CutoverActivationObligationEvidence, error) {
+	rows, err := q.db.QueryContext(ctx, listCutoverActivationObligationEvidence, activationRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CutoverActivationObligationEvidence{}
+	for rows.Next() {
+		var i CutoverActivationObligationEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivationRowID,
+			&i.ObligationKind,
+			&i.Sequence,
+			&i.Obligation,
+			&i.Evidence,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCutoverActivationPrerequisiteEvidence = `-- name: ListCutoverActivationPrerequisiteEvidence :many
+SELECT id, activation_row_id, sequence, prerequisite, evidence, created_at
+FROM cutover_activation_prerequisite_evidence
+WHERE activation_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListCutoverActivationPrerequisiteEvidence(ctx context.Context, activationRowID int64) ([]CutoverActivationPrerequisiteEvidence, error) {
+	rows, err := q.db.QueryContext(ctx, listCutoverActivationPrerequisiteEvidence, activationRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CutoverActivationPrerequisiteEvidence{}
+	for rows.Next() {
+		var i CutoverActivationPrerequisiteEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivationRowID,
+			&i.Sequence,
+			&i.Prerequisite,
+			&i.Evidence,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCutoverActivations = `-- name: ListCutoverActivations :many
+SELECT id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+FROM cutover_activations
+ORDER BY id
+`
+
+func (q *Queries) ListCutoverActivations(ctx context.Context) ([]CutoverActivation, error) {
+	rows, err := q.db.QueryContext(ctx, listCutoverActivations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CutoverActivation{}
+	for rows.Next() {
+		var i CutoverActivation
+		if err := rows.Scan(
+			&i.ID,
+			&i.CutoverActivationID,
+			&i.WorkspaceRowID,
+			&i.TransitionPlanTicketRevisionRowID,
+			&i.TransitionPlanTicketID,
+			&i.TransitionPlanTicketRevision,
+			&i.TransitionPlanAuthorityLayerRowID,
+			&i.TransitionPlanSha256,
+			&i.AuthorityRevisionRowID,
+			&i.AuthorityRevisionID,
+			&i.AuthorityRevisionNumber,
+			&i.AuthoritySha256,
+			&i.RollbackEligibility,
+			&i.ActivationStatus,
+			&i.ActivatedAt,
+			&i.ExecutionBoundaryStatus,
+			&i.FirstNewExecutionRunRowID,
+			&i.FirstNewExecutionAt,
+			&i.RollbackStatus,
+			&i.RollForwardStatus,
+			&i.RolledBackAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCutoverRollForwardCriteria = `-- name: ListCutoverRollForwardCriteria :many
+SELECT id, activation_row_id, sequence, completion_criterion, created_at
+FROM cutover_roll_forward_criteria
+WHERE activation_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListCutoverRollForwardCriteria(ctx context.Context, activationRowID int64) ([]CutoverRollForwardCriterium, error) {
+	rows, err := q.db.QueryContext(ctx, listCutoverRollForwardCriteria, activationRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CutoverRollForwardCriterium{}
+	for rows.Next() {
+		var i CutoverRollForwardCriterium
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivationRowID,
+			&i.Sequence,
+			&i.CompletionCriterion,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCutoverRollForwardEvidence = `-- name: ListCutoverRollForwardEvidence :many
+SELECT id, activation_row_id, criterion_row_id, evidence, created_at
+FROM cutover_roll_forward_evidence
+WHERE activation_row_id = ?
+ORDER BY criterion_row_id, id
+`
+
+func (q *Queries) ListCutoverRollForwardEvidence(ctx context.Context, activationRowID int64) ([]CutoverRollForwardEvidence, error) {
+	rows, err := q.db.QueryContext(ctx, listCutoverRollForwardEvidence, activationRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CutoverRollForwardEvidence{}
+	for rows.Next() {
+		var i CutoverRollForwardEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivationRowID,
+			&i.CriterionRowID,
+			&i.Evidence,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -3722,6 +4312,54 @@ func (q *Queries) NextExecutionAttemptNumber(ctx context.Context, runRowID int64
 	return column_1, err
 }
 
+const recordCutoverExecutionBoundary = `-- name: RecordCutoverExecutionBoundary :one
+UPDATE cutover_activations
+SET execution_boundary_status = 'crossed',
+    first_new_execution_run_row_id = ?,
+    first_new_execution_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    rollback_status = 'forbidden',
+    roll_forward_status = 'required'
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'open'
+RETURNING id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+`
+
+type RecordCutoverExecutionBoundaryParams struct {
+	FirstNewExecutionRunRowID sql.NullInt64 `json:"first_new_execution_run_row_id"`
+	CutoverActivationID       string        `json:"cutover_activation_id"`
+}
+
+func (q *Queries) RecordCutoverExecutionBoundary(ctx context.Context, arg RecordCutoverExecutionBoundaryParams) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, recordCutoverExecutionBoundary, arg.FirstNewExecutionRunRowID, arg.CutoverActivationID)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const releaseRepositoryBranchMutationLease = `-- name: ReleaseRepositoryBranchMutationLease :one
 UPDATE repository_branch_mutation_leases
 SET
@@ -3751,6 +4389,72 @@ func (q *Queries) ReleaseRepositoryBranchMutationLease(ctx context.Context, leas
 		&i.ReleasedAt,
 		&i.ReconciliationStartedAt,
 		&i.ReconciledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const rollbackCutoverActivation = `-- name: RollbackCutoverActivation :one
+UPDATE cutover_activations
+SET activation_status = 'rolled_back',
+    rollback_status = 'rolled_back',
+    roll_forward_status = 'not_required',
+    rolled_back_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'open'
+  AND rollback_eligibility = 'eligible'
+  AND rollback_status = 'available'
+RETURNING id, cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, first_new_execution_run_row_id, first_new_execution_at, rollback_status, roll_forward_status, rolled_back_at, created_at
+`
+
+func (q *Queries) RollbackCutoverActivation(ctx context.Context, cutoverActivationID string) (CutoverActivation, error) {
+	row := q.db.QueryRowContext(ctx, rollbackCutoverActivation, cutoverActivationID)
+	var i CutoverActivation
+	err := row.Scan(
+		&i.ID,
+		&i.CutoverActivationID,
+		&i.WorkspaceRowID,
+		&i.TransitionPlanTicketRevisionRowID,
+		&i.TransitionPlanTicketID,
+		&i.TransitionPlanTicketRevision,
+		&i.TransitionPlanAuthorityLayerRowID,
+		&i.TransitionPlanSha256,
+		&i.AuthorityRevisionRowID,
+		&i.AuthorityRevisionID,
+		&i.AuthorityRevisionNumber,
+		&i.AuthoritySha256,
+		&i.RollbackEligibility,
+		&i.ActivationStatus,
+		&i.ActivatedAt,
+		&i.ExecutionBoundaryStatus,
+		&i.FirstNewExecutionRunRowID,
+		&i.FirstNewExecutionAt,
+		&i.RollbackStatus,
+		&i.RollForwardStatus,
+		&i.RolledBackAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const setCutoverCurrentState = `-- name: SetCutoverCurrentState :one
+INSERT INTO cutover_current_states (singleton_id, activation_row_id)
+VALUES (1, ?)
+ON CONFLICT (singleton_id) DO UPDATE
+SET activation_row_id = excluded.activation_row_id,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE cutover_current_states.activation_row_id IS NULL
+RETURNING singleton_id, activation_row_id, created_at, updated_at
+`
+
+func (q *Queries) SetCutoverCurrentState(ctx context.Context, activationRowID sql.NullInt64) (CutoverCurrentState, error) {
+	row := q.db.QueryRowContext(ctx, setCutoverCurrentState, activationRowID)
+	var i CutoverCurrentState
+	err := row.Scan(
+		&i.SingletonID,
+		&i.ActivationRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

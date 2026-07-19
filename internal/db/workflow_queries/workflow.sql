@@ -492,6 +492,154 @@ INSERT INTO delivery_ticket_revision_members (
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
+-- name: CreateCutoverActivation :one
+INSERT INTO cutover_activations (
+    cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id,
+    transition_plan_ticket_id, transition_plan_ticket_revision,
+    transition_plan_authority_layer_row_id, transition_plan_sha256,
+    authority_revision_row_id, authority_revision_id, authority_revision_number,
+    authority_sha256, rollback_eligibility
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetCutoverActivationByID :one
+SELECT *
+FROM cutover_activations
+WHERE cutover_activation_id = ?;
+
+-- name: ListCutoverActivations :many
+SELECT *
+FROM cutover_activations
+ORDER BY id;
+
+-- name: CreateCutoverActivationPrerequisiteEvidence :one
+INSERT INTO cutover_activation_prerequisite_evidence (
+    activation_row_id, sequence, prerequisite, evidence
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListCutoverActivationPrerequisiteEvidence :many
+SELECT *
+FROM cutover_activation_prerequisite_evidence
+WHERE activation_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateCutoverActivationObligationEvidence :one
+INSERT INTO cutover_activation_obligation_evidence (
+    activation_row_id, obligation_kind, sequence, obligation, evidence
+)
+VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListCutoverActivationObligationEvidence :many
+SELECT *
+FROM cutover_activation_obligation_evidence
+WHERE activation_row_id = ?
+ORDER BY obligation_kind, sequence, id;
+
+-- name: CreateCutoverRollForwardCriterion :one
+INSERT INTO cutover_roll_forward_criteria (
+    activation_row_id, sequence, completion_criterion
+)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: ListCutoverRollForwardCriteria :many
+SELECT *
+FROM cutover_roll_forward_criteria
+WHERE activation_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateCutoverRollForwardEvidence :one
+INSERT INTO cutover_roll_forward_evidence (
+    activation_row_id, criterion_row_id, evidence
+)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: ListCutoverRollForwardEvidence :many
+SELECT *
+FROM cutover_roll_forward_evidence
+WHERE activation_row_id = ?
+ORDER BY criterion_row_id, id;
+
+-- name: GetCutoverCurrentState :one
+SELECT *
+FROM cutover_current_states
+WHERE singleton_id = 1;
+
+-- name: SetCutoverCurrentState :one
+INSERT INTO cutover_current_states (singleton_id, activation_row_id)
+VALUES (1, ?)
+ON CONFLICT (singleton_id) DO UPDATE
+SET activation_row_id = excluded.activation_row_id,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE cutover_current_states.activation_row_id IS NULL
+RETURNING *;
+
+-- name: GetCurrentCutoverActivation :one
+SELECT activation.*
+FROM cutover_current_states AS current_state
+JOIN cutover_activations AS activation ON activation.id = current_state.activation_row_id
+WHERE current_state.singleton_id = 1
+  AND activation.activation_status = 'active';
+
+-- name: ActivateCutoverActivation :one
+UPDATE cutover_activations
+SET activation_status = 'active',
+    activated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    rollback_status = CASE rollback_eligibility
+        WHEN 'eligible' THEN 'available'
+        ELSE 'not_eligible'
+    END
+WHERE cutover_activation_id = ?
+  AND activation_status = 'prepared'
+RETURNING *;
+
+-- name: RecordCutoverExecutionBoundary :one
+UPDATE cutover_activations
+SET execution_boundary_status = 'crossed',
+    first_new_execution_run_row_id = ?,
+    first_new_execution_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    rollback_status = 'forbidden',
+    roll_forward_status = 'required'
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'open'
+RETURNING *;
+
+-- name: CompleteCutoverRollForward :one
+UPDATE cutover_activations
+SET roll_forward_status = 'completed'
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'crossed'
+  AND roll_forward_status = 'required'
+RETURNING *;
+
+-- name: RollbackCutoverActivation :one
+UPDATE cutover_activations
+SET activation_status = 'rolled_back',
+    rollback_status = 'rolled_back',
+    roll_forward_status = 'not_required',
+    rolled_back_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE cutover_activation_id = ?
+  AND activation_status = 'active'
+  AND execution_boundary_status = 'open'
+  AND rollback_eligibility = 'eligible'
+  AND rollback_status = 'available'
+RETURNING *;
+
+-- name: ClearCutoverCurrentState :one
+UPDATE cutover_current_states
+SET activation_row_id = NULL,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE singleton_id = 1
+  AND activation_row_id = ?
+RETURNING *;
+
 -- name: ListDeliveryTicketRevisionMembers :many
 SELECT *
 FROM delivery_ticket_revision_members

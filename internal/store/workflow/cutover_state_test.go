@@ -1,0 +1,559 @@
+package workflowstore
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	relaydb "relay/internal/db"
+	workflowgenerated "relay/internal/store/workflowgenerated"
+
+	"github.com/pressly/goose/v3"
+)
+
+func TestCutoverStateBindsExactTransitionPlanAndCrossesOneWayBoundary(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	queries := workflowgenerated.New(store.DB())
+
+	if _, err := queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, "cutover-wrong-plan", workflowHash('f'), "eligible")); err == nil {
+		t.Fatal("cutover activation accepted a Transition Plan hash that was not the current authority layer")
+	}
+
+	activation, criterion := activateCutoverState(t, ctx, store, seed, "cutover-one-way", "eligible")
+	current, err := queries.GetCurrentCutoverActivation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.CutoverActivationID != activation.CutoverActivationID ||
+		current.TransitionPlanTicketRevisionRowID != seed.revision.ID ||
+		current.TransitionPlanSha256 != seed.transitionPlanSHA256 ||
+		current.AuthorityRevisionRowID != seed.authority.ID ||
+		current.AuthoritySha256 != seed.authoritySHA256 ||
+		current.ActivationStatus != "active" ||
+		current.RollbackStatus != "available" ||
+		!current.ActivatedAt.Valid {
+		t.Fatalf("current cutover activation = %#v", current)
+	}
+	prerequisites, err := queries.ListCutoverActivationPrerequisiteEvidence(ctx, activation.ID)
+	if err != nil || len(prerequisites) != 1 || prerequisites[0].Prerequisite != "The current Transition Plan authority is available." {
+		t.Fatalf("cutover prerequisite evidence = %#v, %v", prerequisites, err)
+	}
+	if _, err := store.DB().Exec(`UPDATE cutover_activations SET authority_sha256 = ? WHERE id = ?`, workflowHash('e'), activation.ID); err == nil {
+		t.Fatal("cutover activation identity was mutable")
+	}
+	if _, err := store.DB().Exec(`UPDATE cutover_activation_prerequisite_evidence SET evidence = 'rewritten' WHERE activation_row_id = ?`, activation.ID); err == nil {
+		t.Fatal("cutover prerequisite evidence was mutable")
+	}
+	if _, err := queries.SetCutoverCurrentState(ctx, sql.NullInt64{Int64: activation.ID, Valid: true}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second current cutover state error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := queries.ClearCutoverCurrentState(ctx, sql.NullInt64{Int64: activation.ID, Valid: true}); err == nil {
+		t.Fatal("active cutover state cleared before rollback")
+	}
+
+	run := createCutoverBoundaryRun(t, ctx, store, seed)
+	boundary, err := queries.RecordCutoverExecutionBoundary(ctx, workflowgenerated.RecordCutoverExecutionBoundaryParams{
+		FirstNewExecutionRunRowID: sql.NullInt64{Int64: run.ID, Valid: true},
+		CutoverActivationID:       activation.CutoverActivationID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boundary.ExecutionBoundaryStatus != "crossed" || !boundary.FirstNewExecutionRunRowID.Valid ||
+		boundary.FirstNewExecutionRunRowID.Int64 != run.ID || boundary.RollbackStatus != "forbidden" ||
+		boundary.RollForwardStatus != "required" {
+		t.Fatalf("cutover execution boundary = %#v", boundary)
+	}
+	if _, err := queries.RollbackCutoverActivation(ctx, activation.CutoverActivationID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("rollback after execution boundary error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := store.DB().Exec(`UPDATE cutover_activations SET activation_status = 'rolled_back' WHERE id = ?`, activation.ID); err == nil {
+		t.Fatal("execution boundary allowed a direct rollback")
+	}
+	if _, err := queries.CompleteCutoverRollForward(ctx, activation.CutoverActivationID); err == nil {
+		t.Fatal("roll-forward completed without evidence for every criterion")
+	}
+	if _, err := queries.CreateCutoverRollForwardEvidence(ctx, workflowgenerated.CreateCutoverRollForwardEvidenceParams{
+		ActivationRowID: activation.ID,
+		CriterionRowID:  criterion.ID,
+		Evidence:        "The first ticket-oriented execution is recorded against the exact package.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := queries.CompleteCutoverRollForward(ctx, activation.CutoverActivationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.RollForwardStatus != "completed" {
+		t.Fatalf("completed cutover roll-forward = %#v", completed)
+	}
+	if _, err := store.DB().Exec(`UPDATE cutover_roll_forward_evidence SET evidence = 'rewritten' WHERE activation_row_id = ?`, activation.ID); err == nil {
+		t.Fatal("cutover roll-forward evidence was mutable")
+	}
+}
+
+func TestCutoverStateAllowsEligibleRollbackOnlyBeforeBoundary(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	activation, _ := activateCutoverState(t, ctx, store, seed, "cutover-rollback", "eligible")
+	queries := workflowgenerated.New(store.DB())
+
+	rolledBack, err := queries.RollbackCutoverActivation(ctx, activation.CutoverActivationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.ActivationStatus != "rolled_back" || rolledBack.RollbackStatus != "rolled_back" ||
+		rolledBack.RollForwardStatus != "not_required" || !rolledBack.RolledBackAt.Valid {
+		t.Fatalf("rolled-back cutover activation = %#v", rolledBack)
+	}
+	currentState, err := queries.ClearCutoverCurrentState(ctx, sql.NullInt64{Int64: activation.ID, Valid: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if currentState.ActivationRowID.Valid {
+		t.Fatalf("cleared cutover current state = %#v", currentState)
+	}
+	if _, err := queries.GetCurrentCutoverActivation(ctx); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("current cutover after rollback error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := queries.SetCutoverCurrentState(ctx, sql.NullInt64{Int64: activation.ID, Valid: true}); err == nil {
+		t.Fatal("rolled-back activation became current again")
+	}
+}
+
+func TestCutoverActivationRollsBackAsOneTransaction(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	errInjected := errors.New("injected cutover activation rollback")
+
+	err := store.WithTx(ctx, func(tx *Tx) error {
+		queries := workflowgenerated.New(tx.tx)
+		activation, err := queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, "cutover-transaction", seed.transitionPlanSHA256, "eligible"))
+		if err != nil {
+			return err
+		}
+		if _, err := queries.CreateCutoverActivationPrerequisiteEvidence(ctx, workflowgenerated.CreateCutoverActivationPrerequisiteEvidenceParams{
+			ActivationRowID: activation.ID,
+			Sequence:        1,
+			Prerequisite:    "The current Transition Plan authority is available.",
+			Evidence:        "The current authority layer is exact and immutable.",
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.CreateCutoverActivationObligationEvidence(ctx, workflowgenerated.CreateCutoverActivationObligationEvidenceParams{
+			ActivationRowID: activation.ID,
+			ObligationKind:  "activation",
+			Sequence:        1,
+			Obligation:      "Record activation evidence in the cutover transaction.",
+			Evidence:        "The activation transaction is still open.",
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.CreateCutoverActivationObligationEvidence(ctx, workflowgenerated.CreateCutoverActivationObligationEvidenceParams{
+			ActivationRowID: activation.ID,
+			ObligationKind:  "rollback",
+			Sequence:        1,
+			Obligation:      "Keep the rollback path available before the execution boundary.",
+			Evidence:        "No execution boundary has been recorded.",
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.CreateCutoverRollForwardCriterion(ctx, workflowgenerated.CreateCutoverRollForwardCriterionParams{
+			ActivationRowID:     activation.ID,
+			Sequence:            1,
+			CompletionCriterion: "The ticket-oriented execution boundary is recorded safely.",
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.SetCutoverCurrentState(ctx, sql.NullInt64{Int64: activation.ID, Valid: true}); err != nil {
+			return err
+		}
+		if _, err := queries.ActivateCutoverActivation(ctx, activation.CutoverActivationID); err != nil {
+			return err
+		}
+		return errInjected
+	})
+	if !errors.Is(err, errInjected) {
+		t.Fatalf("cutover activation transaction error = %v, want injected rollback", err)
+	}
+	assertWorkflowCount(t, store.DB(), "cutover_activations", 0)
+	assertWorkflowCount(t, store.DB(), "cutover_activation_prerequisite_evidence", 0)
+	assertWorkflowCount(t, store.DB(), "cutover_activation_obligation_evidence", 0)
+	assertWorkflowCount(t, store.DB(), "cutover_roll_forward_criteria", 0)
+	assertWorkflowCount(t, store.DB(), "cutover_current_states", 0)
+}
+
+func TestCutoverStateMigrationPreservesHistoricalPlanPassAndRunState(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "workflow.sqlite")
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(relaydb.WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(database, "workflow_migrations", 15); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO repository_targets (repo_target, local_path) VALUES ('relay', '/repo')`); err != nil {
+		t.Fatal(err)
+	}
+	var projectRowID, planRowID int64
+	if err := database.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-cutover-upgrade', 'Cutover Upgrade') RETURNING id`).Scan(&projectRowID); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`
+INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256)
+VALUES (?, 'plan-cutover-history', 'cutover-history', ?)
+RETURNING id`, projectRowID, workflowHash('a')).Scan(&planRowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO plan_repository_targets (plan_row_id, sequence, repo_target, branch, planning_base_commit)
+VALUES (?, 1, 'relay', 'main', ?)`, planRowID, strings.Repeat("a", 40)); err != nil {
+		t.Fatal(err)
+	}
+	var planPassRowID int64
+	if err := database.QueryRow(`
+INSERT INTO plan_passes (pass_id, plan_row_id, pass_number, name, repo_target, status)
+VALUES ('pass-cutover-history', ?, 1, 'Historical Pass', 'relay', 'planned')
+RETURNING id`, planRowID).Scan(&planPassRowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+UPDATE plan_passes
+SET status = 'in_progress',
+    started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?`, planPassRowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO runs (run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, status, branch, base_commit, canonical_sha256)
+VALUES ('run-cutover-history', 'cutover-history', 'relay', ?, ?, 'created', 'main', ?, ?)`, planRowID, planPassRowID, strings.Repeat("a", 40), workflowHash('b')); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`UPDATE runs SET status = 'setup_ready' WHERE run_id = 'run-cutover-history'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := relaydb.AutoMigrateWorkflow(database); err != nil {
+		t.Fatal(err)
+	}
+	assertHistoricalCutoverRows(t, database)
+	if err := goose.DownTo(database, "workflow_migrations", 15); err != nil {
+		t.Fatal(err)
+	}
+	assertHistoricalCutoverRows(t, database)
+	var cutoverTables int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'cutover_activations'`).Scan(&cutoverTables); err != nil {
+		t.Fatal(err)
+	}
+	if cutoverTables != 0 {
+		t.Fatal("cutover activation table survived rollback to the prior schema")
+	}
+}
+
+func assertHistoricalCutoverRows(t *testing.T, database *sql.DB) {
+	t.Helper()
+	var planStatus, passStatus, runStatus string
+	if err := database.QueryRow(`SELECT status FROM plans WHERE plan_id = 'plan-cutover-history'`).Scan(&planStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT status FROM plan_passes WHERE pass_id = 'pass-cutover-history'`).Scan(&passStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT status FROM runs WHERE run_id = 'run-cutover-history'`).Scan(&runStatus); err != nil {
+		t.Fatal(err)
+	}
+	if planStatus != "active" || passStatus != "in_progress" || runStatus != "setup_ready" {
+		t.Fatalf("historical cutover rows = plan:%q pass:%q run:%q", planStatus, passStatus, runStatus)
+	}
+}
+
+type cutoverStateSeed struct {
+	closure              SourceVaultClosure
+	workspace            FeatureWorkspace
+	authority            FeatureWorkspaceAuthorityRevision
+	ticket               DeliveryTicket
+	revision             DeliveryTicketRevision
+	layer                FeatureWorkspaceAuthorityLayer
+	transitionPlanSHA256 string
+	authoritySHA256      string
+}
+
+func seedCutoverState(t *testing.T, ctx context.Context, store *Store) cutoverStateSeed {
+	t.Helper()
+	_, closure := seedReadySourceVaultClosure(t, ctx, store)
+	workspace := seedDeliveryTicketWorkspace(t, ctx, store)
+	seed := cutoverStateSeed{
+		closure:              closure,
+		workspace:            workspace,
+		transitionPlanSHA256: workflowHash('c'),
+		authoritySHA256:      workflowHash('d'),
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		plan, err := tx.CreatePlan(ctx, CreatePlanParams{
+			ProjectRowID:    workspace.ProjectRowID,
+			PlanID:          "plan-cutover-state",
+			FeatureSlug:     workspace.FeatureSlug,
+			CanonicalSHA256: workflowHash('a'),
+		})
+		if err != nil {
+			return err
+		}
+		artifact, err := tx.CreateArtifact(ctx, CreateArtifactParams{
+			ArtifactID:   "artifact-cutover-transition-plan",
+			OwnerType:    ArtifactOwnerPlan,
+			PlanRowID:    sql.NullInt64{Int64: plan.ID, Valid: true},
+			Kind:         "transition_plan",
+			RelativePath: "plans/delivery-ticket/p7-t1.r1.transition-plan.json",
+			MediaType:    "application/json",
+			SHA256:       seed.transitionPlanSHA256,
+			SizeBytes:    1,
+		})
+		if err != nil {
+			return err
+		}
+		seed.authority, err = tx.CreateFeatureWorkspaceAuthorityRevision(ctx, CreateFeatureWorkspaceAuthorityRevisionParams{
+			AuthorityRevisionID: "authority-cutover-1",
+			WorkspaceRowID:      workspace.ID,
+			RevisionNumber:      1,
+			SourceClosureRowID:  sql.NullInt64{Int64: closure.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		seed.layer, err = tx.CreateFeatureWorkspaceAuthorityLayer(ctx, CreateFeatureWorkspaceAuthorityLayerParams{
+			AuthorityRevisionRowID: seed.authority.ID,
+			LayerKind:              "plan",
+			Sequence:               1,
+			ArtifactRowID:          sql.NullInt64{Int64: artifact.ID, Valid: true},
+			ArtifactSha256:         seed.transitionPlanSHA256,
+		})
+		if err != nil {
+			return err
+		}
+		seed.workspace, err = tx.SetFeatureWorkspaceAuthorityRevision(ctx, seed.authority.ID, workspace.WorkspaceID, workspace.Version)
+		if err != nil {
+			return err
+		}
+		seed.ticket, err = tx.CreateDeliveryTicket(ctx, CreateDeliveryTicketParams{
+			TicketID: "P7-T1", WorkspaceRowID: workspace.ID, ExternalPriority: 40,
+		})
+		if err != nil {
+			return err
+		}
+		seed.revision, err = tx.CreateDeliveryTicketRevision(ctx, CreateDeliveryTicketRevisionParams{
+			DeliveryTicketRowID:     seed.ticket.ID,
+			RevisionNumber:          1,
+			RepoTarget:              "relay",
+			Branch:                  "main",
+			BaseCommit:              closure.CommitOID,
+			SourceClosureRowID:      closure.ID,
+			SourcePath:              "tickets/p7-t1.r1.delivery-ticket.json",
+			Goal:                    "Persist the ticket-oriented cutover state.",
+			Context:                 "The Transition Plan is exact current activation authority.",
+			TransitionApplicability: "required",
+		})
+		if err != nil {
+			return err
+		}
+		_, err = tx.SetDeliveryTicketCurrentRevision(ctx, seed.ticket.TicketID, seed.revision.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return seed
+}
+
+func cutoverActivationParams(seed cutoverStateSeed, activationID, transitionPlanSHA256, rollbackEligibility string) workflowgenerated.CreateCutoverActivationParams {
+	return workflowgenerated.CreateCutoverActivationParams{
+		CutoverActivationID:               activationID,
+		WorkspaceRowID:                    seed.workspace.ID,
+		TransitionPlanTicketRevisionRowID: seed.revision.ID,
+		TransitionPlanTicketID:            seed.ticket.TicketID,
+		TransitionPlanTicketRevision:      seed.revision.RevisionNumber,
+		TransitionPlanAuthorityLayerRowID: seed.layer.ID,
+		TransitionPlanSha256:              transitionPlanSHA256,
+		AuthorityRevisionRowID:            seed.authority.ID,
+		AuthorityRevisionID:               seed.authority.AuthorityRevisionID,
+		AuthorityRevisionNumber:           seed.authority.RevisionNumber,
+		AuthoritySha256:                   seed.authoritySHA256,
+		RollbackEligibility:               rollbackEligibility,
+	}
+}
+
+func activateCutoverState(
+	t *testing.T,
+	ctx context.Context,
+	store *Store,
+	seed cutoverStateSeed,
+	activationID, rollbackEligibility string,
+) (workflowgenerated.CutoverActivation, workflowgenerated.CutoverRollForwardCriterium) {
+	t.Helper()
+	var activation workflowgenerated.CutoverActivation
+	var criterion workflowgenerated.CutoverRollForwardCriterium
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		queries := workflowgenerated.New(tx.tx)
+		var err error
+		activation, err = queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, activationID, seed.transitionPlanSHA256, rollbackEligibility))
+		if err != nil {
+			return err
+		}
+		if _, err := queries.CreateCutoverActivationPrerequisiteEvidence(ctx, workflowgenerated.CreateCutoverActivationPrerequisiteEvidenceParams{
+			ActivationRowID: activation.ID,
+			Sequence:        1,
+			Prerequisite:    "The current Transition Plan authority is available.",
+			Evidence:        "The immutable authority layer SHA-256 is bound to this activation.",
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.CreateCutoverActivationObligationEvidence(ctx, workflowgenerated.CreateCutoverActivationObligationEvidenceParams{
+			ActivationRowID: activation.ID,
+			ObligationKind:  "activation",
+			Sequence:        1,
+			Obligation:      "Activate only after every prerequisite has recorded evidence.",
+			Evidence:        "The activation transaction records every prerequisite and obligation before activation.",
+		}); err != nil {
+			return err
+		}
+		if rollbackEligibility == "eligible" {
+			if _, err := queries.CreateCutoverActivationObligationEvidence(ctx, workflowgenerated.CreateCutoverActivationObligationEvidenceParams{
+				ActivationRowID: activation.ID,
+				ObligationKind:  "rollback",
+				Sequence:        1,
+				Obligation:      "Restore the prior route before the first new execution boundary.",
+				Evidence:        "The prior route is retained while the execution boundary remains open.",
+			}); err != nil {
+				return err
+			}
+		}
+		criterion, err = queries.CreateCutoverRollForwardCriterion(ctx, workflowgenerated.CreateCutoverRollForwardCriterionParams{
+			ActivationRowID:     activation.ID,
+			Sequence:            1,
+			CompletionCriterion: "The first ticket-oriented execution is recorded and the route is safe to roll forward.",
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := queries.SetCutoverCurrentState(ctx, sql.NullInt64{Int64: activation.ID, Valid: true}); err != nil {
+			return err
+		}
+		activation, err = queries.ActivateCutoverActivation(ctx, activation.CutoverActivationID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return activation, criterion
+}
+
+func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, seed cutoverStateSeed) Run {
+	t.Helper()
+	var run Run
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		approval, err := tx.CreateDeliveryTicketRevisionApproval(ctx, CreateDeliveryTicketRevisionApprovalParams{
+			ApprovalID:             "approval-cutover-1",
+			RevisionRowID:          seed.revision.ID,
+			ApprovalKind:           "delivery",
+			ApprovalState:          "approved",
+			Rationale:              "The exact transition ticket is approved against the current authority.",
+			SourceClosureRowID:     seed.closure.ID,
+			AuthorityRevisionRowID: sql.NullInt64{Int64: seed.authority.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		selection, err := tx.CreateDeliveryTicketSelection(ctx, CreateDeliveryTicketSelectionParams{
+			SelectionID:        "selection-cutover-1",
+			WorkspaceRowID:     seed.workspace.ID,
+			State:              "active",
+			Rationale:          "Compose the exact transition ticket as the first new execution package.",
+			SourceClosureRowID: sql.NullInt64{Int64: seed.closure.ID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		selectionMember, err := tx.CreateDeliveryTicketSelectionMember(ctx, CreateDeliveryTicketSelectionMemberParams{
+			SelectionRowID: selection.ID,
+			Sequence:       1,
+			RevisionRowID:  seed.revision.ID,
+			ApprovalRowID:  approval.ID,
+		})
+		if err != nil {
+			return err
+		}
+		queries := workflowgenerated.New(tx.tx)
+		executionPackage, err := queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
+			PackageID:              "package-cutover-boundary",
+			SelectionRowID:         selection.ID,
+			WorkspaceRowID:         seed.workspace.ID,
+			RepoTarget:             "relay",
+			Branch:                 "main",
+			BaseCommit:             seed.closure.CommitOID,
+			SourceClosureRowID:     seed.closure.ID,
+			AuthorityRevisionRowID: seed.authority.ID,
+			PackageSha256:          workflowHash('1'),
+			AuthoritySha256:        seed.authoritySHA256,
+			SourceSha256:           workflowHash('2'),
+			DesignBriefSha256:      workflowHash('3'),
+			ExecutionSpecSha256:    workflowHash('4'),
+		})
+		if err != nil {
+			return err
+		}
+		member, err := queries.CreateExecutionPackageMember(ctx, workflowgenerated.CreateExecutionPackageMemberParams{
+			PackageRowID:         executionPackage.ID,
+			SelectionMemberRowID: selectionMember.ID,
+			Sequence:             1,
+			RevisionRowID:        seed.revision.ID,
+			MemberSha256:         workflowHash('5'),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := queries.CreateExecutionPackageApprovalBinding(ctx, workflowgenerated.CreateExecutionPackageApprovalBindingParams{
+			PackageRowID:           executionPackage.ID,
+			PackageMemberRowID:     member.ID,
+			ApprovalRowID:          approval.ID,
+			AuthorityRevisionRowID: seed.authority.ID,
+			SourceClosureRowID:     seed.closure.ID,
+			ApprovalBasisSha256:    workflowHash('6'),
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
+			return err
+		}
+		run, err = tx.CreateRun(ctx, CreateRunParams{
+			RunID:           "run-cutover-boundary",
+			FeatureSlug:     seed.workspace.FeatureSlug,
+			RepoTarget:      "relay",
+			Status:          RunStatusCreated,
+			Branch:          "main",
+			BaseCommit:      seed.closure.CommitOID,
+			CanonicalSHA256: workflowHash('7'),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = tx.LinkRunToExecutionPackage(ctx, run.RunID, executionPackage.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func workflowHash(character rune) string {
+	return strings.Repeat(string(character), 64)
+}

@@ -100,6 +100,73 @@ type AuditTicketRevisionDecision struct {
 	CreatedAt                        string `json:"created_at"`
 }
 
+type CutoverActivation struct {
+	ID                                int64          `json:"id"`
+	CutoverActivationID               string         `json:"cutover_activation_id"`
+	WorkspaceRowID                    int64          `json:"workspace_row_id"`
+	TransitionPlanTicketRevisionRowID int64          `json:"transition_plan_ticket_revision_row_id"`
+	TransitionPlanTicketID            string         `json:"transition_plan_ticket_id"`
+	TransitionPlanTicketRevision      int64          `json:"transition_plan_ticket_revision"`
+	TransitionPlanAuthorityLayerRowID int64          `json:"transition_plan_authority_layer_row_id"`
+	TransitionPlanSha256              string         `json:"transition_plan_sha256"`
+	AuthorityRevisionRowID            int64          `json:"authority_revision_row_id"`
+	AuthorityRevisionID               string         `json:"authority_revision_id"`
+	AuthorityRevisionNumber           int64          `json:"authority_revision_number"`
+	AuthoritySha256                   string         `json:"authority_sha256"`
+	RollbackEligibility               string         `json:"rollback_eligibility"`
+	ActivationStatus                  string         `json:"activation_status"`
+	ActivatedAt                       sql.NullString `json:"activated_at"`
+	ExecutionBoundaryStatus           string         `json:"execution_boundary_status"`
+	FirstNewExecutionRunRowID         sql.NullInt64  `json:"first_new_execution_run_row_id"`
+	FirstNewExecutionAt               sql.NullString `json:"first_new_execution_at"`
+	RollbackStatus                    string         `json:"rollback_status"`
+	RollForwardStatus                 string         `json:"roll_forward_status"`
+	RolledBackAt                      sql.NullString `json:"rolled_back_at"`
+	CreatedAt                         string         `json:"created_at"`
+}
+
+type CutoverActivationObligationEvidence struct {
+	ID              int64  `json:"id"`
+	ActivationRowID int64  `json:"activation_row_id"`
+	ObligationKind  string `json:"obligation_kind"`
+	Sequence        int64  `json:"sequence"`
+	Obligation      string `json:"obligation"`
+	Evidence        string `json:"evidence"`
+	CreatedAt       string `json:"created_at"`
+}
+
+type CutoverActivationPrerequisiteEvidence struct {
+	ID              int64  `json:"id"`
+	ActivationRowID int64  `json:"activation_row_id"`
+	Sequence        int64  `json:"sequence"`
+	Prerequisite    string `json:"prerequisite"`
+	Evidence        string `json:"evidence"`
+	CreatedAt       string `json:"created_at"`
+}
+
+type CutoverCurrentState struct {
+	SingletonID     int64         `json:"singleton_id"`
+	ActivationRowID sql.NullInt64 `json:"activation_row_id"`
+	CreatedAt       string        `json:"created_at"`
+	UpdatedAt       string        `json:"updated_at"`
+}
+
+type CutoverRollForwardCriterium struct {
+	ID                  int64  `json:"id"`
+	ActivationRowID     int64  `json:"activation_row_id"`
+	Sequence            int64  `json:"sequence"`
+	CompletionCriterion string `json:"completion_criterion"`
+	CreatedAt           string `json:"created_at"`
+}
+
+type CutoverRollForwardEvidence struct {
+	ID              int64  `json:"id"`
+	ActivationRowID int64  `json:"activation_row_id"`
+	CriterionRowID  int64  `json:"criterion_row_id"`
+	Evidence        string `json:"evidence"`
+	CreatedAt       string `json:"created_at"`
+}
+
 type DeliveryTicket struct {
 	ID                   int64         `json:"id"`
 	TicketID             string        `json:"ticket_id"`
