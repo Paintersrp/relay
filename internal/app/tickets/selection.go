@@ -240,7 +240,7 @@ func selectionReadinessError(ticketID string, readiness Readiness) error {
 		return fmt.Errorf("%w: ticket %s", ErrSelectionSourceStale, ticketID)
 	case readinessHasReason(readiness, "authority_missing"), readinessHasReason(readiness, "authority_stale"), readinessHasReason(readiness, "approval_missing_or_stale"):
 		return fmt.Errorf("%w: ticket %s", ErrSelectionAuthorityStale, ticketID)
-	case readinessHasReason(readiness, "dependency_outcome_not_satisfied"), readinessHasReason(readiness, "dependency_revision_stale"):
+	case readinessHasReason(readiness, "dependency_outcome_not_satisfied"), readinessHasReason(readiness, "dependency_revision_stale"), readinessHasReason(readiness, "dependency_outcome_incomplete"):
 		return fmt.Errorf("%w: ticket %s", ErrSelectionDependenciesInvalid, ticketID)
 	default:
 		return fmt.Errorf("%w: ticket %s (%s)", ErrSelectionMemberNotReady, ticketID, strings.Join(readiness.Reasons, ","))

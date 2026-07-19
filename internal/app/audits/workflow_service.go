@@ -197,6 +197,9 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		if err != nil {
 			return err
 		}
+		if err := bindWorkflowAuditPacketTicketObligations(ctx, tx, currentRun, packet); err != nil {
+			return err
+		}
 		if currentRun.Status == workflowstore.RunStatusValidating {
 			currentRun, err = tx.TransitionRun(ctx, currentRun.RunID, workflowstore.RunStatusValidating, workflowstore.RunStatusAuditReady)
 			if err != nil {
@@ -464,24 +467,33 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		current.Packet.AuditedCommit != input.AuditedCommit {
 		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
 	}
+	input.MaterialFindings = normalizeWorkflowAuditFindings(input.MaterialFindings)
+	input.Observations = normalizeWorkflowAuditObservations(input.Observations)
+	if err := validateWorkflowAuditDecisionInput(input, current.Run.ExecutionPackageRowID.Valid); err != nil {
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
 
 	decisionID := workflowstore.NewAuditDecisionID()
 	decisionBody, err := json.MarshalIndent(struct {
-		AuditDecisionID string `json:"audit_decision_id"`
-		RunID           string `json:"run_id"`
-		AuditPacketID   string `json:"audit_packet_id"`
-		PacketSHA256    string `json:"packet_sha256"`
-		AuditedCommit   string `json:"audited_commit"`
-		Decision        string `json:"decision"`
-		Rationale       string `json:"rationale"`
+		AuditDecisionID  string                         `json:"audit_decision_id"`
+		RunID            string                         `json:"run_id"`
+		AuditPacketID    string                         `json:"audit_packet_id"`
+		PacketSHA256     string                         `json:"packet_sha256"`
+		AuditedCommit    string                         `json:"audited_commit"`
+		Decision         string                         `json:"decision"`
+		Rationale        string                         `json:"rationale"`
+		MaterialFindings []WorkflowAuditMaterialFinding `json:"material_findings"`
+		Observations     []string                       `json:"observations"`
 	}{
-		AuditDecisionID: decisionID,
-		RunID:           input.RunID,
-		AuditPacketID:   input.AuditPacketID,
-		PacketSHA256:    input.PacketSHA256,
-		AuditedCommit:   input.AuditedCommit,
-		Decision:        input.Decision,
-		Rationale:       input.Rationale,
+		AuditDecisionID:  decisionID,
+		RunID:            input.RunID,
+		AuditPacketID:    input.AuditPacketID,
+		PacketSHA256:     input.PacketSHA256,
+		AuditedCommit:    input.AuditedCommit,
+		Decision:         input.Decision,
+		Rationale:        input.Rationale,
+		MaterialFindings: input.MaterialFindings,
+		Observations:     input.Observations,
 	}, "", "  ")
 	if err != nil {
 		return RecordWorkflowAuditDecisionResult{}, err
@@ -539,7 +551,8 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		if err != nil || sha256HexBytes(packetBytes) != packet.PacketSHA256 {
 			return ErrWorkflowAuditPacketStale
 		}
-		if json.Unmarshal(packetBytes, &WorkflowAuditPacket{}) != nil {
+		var packetDocument WorkflowAuditPacket
+		if json.Unmarshal(packetBytes, &packetDocument) != nil {
 			return ErrWorkflowAuditPacketStale
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
@@ -564,6 +577,12 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 			Decision:                 input.Decision,
 			Rationale:                input.Rationale,
 		})
+		if err != nil {
+			return err
+		}
+		ticketDecisions, satisfactions, remediationSeeds, err := applyWorkflowAuditTicketDecisionEffects(
+			ctx, tx, run, packet, decision, packetDocument, input,
+		)
 		if err != nil {
 			return err
 		}
@@ -602,6 +621,9 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		result = RecordWorkflowAuditDecisionResult{
 			Run: run, Pass: completedPass, Plan: completedPlan,
 			Packet: packet, Decision: decision, Artifact: artifact,
+			TicketRevisionDecisions: ticketDecisions,
+			TicketSatisfactions:     satisfactions,
+			RemediationSeeds:        remediationSeeds,
 		}
 		return nil
 	})
@@ -609,6 +631,33 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		return RecordWorkflowAuditDecisionResult{}, err
 	}
 	return result, nil
+}
+
+func normalizeWorkflowAuditFindings(findings []WorkflowAuditMaterialFinding) []WorkflowAuditMaterialFinding {
+	if len(findings) == 0 {
+		return []WorkflowAuditMaterialFinding{}
+	}
+	result := make([]WorkflowAuditMaterialFinding, len(findings))
+	for index, finding := range findings {
+		result[index] = WorkflowAuditMaterialFinding{
+			Source:              strings.TrimSpace(finding.Source),
+			Summary:             strings.TrimSpace(finding.Summary),
+			Evidence:            strings.TrimSpace(finding.Evidence),
+			RequiredRemediation: strings.TrimSpace(finding.RequiredRemediation),
+		}
+	}
+	return result
+}
+
+func normalizeWorkflowAuditObservations(observations []string) []string {
+	if len(observations) == 0 {
+		return []string{}
+	}
+	result := make([]string, len(observations))
+	for index, observation := range observations {
+		result[index] = strings.TrimSpace(observation)
+	}
+	return result
 }
 
 func sha256HexBytes(data []byte) string {

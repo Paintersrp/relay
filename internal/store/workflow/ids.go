@@ -58,6 +58,10 @@ func NewAuditDecisionID() string {
 	return "audit-" + uuid.NewString()
 }
 
+func NewAuditRemediationSeedID() string {
+	return "remediation-" + uuid.NewString()
+}
+
 func NewFeatureWorkspaceID() string {
 	return "workspace-" + uuid.NewString()
 }
@@ -84,6 +88,10 @@ func NewFeatureWorkspaceRouteStateID() string {
 
 func NewFeatureWorkspaceAuthorityRevisionID() string {
 	return "authority-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceCompletionDecisionID() string {
+	return "completion-" + uuid.NewString()
 }
 
 func NewDeliveryTicketSelectionID() string {

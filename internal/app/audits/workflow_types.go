@@ -36,6 +36,8 @@ var (
 	ErrWorkflowAuditArtifactOwnership   = errors.New("workflow audit artifact does not belong to the packet execution attempt")
 	ErrWorkflowAuditArtifactIntegrity   = errors.New("workflow audit artifact failed integrity verification")
 	ErrWorkflowAuditArtifactUnsupported = errors.New("workflow audit artifact is not supported for textual readback")
+	ErrWorkflowAuditDecisionInput       = errors.New("workflow audit decision input is invalid")
+	ErrWorkflowAuditTicketIneligible    = errors.New("workflow audit ticket effect is no longer eligible")
 )
 
 type WorkflowAuditInspector func(context.Context, string, string, string, string) (workflowrepos.AuditCommitEvidence, error)
@@ -388,14 +390,19 @@ type RecordWorkflowAuditDecisionInput struct {
 	AuditedCommit     string
 	Decision          string
 	Rationale         string
+	MaterialFindings  []WorkflowAuditMaterialFinding
+	Observations      []string
 	OperatorConfirmed bool
 }
 
 type RecordWorkflowAuditDecisionResult struct {
-	Run      workflowstore.Run
-	Pass     *workflowstore.PlanPass
-	Plan     *workflowstore.Plan
-	Packet   workflowstore.AuditPacket
-	Decision workflowstore.AuditDecision
-	Artifact workflowstore.Artifact
+	Run                     workflowstore.Run
+	Pass                    *workflowstore.PlanPass
+	Plan                    *workflowstore.Plan
+	Packet                  workflowstore.AuditPacket
+	Decision                workflowstore.AuditDecision
+	Artifact                workflowstore.Artifact
+	TicketRevisionDecisions []workflowstore.AuditTicketRevisionDecision
+	TicketSatisfactions     []workflowstore.DeliveryTicketRevisionSatisfaction
+	RemediationSeeds        []workflowstore.AuditRemediationSeed
 }

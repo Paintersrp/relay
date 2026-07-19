@@ -28,6 +28,10 @@ func (s *Store) GetExecutionPackageBySelectionRowID(ctx context.Context, selecti
 	return workflowgenerated.New(s.db).GetExecutionPackageBySelectionRowID(ctx, selectionRowID)
 }
 
+func (s *Store) GetExecutionPackageByRowID(ctx context.Context, packageRowID int64) (ExecutionPackage, error) {
+	return getExecutionPackageByRowID(ctx, s.db, packageRowID)
+}
+
 func (s *Store) ListExecutionPackagesByWorkspace(ctx context.Context, workspaceRowID int64) ([]ExecutionPackage, error) {
 	return workflowgenerated.New(s.db).ListExecutionPackagesByWorkspace(ctx, workspaceRowID)
 }
@@ -50,6 +54,10 @@ func (tx *Tx) GetExecutionPackageByPackageID(ctx context.Context, packageID stri
 
 func (tx *Tx) GetExecutionPackageBySelectionRowID(ctx context.Context, selectionRowID int64) (ExecutionPackage, error) {
 	return workflowgenerated.New(tx.tx).GetExecutionPackageBySelectionRowID(ctx, selectionRowID)
+}
+
+func (tx *Tx) GetExecutionPackageByRowID(ctx context.Context, packageRowID int64) (ExecutionPackage, error) {
+	return getExecutionPackageByRowID(ctx, tx.tx, packageRowID)
 }
 
 func (tx *Tx) CreateExecutionPackage(ctx context.Context, params CreateExecutionPackageParams) (ExecutionPackage, error) {
@@ -102,6 +110,22 @@ func (tx *Tx) LinkRunToExecutionPackage(ctx context.Context, runID string, packa
 
 type runExecutionPackageQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func getExecutionPackageByRowID(ctx context.Context, queryer runExecutionPackageQueryer, packageRowID int64) (ExecutionPackage, error) {
+	var value ExecutionPackage
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit,
+       source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256,
+       source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+FROM execution_packages
+WHERE id = ?`, packageRowID).Scan(
+		&value.ID, &value.PackageID, &value.SelectionRowID, &value.WorkspaceRowID,
+		&value.RepoTarget, &value.Branch, &value.BaseCommit, &value.SourceClosureRowID,
+		&value.AuthorityRevisionRowID, &value.PackageSha256, &value.AuthoritySha256,
+		&value.SourceSha256, &value.DesignBriefSha256, &value.ExecutionSpecSha256, &value.CreatedAt,
+	)
+	return value, err
 }
 
 func getRunByExecutionPackageRowID(ctx context.Context, queryer runExecutionPackageQueryer, packageRowID int64) (Run, error) {

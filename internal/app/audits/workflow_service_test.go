@@ -9,11 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	workflowpackages "relay/internal/app/packages"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
+	workflowtickets "relay/internal/app/tickets"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/artifactschema"
 	workflowrepos "relay/internal/repos/workflow"
@@ -1758,6 +1760,246 @@ func TestWorkflowAuditTicketPackageStalesWhenCurrentTicketRevisionChanges(t *tes
 	if _, err := fixture.service.GetCurrentPacket(ctx, fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPacketStale) {
 		t.Fatalf("replaced ticket revision current packet error = %v", err)
 	}
+}
+
+func TestWorkflowAuditTicketDecisionAppliesExactEffectsAndReleasesDependentFrontier(t *testing.T) {
+	ctx := context.Background()
+	fixture := newTicketPackageAuditFixture(t)
+	prepared, err := fixture.service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	obligations, err := fixture.store.ListAuditPacketTicketObligations(ctx, prepared.Packet.ID)
+	if err != nil || len(obligations) != 1 {
+		t.Fatalf("packet obligations = %#v, err=%v", obligations, err)
+	}
+	pkg, err := fixture.store.GetExecutionPackageByRowID(ctx, fixture.run.ExecutionPackageRowID.Int64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := fixture.store.GetFeatureWorkspaceByRowID(ctx, pkg.WorkspaceRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision, err := fixture.store.GetDeliveryTicketRevisionByRowID(ctx, obligations[0].DeliveryTicketRevisionRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := fixture.store.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, obligations[0].AuthorityRevisionRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketService, err := workflowtickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependent, err := ticketService.Publish(ctx, workflowtickets.PublishInput{
+		WorkspaceID: workspace.WorkspaceID, TicketID: "P6-DEPENDENT", ExternalPriority: 47, ExpectedRevisionNumber: 0,
+		Revision: workflowtickets.RevisionInput{
+			RepoTarget: revision.RepoTarget, Branch: revision.Branch, BaseCommit: revision.BaseCommit,
+			SourceClosureRowID: revision.SourceClosureRowID, SourcePath: "tickets/P6-DEPENDENT.delivery-ticket.json",
+			Goal: "Release after the audited dependency completes.", Context: "The dependency outcome must be recorded by audit.",
+			TransitionApplicability: "not_required", CanonicalJSON: []byte(`{"ticket":"P6-DEPENDENT"}`), RenderedMarkdown: []byte("# P6-DEPENDENT\n"),
+			Members:      []workflowtickets.RevisionMemberInput{{Kind: "implementation_obligation", Path: "internal/app/tickets", Text: "Wait for the accepted dependency."}},
+			Dependencies: []workflowtickets.DependencyInput{{RevisionRowID: revision.ID, Outcome: "satisfied"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ticketService.Approve(ctx, workflowtickets.ApproveInput{TicketID: dependent.Ticket.TicketID, RevisionRowID: dependent.Revision.ID, AuthorityRevisionID: authority.AuthorityRevisionID, Rationale: "approved for dependency release"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := ticketService.Read(ctx, dependent.Ticket.TicketID)
+	if err != nil || !hasWorkflowAuditReadinessReason(before.Readiness, "dependency_outcome_incomplete") {
+		t.Fatalf("dependent readiness before acceptance = %#v, err=%v", before.Readiness, err)
+	}
+
+	result, err := fixture.service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
+		RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256,
+		AuditedCommit: fixture.head, Decision: workflowstore.AuditDecisionAccepted, Rationale: "The exact package satisfies its delivery obligations.", OperatorConfirmed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Run.Status != workflowstore.RunStatusCompleted || len(result.TicketRevisionDecisions) != 1 || len(result.TicketSatisfactions) != 1 || len(result.RemediationSeeds) != 0 {
+		t.Fatalf("accepted ticket audit result = %#v", result)
+	}
+	if _, err := fixture.store.GetDeliveryTicketRevisionSatisfaction(ctx, revision.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := ticketService.Read(ctx, dependent.Ticket.TicketID)
+	if err != nil || !after.Readiness.Ready {
+		t.Fatalf("dependent readiness after acceptance = %#v, err=%v", after.Readiness, err)
+	}
+	frontier, err := ticketService.ListFrontier(ctx, workspace.WorkspaceID)
+	if err != nil || len(frontier.Entries) != 1 || frontier.Entries[0].TicketID != dependent.Ticket.TicketID {
+		t.Fatalf("frontier after accepted dependency = %#v, err=%v", frontier, err)
+	}
+}
+
+func TestWorkflowAuditTicketNeedsRevisionCreatesBoundedImmutableSeed(t *testing.T) {
+	ctx := context.Background()
+	fixture := newTicketPackageAuditFixture(t)
+	prepared, err := fixture.service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := fixture.service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
+		RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256,
+		AuditedCommit: fixture.head, Decision: workflowstore.AuditDecisionNeedsRevision, Rationale: "The package does not prove its required persistence outcome.",
+		MaterialFindings: []WorkflowAuditMaterialFinding{{
+			Source: "executor_implementation", Summary: "The implementation omits the required persistence assertion.",
+			Evidence: "The declared validation evidence does not cover the persisted audit effect.", RequiredRemediation: "Publish a current remediation ticket with the missing assertion.",
+		}},
+		Observations: []string{"No unrelated source changes were observed."}, OperatorConfirmed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Run.Status != workflowstore.RunStatusNeedsRevision || len(result.TicketSatisfactions) != 0 || len(result.RemediationSeeds) != 1 || len(result.TicketRevisionDecisions) != 1 {
+		t.Fatalf("needs-revision ticket audit result = %#v", result)
+	}
+	findings, err := fixture.store.ListAuditRemediationSeedFindings(ctx, result.RemediationSeeds[0].ID)
+	if err != nil || len(findings) != 1 || findings[0].UpstreamClassification != "executor_implementation" {
+		t.Fatalf("immutable remediation findings = %#v, err=%v", findings, err)
+	}
+	obligations, err := fixture.store.ListAuditPacketTicketObligations(ctx, prepared.Packet.ID)
+	if err != nil || len(obligations) != 1 {
+		t.Fatalf("packet obligations = %#v, err=%v", obligations, err)
+	}
+	if _, err := fixture.store.GetDeliveryTicketRevisionSatisfaction(ctx, obligations[0].DeliveryTicketRevisionRowID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("needs-revision unexpectedly satisfied ticket: %v", err)
+	}
+	if _, err := fixture.service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
+		RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256,
+		AuditedCommit: fixture.head, Decision: workflowstore.AuditDecisionNeedsRevision, Rationale: "repeat", MaterialFindings: []WorkflowAuditMaterialFinding{{Source: "execution_spec", Summary: "repeat", Evidence: "repeat", RequiredRemediation: "repeat"}}, OperatorConfirmed: true,
+	}); !errors.Is(err, ErrWorkflowAuditDecisionRecorded) {
+		t.Fatalf("second decision error = %v", err)
+	}
+	revision, err := fixture.store.GetDeliveryTicketRevisionByRowID(ctx, obligations[0].DeliveryTicketRevisionRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := fixture.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketService, err := workflowtickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := ticketService.Publish(ctx, workflowtickets.PublishInput{
+		WorkspaceID: "workspace-ticket-audit", TicketID: ticket.TicketID, ExternalPriority: ticket.ExternalPriority, ExpectedRevisionNumber: revision.RevisionNumber,
+		RemediationSeedID: result.RemediationSeeds[0].RemediationSeedID,
+		Revision: workflowtickets.RevisionInput{
+			RepoTarget: revision.RepoTarget, Branch: revision.Branch, BaseCommit: revision.BaseCommit, SourceClosureRowID: revision.SourceClosureRowID,
+			SourcePath: "tickets/P6-T2.r2.delivery-ticket.json", Goal: "Repair the audited incomplete outcome.", Context: "Use the immutable remediation seed as historical evidence.",
+			TransitionApplicability: revision.TransitionApplicability, CanonicalJSON: []byte(`{"ticket":"P6-T2","revision":2}`), RenderedMarkdown: []byte("# P6-T2 remediation\n"),
+			Members: []workflowtickets.RevisionMemberInput{{Kind: "implementation_obligation", Path: "internal/app/audits", Text: "Restore the missing persistence assertion."}},
+		},
+	})
+	if err != nil || replacement.RemediationReopening == nil || replacement.RemediationReopening.ReopeningKind != "replacement_ticket_revision" || replacement.RemediationReopening.ReopeningRevisionRowID != replacement.Revision.ID {
+		t.Fatalf("remediation replacement linkage = %#v, err=%v", replacement, err)
+	}
+}
+
+func TestWorkflowAuditTicketDecisionRejectsStaleAndConcurrentEffects(t *testing.T) {
+	ctx := context.Background()
+	t.Run("replaced ticket blocks all effects", func(t *testing.T) {
+		fixture := newTicketPackageAuditFixture(t)
+		prepared, err := fixture.service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pkg, err := fixture.store.GetExecutionPackageByRowID(ctx, fixture.run.ExecutionPackageRowID.Int64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		members, err := fixture.store.ListExecutionPackageMembers(ctx, pkg.ID)
+		if err != nil || len(members) != 1 {
+			t.Fatalf("package members = %#v, err=%v", members, err)
+		}
+		revision, err := fixture.store.GetDeliveryTicketRevisionByRowID(ctx, members[0].RevisionRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ticket, err := fixture.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			replacement, err := tx.CreateDeliveryTicketRevision(ctx, workflowstore.CreateDeliveryTicketRevisionParams{
+				DeliveryTicketRowID: ticket.ID, RevisionNumber: revision.RevisionNumber + 1, ReplacesRevisionRowID: sql.NullInt64{Int64: revision.ID, Valid: true},
+				RepoTarget: revision.RepoTarget, Branch: revision.Branch, BaseCommit: revision.BaseCommit, SourceClosureRowID: revision.SourceClosureRowID,
+				SourcePath: revision.SourcePath, Goal: revision.Goal, Context: revision.Context, TransitionApplicability: revision.TransitionApplicability,
+			})
+			if err != nil {
+				return err
+			}
+			_, err = tx.SetDeliveryTicketCurrentRevision(ctx, ticket.TicketID, replacement.ID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
+			RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256,
+			AuditedCommit: fixture.head, Decision: workflowstore.AuditDecisionAccepted, Rationale: "must fail closed", OperatorConfirmed: true,
+		}); !errors.Is(err, ErrWorkflowAuditPacketStale) {
+			t.Fatalf("stale ticket decision error = %v", err)
+		}
+		if _, err := fixture.store.GetAuditDecisionByRun(ctx, fixture.run.ID); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("stale decision recorded audit evidence: %v", err)
+		}
+	})
+
+	t.Run("only one concurrent decision commits", func(t *testing.T) {
+		fixture := newTicketPackageAuditFixture(t)
+		prepared, err := fixture.service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head})
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		results := make(chan error, 2)
+		var workers sync.WaitGroup
+		for index := 0; index < 2; index++ {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				<-start
+				_, err := fixture.service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
+					RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256,
+					AuditedCommit: fixture.head, Decision: workflowstore.AuditDecisionAccepted, Rationale: "one confirmed exact decision", OperatorConfirmed: true,
+				})
+				results <- err
+			}()
+		}
+		close(start)
+		workers.Wait()
+		close(results)
+		successes, rejected := 0, 0
+		for err := range results {
+			if err == nil {
+				successes++
+			} else if errors.Is(err, ErrWorkflowAuditDecisionRecorded) {
+				rejected++
+			} else {
+				t.Fatalf("concurrent decision error = %v", err)
+			}
+		}
+		if successes != 1 || rejected != 1 {
+			t.Fatalf("concurrent outcomes successes=%d rejected=%d", successes, rejected)
+		}
+	})
+}
+
+func hasWorkflowAuditReadinessReason(readiness workflowtickets.Readiness, want string) bool {
+	for _, reason := range readiness.Reasons {
+		if reason == want {
+			return true
+		}
+	}
+	return false
 }
 
 var _ = json.Valid

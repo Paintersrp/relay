@@ -51,6 +51,7 @@ type ticketReadStore interface {
 	GetDeliveryTicketByRowID(context.Context, int64) (workflowstore.DeliveryTicket, error)
 	ListDeliveryTicketRevisionDependencies(context.Context, int64) ([]workflowstore.DeliveryTicketRevisionDependency, error)
 	ListDeliveryTicketRevisionApprovals(context.Context, int64) ([]workflowstore.DeliveryTicketRevisionApproval, error)
+	GetDeliveryTicketRevisionSatisfaction(context.Context, int64) (workflowstore.DeliveryTicketRevisionSatisfaction, error)
 	ListDeliveryTicketSelectionsByWorkspace(context.Context, int64) ([]workflowstore.DeliveryTicketSelection, error)
 	ListDeliveryTicketSelectionMembers(context.Context, int64) ([]workflowstore.DeliveryTicketSelectionMember, error)
 }
@@ -88,7 +89,7 @@ func (s *Service) ListFrontier(ctx context.Context, workspaceID string) (Frontie
 		if err != nil {
 			return Frontier{}, err
 		}
-		if !readiness.Ready || readiness.Selected {
+		if !readiness.Ready || readiness.Selected || readiness.Completed {
 			continue
 		}
 		entries = append(entries, FrontierEntry{

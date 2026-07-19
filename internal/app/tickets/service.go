@@ -21,6 +21,7 @@ var (
 	ErrTicketNotFound       = errors.New("delivery ticket not found")
 	ErrRevisionConflict     = errors.New("delivery ticket revision conflict")
 	ErrDependencyNotCurrent = errors.New("delivery ticket dependency is not current")
+	ErrRemediationSeed      = errors.New("delivery ticket remediation seed is invalid")
 )
 
 type Service struct {
@@ -71,6 +72,7 @@ type PublishInput struct {
 	TicketID               string
 	ExternalPriority       int64
 	ExpectedRevisionNumber int64
+	RemediationSeedID      string
 	Revision               RevisionInput
 }
 
@@ -81,10 +83,11 @@ type StoredArtifact struct {
 }
 
 type PublishedRevision struct {
-	Ticket    workflowstore.DeliveryTicket
-	Revision  workflowstore.DeliveryTicketRevision
-	Canonical StoredArtifact
-	Rendered  StoredArtifact
+	Ticket               workflowstore.DeliveryTicket
+	Revision             workflowstore.DeliveryTicketRevision
+	Canonical            StoredArtifact
+	Rendered             StoredArtifact
+	RemediationReopening *workflowstore.AuditRemediationSeedReopening
 }
 
 func (s *Service) Publish(ctx context.Context, input PublishInput) (PublishedRevision, error) {
@@ -188,6 +191,16 @@ func (s *Service) Publish(ctx context.Context, input PublishInput) (PublishedRev
 		if err != nil {
 			return err
 		}
+		if err := reopenCurrentFeatureCompletionForTicket(ctx, tx, ticket, revision); err != nil {
+			return err
+		}
+		if input.RemediationSeedID != "" {
+			reopening, err := linkRemediationSeed(ctx, tx, input.RemediationSeedID, ticket, revision)
+			if err != nil {
+				return err
+			}
+			result.RemediationReopening = &reopening
+		}
 		result.Ticket, result.Revision = ticket, revision
 		return nil
 	})
@@ -224,9 +237,10 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (workflowstor
 }
 
 type Readiness struct {
-	Ready    bool
-	Selected bool
-	Reasons  []string
+	Ready     bool
+	Selected  bool
+	Completed bool
+	Reasons   []string
 }
 
 type TicketDetail struct {
@@ -334,7 +348,20 @@ func deriveTicketReadiness(ctx context.Context, reader ticketReadStore, detail T
 		}
 		if !dependencyTicket.CurrentRevisionRowID.Valid || dependencyTicket.CurrentRevisionRowID.Int64 != dependencyRevision.ID {
 			reasons = append(reasons, "dependency_revision_stale")
+			continue
 		}
+		if _, err := reader.GetDeliveryTicketRevisionSatisfaction(ctx, dependencyRevision.ID); errors.Is(err, sql.ErrNoRows) {
+			reasons = append(reasons, "dependency_outcome_incomplete")
+		} else if err != nil {
+			return Readiness{}, err
+		}
+	}
+	completed := false
+	if _, err := reader.GetDeliveryTicketRevisionSatisfaction(ctx, detail.Revision.ID); err == nil {
+		completed = true
+		reasons = append(reasons, "completed")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Readiness{}, err
 	}
 
 	selected := false
@@ -362,7 +389,7 @@ func deriveTicketReadiness(ctx context.Context, reader ticketReadStore, detail T
 			break
 		}
 	}
-	return Readiness{Ready: len(reasons) == 0, Selected: selected, Reasons: reasons}, nil
+	return Readiness{Ready: len(reasons) == 0, Selected: selected, Completed: completed, Reasons: reasons}, nil
 }
 
 func (s *Service) readArtifact(ticketID string, revisionNumber int64, filename string) (StoredArtifact, error) {
@@ -397,6 +424,7 @@ func validPublish(input PublishInput) bool {
 		!nonBlank(input.Revision.RepoTarget) || !nonBlank(input.Revision.Branch) || !nonBlank(input.Revision.BaseCommit) ||
 		input.Revision.SourceClosureRowID < 1 || !nonBlank(input.Revision.SourcePath) || !nonBlank(input.Revision.Goal) || !nonBlank(input.Revision.Context) ||
 		(input.Revision.TransitionApplicability != "required" && input.Revision.TransitionApplicability != "not_required") ||
+		(strings.TrimSpace(input.RemediationSeedID) != input.RemediationSeedID) ||
 		(strings.TrimSpace(input.Revision.CancellationReason) != input.Revision.CancellationReason) {
 		return false
 	}
@@ -414,3 +442,67 @@ func validPublish(input PublishInput) bool {
 }
 
 func nonBlank(value string) bool { return strings.TrimSpace(value) == value && value != "" }
+
+func reopenCurrentFeatureCompletionForTicket(
+	ctx context.Context,
+	tx *workflowstore.Tx,
+	ticket workflowstore.DeliveryTicket,
+	revision workflowstore.DeliveryTicketRevision,
+) error {
+	completion, err := tx.GetCurrentFeatureWorkspaceCompletionDecision(ctx, ticket.WorkspaceRowID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = tx.CreateFeatureWorkspaceCompletionReopening(ctx, workflowstore.CreateFeatureWorkspaceCompletionReopeningParams{
+		CompletionDecisionRowID:      completion.ID,
+		ReopeningKind:                "ticket_revision",
+		ReopeningTicketRevisionRowID: sql.NullInt64{Int64: revision.ID, Valid: true},
+	})
+	return err
+}
+
+func linkRemediationSeed(
+	ctx context.Context,
+	tx *workflowstore.Tx,
+	seedID string,
+	ticket workflowstore.DeliveryTicket,
+	revision workflowstore.DeliveryTicketRevision,
+) (workflowstore.AuditRemediationSeedReopening, error) {
+	seed, err := tx.GetAuditRemediationSeedBySeedID(ctx, seedID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+		}
+		return workflowstore.AuditRemediationSeedReopening{}, err
+	}
+	if _, err := tx.GetAuditRemediationSeedReopening(ctx, seed.ID); err == nil {
+		return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return workflowstore.AuditRemediationSeedReopening{}, err
+	}
+	revisionDecision, err := tx.GetAuditTicketRevisionDecisionByRowID(ctx, seed.AuditTicketRevisionDecisionRowID)
+	if err != nil {
+		return workflowstore.AuditRemediationSeedReopening{}, err
+	}
+	obligation, err := tx.GetAuditPacketTicketObligationByRowID(ctx, revisionDecision.AuditPacketTicketObligationRowID)
+	if err != nil || ticket.WorkspaceRowID == 0 {
+		return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+	}
+	auditedTicket, err := tx.GetDeliveryTicketByRowID(ctx, obligation.DeliveryTicketRowID)
+	if err != nil || auditedTicket.WorkspaceRowID != ticket.WorkspaceRowID {
+		return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+	}
+	kind := "remediation_ticket"
+	if auditedTicket.ID == ticket.ID {
+		kind = "replacement_ticket_revision"
+		if !revision.ReplacesRevisionRowID.Valid || revision.ReplacesRevisionRowID.Int64 != obligation.DeliveryTicketRevisionRowID {
+			return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+		}
+	}
+	return tx.CreateAuditRemediationSeedReopening(ctx, workflowstore.CreateAuditRemediationSeedReopeningParams{
+		RemediationSeedRowID: seed.ID, ReopeningRevisionRowID: revision.ID, ReopeningKind: kind,
+	})
+}

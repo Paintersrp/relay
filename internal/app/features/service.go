@@ -10,16 +10,25 @@ import (
 )
 
 var (
-	ErrInvalidAuthorityRequest = errors.New("invalid feature authority request")
-	ErrWorkspaceNotFound       = errors.New("feature workspace not found")
-	ErrVersionConflict         = errors.New("feature workspace version conflict")
+	ErrInvalidAuthorityRequest       = errors.New("invalid feature authority request")
+	ErrWorkspaceNotFound             = errors.New("feature workspace not found")
+	ErrVersionConflict               = errors.New("feature workspace version conflict")
+	ErrFeatureCompletionConfirmation = errors.New("feature completion confirmation is required")
+	ErrFeatureCompletionNotReady     = errors.New("feature workspace completion gates are not satisfied")
+	ErrFeatureCompletionRecorded     = errors.New("feature workspace completion is already current")
 )
 
-type IDGenerator interface{ AuthorityRevisionID() string }
+type IDGenerator interface {
+	AuthorityRevisionID() string
+	CompletionDecisionID() string
+}
 type defaultIDGenerator struct{}
 
 func (defaultIDGenerator) AuthorityRevisionID() string {
 	return workflowstore.NewFeatureWorkspaceAuthorityRevisionID()
+}
+func (defaultIDGenerator) CompletionDecisionID() string {
+	return workflowstore.NewFeatureWorkspaceCompletionDecisionID()
 }
 
 type Service struct {
@@ -101,7 +110,10 @@ func (s *Service) PublishAuthority(ctx context.Context, input PublishAuthorityIn
 			detail.Layers = append(detail.Layers, applicationLayerKind(created))
 		}
 		updated, err = tx.SetFeatureWorkspaceAuthorityRevision(ctx, detail.Revision.ID, workspace.WorkspaceID, workspace.Version)
-		return err
+		if err != nil {
+			return err
+		}
+		return reopenCurrentFeatureCompletionForAuthority(ctx, tx, updated, detail.Revision)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrVersionConflict
@@ -175,4 +187,263 @@ func validSHA256(value string) bool {
 		}
 	}
 	return true
+}
+
+type CompletionInput struct {
+	WorkspaceID       string
+	ExpectedVersion   int64
+	OperatorConfirmed bool
+}
+
+type CompletionGate struct {
+	Name  string
+	Ready bool
+}
+
+type CompletionStatus struct {
+	Workspace       workflowstore.FeatureWorkspace
+	Gates           []CompletionGate
+	CurrentDecision *workflowstore.FeatureWorkspaceCompletionDecision
+}
+
+type CompletionResult struct {
+	Decision  workflowstore.FeatureWorkspaceCompletionDecision
+	Workspace workflowstore.FeatureWorkspace
+}
+
+// EvaluateCompletion exposes the current gate matrix without creating a
+// completion record. Completion itself remains an explicit confirmed action.
+func (s *Service) EvaluateCompletion(ctx context.Context, workspaceID string) (CompletionStatus, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return CompletionStatus{}, ErrInvalidAuthorityRequest
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CompletionStatus{}, ErrWorkspaceNotFound
+	}
+	if err != nil {
+		return CompletionStatus{}, err
+	}
+	gates, err := featureCompletionGates(ctx, s.store, workspace)
+	if err != nil {
+		return CompletionStatus{}, err
+	}
+	status := CompletionStatus{Workspace: workspace, Gates: gates}
+	if decision, err := s.store.GetCurrentFeatureWorkspaceCompletionDecision(ctx, workspace.ID); err == nil {
+		status.CurrentDecision = &decision
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return CompletionStatus{}, err
+	}
+	return status, nil
+}
+
+func (s *Service) Complete(ctx context.Context, input CompletionInput) (CompletionResult, error) {
+	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
+	if input.WorkspaceID == "" || input.ExpectedVersion < 1 {
+		return CompletionResult{}, ErrInvalidAuthorityRequest
+	}
+	if !input.OperatorConfirmed {
+		return CompletionResult{}, ErrFeatureCompletionConfirmation
+	}
+	result := CompletionResult{}
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		workspace, err := tx.GetFeatureWorkspaceByWorkspaceID(ctx, input.WorkspaceID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrWorkspaceNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if workspace.Version != input.ExpectedVersion {
+			return ErrVersionConflict
+		}
+		if _, err := tx.GetCurrentFeatureWorkspaceCompletionDecision(ctx, workspace.ID); err == nil {
+			return ErrFeatureCompletionRecorded
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		gates, err := featureCompletionGates(ctx, tx, workspace)
+		if err != nil {
+			return err
+		}
+		if !completionGatesReady(gates) {
+			return ErrFeatureCompletionNotReady
+		}
+		authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+		if err != nil || !authority.SourceClosureRowID.Valid {
+			return ErrFeatureCompletionNotReady
+		}
+		decision, err := tx.CreateFeatureWorkspaceCompletionDecision(ctx, workflowstore.CreateFeatureWorkspaceCompletionDecisionParams{
+			CompletionDecisionID:   s.ids.CompletionDecisionID(),
+			WorkspaceRowID:         workspace.ID,
+			AuthorityRevisionRowID: authority.ID,
+			SourceClosureRowID:     authority.SourceClosureRowID.Int64,
+			Decision:               "completed",
+		})
+		if err != nil {
+			return err
+		}
+		updated, err := tx.BumpFeatureWorkspaceVersion(ctx, workspace.WorkspaceID, workspace.Version)
+		if err != nil {
+			return ErrVersionConflict
+		}
+		result = CompletionResult{Decision: decision, Workspace: updated}
+		return nil
+	})
+	return result, err
+}
+
+type featureCompletionReader interface {
+	GetFeatureWorkspaceAuthorityRevisionByRowID(context.Context, int64) (workflowstore.FeatureWorkspaceAuthorityRevision, error)
+	GetSourceVaultClosureByRowID(context.Context, int64) (workflowstore.SourceVaultClosure, error)
+	ListFeatureWorkspaceAuthorityLayers(context.Context, int64) ([]workflowstore.FeatureWorkspaceAuthorityLayer, error)
+	ListDeliveryTicketsByWorkspace(context.Context, int64) ([]workflowstore.DeliveryTicket, error)
+	GetDeliveryTicketRevisionByRowID(context.Context, int64) (workflowstore.DeliveryTicketRevision, error)
+	GetDeliveryTicketRevisionSatisfaction(context.Context, int64) (workflowstore.DeliveryTicketRevisionSatisfaction, error)
+	ListDeliveryTicketSelectionsByWorkspace(context.Context, int64) ([]workflowstore.DeliveryTicketSelection, error)
+	ListAuditRemediationSeedsByWorkspace(context.Context, int64) ([]workflowstore.AuditRemediationSeed, error)
+	GetAuditRemediationSeedReopening(context.Context, int64) (workflowstore.AuditRemediationSeedReopening, error)
+}
+
+func featureCompletionGates(ctx context.Context, reader featureCompletionReader, workspace workflowstore.FeatureWorkspace) ([]CompletionGate, error) {
+	authorityReady := workspace.CurrentAuthorityRevisionRowID.Valid
+	var authority workflowstore.FeatureWorkspaceAuthorityRevision
+	if authorityReady {
+		value, err := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+		if err != nil {
+			return nil, err
+		}
+		authority = value
+		if !authority.SourceClosureRowID.Valid {
+			authorityReady = false
+		} else {
+			closure, err := reader.GetSourceVaultClosureByRowID(ctx, authority.SourceClosureRowID.Int64)
+			if err != nil {
+				return nil, err
+			}
+			authorityReady = authority.WorkspaceRowID == workspace.ID && closure.State == workflowstore.SourceVaultClosureStateReady
+		}
+	}
+
+	tickets, err := reader.ListDeliveryTicketsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	ticketsReady, auditReady, transitionsReady := true, true, true
+	requiresTransition := false
+	for _, ticket := range tickets {
+		if !ticket.CurrentRevisionRowID.Valid {
+			continue
+		}
+		revision, err := reader.GetDeliveryTicketRevisionByRowID(ctx, ticket.CurrentRevisionRowID.Int64)
+		if err != nil {
+			return nil, err
+		}
+		if revision.CancellationReason.Valid {
+			continue
+		}
+		if _, err := reader.GetDeliveryTicketRevisionSatisfaction(ctx, revision.ID); errors.Is(err, sql.ErrNoRows) {
+			ticketsReady, auditReady = false, false
+		} else if err != nil {
+			return nil, err
+		}
+		if revision.TransitionApplicability == "required" {
+			requiresTransition = true
+		}
+	}
+	if requiresTransition && authorityReady {
+		layers, err := reader.ListFeatureWorkspaceAuthorityLayers(ctx, authority.ID)
+		if err != nil {
+			return nil, err
+		}
+		transitionsReady = false
+		for _, layer := range layers {
+			if layer.LayerKind == "plan" || layer.LayerKind == "transition_plan" {
+				transitionsReady = true
+				break
+			}
+		}
+	}
+	if requiresTransition && !authorityReady {
+		transitionsReady = false
+	}
+
+	selections, err := reader.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	integrationReady := true
+	for _, selection := range selections {
+		if selection.State == "active" {
+			integrationReady = false
+			break
+		}
+	}
+
+	remediationReady := true
+	seeds, err := reader.ListAuditRemediationSeedsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, seed := range seeds {
+		reopening, err := reader.GetAuditRemediationSeedReopening(ctx, seed.ID)
+		if errors.Is(err, sql.ErrNoRows) {
+			remediationReady = false
+			break
+		}
+		if err != nil || reopening.ReopeningRevisionRowID < 1 {
+			if err != nil {
+				return nil, err
+			}
+			remediationReady = false
+			break
+		}
+		remediationRevision, err := reader.GetDeliveryTicketRevisionByRowID(ctx, reopening.ReopeningRevisionRowID)
+		if err != nil {
+			return nil, err
+		}
+		if remediationRevision.CancellationReason.Valid {
+			remediationReady = false
+			break
+		}
+	}
+	return []CompletionGate{
+		{Name: "authority", Ready: authorityReady},
+		{Name: "tickets", Ready: ticketsReady},
+		{Name: "integration", Ready: integrationReady},
+		{Name: "transitions", Ready: transitionsReady},
+		{Name: "remediation", Ready: remediationReady},
+		{Name: "audit", Ready: auditReady},
+	}, nil
+}
+
+func completionGatesReady(gates []CompletionGate) bool {
+	for _, gate := range gates {
+		if !gate.Ready {
+			return false
+		}
+	}
+	return true
+}
+
+func reopenCurrentFeatureCompletionForAuthority(
+	ctx context.Context,
+	tx *workflowstore.Tx,
+	workspace workflowstore.FeatureWorkspace,
+	authority workflowstore.FeatureWorkspaceAuthorityRevision,
+) error {
+	completion, err := tx.GetCurrentFeatureWorkspaceCompletionDecision(ctx, workspace.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = tx.CreateFeatureWorkspaceCompletionReopening(ctx, workflowstore.CreateFeatureWorkspaceCompletionReopeningParams{
+		CompletionDecisionRowID:         completion.ID,
+		ReopeningKind:                   "authority_revision",
+		ReopeningAuthorityRevisionRowID: sql.NullInt64{Int64: authority.ID, Valid: true},
+	})
+	return err
 }
