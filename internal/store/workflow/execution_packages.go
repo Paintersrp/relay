@@ -14,10 +14,13 @@ type (
 	ExecutionPackage                = workflowgenerated.ExecutionPackage
 	ExecutionPackageMember          = workflowgenerated.ExecutionPackageMember
 	ExecutionPackageApprovalBinding = workflowgenerated.ExecutionPackageApprovalBinding
+	ExecutionPackageApproval        = workflowgenerated.ExecutionPackageApproval
 
 	CreateExecutionPackageParams                = workflowgenerated.CreateExecutionPackageParams
 	CreateExecutionPackageMemberParams          = workflowgenerated.CreateExecutionPackageMemberParams
 	CreateExecutionPackageApprovalBindingParams = workflowgenerated.CreateExecutionPackageApprovalBindingParams
+	CreateExecutionPackageApprovalParams        = workflowgenerated.CreateExecutionPackageApprovalParams
+	LinkRunToExecutionPackageApprovalParams     = workflowgenerated.LinkRunToExecutionPackageApprovalParams
 )
 
 func (s *Store) GetExecutionPackageByPackageID(ctx context.Context, packageID string) (ExecutionPackage, error) {
@@ -46,6 +49,14 @@ func (s *Store) ListExecutionPackageApprovalBindings(ctx context.Context, packag
 
 func (s *Store) GetRunByExecutionPackageRowID(ctx context.Context, packageRowID int64) (Run, error) {
 	return getRunByExecutionPackageRowID(ctx, s.db, packageRowID)
+}
+
+func (s *Store) GetExecutionPackageApprovalByPackageRowID(ctx context.Context, packageRowID int64) (ExecutionPackageApproval, error) {
+	return workflowgenerated.New(s.db).GetExecutionPackageApprovalByPackageRowID(ctx, packageRowID)
+}
+
+func (s *Store) GetExecutionPackageApprovalByApprovalID(ctx context.Context, approvalID string) (ExecutionPackageApproval, error) {
+	return workflowgenerated.New(s.db).GetExecutionPackageApprovalByApprovalID(ctx, approvalID)
 }
 
 func (tx *Tx) GetExecutionPackageByPackageID(ctx context.Context, packageID string) (ExecutionPackage, error) {
@@ -84,6 +95,36 @@ func (tx *Tx) ConsumeDeliveryTicketSelection(ctx context.Context, selectionID st
 	return workflowgenerated.New(tx.tx).ConsumeDeliveryTicketSelection(ctx, selectionID)
 }
 
+func (tx *Tx) CreateExecutionPackageApproval(ctx context.Context, params CreateExecutionPackageApprovalParams) (ExecutionPackageApproval, error) {
+	return workflowgenerated.New(tx.tx).CreateExecutionPackageApproval(ctx, params)
+}
+
+func (tx *Tx) GetExecutionPackageApprovalByPackageRowID(ctx context.Context, packageRowID int64) (ExecutionPackageApproval, error) {
+	return workflowgenerated.New(tx.tx).GetExecutionPackageApprovalByPackageRowID(ctx, packageRowID)
+}
+
+func (tx *Tx) LinkRunToExecutionPackageApproval(ctx context.Context, params LinkRunToExecutionPackageApprovalParams) (Run, error) {
+	value, err := workflowgenerated.New(tx.tx).LinkRunToExecutionPackageApproval(ctx, params)
+	return Run{
+		ID:                    value.ID,
+		RunID:                 value.RunID,
+		FeatureSlug:           value.FeatureSlug,
+		RepoTarget:            value.RepoTarget,
+		PlanRowID:             value.PlanRowID,
+		PlanPassRowID:         value.PlanPassRowID,
+		RemediatesRunRowID:    value.RemediatesRunRowID,
+		Status:                value.Status,
+		Branch:                value.Branch,
+		BaseCommit:            value.BaseCommit,
+		CanonicalSHA256:       value.CanonicalSha256,
+		CreatedAt:             value.CreatedAt,
+		UpdatedAt:             value.UpdatedAt,
+		CompletedAt:           value.CompletedAt,
+		ExecutionPackageRowID: value.ExecutionPackageRowID,
+		PackageApprovalRowID:  value.PackageApprovalRowID,
+	}, err
+}
+
 func (tx *Tx) LinkRunToExecutionPackage(ctx context.Context, runID string, packageRowID int64) (Run, error) {
 	value, err := workflowgenerated.New(tx.tx).LinkRunToExecutionPackage(ctx, workflowgenerated.LinkRunToExecutionPackageParams{
 		ExecutionPackageRowID: sql.NullInt64{Int64: packageRowID, Valid: true},
@@ -105,6 +146,7 @@ func (tx *Tx) LinkRunToExecutionPackage(ctx context.Context, runID string, packa
 		UpdatedAt:             value.UpdatedAt,
 		CompletedAt:           value.CompletedAt,
 		ExecutionPackageRowID: value.ExecutionPackageRowID,
+		PackageApprovalRowID:  value.PackageApprovalRowID,
 	}, err
 }
 
@@ -133,7 +175,7 @@ func getRunByExecutionPackageRowID(ctx context.Context, queryer runExecutionPack
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id,
        status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at,
-       execution_package_row_id
+       execution_package_row_id, package_approval_row_id
 FROM runs
 WHERE execution_package_row_id = ?`, packageRowID).Scan(
 		&value.ID,
@@ -151,6 +193,7 @@ WHERE execution_package_row_id = ?`, packageRowID).Scan(
 		&value.UpdatedAt,
 		&value.CompletedAt,
 		&value.ExecutionPackageRowID,
+		&value.PackageApprovalRowID,
 	)
 	return value, err
 }

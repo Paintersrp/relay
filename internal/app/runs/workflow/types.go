@@ -30,14 +30,15 @@ type CreateRunResult struct {
 type PackageRunPreflight func(context.Context, *workflowstore.Tx) error
 
 type CreatePackageRunInput struct {
-	FeatureSlug           string
-	RepoTarget            string
-	Branch                string
-	BaseCommit            string
-	CanonicalJSON         []byte
-	RenderedMarkdown      []byte
-	ExecutionPackageRowID int64
-	Preflight             PackageRunPreflight
+	FeatureSlug              string
+	RepoTarget               string
+	Branch                   string
+	BaseCommit               string
+	CanonicalJSON            []byte
+	RenderedMarkdown         []byte
+	ExecutionPackageRowID    int64
+	Preflight                PackageRunPreflight
+	PackageApprovalRowIDRef  *int64
 }
 
 type BeginExecutionAttemptInput struct {

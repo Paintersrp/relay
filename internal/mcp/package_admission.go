@@ -17,16 +17,18 @@ import (
 // durable identities only; local repository paths and process state never cross
 // this boundary.
 type PackageOperationIdentity struct {
-	MutationID           string                   `json:"mutation_id"`
-	ExpectedPacketID     string                   `json:"expected_packet_id"`
-	OperationID          string                   `json:"operation_id"`
-	Action               string                   `json:"action"`
-	SelectionID          string                   `json:"selection_id,omitempty"`
-	PackageID            string                   `json:"package_id,omitempty"`
-	RunID                string                   `json:"run_id,omitempty"`
-	LeaseID              string                   `json:"lease_id,omitempty"`
-	PayloadSHA256        string                   `json:"payload_sha256"`
-	RequiredDependencies []TicketPacketDependency `json:"required_dependencies"`
+	MutationID                   string                   `json:"mutation_id"`
+	ExpectedPacketID             string                   `json:"expected_packet_id"`
+	OperationID                  string                   `json:"operation_id"`
+	Action                       string                   `json:"action"`
+	SelectionID                  string                   `json:"selection_id,omitempty"`
+	PackageID                    string                   `json:"package_id,omitempty"`
+	RunID                        string                   `json:"run_id,omitempty"`
+	LeaseID                      string                   `json:"lease_id,omitempty"`
+	PayloadSHA256                string                   `json:"payload_sha256"`
+	ExpectedPackageSha256        string                   `json:"expected_package_sha256,omitempty"`
+	OperatorConfirmationEvidence string                   `json:"operator_confirmation_evidence,omitempty"`
+	RequiredDependencies         []TicketPacketDependency `json:"required_dependencies"`
 }
 
 func (v PackageOperationIdentity) SemanticIdentityVersion() string {
@@ -90,7 +92,10 @@ func (v PackageOperationIdentity) admissionRequest() appoperations.PackageOperat
 	return appoperations.PackageOperationRequest{
 		PacketID: v.ExpectedPacketID, OperationID: registry.OperationID(v.OperationID), Action: registry.AllowedAction(v.Action),
 		SelectionID: v.SelectionID, PackageID: v.PackageID, RunID: v.RunID, LeaseID: v.LeaseID,
-		PayloadSHA256: v.PayloadSHA256, RequiredDependencies: dependencies,
+		PayloadSHA256:                v.PayloadSHA256,
+		ExpectedPackageSha256:        v.ExpectedPackageSha256,
+		OperatorConfirmationEvidence: v.OperatorConfirmationEvidence,
+		RequiredDependencies:         dependencies,
 	}
 }
 

@@ -300,6 +300,15 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 		if err != nil {
 			return fmt.Errorf("link package Run: %w", err)
 		}
+		if input.PackageApprovalRowIDRef != nil && *input.PackageApprovalRowIDRef != 0 {
+			run, err = tx.LinkRunToExecutionPackageApproval(ctx, workflowstore.LinkRunToExecutionPackageApprovalParams{
+				PackageApprovalRowID: sql.NullInt64{Int64: *input.PackageApprovalRowIDRef, Valid: true},
+				RunID:                run.RunID,
+			})
+			if err != nil {
+				return fmt.Errorf("link package Run to approval: %w", err)
+			}
+		}
 		result.Run = run
 
 		for _, staged := range []workflowartifacts.File{canonical, rendered} {

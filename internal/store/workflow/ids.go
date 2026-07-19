@@ -110,6 +110,10 @@ func NewRepositoryBranchMutationLeaseID() string {
 	return "lease-" + uuid.NewString()
 }
 
+func NewExecutionPackageApprovalID() string {
+	return "pkg-approval-" + uuid.NewString()
+}
+
 func NewGoverningArtifactApprovalID() string {
 	return "ga-approval-" + uuid.NewString()
 }

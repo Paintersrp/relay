@@ -66,11 +66,13 @@ type PackageDetailView struct {
 	TicketDesignBriefs []PackageArtifactView        `json:"ticketDesignBriefs"`
 	ExecutionSpec      PackageArtifactView          `json:"executionSpec"`
 	Run                *RunView                     `json:"run"`
+	PackageApprovalID  string                       `json:"packageApprovalId,omitempty"`
 }
 
 type PackageApprovalView struct {
-	Package PackageIdentityView `json:"package"`
-	Run     RunView             `json:"run"`
+	Package           PackageIdentityView `json:"package"`
+	Run               RunView             `json:"run"`
+	PackageApprovalID string              `json:"packageApprovalId"`
 }
 
 // MutationLeaseView intentionally contains durable Run and lease identities
@@ -103,6 +105,7 @@ func packageDetailView(value packages.Detail) PackageDetailView {
 		ApprovalBindings:    make([]PackageApprovalBindingView, 0, len(value.ApprovalBindings)),
 		TicketDesignBriefs:  make([]PackageArtifactView, 0, len(value.Briefs)),
 		ExecutionSpec:       packageArtifactView(value.ExecutionSpec),
+		PackageApprovalID:   value.PackageApprovalID,
 	}
 	for _, member := range value.Members {
 		view.Members = append(view.Members, PackageMemberView{SelectionMemberRowID: member.SelectionMemberRowID, Sequence: member.Sequence, RevisionRowID: member.RevisionRowID, MemberSHA256: member.MemberSha256})

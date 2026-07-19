@@ -2,6 +2,8 @@ export interface PacketAdmissionRequest {
   packetId: string;
   operationId: string;
   requiredDependencies: { class: string; key: string }[];
+  expectedPackageSha256?: string;
+  operatorConfirmationEvidence?: string;
 }
 
 export interface PackageArtifactInput {
@@ -24,6 +26,7 @@ export interface ExecutionPackageRun {
   branch: string;
   baseCommit: string;
   status: string;
+  packageApprovalId?: string;
 }
 
 export interface ExecutionPackageDetail {
@@ -46,6 +49,7 @@ export interface ExecutionPackageDetail {
   ticketDesignBriefs: PackageArtifact[];
   executionSpec: PackageArtifact;
   run: ExecutionPackageRun | null;
+  packageApprovalId?: string;
 }
 
 export interface MutationLease {

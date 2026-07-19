@@ -49,7 +49,11 @@ type prepareRequest struct {
 	ExecutionSpec      artifactRequest   `json:"executionSpec"`
 }
 
-type approveRequest struct{ admissionRequest }
+type approveRequest struct {
+	admissionRequest
+	ExpectedPackageSha256       string `json:"expectedPackageSha256"`
+	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
+}
 
 type reconcileRequest struct{ admissionRequest }
 
@@ -105,13 +109,23 @@ func (h *WorkflowHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid execution package approval request")
 		return
 	}
-	payload, err := appoperations.PackageApprovePayloadSHA256(packageID(r))
+	if strings.TrimSpace(request.ExpectedPackageSha256) == "" || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" {
+		badRequest(w, "Expected package SHA-256 and operator confirmation evidence are required")
+		return
+	}
+	payload, err := appoperations.PackageApprovePayloadSHA256(packageID(r), request.ExpectedPackageSha256, request.OperatorConfirmationEvidence)
 	if err != nil {
 		badRequest(w, "Invalid execution package approval request")
 		return
 	}
 	result, err := h.service.Approve(r.Context(), appoperations.PackageApproveOperationInput{
-		Admission: admission(request.admissionRequest, appoperations.PackageOperationRequest{Action: "approve_execution_package", PackageID: packageID(r), PayloadSHA256: payload}),
+		Admission: admission(request.admissionRequest, appoperations.PackageOperationRequest{
+			Action:                       "approve_execution_package",
+			PackageID:                    packageID(r),
+			PayloadSHA256:                payload,
+			ExpectedPackageSha256:        request.ExpectedPackageSha256,
+			OperatorConfirmationEvidence: request.OperatorConfirmationEvidence,
+		}),
 	})
 	if err != nil {
 		writePackageError(w, err)

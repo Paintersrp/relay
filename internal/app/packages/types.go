@@ -32,22 +32,26 @@ type PrepareResult struct {
 }
 
 type ApproveInput struct {
-	PackageID string
+	PackageID                   string
+	ExpectedPackageSha256       string
+	OperatorConfirmationEvidence string
 }
 
 type ApproveResult struct {
-	Package      workflowstore.ExecutionPackage
-	Run          workflowstore.Run
-	RunArtifacts []workflowstore.Artifact
+	Package         workflowstore.ExecutionPackage
+	Run             workflowstore.Run
+	RunArtifacts    []workflowstore.Artifact
+	PackageApproval workflowstore.ExecutionPackageApproval
 }
 
 // Detail is the bounded package projection used by later operation, UI, and
 // audit owners. A nil Run means the immutable package is still unapproved.
 type Detail struct {
-	Package          workflowstore.ExecutionPackage
-	Members          []workflowstore.ExecutionPackageMember
-	ApprovalBindings []workflowstore.ExecutionPackageApprovalBinding
-	Briefs           []PackageArtifact
-	ExecutionSpec    PackageArtifact
-	Run              *workflowstore.Run
+	Package           workflowstore.ExecutionPackage
+	Members           []workflowstore.ExecutionPackageMember
+	ApprovalBindings  []workflowstore.ExecutionPackageApprovalBinding
+	Briefs            []PackageArtifact
+	ExecutionSpec     PackageArtifact
+	Run               *workflowstore.Run
+	PackageApprovalID string
 }

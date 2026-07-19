@@ -1042,3 +1042,27 @@ SELECT *
 FROM governing_artifact_approvals
 WHERE workspace_row_id = ?
 ORDER BY created_at DESC, id DESC;
+
+-- name: CreateExecutionPackageApproval :one
+INSERT INTO execution_package_approvals (
+    approval_id, package_row_id, package_sha256,
+    operator_confirmation_evidence
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetExecutionPackageApprovalByApprovalID :one
+SELECT *
+FROM execution_package_approvals
+WHERE approval_id = ?;
+
+-- name: GetExecutionPackageApprovalByPackageRowID :one
+SELECT *
+FROM execution_package_approvals
+WHERE package_row_id = ?;
+
+-- name: LinkRunToExecutionPackageApproval :one
+UPDATE runs
+SET package_approval_row_id = ?
+WHERE run_id = ? AND package_approval_row_id IS NULL
+RETURNING *;

@@ -285,6 +285,15 @@ type ExecutionPackage struct {
 	CreatedAt              string `json:"created_at"`
 }
 
+type ExecutionPackageApproval struct {
+	ID                           int64  `json:"id"`
+	ApprovalID                   string `json:"approval_id"`
+	PackageRowID                 int64  `json:"package_row_id"`
+	PackageSha256                string `json:"package_sha256"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+	CreatedAt                    string `json:"created_at"`
+}
+
 type ExecutionPackageApprovalBinding struct {
 	ID                     int64  `json:"id"`
 	PackageRowID           int64  `json:"package_row_id"`
@@ -687,6 +696,7 @@ type Run struct {
 	UpdatedAt             string         `json:"updated_at"`
 	CompletedAt           sql.NullString `json:"completed_at"`
 	ExecutionPackageRowID sql.NullInt64  `json:"execution_package_row_id"`
+	PackageApprovalRowID  sql.NullInt64  `json:"package_approval_row_id"`
 }
 
 type SourceVault struct {

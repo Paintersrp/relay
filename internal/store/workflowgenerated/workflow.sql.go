@@ -1147,6 +1147,41 @@ func (q *Queries) CreateExecutionPackage(ctx context.Context, arg CreateExecutio
 	return i, err
 }
 
+const createExecutionPackageApproval = `-- name: CreateExecutionPackageApproval :one
+INSERT INTO execution_package_approvals (
+    approval_id, package_row_id, package_sha256,
+    operator_confirmation_evidence
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, approval_id, package_row_id, package_sha256, operator_confirmation_evidence, created_at
+`
+
+type CreateExecutionPackageApprovalParams struct {
+	ApprovalID                   string `json:"approval_id"`
+	PackageRowID                 int64  `json:"package_row_id"`
+	PackageSha256                string `json:"package_sha256"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+}
+
+func (q *Queries) CreateExecutionPackageApproval(ctx context.Context, arg CreateExecutionPackageApprovalParams) (ExecutionPackageApproval, error) {
+	row := q.db.QueryRowContext(ctx, createExecutionPackageApproval,
+		arg.ApprovalID,
+		arg.PackageRowID,
+		arg.PackageSha256,
+		arg.OperatorConfirmationEvidence,
+	)
+	var i ExecutionPackageApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.PackageRowID,
+		&i.PackageSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createExecutionPackageApprovalBinding = `-- name: CreateExecutionPackageApprovalBinding :one
 INSERT INTO execution_package_approval_bindings (
     package_row_id,
@@ -2018,7 +2053,7 @@ INSERT INTO runs (
     canonical_sha256
 )
 VALUES (?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
-RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
 `
 
 type CreateRunParams struct {
@@ -2062,6 +2097,7 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
+		&i.PackageApprovalRowID,
 	)
 	return i, err
 }
@@ -2451,6 +2487,46 @@ func (q *Queries) GetExecutionAttemptByAttemptID(ctx context.Context, attemptID 
 	return i, err
 }
 
+const getExecutionPackageApprovalByApprovalID = `-- name: GetExecutionPackageApprovalByApprovalID :one
+SELECT id, approval_id, package_row_id, package_sha256, operator_confirmation_evidence, created_at
+FROM execution_package_approvals
+WHERE approval_id = ?
+`
+
+func (q *Queries) GetExecutionPackageApprovalByApprovalID(ctx context.Context, approvalID string) (ExecutionPackageApproval, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionPackageApprovalByApprovalID, approvalID)
+	var i ExecutionPackageApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.PackageRowID,
+		&i.PackageSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getExecutionPackageApprovalByPackageRowID = `-- name: GetExecutionPackageApprovalByPackageRowID :one
+SELECT id, approval_id, package_row_id, package_sha256, operator_confirmation_evidence, created_at
+FROM execution_package_approvals
+WHERE package_row_id = ?
+`
+
+func (q *Queries) GetExecutionPackageApprovalByPackageRowID(ctx context.Context, packageRowID int64) (ExecutionPackageApproval, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionPackageApprovalByPackageRowID, packageRowID)
+	var i ExecutionPackageApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.PackageRowID,
+		&i.PackageSha256,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getExecutionPackageByPackageID = `-- name: GetExecutionPackageByPackageID :one
 SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
 FROM execution_packages
@@ -2789,7 +2865,7 @@ func (q *Queries) GetRepositoryTarget(ctx context.Context, repoTarget string) (R
 }
 
 const getRunByRowID = `-- name: GetRunByRowID :one
-SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
 FROM runs
 WHERE id = ?
 `
@@ -2813,12 +2889,13 @@ func (q *Queries) GetRunByRowID(ctx context.Context, id int64) (Run, error) {
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
+		&i.PackageApprovalRowID,
 	)
 	return i, err
 }
 
 const getRunByRunID = `-- name: GetRunByRunID :one
-SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
 FROM runs
 WHERE run_id = ?
 `
@@ -2842,6 +2919,7 @@ func (q *Queries) GetRunByRunID(ctx context.Context, runID string) (Run, error) 
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
+		&i.PackageApprovalRowID,
 	)
 	return i, err
 }
@@ -2898,7 +2976,7 @@ const linkRunToExecutionPackage = `-- name: LinkRunToExecutionPackage :one
 UPDATE runs
 SET execution_package_row_id = ?
 WHERE run_id = ? AND execution_package_row_id IS NULL
-RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
 `
 
 type LinkRunToExecutionPackageParams struct {
@@ -2925,6 +3003,43 @@ func (q *Queries) LinkRunToExecutionPackage(ctx context.Context, arg LinkRunToEx
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
+		&i.PackageApprovalRowID,
+	)
+	return i, err
+}
+
+const linkRunToExecutionPackageApproval = `-- name: LinkRunToExecutionPackageApproval :one
+UPDATE runs
+SET package_approval_row_id = ?
+WHERE run_id = ? AND package_approval_row_id IS NULL
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
+`
+
+type LinkRunToExecutionPackageApprovalParams struct {
+	PackageApprovalRowID sql.NullInt64 `json:"package_approval_row_id"`
+	RunID                string        `json:"run_id"`
+}
+
+func (q *Queries) LinkRunToExecutionPackageApproval(ctx context.Context, arg LinkRunToExecutionPackageApprovalParams) (Run, error) {
+	row := q.db.QueryRowContext(ctx, linkRunToExecutionPackageApproval, arg.PackageApprovalRowID, arg.RunID)
+	var i Run
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.FeatureSlug,
+		&i.RepoTarget,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
+		&i.RemediatesRunRowID,
+		&i.Status,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.CanonicalSha256,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.ExecutionPackageRowID,
+		&i.PackageApprovalRowID,
 	)
 	return i, err
 }
@@ -4490,7 +4605,7 @@ func (q *Queries) ListRepositoryTargets(ctx context.Context) ([]RepositoryTarget
 }
 
 const listRunsByPlanPass = `-- name: ListRunsByPlanPass :many
-SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
 FROM runs
 WHERE plan_pass_row_id = ?
 ORDER BY created_at, id
@@ -4521,6 +4636,7 @@ func (q *Queries) ListRunsByPlanPass(ctx context.Context, planPassRowID sql.Null
 			&i.UpdatedAt,
 			&i.CompletedAt,
 			&i.ExecutionPackageRowID,
+			&i.PackageApprovalRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -4933,7 +5049,7 @@ SET
     END,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE run_id = ? AND status = ?
-RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id
+RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id, status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at, execution_package_row_id, package_approval_row_id
 `
 
 type TransitionRunStatusParams struct {
@@ -4967,6 +5083,7 @@ func (q *Queries) TransitionRunStatus(ctx context.Context, arg TransitionRunStat
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
+		&i.PackageApprovalRowID,
 	)
 	return i, err
 }

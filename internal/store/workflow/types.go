@@ -310,6 +310,7 @@ type Run struct {
 	UpdatedAt             string
 	CompletedAt           sql.NullString
 	ExecutionPackageRowID sql.NullInt64
+	PackageApprovalRowID  sql.NullInt64
 }
 
 type ExecutionAttempt struct {

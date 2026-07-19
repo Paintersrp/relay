@@ -60,6 +60,7 @@ ORDER BY name`)
 		"delivery_tickets",
 		"execution_attempts",
 		"execution_package_approval_bindings",
+		"execution_package_approvals",
 		"execution_package_members",
 		"execution_packages",
 		"feature_workspace_admitted_inputs",

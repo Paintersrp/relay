@@ -35,15 +35,17 @@ const (
 // repository paths, process identities, and other local runtime values are not
 // admitted or returned through this boundary.
 type PackageOperationRequest struct {
-	PacketID             string
-	OperationID          registry.OperationID
-	Action               registry.AllowedAction
-	SelectionID          string
-	PackageID            string
-	RunID                string
-	LeaseID              string
-	PayloadSHA256        string
-	RequiredDependencies []DependencyRequirement
+	PacketID                     string
+	OperationID                  registry.OperationID
+	Action                       registry.AllowedAction
+	SelectionID                  string
+	PackageID                    string
+	RunID                        string
+	LeaseID                      string
+	PayloadSHA256                string
+	ExpectedPackageSha256        string
+	OperatorConfirmationEvidence string
+	RequiredDependencies         []DependencyRequirement
 }
 
 // PackageAdmissionService verifies the one registered local-operator action
@@ -72,6 +74,9 @@ func ValidatePackageOperationRequest(request PackageOperationRequest) error {
 		}
 	case registry.PackageActionApprove:
 		if request.SelectionID != "" || !exactNonBlank(request.PackageID) || request.RunID != "" || request.LeaseID != "" {
+			return ErrPackageAdmission
+		}
+		if !exactNonBlank(request.ExpectedPackageSha256) || !exactNonBlank(request.OperatorConfirmationEvidence) {
 			return ErrPackageAdmission
 		}
 	case registry.MutationLeaseActionReconcile:
@@ -149,10 +154,12 @@ func (s *PackageWorkflowService) Prepare(ctx context.Context, input PackagePrepa
 	return packageDetailView(packages.Detail{Package: result.Package, Members: result.Members, Briefs: result.Briefs, ExecutionSpec: result.ExecutionSpec}), nil
 }
 
-type PackageApproveOperationInput struct{ Admission PackageOperationRequest }
+type PackageApproveOperationInput struct {
+	Admission PackageOperationRequest
+}
 
 func (s *PackageWorkflowService) Approve(ctx context.Context, input PackageApproveOperationInput) (PackageApprovalView, error) {
-	payload, err := PackageApprovePayloadSHA256(input.Admission.PackageID)
+	payload, err := PackageApprovePayloadSHA256(input.Admission.PackageID, input.Admission.ExpectedPackageSha256, input.Admission.OperatorConfirmationEvidence)
 	if err != nil || input.Admission.Action != registry.PackageActionApprove || input.Admission.PayloadSHA256 != payload {
 		return PackageApprovalView{}, ErrPackageAdmission
 	}
@@ -166,11 +173,15 @@ func (s *PackageWorkflowService) Approve(ctx context.Context, input PackageAppro
 	if _, err := s.admit(ctx, input.Admission, registry.PackageActionApprove); err != nil {
 		return PackageApprovalView{}, err
 	}
-	result, err := s.packages.Approve(ctx, packages.ApproveInput{PackageID: input.Admission.PackageID})
+	result, err := s.packages.Approve(ctx, packages.ApproveInput{
+		PackageID:                    input.Admission.PackageID,
+		ExpectedPackageSha256:        input.Admission.ExpectedPackageSha256,
+		OperatorConfirmationEvidence: input.Admission.OperatorConfirmationEvidence,
+	})
 	if err != nil {
 		return PackageApprovalView{}, err
 	}
-	return PackageApprovalView{Package: packageIdentityView(result.Package), Run: runView(result.Run)}, nil
+	return PackageApprovalView{Package: packageIdentityView(result.Package), Run: runView(result.Run), PackageApprovalID: result.PackageApproval.ApprovalID}, nil
 }
 
 func (s *PackageWorkflowService) Get(ctx context.Context, packageID string) (PackageDetailView, error) {
@@ -254,10 +265,12 @@ func PackagePreparePayloadSHA256(input packages.PrepareInput) (string, error) {
 	return packagePayloadSHA256(input)
 }
 
-func PackageApprovePayloadSHA256(packageID string) (string, error) {
+func PackageApprovePayloadSHA256(packageID, expectedPackageSha256, evidence string) (string, error) {
 	return packagePayloadSHA256(struct {
-		PackageID string `json:"package_id"`
-	}{PackageID: packageID})
+		PackageID                   string `json:"package_id"`
+		ExpectedPackageSha256       string `json:"expected_package_sha256"`
+		OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+	}{PackageID: packageID, ExpectedPackageSha256: expectedPackageSha256, OperatorConfirmationEvidence: evidence})
 }
 
 func MutationLeaseReconcilePayloadSHA256(runID, leaseID string) (string, error) {

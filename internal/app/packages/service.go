@@ -168,6 +168,14 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 	if input.PackageID == "" || strings.TrimSpace(input.PackageID) != input.PackageID {
 		return ApproveResult{}, fmt.Errorf("%w: package ID must be nonblank without outer whitespace", ErrInvalidPackageInput)
 	}
+	if !packageSHA256.MatchString(input.ExpectedPackageSha256) {
+		return ApproveResult{}, fmt.Errorf("%w: expected package SHA-256 must be 64 lowercase hexadecimal characters", ErrInvalidPackageInput)
+	}
+	evidence := strings.TrimSpace(input.OperatorConfirmationEvidence)
+	if evidence == "" || len(evidence) > 4096 {
+		return ApproveResult{}, fmt.Errorf("%w: operator confirmation evidence must be 1-4096 non-whitespace characters", ErrInvalidPackageInput)
+	}
+
 	packageRow, err := s.store.GetExecutionPackageByPackageID(ctx, input.PackageID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ApproveResult{}, fmt.Errorf("%w: %s", ErrPackageNotFound, input.PackageID)
@@ -180,6 +188,11 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 	} else if !errors.Is(runErr, sql.ErrNoRows) {
 		return ApproveResult{}, runErr
 	}
+	if _, approvalErr := s.store.GetExecutionPackageApprovalByPackageRowID(ctx, packageRow.ID); approvalErr == nil {
+		return ApproveResult{}, fmt.Errorf("%w: %s", ErrPackageAlreadyRun, input.PackageID)
+	} else if !errors.Is(approvalErr, sql.ErrNoRows) {
+		return ApproveResult{}, approvalErr
+	}
 
 	prepareInput, err := s.readPackageInput(ctx, packageRow)
 	if err != nil {
@@ -189,15 +202,20 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 	if err != nil {
 		return ApproveResult{}, err
 	}
+	var (
+		approvalID       = workflowstore.NewExecutionPackageApprovalID()
+		approvalRowID    int64
+	)
 
 	created, err := s.runs.CreatePackageRun(ctx, workflowruns.CreatePackageRunInput{
-		FeatureSlug:           validated.spec.FeatureSlug,
-		RepoTarget:            validated.spec.RepoTarget,
-		Branch:                validated.spec.Branch,
-		BaseCommit:            validated.spec.BaseCommit,
-		CanonicalJSON:         prepareInput.ExecutionSpec.Bytes,
-		RenderedMarkdown:      validated.rendered,
-		ExecutionPackageRowID: packageRow.ID,
+		FeatureSlug:              validated.spec.FeatureSlug,
+		RepoTarget:               validated.spec.RepoTarget,
+		Branch:                   validated.spec.Branch,
+		BaseCommit:               validated.spec.BaseCommit,
+		CanonicalJSON:            prepareInput.ExecutionSpec.Bytes,
+		RenderedMarkdown:         validated.rendered,
+		ExecutionPackageRowID:    packageRow.ID,
+		PackageApprovalRowIDRef:  &approvalRowID,
 		Preflight: func(ctx context.Context, tx *workflowstore.Tx) error {
 			freshInput, readErr := s.rereadPackageInput(packageRow.PackageID, prepareInput)
 			if readErr != nil {
@@ -213,6 +231,9 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 			basis, basisErr := s.validateBasis(ctx, tx, freshInput, freshValidated, &packageRow)
 			if basisErr != nil {
 				return basisErr
+			}
+			if input.ExpectedPackageSha256 != basis.packageSHA256 {
+				return fmt.Errorf("%w: expected package SHA does not match the current package basis", ErrPackageBasisChanged)
 			}
 			bindings, listErr := tx.ListExecutionPackageApprovalBindings(ctx, packageRow.ID)
 			if listErr != nil {
@@ -256,6 +277,16 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 					return fmt.Errorf("create execution package approval binding: %w", createErr)
 				}
 			}
+			packageApproval, createApprovalErr := tx.CreateExecutionPackageApproval(ctx, workflowstore.CreateExecutionPackageApprovalParams{
+				PackageRowID:                 packageRow.ID,
+				ApprovalID:                   approvalID,
+				PackageSha256:                basis.packageSHA256,
+				OperatorConfirmationEvidence: evidence,
+			})
+			if createApprovalErr != nil {
+				return fmt.Errorf("create execution package approval: %w", createApprovalErr)
+			}
+			approvalRowID = packageApproval.ID
 			if _, consumeErr := tx.ConsumeDeliveryTicketSelection(ctx, basis.selection.SelectionID); consumeErr != nil {
 				return fmt.Errorf("consume delivery ticket selection: %w", consumeErr)
 			}
@@ -265,11 +296,15 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 	if err != nil {
 		return ApproveResult{}, err
 	}
+	packageApproval, err := s.store.GetExecutionPackageApprovalByApprovalID(ctx, approvalID)
+	if err != nil {
+		return ApproveResult{}, err
+	}
 	packageRow, err = s.store.GetExecutionPackageByPackageID(ctx, input.PackageID)
 	if err != nil {
 		return ApproveResult{}, err
 	}
-	return ApproveResult{Package: packageRow, Run: created.Run, RunArtifacts: created.Artifacts}, nil
+	return ApproveResult{Package: packageRow, Run: created.Run, RunArtifacts: created.Artifacts, PackageApproval: packageApproval}, nil
 }
 
 func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
@@ -334,6 +369,12 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 	}
 	if run, runErr := s.store.GetRunByExecutionPackageRowID(ctx, packageRow.ID); runErr == nil {
 		detail.Run = &run
+		if run.PackageApprovalRowID.Valid {
+			approval, approvalErr := s.store.GetExecutionPackageApprovalByPackageRowID(ctx, packageRow.ID)
+			if approvalErr == nil {
+				detail.PackageApprovalID = approval.ApprovalID
+			}
+		}
 	} else if !errors.Is(runErr, sql.ErrNoRows) {
 		return Detail{}, runErr
 	}
