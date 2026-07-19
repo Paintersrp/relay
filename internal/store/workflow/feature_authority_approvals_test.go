@@ -226,3 +226,122 @@ INSERT INTO artifacts (artifact_id, owner_type, plan_row_id, kind, relative_path
 	}
 	return store, artifactID
 }
+
+func TestApprovalEvidenceEnforcement(t *testing.T) {
+	ctx := context.Background()
+	store, artifactID := openApprovalTestStore(t, ctx)
+
+	sha := strings.Repeat("b", 64)
+	var workspace FeatureWorkspace
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		project, err := tx.GetProjectByProjectID(ctx, "project-approval-test")
+		if err != nil {
+			return err
+		}
+		workspace, err = tx.CreateFeatureWorkspace(ctx, CreateFeatureWorkspaceParams{
+			WorkspaceID:  "workspace-evidence-test",
+			ProjectRowID: project.ID,
+			FeatureSlug:  "evidence-test",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	invalidEvidences := []string{"", "   "}
+	for _, evidence := range invalidEvidences {
+		if err := store.WithTx(ctx, func(tx *Tx) error {
+			_, err := tx.CreateGoverningArtifactApproval(ctx, CreateGoverningArtifactApprovalParams{
+				ApprovalID:                   NewGoverningArtifactApprovalID(),
+				WorkspaceRowID:               workspace.ID,
+				ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+				Family:                       "requirements",
+				ArtifactSha256:               sha,
+				OperatorConfirmationEvidence: evidence,
+			})
+			return err
+		}); err == nil {
+			t.Fatalf("empty/whitespace evidence %q was accepted", evidence)
+		}
+	}
+
+	validLengths := []int{1, 4096}
+	for _, length := range validLengths {
+		evidence := strings.Repeat("x", length)
+		var approval GoverningArtifactApproval
+		if err := store.WithTx(ctx, func(tx *Tx) error {
+			var txErr error
+			approval, txErr = tx.CreateGoverningArtifactApproval(ctx, CreateGoverningArtifactApprovalParams{
+				ApprovalID:                   NewGoverningArtifactApprovalID(),
+				WorkspaceRowID:               workspace.ID,
+				ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+				Family:                       "requirements",
+				ArtifactSha256:               sha,
+				OperatorConfirmationEvidence: evidence,
+			})
+			return txErr
+		}); err != nil {
+			t.Fatalf("valid evidence length %d was rejected: %v", length, err)
+		}
+		if approval.OperatorConfirmationEvidence != evidence {
+			t.Fatalf("evidence mismatch length %d: %q", length, approval.OperatorConfirmationEvidence)
+		}
+		valid, err := store.GetValidGoverningArtifactApproval(ctx, GetValidGoverningArtifactApprovalParams{
+			WorkspaceRowID:        workspace.ID,
+			Family:                "requirements",
+			ArtifactSha256:        sha,
+			ArtifactRowID:         sql.NullInt64{Int64: artifactID, Valid: true},
+			RetainedArtifactRowID: sql.NullInt64{},
+		})
+		if err != nil || valid.ID != approval.ID {
+			t.Fatalf("valid evidence length %d not resolved: %v", length, err)
+		}
+	}
+
+	tooLong := strings.Repeat("x", 4097)
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.CreateGoverningArtifactApproval(ctx, CreateGoverningArtifactApprovalParams{
+			ApprovalID:                   NewGoverningArtifactApprovalID(),
+			WorkspaceRowID:               workspace.ID,
+			ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+			Family:                       "requirements",
+			ArtifactSha256:               sha,
+			OperatorConfirmationEvidence: tooLong,
+		})
+		return err
+	}); err == nil {
+		t.Fatal("4097-length evidence was accepted")
+	}
+
+	approved, err := store.GetValidGoverningArtifactApproval(ctx, GetValidGoverningArtifactApprovalParams{
+		WorkspaceRowID:        workspace.ID,
+		Family:                "requirements",
+		ArtifactSha256:        sha,
+		ArtifactRowID:         sql.NullInt64{Int64: artifactID, Valid: true},
+		RetainedArtifactRowID: sql.NullInt64{},
+	})
+	if err != nil || approved.OperatorConfirmationEvidence != strings.Repeat("x", 4096) {
+		t.Fatalf("most-recent valid evidence resolution = %#v, %v", approved, err)
+	}
+
+	rollbackID := NewGoverningArtifactApprovalID()
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, txErr := tx.CreateGoverningArtifactApproval(ctx, CreateGoverningArtifactApprovalParams{
+			ApprovalID:                   rollbackID,
+			WorkspaceRowID:               workspace.ID,
+			ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+			Family:                       "requirements",
+			ArtifactSha256:               sha,
+			OperatorConfirmationEvidence: "rollback evidence",
+		})
+		if txErr != nil {
+			return txErr
+		}
+		return errors.New("intentional rollback")
+	}); err == nil {
+		t.Fatal("expected rollback error")
+	}
+	if _, err := store.GetGoverningArtifactApprovalByApprovalID(ctx, rollbackID); err == nil {
+		t.Fatal("rolled-back evidence approval persisted")
+	}
+}

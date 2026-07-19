@@ -131,3 +131,22 @@ func TestWorkspaceCompletionShowsBlockersAndForwardsExplicitAdmission(t *testing
 		t.Fatalf("response = %d input = %#v body = %s", response.Code, completion.input, response.Body.String())
 	}
 }
+
+func TestRecordApprovalRejectsInvalidEvidenceInAPI(t *testing.T) {
+	badAuthority := &fakeAuthority{err: featureapp.ErrInvalidApprovalInput}
+	router := workspaceRouter(&fakeWayfinder{}, badAuthority, &fakeCompletion{})
+
+	emptyBody := `{"family":"requirements","artifactRowID":1,"artifactSHA256":"` + strings.Repeat("b", 64) + `","operatorConfirmationEvidence":""}`
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/authority-approvals", strings.NewReader(emptyBody)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("empty evidence status = %d body = %s", response.Code, response.Body.String())
+	}
+
+	whitespaceBody := `{"family":"design","artifactRowID":1,"artifactSHA256":"` + strings.Repeat("c", 64) + `","operatorConfirmationEvidence":"   "}`
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/authority-approvals", strings.NewReader(whitespaceBody)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("whitespace evidence status = %d body = %s", response.Code, response.Body.String())
+	}
+}

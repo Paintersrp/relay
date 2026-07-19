@@ -164,6 +164,10 @@ func (s *Service) RecordAuthorityApproval(ctx context.Context, input RecordAutho
 	if !oneOf(input.Family, "requirements", "design", "transition_plan") {
 		return RecordAuthorityApprovalResult{}, ErrInvalidApprovalInput
 	}
+	evidence := strings.TrimSpace(input.OperatorConfirmationEvidence)
+	if evidence == "" || len(evidence) > 4096 {
+		return RecordAuthorityApprovalResult{}, ErrInvalidApprovalInput
+	}
 	var result RecordAuthorityApprovalResult
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		workspace, err := tx.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
@@ -180,7 +184,7 @@ func (s *Service) RecordAuthorityApproval(ctx context.Context, input RecordAutho
 			RetainedArtifactRowID:        input.RetainedArtifact,
 			Family:                       input.Family,
 			ArtifactSha256:               input.ArtifactSHA256,
-			OperatorConfirmationEvidence: input.OperatorConfirmationEvidence,
+			OperatorConfirmationEvidence: evidence,
 		})
 		if err != nil {
 			return err

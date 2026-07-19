@@ -26,6 +26,7 @@ func TestAuthorityPublicationKeepsReplacementHistoryAndAllowsNoAuthority(t *test
 	firstApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
 		WorkspaceID: workspace.WorkspaceID, Family: "requirements",
 		ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64),
+		OperatorConfirmationEvidence: "confirmed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,7 @@ func TestAuthorityPublicationKeepsReplacementHistoryAndAllowsNoAuthority(t *test
 	secondApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
 		WorkspaceID: workspace.WorkspaceID, Family: "design",
 		ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64),
+		OperatorConfirmationEvidence: "confirmed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +58,7 @@ func TestAuthorityPublicationKeepsReplacementHistoryAndAllowsNoAuthority(t *test
 	thirdApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
 		WorkspaceID: workspace.WorkspaceID, Family: "transition_plan",
 		ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64),
+		OperatorConfirmationEvidence: "confirmed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +105,7 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 	firstApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
 		WorkspaceID: workspace.WorkspaceID, Family: "requirements",
 		ArtifactRowID: sql.NullInt64{Int64: firstArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64),
+		OperatorConfirmationEvidence: "confirmed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +138,7 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 	secondApproval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
 		WorkspaceID: workspace.WorkspaceID, Family: "design",
 		ArtifactRowID: sql.NullInt64{Int64: secondArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("c", 64),
+		OperatorConfirmationEvidence: "confirmed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -245,4 +250,58 @@ func completionGateReady(status CompletionStatus, name string) bool {
 		}
 	}
 	return false
+}
+
+func TestRecordApprovalRejectsEmptyAndWhitespaceEvidence(t *testing.T) {
+	ctx := context.Background()
+	store, artifactID, _ := openFeatureServiceStore(t, ctx)
+	service, err := NewServiceWithIDs(store, &featureTestIDs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := createFeatureWorkspace(ctx, store, "workspace-evidence-svc", "evidence-svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	invalidEvidences := []string{"", "   ", "\t", "\n"}
+	for _, evidence := range invalidEvidences {
+		_, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+			WorkspaceID:                  workspace.WorkspaceID,
+			Family:                       "requirements",
+			ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+			ArtifactSHA256:               strings.Repeat("b", 64),
+			OperatorConfirmationEvidence: evidence,
+		})
+		if !errors.Is(err, ErrInvalidApprovalInput) {
+			t.Fatalf("empty/whitespace evidence %q: %v", evidence, err)
+		}
+	}
+
+	surrounding := "  confirmed  "
+	approval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID:                  workspace.WorkspaceID,
+		Family:                       "requirements",
+		ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+		ArtifactSHA256:               strings.Repeat("b", 64),
+		OperatorConfirmationEvidence: surrounding,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approval.Approval.OperatorConfirmationEvidence != "confirmed" {
+		t.Fatalf("whitespace not trimmed: %q", approval.Approval.OperatorConfirmationEvidence)
+	}
+
+	tooLong := strings.Repeat("x", 4097)
+	_, err = service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{
+		WorkspaceID:                  workspace.WorkspaceID,
+		Family:                       "design",
+		ArtifactRowID:                sql.NullInt64{Int64: artifactID, Valid: true},
+		ArtifactSHA256:               strings.Repeat("c", 64),
+		OperatorConfirmationEvidence: tooLong,
+	})
+	if !errors.Is(err, ErrInvalidApprovalInput) {
+		t.Fatalf("4097-length evidence: %v", err)
+	}
 }

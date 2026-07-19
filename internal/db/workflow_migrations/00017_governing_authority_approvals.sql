@@ -7,13 +7,13 @@ CREATE TABLE governing_artifact_approvals (
     retained_artifact_row_id INTEGER REFERENCES operation_packet_retained_artifacts(id) ON DELETE RESTRICT,
     family TEXT NOT NULL CHECK (family IN ('requirements', 'design', 'transition_plan')),
     artifact_sha256 TEXT NOT NULL CHECK (length(artifact_sha256) = 64 AND artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
-    operator_confirmation_evidence TEXT NOT NULL DEFAULT '',
+    operator_confirmation_evidence TEXT NOT NULL,
     invalidated_by_approval_row_id INTEGER REFERENCES governing_artifact_approvals(id) ON DELETE RESTRICT,
     superseded_by_approval_row_id INTEGER REFERENCES governing_artifact_approvals(id) ON DELETE RESTRICT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     CHECK (approval_id GLOB 'ga-approval-*' AND trim(approval_id) = approval_id),
     CHECK ((artifact_row_id IS NOT NULL AND retained_artifact_row_id IS NULL) OR (artifact_row_id IS NULL AND retained_artifact_row_id IS NOT NULL)),
-    CHECK (operator_confirmation_evidence = trim(operator_confirmation_evidence) AND length(operator_confirmation_evidence) <= 4096)
+    CHECK (operator_confirmation_evidence = trim(operator_confirmation_evidence) AND length(operator_confirmation_evidence) BETWEEN 1 AND 4096)
 );
 
 ALTER TABLE feature_workspace_authority_layers ADD COLUMN approval_row_id INTEGER;

@@ -2820,6 +2820,8 @@ WHERE workspace_row_id = ?
   AND ((artifact_row_id IS NOT NULL AND artifact_row_id = ?) OR (retained_artifact_row_id IS NOT NULL AND retained_artifact_row_id = ?))
   AND invalidated_by_approval_row_id IS NULL
   AND superseded_by_approval_row_id IS NULL
+  AND operator_confirmation_evidence = trim(operator_confirmation_evidence)
+  AND length(operator_confirmation_evidence) BETWEEN 1 AND 4096
 ORDER BY created_at DESC, id DESC
 LIMIT 1
 `
