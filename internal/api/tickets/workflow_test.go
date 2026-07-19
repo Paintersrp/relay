@@ -86,10 +86,10 @@ func TestPublishRouteBuildsExactPacketBoundOwnerInput(t *testing.T) {
 
 func TestSelectionRouteMapsAtomicConflict(t *testing.T) {
 	service := &fakeWorkflow{err: apptickets.ErrSelectionConflict}
-	body := `{"packetId":"operator-packet","operationId":"local_operator.ticket_workflow","rationale":"reserve","members":[{"ticketId":"ticket-1","revisionRowId":9}]}`
+	body := `{"packetId":"operator-packet","operationId":"local_operator.ticket_workflow","ticketId":"ticket-1","revisionRowId":9,"rationale":"reserve"}`
 	response := httptest.NewRecorder()
 	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/selection", strings.NewReader(body)))
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"CONFLICT"`) || len(service.selectionInput.Admission.SelectionMembers) != 1 {
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"CONFLICT"`) || service.selectionInput.Select.TicketID != "ticket-1" || service.selectionInput.Select.RevisionRowID != 9 {
 		t.Fatalf("response = %d %s selection = %#v", response.Code, response.Body.String(), service.selectionInput)
 	}
 }

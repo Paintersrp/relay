@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -17,18 +16,11 @@ import (
 
 var ErrTicketAdmission = errors.New("invalid ticket packet admission")
 
-// TicketSelectionMember identifies the exact current ticket revision observed
-// by a selection caller. It is intentionally the same identity boundary as
-// tickets.SelectionMemberInput without making this packet-admission package a
-// second selection owner.
 type TicketSelectionMember struct {
 	TicketID      string
 	RevisionRowID int64
 }
 
-// TicketOperationRequest is the packet-bound business identity passed to the
-// ticket route. It carries no package or Run fields: those are deliberately
-// outside the Pass 4 route surface.
 type TicketOperationRequest struct {
 	PacketID               string
 	OperationID            registry.OperationID
@@ -45,9 +37,6 @@ type TicketOperationRequest struct {
 	RequiredDependencies   []DependencyRequirement
 }
 
-// TicketAdmissionService is the narrow packet boundary used by the ticket
-// route. It verifies the one action-to-surface mapping before a shared ticket
-// owner can be called.
 type TicketAdmissionService struct{ packets PacketMutationAuthorizer }
 
 func NewTicketAdmissionService(packets PacketMutationAuthorizer) (*TicketAdmissionService, error) {
@@ -57,9 +46,6 @@ func NewTicketAdmissionService(packets PacketMutationAuthorizer) (*TicketAdmissi
 	return &TicketAdmissionService{packets: packets}, nil
 }
 
-// ValidateTicketOperationRequest validates the transport-independent route
-// identity. The operation and action must be the exact registered pair, so a
-// valid Planner frontier packet can never authorize a local mutation.
 func ValidateTicketOperationRequest(request TicketOperationRequest) error {
 	if strings.TrimSpace(request.PacketID) != request.PacketID || request.PacketID == "" ||
 		strings.TrimSpace(request.WorkspaceID) != request.WorkspaceID || request.WorkspaceID == "" {
@@ -100,9 +86,9 @@ func ValidateTicketOperationRequest(request TicketOperationRequest) error {
 			return ErrTicketAdmission
 		}
 	case registry.TicketActionSelect:
-		if request.TicketID != "" || request.RevisionRowID != 0 || request.ExpectedRevisionNumber != 0 ||
+		if !exactNonBlank(request.TicketID) || request.RevisionRowID < 1 || request.ExpectedRevisionNumber != 0 ||
 			request.AuthorityRevisionID != "" || request.SourceClosureRowID != 0 || request.ExternalPriority != 0 ||
-			!validTicketSHA256(request.PayloadSHA256) || validateTicketSelectionMembers(request.SelectionMembers) != nil {
+			!validTicketSHA256(request.PayloadSHA256) || len(request.SelectionMembers) != 0 {
 			return ErrTicketAdmission
 		}
 	default:
@@ -111,9 +97,6 @@ func ValidateTicketOperationRequest(request TicketOperationRequest) error {
 	return nil
 }
 
-// Admit validates the business identity, the retained packet dependencies,
-// and the active packet before a ticket route operation can continue. Frontier
-// reads use the same packet proof but are still read-only at the shared owner.
 func (s *TicketAdmissionService) Admit(ctx context.Context, request TicketOperationRequest) (MutationAuthorization, error) {
 	if s == nil || s.packets == nil {
 		return MutationAuthorization{}, ErrTicketAdmission
@@ -128,9 +111,6 @@ func (s *TicketAdmissionService) Admit(ctx context.Context, request TicketOperat
 	})
 }
 
-// TicketWorkflowOwner is the one shared owner interface exposed through the
-// packet gateway. The gateway has no direct store access and cannot create a
-// package or Run.
 type TicketWorkflowOwner interface {
 	Publish(context.Context, tickets.PublishInput) (tickets.PublishedRevision, error)
 	UpdateExternalPriority(context.Context, string, int64) (workflowstore.DeliveryTicket, error)
@@ -140,10 +120,6 @@ type TicketWorkflowOwner interface {
 	Select(context.Context, tickets.SelectInput) (tickets.SelectionResult, error)
 }
 
-// TicketWorkflowService runs every ticket operation through packet admission
-// before it reaches tickets.Service. A dependency replacement is a full ticket
-// publication under a distinct packet action; it never mutates dependencies in
-// place.
 type TicketWorkflowService struct {
 	admission *TicketAdmissionService
 	owner     TicketWorkflowOwner
@@ -173,8 +149,6 @@ func (s *TicketWorkflowService) Publish(ctx context.Context, input TicketPublish
 	return s.owner.Publish(ctx, input.Publish)
 }
 
-// ReplaceDependencies publishes a complete replacement revision carrying the
-// new dependency outcomes. It cannot create a mutable dependency side route.
 func (s *TicketWorkflowService) ReplaceDependencies(ctx context.Context, input TicketPublishOperationInput) (tickets.PublishedRevision, error) {
 	payload, err := TicketPublishPayloadSHA256(input.Publish)
 	if err != nil || !matchesPublishRequest(input.Admission, registry.TicketActionReplaceDependencies, input.Publish) || input.Admission.PayloadSHA256 != payload {
@@ -237,7 +211,8 @@ type TicketSelectionOperationInput struct {
 func (s *TicketWorkflowService) Select(ctx context.Context, input TicketSelectionOperationInput) (tickets.SelectionResult, error) {
 	payload, err := TicketSelectionPayloadSHA256(input.Select)
 	if input.Admission.Action != registry.TicketActionSelect || input.Admission.WorkspaceID != input.Select.WorkspaceID ||
-		!sameSelectionMembers(input.Admission.SelectionMembers, input.Select.Members) || err != nil || input.Admission.PayloadSHA256 != payload {
+		input.Admission.TicketID != input.Select.TicketID || input.Admission.RevisionRowID != input.Select.RevisionRowID ||
+		err != nil || input.Admission.PayloadSHA256 != payload {
 		return tickets.SelectionResult{}, ErrTicketAdmission
 	}
 	if _, err := s.admit(ctx, input.Admission, registry.TicketActionSelect); err != nil {
@@ -259,23 +234,6 @@ func matchesPublishRequest(request TicketOperationRequest, action registry.Allow
 		request.SourceClosureRowID == input.Revision.SourceClosureRowID
 }
 
-func sameSelectionMembers(left []TicketSelectionMember, right []tickets.SelectionMemberInput) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	seen := make(map[string]struct{}, len(left))
-	for _, member := range left {
-		seen[member.TicketID+"\x00"+stringRevisionID(member.RevisionRowID)] = struct{}{}
-	}
-	for _, member := range right {
-		key := member.TicketID + "\x00" + stringRevisionID(member.RevisionRowID)
-		if _, ok := seen[key]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
 func validateTicketDependencies(values []DependencyRequirement) error {
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
@@ -287,28 +245,6 @@ func validateTicketDependencies(values []DependencyRequirement) error {
 			return ErrTicketAdmission
 		}
 		seen[key] = struct{}{}
-	}
-	return nil
-}
-
-func validateTicketSelectionMembers(values []TicketSelectionMember) error {
-	if len(values) == 0 {
-		return ErrTicketAdmission
-	}
-	seenTickets := make(map[string]struct{}, len(values))
-	seenRevisions := make(map[int64]struct{}, len(values))
-	for _, value := range values {
-		if !exactNonBlank(value.TicketID) || value.RevisionRowID < 1 {
-			return ErrTicketAdmission
-		}
-		if _, duplicate := seenTickets[value.TicketID]; duplicate {
-			return ErrTicketAdmission
-		}
-		if _, duplicate := seenRevisions[value.RevisionRowID]; duplicate {
-			return ErrTicketAdmission
-		}
-		seenTickets[value.TicketID] = struct{}{}
-		seenRevisions[value.RevisionRowID] = struct{}{}
 	}
 	return nil
 }
@@ -331,15 +267,7 @@ func TicketPriorityPayloadSHA256(ticketID string, externalPriority int64) (strin
 }
 
 func TicketSelectionPayloadSHA256(input tickets.SelectInput) (string, error) {
-	canonical := input
-	canonical.Members = append([]tickets.SelectionMemberInput(nil), input.Members...)
-	sort.Slice(canonical.Members, func(left, right int) bool {
-		if canonical.Members[left].TicketID != canonical.Members[right].TicketID {
-			return canonical.Members[left].TicketID < canonical.Members[right].TicketID
-		}
-		return canonical.Members[left].RevisionRowID < canonical.Members[right].RevisionRowID
-	})
-	return ticketPayloadSHA256(canonical)
+	return ticketPayloadSHA256(input)
 }
 
 func ticketPayloadSHA256(value any) (string, error) {

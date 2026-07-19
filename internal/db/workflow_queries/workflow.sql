@@ -710,6 +710,24 @@ FROM delivery_ticket_selection_members
 WHERE selection_row_id = ?
 ORDER BY sequence, id;
 
+-- name: CountDeliveryTicketSelectionMembers :one
+SELECT COUNT(*) AS member_count
+FROM delivery_ticket_selection_members
+WHERE selection_row_id = ?;
+
+-- name: GetDeliveryTicketSelectionMember :one
+SELECT *
+FROM delivery_ticket_selection_members
+WHERE selection_row_id = ?
+ORDER BY sequence, id
+LIMIT 1;
+
+-- name: ListInvalidDeliveryTicketSelections :many
+SELECT selection_row_id, COUNT(*) AS member_count
+FROM delivery_ticket_selection_members
+GROUP BY selection_row_id
+HAVING COUNT(*) != 1;
+
 -- name: CreateExecutionPackage :one
 INSERT INTO execution_packages (
     package_id,

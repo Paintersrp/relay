@@ -18,7 +18,8 @@ export interface TicketFrontierEntry {
 
 export interface TicketFrontier { workspaceId: string; entries: TicketFrontierEntry[] }
 export interface TicketSelectionMember { ticketId: string; revisionRowId: number }
-export interface TicketSelection { selectionId: string; state: string; rationale: string; createdAt: string; members: (TicketSelectionMember & { revisionNumber: number; approvalRowId: number })[] }
+export interface SelectedTicket { ticketId: string; revisionRowId: number; revisionNumber: number; approvalRowId: number }
+export interface TicketSelection { selectionId: string; state: string; rationale: string; createdAt: string; selectedTicket: SelectedTicket }
 
 export interface PublishTicketRevisionRequest extends TicketAdmissionRequest {
   externalPriority: number;

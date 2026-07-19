@@ -19,31 +19,37 @@ func (f *fakeMCPTicketPacketAuthorizer) AuthorizeMutation(_ context.Context, req
 	return appoperations.MutationAuthorization{Allowed: true}, nil
 }
 
-func TestTicketOperationIdentityCanonicalizesDependenciesAndSelectionMembers(t *testing.T) {
+func TestTicketOperationIdentityCanonicalizesDependencies(t *testing.T) {
 	identity := TicketOperationIdentity{
 		MutationID: "mutation-1", ExpectedPacketID: "packet-1", OperationID: string(registry.LocalOperatorTicketWorkflowOperationID),
-		Action: string(registry.TicketActionSelect), WorkspaceID: "workspace-1", PayloadSHA256: strings.Repeat("a", 64),
-		SelectionMembers:     []TicketSelectionMemberIdentity{{TicketID: "TICKET-2", RevisionRowID: 2}, {TicketID: "TICKET-1", RevisionRowID: 1}},
+		Action: string(registry.TicketActionSelect), WorkspaceID: "workspace-1", TicketID: "TICKET-1", RevisionRowID: 1,
+		PayloadSHA256: strings.Repeat("a", 64),
 		RequiredDependencies: []TicketPacketDependency{{Class: "workflow_snapshot", Key: "ticket:TICKET-2"}, {Class: "workflow_snapshot", Key: "ticket:TICKET-1"}},
 	}
 	first, err := identity.SemanticRequestSHA256()
 	if err != nil || first == "" {
 		t.Fatalf("first fingerprint = %q, %v", first, err)
 	}
-	identity.SelectionMembers[0], identity.SelectionMembers[1] = identity.SelectionMembers[1], identity.SelectionMembers[0]
 	identity.RequiredDependencies[0], identity.RequiredDependencies[1] = identity.RequiredDependencies[1], identity.RequiredDependencies[0]
 	second, err := identity.SemanticRequestSHA256()
 	if err != nil || second != first {
 		t.Fatalf("reordered fingerprint = %q, %v; want %q", second, err, first)
 	}
-	identity.SelectionMembers[0].RevisionRowID = 3
-	changed, err := identity.SemanticRequestSHA256()
-	if err != nil || changed == first {
-		t.Fatalf("changed selection fingerprint = %q, %v", changed, err)
-	}
 	identity.RequiredDependencies = append(identity.RequiredDependencies, identity.RequiredDependencies[0])
 	if _, err := identity.SemanticRequestSHA256(); err == nil {
 		t.Fatal("duplicate retained dependency was accepted")
+	}
+}
+
+func TestTicketSelectionRejectsLegacyMembersArray(t *testing.T) {
+	identity := TicketOperationIdentity{
+		MutationID: "mutation-1", ExpectedPacketID: "packet-1", OperationID: string(registry.LocalOperatorTicketWorkflowOperationID),
+		Action: string(registry.TicketActionSelect), WorkspaceID: "workspace-1", TicketID: "TICKET-1", RevisionRowID: 1,
+		PayloadSHA256: strings.Repeat("a", 64),
+		SelectionMembers: []TicketSelectionMemberIdentity{{TicketID: "TICKET-1", RevisionRowID: 1}},
+	}
+	if err := identity.Validate(); err == nil {
+		t.Fatal("legacy selection members array was accepted for select action")
 	}
 }
 

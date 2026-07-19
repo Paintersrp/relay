@@ -23,6 +23,7 @@ type (
 	CreateDeliveryTicketRevisionApprovalParams   = workflowgenerated.CreateDeliveryTicketRevisionApprovalParams
 	CreateDeliveryTicketSelectionParams          = workflowgenerated.CreateDeliveryTicketSelectionParams
 	CreateDeliveryTicketSelectionMemberParams    = workflowgenerated.CreateDeliveryTicketSelectionMemberParams
+	ListInvalidDeliveryTicketSelectionsRow       = workflowgenerated.ListInvalidDeliveryTicketSelectionsRow
 )
 
 func getDeliveryTicketSelectionByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (DeliveryTicketSelection, error) {
@@ -97,6 +98,18 @@ func (s *Store) ListDeliveryTicketSelectionsByWorkspace(ctx context.Context, wor
 
 func (s *Store) ListDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) ([]DeliveryTicketSelectionMember, error) {
 	return workflowgenerated.New(s.db).ListDeliveryTicketSelectionMembers(ctx, selectionRowID)
+}
+
+func (s *Store) CountDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) (int64, error) {
+	return workflowgenerated.New(s.db).CountDeliveryTicketSelectionMembers(ctx, selectionRowID)
+}
+
+func (s *Store) GetDeliveryTicketSelectionMember(ctx context.Context, selectionRowID int64) (DeliveryTicketSelectionMember, error) {
+	return workflowgenerated.New(s.db).GetDeliveryTicketSelectionMember(ctx, selectionRowID)
+}
+
+func (s *Store) ListInvalidDeliveryTicketSelections(ctx context.Context) ([]workflowgenerated.ListInvalidDeliveryTicketSelectionsRow, error) {
+	return workflowgenerated.New(s.db).ListInvalidDeliveryTicketSelections(ctx)
 }
 
 func (tx *Tx) CreateDeliveryTicket(ctx context.Context, params CreateDeliveryTicketParams) (DeliveryTicket, error) {
@@ -199,4 +212,12 @@ func (tx *Tx) CreateDeliveryTicketSelectionMember(ctx context.Context, params Cr
 
 func (tx *Tx) ListDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) ([]DeliveryTicketSelectionMember, error) {
 	return workflowgenerated.New(tx.tx).ListDeliveryTicketSelectionMembers(ctx, selectionRowID)
+}
+
+func (tx *Tx) CountDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) (int64, error) {
+	return workflowgenerated.New(tx.tx).CountDeliveryTicketSelectionMembers(ctx, selectionRowID)
+}
+
+func (tx *Tx) GetDeliveryTicketSelectionMember(ctx context.Context, selectionRowID int64) (DeliveryTicketSelectionMember, error) {
+	return workflowgenerated.New(tx.tx).GetDeliveryTicketSelectionMember(ctx, selectionRowID)
 }

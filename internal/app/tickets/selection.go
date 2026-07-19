@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	workflowstore "relay/internal/store/workflow"
@@ -23,18 +22,11 @@ var (
 	ErrIncompatibleSelection        = errors.New("delivery ticket selection members are incompatible")
 )
 
-// SelectionMemberInput identifies the exact revision an operator observed in
-// the frontier. The service rejects it rather than silently selecting a later
-// replacement revision.
-type SelectionMemberInput struct {
+type SelectInput struct {
+	WorkspaceID   string
 	TicketID      string
 	RevisionRowID int64
-}
-
-type SelectInput struct {
-	WorkspaceID string
-	Members     []SelectionMemberInput
-	Rationale   string
+	Rationale     string
 }
 
 type SelectedTicket struct {
@@ -44,11 +36,9 @@ type SelectedTicket struct {
 	ApprovalRowID  int64
 }
 
-// SelectionResult retains the exact selection record and the exact approved
-// revisions that were atomically reserved by it.
 type SelectionResult struct {
-	Selection workflowstore.DeliveryTicketSelection
-	Members   []SelectedTicket
+	Selection      workflowstore.DeliveryTicketSelection
+	SelectedTicket SelectedTicket
 }
 
 type selectionCandidate struct {
@@ -57,9 +47,6 @@ type selectionCandidate struct {
 	approval workflowstore.DeliveryTicketRevisionApproval
 }
 
-// Select creates one active selection only after it has revalidated every
-// requested ticket revision in the same database transaction. It does not
-// create packages, Runs, or mutate any ticket or priority fields.
 func (s *Service) Select(ctx context.Context, input SelectInput) (SelectionResult, error) {
 	if err := validateSelectInput(input); err != nil {
 		return SelectionResult{}, err
@@ -84,85 +71,73 @@ func (s *Service) Select(ctx context.Context, input SelectInput) (SelectionResul
 			}
 		}
 
-		candidates := make([]selectionCandidate, 0, len(input.Members))
-		for _, requested := range input.Members {
-			ticket, err := tx.GetDeliveryTicketByTicketID(ctx, requested.TicketID)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: ticket %s was not found", ErrSelectionMemberStale, requested.TicketID)
-			}
-			if err != nil {
-				return err
-			}
-			if ticket.WorkspaceRowID != workspace.ID {
-				return fmt.Errorf("%w: ticket %s belongs to another workspace", ErrSelectionMemberStale, requested.TicketID)
-			}
-			revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, requested.RevisionRowID)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: revision %d was not found", ErrSelectionMemberStale, requested.RevisionRowID)
-			}
-			if err != nil {
-				return err
-			}
-			if revision.DeliveryTicketRowID != ticket.ID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID {
-				return fmt.Errorf("%w: ticket %s no longer has revision %d as current", ErrSelectionMemberStale, requested.TicketID, requested.RevisionRowID)
-			}
-			detail, err := ticketDetailForRevision(ctx, tx, ticket, revision)
-			if err != nil {
-				return err
-			}
-			readiness, err := deriveTicketReadiness(ctx, tx, detail)
-			if err != nil {
-				return err
-			}
-			if readiness.Selected {
-				return ErrSelectionConflict
-			}
-			if !readiness.Ready {
-				return selectionReadinessError(ticket.TicketID, readiness)
-			}
-			approval, ok := currentDeliveryApproval(workspace, revision, detail.Approvals)
-			if !ok {
-				return fmt.Errorf("%w: ticket %s approval changed", ErrSelectionAuthorityStale, ticket.TicketID)
-			}
-			candidates = append(candidates, selectionCandidate{ticket: ticket, revision: revision, approval: approval})
+		ticket, err := tx.GetDeliveryTicketByTicketID(ctx, input.TicketID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: ticket %s was not found", ErrSelectionMemberStale, input.TicketID)
 		}
-
-		if err := validateSelectionBundle(candidates); err != nil {
+		if err != nil {
 			return err
 		}
-		sort.Slice(candidates, func(left, right int) bool {
-			return frontierEntryBefore(frontierEntryForCandidate(candidates[left]), frontierEntryForCandidate(candidates[right]))
-		})
+		if ticket.WorkspaceRowID != workspace.ID {
+			return fmt.Errorf("%w: ticket %s belongs to another workspace", ErrSelectionMemberStale, input.TicketID)
+		}
+		revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, input.RevisionRowID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: revision %d was not found", ErrSelectionMemberStale, input.RevisionRowID)
+		}
+		if err != nil {
+			return err
+		}
+		if revision.DeliveryTicketRowID != ticket.ID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID {
+			return fmt.Errorf("%w: ticket %s no longer has revision %d as current", ErrSelectionMemberStale, input.TicketID, input.RevisionRowID)
+		}
+		detail, err := ticketDetailForRevision(ctx, tx, ticket, revision)
+		if err != nil {
+			return err
+		}
+		readiness, err := deriveTicketReadiness(ctx, tx, detail)
+		if err != nil {
+			return err
+		}
+		if readiness.Selected {
+			return ErrSelectionConflict
+		}
+		if !readiness.Ready {
+			return selectionReadinessError(ticket.TicketID, readiness)
+		}
+		approval, ok := currentDeliveryApproval(workspace, revision, detail.Approvals)
+		if !ok {
+			return fmt.Errorf("%w: ticket %s approval changed", ErrSelectionAuthorityStale, ticket.TicketID)
+		}
 
 		selection, err := tx.CreateDeliveryTicketSelection(ctx, workflowstore.CreateDeliveryTicketSelectionParams{
 			SelectionID:        workflowstore.NewDeliveryTicketSelectionID(),
 			WorkspaceRowID:     workspace.ID,
 			State:              "active",
 			Rationale:          input.Rationale,
-			SourceClosureRowID: sql.NullInt64{Int64: candidates[0].revision.SourceClosureRowID, Valid: true},
+			SourceClosureRowID: sql.NullInt64{Int64: revision.SourceClosureRowID, Valid: true},
 		})
 		if err != nil {
 			return selectionConflictError(err)
 		}
 
-		members := make([]SelectedTicket, 0, len(candidates))
-		for index, candidate := range candidates {
-			if _, err := tx.CreateDeliveryTicketSelectionMember(ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{
-				SelectionRowID: selection.ID,
-				Sequence:       int64(index + 1),
-				RevisionRowID:  candidate.revision.ID,
-				ApprovalRowID:  candidate.approval.ID,
-			}); err != nil {
-				return err
-			}
-			members = append(members, SelectedTicket{
-				TicketID:       candidate.ticket.TicketID,
-				RevisionRowID:  candidate.revision.ID,
-				RevisionNumber: candidate.revision.RevisionNumber,
-				ApprovalRowID:  candidate.approval.ID,
-			})
+		if _, err := tx.CreateDeliveryTicketSelectionMember(ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{
+			SelectionRowID: selection.ID,
+			Sequence:       1,
+			RevisionRowID:  revision.ID,
+			ApprovalRowID:  approval.ID,
+		}); err != nil {
+			return err
 		}
-		result = SelectionResult{Selection: selection, Members: members}
+		result = SelectionResult{
+			Selection: selection,
+			SelectedTicket: SelectedTicket{
+				TicketID:       ticket.TicketID,
+				RevisionRowID:  revision.ID,
+				RevisionNumber: revision.RevisionNumber,
+				ApprovalRowID:  approval.ID,
+			},
+		}
 		return nil
 	})
 	if err != nil {
@@ -172,46 +147,8 @@ func (s *Service) Select(ctx context.Context, input SelectInput) (SelectionResul
 }
 
 func validateSelectInput(input SelectInput) error {
-	if !nonBlank(input.WorkspaceID) || !nonBlank(input.Rationale) || len(input.Members) == 0 {
+	if !nonBlank(input.WorkspaceID) || !nonBlank(input.TicketID) || input.RevisionRowID < 1 || !nonBlank(input.Rationale) {
 		return ErrInvalidSelection
-	}
-	seenTicketIDs := make(map[string]struct{}, len(input.Members))
-	seenRevisionIDs := make(map[int64]struct{}, len(input.Members))
-	for _, member := range input.Members {
-		if !nonBlank(member.TicketID) || member.RevisionRowID < 1 {
-			return ErrInvalidSelection
-		}
-		if _, exists := seenTicketIDs[member.TicketID]; exists {
-			return ErrInvalidSelection
-		}
-		if _, exists := seenRevisionIDs[member.RevisionRowID]; exists {
-			return ErrInvalidSelection
-		}
-		seenTicketIDs[member.TicketID] = struct{}{}
-		seenRevisionIDs[member.RevisionRowID] = struct{}{}
-	}
-	return nil
-}
-
-func frontierEntryForCandidate(candidate selectionCandidate) FrontierEntry {
-	return FrontierEntry{
-		TicketID:         candidate.ticket.TicketID,
-		ExternalPriority: candidate.ticket.ExternalPriority,
-		CreatedAt:        candidate.ticket.CreatedAt,
-	}
-}
-
-func validateSelectionBundle(candidates []selectionCandidate) error {
-	if len(candidates) == 0 {
-		return ErrInvalidSelection
-	}
-	first := candidates[0].revision
-	for _, candidate := range candidates[1:] {
-		revision := candidate.revision
-		if revision.RepoTarget != first.RepoTarget || revision.Branch != first.Branch ||
-			revision.SourceClosureRowID != first.SourceClosureRowID || revision.BaseCommit != first.BaseCommit {
-			return fmt.Errorf("%w: tickets must share one repository, branch, and retained source basis", ErrIncompatibleSelection)
-		}
 	}
 	return nil
 }

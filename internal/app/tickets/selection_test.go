@@ -4,14 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
 )
 
-func TestSelectRecordsCompatibleBundleWithoutMutatingTickets(t *testing.T) {
+func TestSelectRecordsSingleTicketWithoutMutatingTicket(t *testing.T) {
 	ctx := context.Background()
 	store, workspaceID, closure, authorityID := ticketFixture(t)
 	service, err := NewService(store)
@@ -19,36 +18,30 @@ func TestSelectRecordsCompatibleBundleWithoutMutatingTickets(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-A", 50, 0, "first")
-	second := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-B", 40, 0, "second")
 
 	result, err := service.Select(ctx, SelectInput{
-		WorkspaceID: workspaceID,
-		Members: []SelectionMemberInput{
-			{TicketID: second.Ticket.TicketID, RevisionRowID: second.Revision.ID},
-			{TicketID: first.Ticket.TicketID, RevisionRowID: first.Revision.ID},
-		},
-		Rationale: "The two current tickets form the smallest cohesive delivery bound.",
+		WorkspaceID:   workspaceID,
+		TicketID:      first.Ticket.TicketID,
+		RevisionRowID: first.Revision.ID,
+		Rationale:     "Select the one current ticket.",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Selection.State != "active" || result.Selection.Rationale != "The two current tickets form the smallest cohesive delivery bound." ||
+	if result.Selection.State != "active" || result.Selection.Rationale != "Select the one current ticket." ||
 		!result.Selection.SourceClosureRowID.Valid || result.Selection.SourceClosureRowID.Int64 != closure.ID {
 		t.Fatalf("selection = %#v", result.Selection)
 	}
-	if len(result.Members) != 2 || result.Members[0].TicketID != first.Ticket.TicketID || result.Members[1].TicketID != second.Ticket.TicketID ||
-		result.Members[0].RevisionRowID != first.Revision.ID || result.Members[1].RevisionRowID != second.Revision.ID {
-		t.Fatalf("selection members = %#v", result.Members)
+	if result.SelectedTicket.TicketID != first.Ticket.TicketID || result.SelectedTicket.RevisionRowID != first.Revision.ID {
+		t.Fatalf("selected ticket = %#v", result.SelectedTicket)
 	}
 
-	for _, published := range []PublishedRevision{first, second} {
-		detail, err := service.Read(ctx, published.Ticket.TicketID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if detail.Canonical.SHA256 != published.Canonical.SHA256 || detail.Ticket.ExternalPriority != published.Ticket.ExternalPriority || !detail.Readiness.Selected {
-			t.Fatalf("ticket changed by selection = %#v", detail)
-		}
+	detail, err := service.Read(ctx, first.Ticket.TicketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Canonical.SHA256 != first.Canonical.SHA256 || detail.Ticket.ExternalPriority != first.Ticket.ExternalPriority || !detail.Readiness.Selected {
+		t.Fatalf("ticket changed by selection = %#v", detail)
 	}
 	frontier, err := service.ListFrontier(ctx, workspaceID)
 	if err != nil {
@@ -64,6 +57,13 @@ func TestSelectRecordsCompatibleBundleWithoutMutatingTickets(t *testing.T) {
 	if runCount != 0 {
 		t.Fatalf("selection created %d Runs", runCount)
 	}
+	var memberCount int
+	if err := store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM delivery_ticket_selection_members`).Scan(&memberCount); err != nil {
+		t.Fatal(err)
+	}
+	if memberCount != 1 {
+		t.Fatalf("selection has %d members, want 1", memberCount)
+	}
 }
 
 func TestSelectRollsBackStaleRevisionAuthorityAndSource(t *testing.T) {
@@ -78,7 +78,7 @@ func TestSelectRollsBackStaleRevisionAuthorityAndSource(t *testing.T) {
 		if _, err := service.Publish(ctx, publishInput(workspaceID, original.Ticket.TicketID, 50, 1, closure, "replacement", "")); err != nil {
 			t.Fatal(err)
 		}
-		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, Members: []SelectionMemberInput{{TicketID: original.Ticket.TicketID, RevisionRowID: original.Revision.ID}}, Rationale: "must reject the replaced revision"})
+		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: original.Ticket.TicketID, RevisionRowID: original.Revision.ID, Rationale: "must reject the replaced revision"})
 		if !errors.Is(err, ErrSelectionMemberStale) {
 			t.Fatalf("selection error = %v", err)
 		}
@@ -94,7 +94,7 @@ func TestSelectRollsBackStaleRevisionAuthorityAndSource(t *testing.T) {
 		}
 		published := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-A", 50, 0, "authority")
 		setCurrentAuthority(t, ctx, store, workspaceID, closure.ID, "authority-ticket-2")
-		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, Members: []SelectionMemberInput{{TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID}}, Rationale: "must reject stale authority"})
+		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID, Rationale: "must reject stale authority"})
 		if !errors.Is(err, ErrSelectionAuthorityStale) {
 			t.Fatalf("selection error = %v", err)
 		}
@@ -121,7 +121,7 @@ func TestSelectRollsBackStaleRevisionAuthorityAndSource(t *testing.T) {
 		if _, err := service.Publish(ctx, publishInput(workspaceID, dependency.Ticket.TicketID, 50, 1, closure, "dependency replacement", "")); err != nil {
 			t.Fatal(err)
 		}
-		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, Members: []SelectionMemberInput{{TicketID: dependent.Ticket.TicketID, RevisionRowID: dependent.Revision.ID}}, Rationale: "must reject stale dependency"})
+		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: dependent.Ticket.TicketID, RevisionRowID: dependent.Revision.ID, Rationale: "must reject stale dependency"})
 		if !errors.Is(err, ErrSelectionDependenciesInvalid) {
 			t.Fatalf("selection error = %v", err)
 		}
@@ -147,7 +147,7 @@ func TestSelectRollsBackStaleRevisionAuthorityAndSource(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, Members: []SelectionMemberInput{{TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID}}, Rationale: "must reject stale source"})
+		_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID, Rationale: "must reject stale source"})
 		if !errors.Is(err, ErrSelectionSourceStale) {
 			t.Fatalf("selection error = %v", err)
 		}
@@ -164,9 +164,10 @@ func TestSelectAllowsOneConcurrentWinner(t *testing.T) {
 	}
 	published := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-A", 50, 0, "race")
 	input := SelectInput{
-		WorkspaceID: workspaceID,
-		Members:     []SelectionMemberInput{{TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID}},
-		Rationale:   "select one current ticket exactly once",
+		WorkspaceID:   workspaceID,
+		TicketID:      published.Ticket.TicketID,
+		RevisionRowID: published.Revision.ID,
+		Rationale:     "select one current ticket exactly once",
 	}
 
 	start := make(chan struct{})
@@ -213,22 +214,28 @@ func TestSelectAllowsOneConcurrentWinner(t *testing.T) {
 	}
 }
 
-func TestValidateSelectionBundleRequiresOneRepositoryBranchAndSourceBasis(t *testing.T) {
-	base := selectionCandidate{revision: workflowstore.DeliveryTicketRevision{
-		RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: 1,
-	}}
-	for _, other := range []workflowstore.DeliveryTicketRevision{
-		{RepoTarget: "relay-specs", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: 1},
-		{RepoTarget: "relay", Branch: "release", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: 1},
-		{RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: 2},
-		{RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("b", 40), SourceClosureRowID: 1},
-	} {
-		if err := validateSelectionBundle([]selectionCandidate{base, {revision: other}}); !errors.Is(err, ErrIncompatibleSelection) {
-			t.Fatalf("incompatible bundle error = %v", err)
-		}
+func TestSelectRejectsSecondMember(t *testing.T) {
+	ctx := context.Background()
+	store, workspaceID, closure, authorityID := ticketFixture(t)
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := validateSelectionBundle([]selectionCandidate{base, {revision: base.revision}}); err != nil {
-		t.Fatalf("compatible bundle error = %v", err)
+	first := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-A", 50, 0, "first")
+	second := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-B", 40, 0, "second")
+	if _, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: first.Ticket.TicketID, RevisionRowID: first.Revision.ID, Rationale: "first selection"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: second.Ticket.TicketID, RevisionRowID: second.Revision.ID, Rationale: "second selection"})
+	if !errors.Is(err, ErrSelectionConflict) {
+		t.Fatalf("second selection error = %v", err)
+	}
+	var memberCount int
+	if err := store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM delivery_ticket_selection_members`).Scan(&memberCount); err != nil {
+		t.Fatal(err)
+	}
+	if memberCount != 1 {
+		t.Fatalf("selection has %d members, want 1", memberCount)
 	}
 }
 

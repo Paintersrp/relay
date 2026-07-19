@@ -22,12 +22,13 @@ import (
 )
 
 var (
-	ErrInvalidPackageInput = errors.New("invalid execution package input")
-	ErrSelectionNotFound   = errors.New("delivery ticket selection not found")
-	ErrSelectionNotActive  = errors.New("delivery ticket selection is not active")
-	ErrPackageNotFound     = errors.New("execution package not found")
-	ErrPackageAlreadyRun   = errors.New("execution package already has a Run")
-	ErrPackageBasisChanged = errors.New("execution package basis changed")
+	ErrInvalidPackageInput   = errors.New("invalid execution package input")
+	ErrSelectionNotFound     = errors.New("delivery ticket selection not found")
+	ErrSelectionNotActive    = errors.New("delivery ticket selection is not active")
+	ErrSelectionInvalid      = errors.New("delivery ticket selection cardinality is invalid")
+	ErrPackageNotFound       = errors.New("execution package not found")
+	ErrPackageAlreadyRun     = errors.New("execution package already has a Run")
+	ErrPackageBasisChanged   = errors.New("execution package basis changed")
 )
 
 var packageSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -430,8 +431,8 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if err != nil {
 		return packageBasis{}, err
 	}
-	if len(selectionMembers) == 0 || len(selectionMembers) != len(validated.briefs) {
-		return packageBasis{}, fmt.Errorf("%w: exact selected member and brief counts differ", ErrPackageBasisChanged)
+	if len(selectionMembers) != 1 {
+		return packageBasis{}, fmt.Errorf("%w: selection must have exactly one member, found %d", ErrSelectionInvalid, len(selectionMembers))
 	}
 	members := make([]packageMemberBasis, 0, len(selectionMembers))
 	for _, selectionMember := range selectionMembers {

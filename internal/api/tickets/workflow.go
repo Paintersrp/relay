@@ -163,15 +163,11 @@ type priorityRequest struct {
 	ExternalPriority int64 `json:"externalPriority"`
 }
 
-type selectionMemberRequest struct {
-	TicketID      string `json:"ticketId"`
-	RevisionRowID int64  `json:"revisionRowId"`
-}
-
 type selectionRequest struct {
 	TicketAdmissionRequest
-	Rationale string                   `json:"rationale"`
-	Members   []selectionMemberRequest `json:"members"`
+	TicketID      string `json:"ticketId"`
+	RevisionRowID int64  `json:"revisionRowId"`
+	Rationale     string `json:"rationale"`
 }
 
 func (h *WorkflowHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -310,26 +306,17 @@ func (h *WorkflowHandler) Select(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid delivery ticket selection request")
 		return
 	}
-	members := make([]apptickets.SelectionMemberInput, 0, len(request.Members))
-	for _, member := range request.Members {
-		members = append(members, apptickets.SelectionMemberInput{TicketID: member.TicketID, RevisionRowID: member.RevisionRowID})
-	}
-	input := apptickets.SelectInput{WorkspaceID: workspaceID(r), Members: members, Rationale: request.Rationale}
+	input := apptickets.SelectInput{WorkspaceID: workspaceID(r), TicketID: request.TicketID, RevisionRowID: request.RevisionRowID, Rationale: request.Rationale}
 	payload, err := appoperations.TicketSelectionPayloadSHA256(input)
 	if err != nil {
 		badRequest(w, "Invalid delivery ticket selection request")
 		return
 	}
-	selectionMembers := make([]appoperations.TicketSelectionMember, 0, len(members))
-	for _, member := range members {
-		selectionMembers = append(selectionMembers, appoperations.TicketSelectionMember{TicketID: member.TicketID, RevisionRowID: member.RevisionRowID})
-	}
-	admission, err := admissionFrom(request.TicketAdmissionRequest, workspaceID(r), "", registry.TicketActionSelect, 0, 0, 0, "", payload)
+	admission, err := admissionFrom(request.TicketAdmissionRequest, workspaceID(r), request.TicketID, registry.TicketActionSelect, input.RevisionRowID, input.RevisionRowID, 0, "", payload)
 	if err != nil {
 		badRequest(w, err.Error())
 		return
 	}
-	admission.SelectionMembers = selectionMembers
 	result, err := h.workflow.Select(r.Context(), appoperations.TicketSelectionOperationInput{Admission: admission, Select: input})
 	if err != nil {
 		writeTicketError(w, err)
@@ -414,11 +401,7 @@ func revisionHistoryDTO(values []RevisionHistory) []map[string]any {
 	return result
 }
 func selectionDTO(value apptickets.SelectionResult) map[string]any {
-	members := make([]map[string]any, 0, len(value.Members))
-	for _, member := range value.Members {
-		members = append(members, map[string]any{"ticketId": member.TicketID, "revisionRowId": member.RevisionRowID, "revisionNumber": member.RevisionNumber, "approvalRowId": member.ApprovalRowID})
-	}
-	return map[string]any{"selection": map[string]any{"selectionId": value.Selection.SelectionID, "state": value.Selection.State, "rationale": value.Selection.Rationale, "createdAt": value.Selection.CreatedAt}, "members": members}
+	return map[string]any{"selection": map[string]any{"selectionId": value.Selection.SelectionID, "state": value.Selection.State, "rationale": value.Selection.Rationale, "createdAt": value.Selection.CreatedAt}, "selectedTicket": map[string]any{"ticketId": value.SelectedTicket.TicketID, "revisionRowId": value.SelectedTicket.RevisionRowID, "revisionNumber": value.SelectedTicket.RevisionNumber, "approvalRowId": value.SelectedTicket.ApprovalRowID}}
 }
 func nullableString(value sql.NullString) any {
 	if !value.Valid {

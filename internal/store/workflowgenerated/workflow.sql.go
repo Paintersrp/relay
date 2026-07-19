@@ -202,6 +202,19 @@ func (q *Queries) ConsumeDeliveryTicketSelection(ctx context.Context, selectionI
 	return i, err
 }
 
+const countDeliveryTicketSelectionMembers = `-- name: CountDeliveryTicketSelectionMembers :one
+SELECT COUNT(*) AS member_count
+FROM delivery_ticket_selection_members
+WHERE selection_row_id = ?
+`
+
+func (q *Queries) CountDeliveryTicketSelectionMembers(ctx context.Context, selectionRowID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countDeliveryTicketSelectionMembers, selectionRowID)
+	var member_count int64
+	err := row.Scan(&member_count)
+	return member_count, err
+}
+
 const countIncompletePlanPasses = `-- name: CountIncompletePlanPasses :one
 SELECT COUNT(*)
 FROM plan_passes
@@ -2390,6 +2403,28 @@ func (q *Queries) GetDeliveryTicketSelectionBySelectionID(ctx context.Context, s
 	return i, err
 }
 
+const getDeliveryTicketSelectionMember = `-- name: GetDeliveryTicketSelectionMember :one
+SELECT id, selection_row_id, sequence, revision_row_id, approval_row_id, created_at
+FROM delivery_ticket_selection_members
+WHERE selection_row_id = ?
+ORDER BY sequence, id
+LIMIT 1
+`
+
+func (q *Queries) GetDeliveryTicketSelectionMember(ctx context.Context, selectionRowID int64) (DeliveryTicketSelectionMember, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketSelectionMember, selectionRowID)
+	var i DeliveryTicketSelectionMember
+	err := row.Scan(
+		&i.ID,
+		&i.SelectionRowID,
+		&i.Sequence,
+		&i.RevisionRowID,
+		&i.ApprovalRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getExecutionAttemptByAttemptID = `-- name: GetExecutionAttemptByAttemptID :one
 SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json, created_at, started_at, finished_at, cancellation_requested_at
 FROM execution_attempts
@@ -4206,6 +4241,41 @@ func (q *Queries) ListGoverningArtifactApprovalsByWorkspace(ctx context.Context,
 			&i.SupersededByApprovalRowID,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvalidDeliveryTicketSelections = `-- name: ListInvalidDeliveryTicketSelections :many
+SELECT selection_row_id, COUNT(*) AS member_count
+FROM delivery_ticket_selection_members
+GROUP BY selection_row_id
+HAVING COUNT(*) != 1
+`
+
+type ListInvalidDeliveryTicketSelectionsRow struct {
+	SelectionRowID int64 `json:"selection_row_id"`
+	MemberCount    int64 `json:"member_count"`
+}
+
+func (q *Queries) ListInvalidDeliveryTicketSelections(ctx context.Context) ([]ListInvalidDeliveryTicketSelectionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInvalidDeliveryTicketSelections)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInvalidDeliveryTicketSelectionsRow{}
+	for rows.Next() {
+		var i ListInvalidDeliveryTicketSelectionsRow
+		if err := rows.Scan(&i.SelectionRowID, &i.MemberCount); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
