@@ -132,6 +132,85 @@ export interface WorkflowAuditDecision {
   createdAt: string;
 }
 
+export interface WorkflowAuditMaterialFinding {
+  source: "executor_implementation" | "execution_spec" | "both";
+  summary: string;
+  evidence: string;
+  requiredRemediation: string;
+}
+
+export interface WorkflowAuditTicketPackage {
+  package: {
+    packageId: string;
+    packageSha256: string;
+    workspaceId: string;
+    featureSlug: string;
+    selectionId: string;
+    selectionState: string;
+    authorityRevisionId: string;
+    authoritySha256: string;
+    sourceClosureId: string;
+    sourceCommit: string;
+  };
+  tickets: Array<{
+    sequence: number;
+    ticketId: string;
+    revisionRowId: number;
+    revisionNumber: number;
+    memberSha256: string;
+    approvalId: string;
+    approvalBasisSha256: string;
+    authorityRevisionRowId: number;
+    sourceClosureRowId: number;
+    designBrief: { artifactReference: string; sha256: string };
+  }>;
+  mutationLeases: Array<{
+    leaseId: string;
+    state: string;
+    certainty: string;
+    reconciliationState: string;
+    releasedAt: string;
+  }>;
+  bundleIntegration: {
+    runId: string;
+    executionPackageId: string;
+    selectionId: string;
+    selectionState: string;
+    approvedRunStatus: string;
+  };
+}
+
+export interface WorkflowAuditReadback {
+  runId: string;
+  runStatus: WorkflowRunStatus;
+  packet: WorkflowAuditPacket;
+  document: unknown;
+  ticketPackage?: WorkflowAuditTicketPackage;
+}
+
+export interface RecordWorkflowAuditDecisionRequest {
+  auditPacketId: string;
+  packetSha256: string;
+  auditedCommit: string;
+  decision: "accepted" | "needs_revision";
+  rationale: string;
+  materialFindings: WorkflowAuditMaterialFinding[];
+  observations: string[];
+  operatorConfirmed: boolean;
+}
+
+export interface RecordWorkflowAuditDecisionResponse {
+  runId: string;
+  runStatus: WorkflowRunStatus;
+  packet: WorkflowAuditPacket;
+  decision: WorkflowAuditDecision;
+  effects: {
+    ticketRevisionDecisions: Array<{ auditTicketRevisionDecisionRowId: number; auditPacketTicketObligationRowId: number }>;
+    ticketSatisfactions: Array<{ deliveryTicketRevisionRowId: number; auditTicketRevisionDecisionRowId: number }>;
+    remediationSeeds: Array<{ remediationSeedId: string; auditPacketRowId: number; executionPackageRowId: number; auditedCommit: string }>;
+  };
+}
+
 export interface WorkflowRunSummary {
   runId: string;
   featureSlug: string;

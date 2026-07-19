@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   getWorkflowAttempt,
+	getWorkflowAuditPacket,
   getWorkflowRun,
+	recordWorkflowAuditDecision,
   startWorkflowAttempt,
 } from "./api";
 
@@ -226,5 +228,31 @@ describe("canonical Run attempt transport", () => {
     await expect(getWorkflowAttempt("run-1", "attempt-1")).rejects.toThrow(
       /pending_terminal_status/,
     );
+  });
+});
+
+describe("ticket-aware audit transport", () => {
+  it("reads exact ticket obligations and submits only a confirmed packet decision", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({
+        runId: "run-1", runStatus: "audit_ready",
+        packet: { auditPacketId: "packet-1", implementationActorKind: "executor", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), status: "current", createdAt: "2026-07-19T00:00:00Z" },
+        document: { schema_version: "2.0" },
+        ticketPackage: { package: { packageId: "package-1", packageSha256: "d".repeat(64), workspaceId: "workspace-1", featureSlug: "payments", selectionId: "selection-1", selectionState: "consumed", authorityRevisionId: "authority-1", authoritySha256: "e".repeat(64), sourceClosureId: "closure-1", sourceCommit: "f".repeat(40) }, tickets: [{ sequence: 1, ticketId: "T1", revisionRowId: 2, revisionNumber: 1, memberSha256: "a".repeat(64), approvalId: "approval-1", approvalBasisSha256: "b".repeat(64), authorityRevisionRowId: 3, sourceClosureRowId: 4, designBrief: { artifactReference: "brief-1", sha256: "c".repeat(64) } }], mutationLeases: [], bundleIntegration: { runId: "run-1", executionPackageId: "package-1", selectionId: "selection-1", selectionState: "consumed", approvedRunStatus: "package_linked" } },
+      }))
+      .mockResolvedValueOnce(response({
+        runId: "run-1", runStatus: "needs_revision",
+        packet: { auditPacketId: "packet-1", implementationActorKind: "executor", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), status: "current", createdAt: "2026-07-19T00:00:00Z" },
+        decision: { auditDecisionId: "decision-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), decision: "needs_revision", rationale: "missing proof", createdAt: "2026-07-19T00:00:00Z" },
+        effects: { ticketRevisionDecisions: [{ auditTicketRevisionDecisionRowId: 1, auditPacketTicketObligationRowId: 2 }], ticketSatisfactions: [], remediationSeeds: [{ remediationSeedId: "seed-1", auditPacketRowId: 3, executionPackageRowId: 4, auditedCommit: "b".repeat(40) }] },
+      }));
+    vi.stubGlobal("fetch", fetch);
+
+    const packet = await getWorkflowAuditPacket("run-1");
+    const result = await recordWorkflowAuditDecision("run-1", { auditPacketId: packet.packet.auditPacketId, packetSha256: packet.packet.packetSha256, auditedCommit: packet.packet.auditedCommit, decision: "needs_revision", rationale: "missing proof", materialFindings: [{ source: "both", summary: "missing proof", evidence: "packet", requiredRemediation: "supply proof" }], observations: [], operatorConfirmed: true });
+
+    expect(packet.ticketPackage?.tickets[0]).toMatchObject({ ticketId: "T1", approvalId: "approval-1" });
+    expect(result.effects.remediationSeeds[0]?.remediationSeedId).toBe("seed-1");
+    expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toMatchObject({ operatorConfirmed: true, materialFindings: [{ requiredRemediation: "supply proof" }] });
   });
 });

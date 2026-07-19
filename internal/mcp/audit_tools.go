@@ -39,6 +39,22 @@ var recordAuditDecisionSchema = json.RawMessage(`{
     "audited_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "decision": {"type": "string", "enum": ["accepted", "needs_revision"]},
     "rationale": {"type": "string"},
+    "material_findings": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "summary", "evidence", "required_remediation"],
+        "properties": {
+          "source": {"type": "string", "enum": ["executor_implementation", "execution_spec", "both"]},
+          "summary": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1},
+          "required_remediation": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "observations": {"type": "array", "maxItems": 32, "items": {"type": "string", "minLength": 1}},
     "operator_confirmed": {"const": true}
   }
 }`)
@@ -67,13 +83,15 @@ type getAuditPacketArgs struct {
 }
 
 type recordAuditDecisionArgs struct {
-	RunID             string `json:"run_id"`
-	AuditPacketID     string `json:"audit_packet_id"`
-	PacketSHA256      string `json:"packet_sha256"`
-	AuditedCommit     string `json:"audited_commit"`
-	Decision          string `json:"decision"`
-	Rationale         string `json:"rationale"`
-	OperatorConfirmed bool   `json:"operator_confirmed"`
+	RunID             string                                   `json:"run_id"`
+	AuditPacketID     string                                   `json:"audit_packet_id"`
+	PacketSHA256      string                                   `json:"packet_sha256"`
+	AuditedCommit     string                                   `json:"audited_commit"`
+	Decision          string                                   `json:"decision"`
+	Rationale         string                                   `json:"rationale"`
+	MaterialFindings  []appaudits.WorkflowAuditMaterialFinding `json:"material_findings"`
+	Observations      []string                                 `json:"observations"`
+	OperatorConfirmed bool                                     `json:"operator_confirmed"`
 }
 
 func (s *Server) workflowAuditService() (WorkflowAuditToolService, error) {
@@ -132,6 +150,8 @@ func (s *Server) HandleRecordWorkflowAuditDecision(rawArgs json.RawMessage) Tool
 		AuditedCommit:     input.AuditedCommit,
 		Decision:          input.Decision,
 		Rationale:         input.Rationale,
+		MaterialFindings:  input.MaterialFindings,
+		Observations:      input.Observations,
 		OperatorConfirmed: input.OperatorConfirmed,
 	})
 	if err != nil {
@@ -156,6 +176,34 @@ func (s *Server) HandleRecordWorkflowAuditDecision(rawArgs json.RawMessage) Tool
 		out["plan_id"] = result.Plan.PlanID
 		out["plan_status"] = result.Plan.Status
 	}
+	ticketDecisions := make([]map[string]any, 0, len(result.TicketRevisionDecisions))
+	for _, decision := range result.TicketRevisionDecisions {
+		ticketDecisions = append(ticketDecisions, map[string]any{
+			"audit_ticket_revision_decision_row_id": decision.ID,
+			"audit_packet_ticket_obligation_row_id": decision.AuditPacketTicketObligationRowID,
+		})
+	}
+	satisfactions := make([]map[string]any, 0, len(result.TicketSatisfactions))
+	for _, satisfaction := range result.TicketSatisfactions {
+		satisfactions = append(satisfactions, map[string]any{
+			"delivery_ticket_revision_row_id":       satisfaction.DeliveryTicketRevisionRowID,
+			"audit_ticket_revision_decision_row_id": satisfaction.AuditTicketRevisionDecisionRowID,
+		})
+	}
+	seeds := make([]map[string]any, 0, len(result.RemediationSeeds))
+	for _, seed := range result.RemediationSeeds {
+		seeds = append(seeds, map[string]any{
+			"remediation_seed_id":      seed.RemediationSeedID,
+			"audit_packet_row_id":      seed.AuditPacketRowID,
+			"execution_package_row_id": seed.ExecutionPackageRowID,
+			"audited_commit":           seed.AuditedCommit,
+		})
+	}
+	out["ticket_effects"] = map[string]any{
+		"ticket_revision_decisions": ticketDecisions,
+		"ticket_satisfactions":      satisfactions,
+		"remediation_seeds":         seeds,
+	}
 	return workflowOK(out)
 }
 
@@ -175,6 +223,10 @@ func workflowAuditBlocked(tool string, err error) ToolCallResult {
 		return workflowBlocked(tool, "operator_confirmation_required", "operator_confirmed must be true after explicit operator confirmation", true, "operator_confirmed", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditPacketStale):
 		return workflowBlocked(tool, "audit_packet_stale", "audit packet is no longer current for the repository or selected execution attempt", true, "audit_packet_id", nil)
+	case errors.Is(err, appaudits.ErrWorkflowAuditDecisionInput):
+		return workflowBlocked(tool, "audit_decision_invalid", "decision rationale, findings, or observations do not satisfy the audit contract", true, "decision", nil)
+	case errors.Is(err, appaudits.ErrWorkflowAuditTicketIneligible):
+		return workflowBlocked(tool, "audit_ticket_ineligible", "the exact ticket package is no longer current and eligible for the requested audit effect", true, "audit_packet_id", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditNotReady), errors.Is(err, appaudits.ErrWorkflowAuditDecisionRecorded):
 		return workflowBlocked(tool, "audit_state_conflict", err.Error(), true, "run_id", nil)
 	default:

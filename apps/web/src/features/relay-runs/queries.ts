@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import {
   getWorkflowArtifactContent,
   getWorkflowAttempt,
+	getWorkflowAuditPacket,
   getWorkflowAuditStatus,
   getWorkflowRun,
   getWorkflowSpecification,
@@ -22,6 +23,8 @@ export const workflowRunKeys = {
     [...workflowRunKeys.detail(runId), "attempt", attemptId] as const,
   audit: (runId: string) =>
     [...workflowRunKeys.detail(runId), "audit"] as const,
+	packet: (runId: string) =>
+		[...workflowRunKeys.audit(runId), "packet"] as const,
   artifact: (contentUrl: string) =>
     [...workflowRunKeys.all, "artifact", contentUrl] as const,
 };
@@ -66,6 +69,14 @@ export function workflowAuditStatusQueryOptions(runId: string) {
     queryFn: () => getWorkflowAuditStatus(runId),
     staleTime: 5 * 1000,
   });
+}
+
+export function workflowAuditPacketQueryOptions(runId: string) {
+	return queryOptions({
+		queryKey: workflowRunKeys.packet(runId),
+		queryFn: () => getWorkflowAuditPacket(runId),
+		staleTime: 5 * 1000,
+	});
 }
 
 export function workflowArtifactContentQueryOptions(contentUrl: string) {

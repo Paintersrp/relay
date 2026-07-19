@@ -23,6 +23,7 @@ func TestTicketOperationInventoryIsClosedAndOrdered(t *testing.T) {
 		PackageActionPrepare,
 		PackageActionApprove,
 		MutationLeaseActionReconcile,
+		FeatureCompletionActionComplete,
 	}
 	if operations[1].OperationID != LocalOperatorTicketWorkflowOperationID || operations[1].Role != "local_operator" ||
 		operations[1].SurfaceContract != LocalOperatorTicketWorkflowSurface ||

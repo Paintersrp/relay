@@ -18,6 +18,7 @@ type fakeWorkflowAuditToolService struct {
 	artifactInput appaudits.GetWorkflowAuditArtifactInput
 	decision      appaudits.RecordWorkflowAuditDecisionResult
 	decisionErr   error
+	decisionInput appaudits.RecordWorkflowAuditDecisionInput
 }
 
 func (f *fakeWorkflowAuditToolService) GetCurrentPacket(context.Context, string) (appaudits.GetWorkflowAuditPacketResult, error) {
@@ -27,7 +28,8 @@ func (f *fakeWorkflowAuditToolService) GetCurrentArtifact(_ context.Context, inp
 	f.artifactInput = input
 	return f.artifact, f.artifactErr
 }
-func (f *fakeWorkflowAuditToolService) RecordDecision(context.Context, appaudits.RecordWorkflowAuditDecisionInput) (appaudits.RecordWorkflowAuditDecisionResult, error) {
+func (f *fakeWorkflowAuditToolService) RecordDecision(_ context.Context, input appaudits.RecordWorkflowAuditDecisionInput) (appaudits.RecordWorkflowAuditDecisionResult, error) {
+	f.decisionInput = input
 	return f.decision, f.decisionErr
 }
 
@@ -83,6 +85,7 @@ func TestRecordAuditDecisionRequiresConfirmationAndReturnsLifecycle(t *testing.T
 			AuditedCommit:   strings.Repeat("b", 40),
 			Decision:        workflowstore.AuditDecisionAccepted,
 		},
+		RemediationSeeds: []workflowstore.AuditRemediationSeed{{RemediationSeedID: "seed-test", AuditPacketRowID: 1, ExecutionPackageRowID: 2, AuditedCommit: strings.Repeat("b", 40)}},
 	}}
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
 	result := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{
@@ -92,10 +95,20 @@ func TestRecordAuditDecisionRequiresConfirmationAndReturnsLifecycle(t *testing.T
 		"audited_commit":"` + strings.Repeat("b", 40) + `",
 		"decision":"accepted",
 		"rationale":"accepted after review",
+		"observations":["non-blocking"],
 		"operator_confirmed":true
 	}`))
-	if result.IsError || !strings.Contains(result.Content[0].Text, `"run_status": "completed"`) {
+	if result.IsError || !strings.Contains(result.Content[0].Text, `"run_status": "completed"`) || !strings.Contains(result.Content[0].Text, `"ticket_effects"`) || len(service.decisionInput.Observations) != 1 {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestRecordAuditDecisionForwardsBoundedMaterialFindings(t *testing.T) {
+	service := &fakeWorkflowAuditToolService{decision: appaudits.RecordWorkflowAuditDecisionResult{Run: workflowstore.Run{RunID: "run-test"}, Packet: workflowstore.AuditPacket{AuditPacketID: "packet-test"}, Decision: workflowstore.AuditDecision{AuditDecisionID: "audit-test", Decision: workflowstore.AuditDecisionNeedsRevision}}}
+	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
+	result := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{"run_id":"run-test","audit_packet_id":"packet-test","packet_sha256":"` + strings.Repeat("c", 64) + `","audited_commit":"` + strings.Repeat("b", 40) + `","decision":"needs_revision","rationale":"revision required","material_findings":[{"source":"both","summary":"missing proof","evidence":"packet","required_remediation":"supply proof"}],"operator_confirmed":true}`))
+	if result.IsError || len(service.decisionInput.MaterialFindings) != 1 || service.decisionInput.MaterialFindings[0].RequiredRemediation != "supply proof" {
+		t.Fatalf("result = %+v input = %#v", result, service.decisionInput)
 	}
 }
 

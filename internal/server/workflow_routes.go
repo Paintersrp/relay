@@ -86,6 +86,10 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err != nil {
 		panic(err)
 	}
+	featureCompletionWorkflowService, err := appoperations.NewFeatureCompletionWorkflowService(packetService, featureAuthorityService)
+	if err != nil {
+		panic(err)
+	}
 	packageService, err := apppackages.NewService(workflowStore)
 	if err != nil {
 		panic(err)
@@ -103,7 +107,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	executionHandler := runsapi.NewWorkflowExecutionHandler(executionService)
 	artifactHandler := artifactsapi.NewWorkflowHandler(readService)
 	auditHandler := auditsapi.NewWorkflowHandler(auditService)
-	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService)
+	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService, featureCompletionWorkflowService)
 	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
 

@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -34,10 +35,12 @@ import {
   isNonterminalWorkflowAttemptStatus,
   isTerminalWorkflowAttemptStatus,
   prepareWorkflowAudit,
+	recordWorkflowAuditDecision,
   reconcileWorkflowAttempt,
   startWorkflowAttempt,
   workflowAttemptQueryOptions,
   workflowAuditStatusQueryOptions,
+	workflowAuditPacketQueryOptions,
   workflowRunDetailQueryOptions,
   workflowRunKeys,
   workflowRunStageRoute,
@@ -476,8 +479,19 @@ function AuditPanel({
 }) {
   const queryClient = useQueryClient();
   const statusQuery = useQuery(workflowAuditStatusQueryOptions(runId));
+	const packetQuery = useQuery({ ...workflowAuditPacketQueryOptions(runId), enabled: Boolean(statusQuery.data?.currentPacket) });
   const [auditedCommit, setAuditedCommit] = React.useState(baseCommit);
   const [error, setError] = React.useState<string | null>(null);
+	const [decision, setDecision] = React.useState<"accepted" | "needs_revision">("accepted");
+	const [rationale, setRationale] = React.useState("");
+	const [findingSource, setFindingSource] = React.useState<"executor_implementation" | "execution_spec" | "both">("both");
+	const [findingSummary, setFindingSummary] = React.useState("");
+	const [findingEvidence, setFindingEvidence] = React.useState("");
+	const [requiredRemediation, setRequiredRemediation] = React.useState("");
+	const [observations, setObservations] = React.useState("");
+	const [operatorConfirmed, setOperatorConfirmed] = React.useState(false);
+	const [decisionError, setDecisionError] = React.useState<string | null>(null);
+	const [recordedEffect, setRecordedEffect] = React.useState<{ satisfactions: number; seeds: string[] } | null>(null);
   const mutation = useMutation({
     mutationFn: () => prepareWorkflowAudit(runId, auditedCommit.trim()),
     onSuccess: () => {
@@ -487,6 +501,26 @@ function AuditPanel({
     },
     onError: (value) => setError(runErrorMessage(value)),
   });
+	const decisionMutation = useMutation({
+		mutationFn: () => {
+			const packet = packetQuery.data?.packet;
+			if (!packet) throw new Error("Load the exact current audit packet before recording a decision.");
+			const hasFinding = findingSummary.trim() || findingEvidence.trim() || requiredRemediation.trim();
+			return recordWorkflowAuditDecision(runId, {
+				auditPacketId: packet.auditPacketId, packetSha256: packet.packetSha256, auditedCommit: packet.auditedCommit,
+				decision, rationale: rationale.trim(),
+				materialFindings: decision === "needs_revision" && hasFinding ? [{ source: findingSource, summary: findingSummary.trim(), evidence: findingEvidence.trim(), requiredRemediation: requiredRemediation.trim() }] : [],
+				observations: observations.split("\n").map((value) => value.trim()).filter(Boolean), operatorConfirmed,
+			});
+		},
+		onSuccess: (result) => {
+			setDecisionError(null);
+			setRecordedEffect({ satisfactions: result.effects.ticketSatisfactions.length, seeds: result.effects.remediationSeeds.map((seed) => seed.remediationSeedId) });
+			void queryClient.invalidateQueries({ queryKey: workflowRunKeys.audit(runId) });
+			void queryClient.invalidateQueries({ queryKey: workflowRunKeys.detail(runId) });
+		},
+		onError: (value) => setDecisionError(runErrorMessage(value)),
+	});
 
   if (statusQuery.isLoading) {
     return <RelayStateSurface tone="loading" title="Loading audit status" description="Loading current packet and recorded decision metadata." />;
@@ -502,13 +536,17 @@ function AuditPanel({
     );
   }
   const status = statusQuery.data;
+	const ticketPackage = packetQuery.data?.ticketPackage;
+	const findingRequired = decision === "needs_revision" && Boolean(ticketPackage);
+	const findingComplete = Boolean(findingSummary.trim() && findingEvidence.trim() && requiredRemediation.trim());
+	const decisionReady = Boolean(packetQuery.data && rationale.trim() && operatorConfirmed && (!findingRequired || findingComplete));
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]" data-testid="audit-responsive-grid">
       <section className="space-y-4 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
         <div>
           <h2 className="text-sm font-semibold">Prepare audit packet</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Browser audit is packet preparation and readback only. Final decisions remain with the Auditor tool.
+			Prepare and inspect the exact immutable packet. Decisions use the same shared audit owner as the Auditor tool.
           </p>
         </div>
         {error ? <div role="alert" className="rounded border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">{error}</div> : null}
@@ -552,6 +590,16 @@ function AuditPanel({
             No current audit packet.
           </div>
         )}
+		{status.currentPacket && packetQuery.isLoading ? <p className="text-xs text-muted-foreground">Reading exact packet obligations…</p> : null}
+		{status.currentPacket && packetQuery.error ? <p role="alert" className="rounded border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">{runErrorMessage(packetQuery.error)}</p> : null}
+		{ticketPackage ? (
+			<div className="rounded border border-[var(--relay-row-border)] p-3 text-xs">
+				<div className="flex items-center justify-between gap-2"><span className="font-medium">Ticket package obligations</span><span className="flex gap-2"><Link className="text-[var(--relay-accent)] underline" to="/feature-workspaces/$workspaceId" params={{ workspaceId: ticketPackage.package.workspaceId }}>Feature workspace</Link><Link className="text-[var(--relay-accent)] underline" to="/feature-workspaces/$workspaceId/tickets" params={{ workspaceId: ticketPackage.package.workspaceId }}>Frontier</Link></span></div>
+				<p className="mt-1 break-all font-mono text-[10px]">package {ticketPackage.package.packageId} · authority {ticketPackage.package.authorityRevisionId} · source {ticketPackage.package.sourceCommit}</p>
+				<div className="mt-2 space-y-2">{ticketPackage.tickets.map((ticket) => <div key={ticket.revisionRowId} className="rounded border p-2"><span className="font-medium">{ticket.ticketId} r{ticket.revisionNumber}</span><span className="ml-2 text-muted-foreground">approval {ticket.approvalId}</span><p className="mt-1 break-all font-mono text-[10px]">member {ticket.memberSha256} · approval basis {ticket.approvalBasisSha256}</p></div>)}</div>
+				<p className="mt-2 text-muted-foreground">Bundle {ticketPackage.bundleIntegration.selectionId} is {ticketPackage.bundleIntegration.selectionState}; no frontier state is changed by inspection.</p>
+			</div>
+		) : status.currentPacket && packetQuery.data ? <p className="rounded border border-dashed p-3 text-xs text-muted-foreground">This ordinary Run has no ticket-package obligations. Legacy audit behavior is unchanged.</p> : null}
         {status.decision ? (
           <div className="rounded border border-success/30 bg-success/10 p-3">
             <p className="text-sm font-medium">{status.decision.decision}</p>
@@ -560,9 +608,20 @@ function AuditPanel({
         ) : (
           <div className="flex items-start gap-2 rounded border border-info/30 bg-info/10 p-3 text-xs">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>No decision is recorded. Use the canonical Auditor tool after reviewing the packet.</span>
+			<span>No decision is recorded. Review the exact packet, provide rationale, and explicitly confirm the decision.</span>
           </div>
         )}
+		{!status.decision && packetQuery.data ? <form className="space-y-3 rounded border border-[var(--relay-row-border)] p-3" onSubmit={(event) => { event.preventDefault(); decisionMutation.mutate(); }}>
+			<div><h3 className="text-sm font-medium">Record confirmed decision</h3><p className="mt-1 text-xs text-muted-foreground">This records only the exact packet, commit, rationale, findings, and observations shown above.</p></div>
+			<div><Label htmlFor="audit-decision">Decision</Label><select id="audit-decision" className="mt-1 w-full rounded border bg-background p-2" value={decision} onChange={(event) => setDecision(event.target.value as typeof decision)}><option value="accepted">Accept</option><option value="needs_revision">Request revision</option></select></div>
+			<div><Label htmlFor="audit-rationale">Decision rationale</Label><Textarea id="audit-rationale" value={rationale} onChange={(event) => setRationale(event.target.value)} required /></div>
+			{decision === "needs_revision" ? <div className="grid gap-2 rounded border border-warning/30 p-3"><p className="text-xs text-muted-foreground">{findingRequired ? "Ticket-route revision requests require one complete material finding." : "A material finding is optional for this ordinary Run."}</p><div><Label htmlFor="audit-finding-source">Finding source</Label><select id="audit-finding-source" className="mt-1 w-full rounded border bg-background p-2" value={findingSource} onChange={(event) => setFindingSource(event.target.value as typeof findingSource)}><option value="both">Both</option><option value="executor_implementation">Executor implementation</option><option value="execution_spec">Execution specification</option></select></div><div><Label htmlFor="audit-finding-summary">Finding summary</Label><Input id="audit-finding-summary" value={findingSummary} onChange={(event) => setFindingSummary(event.target.value)} required={findingRequired} /></div><div><Label htmlFor="audit-finding-evidence">Evidence</Label><Textarea id="audit-finding-evidence" value={findingEvidence} onChange={(event) => setFindingEvidence(event.target.value)} required={findingRequired} /></div><div><Label htmlFor="audit-required-remediation">Required remediation</Label><Textarea id="audit-required-remediation" value={requiredRemediation} onChange={(event) => setRequiredRemediation(event.target.value)} required={findingRequired} /></div></div> : null}
+			<div><Label htmlFor="audit-observations">Non-blocking observations (one per line)</Label><Textarea id="audit-observations" value={observations} onChange={(event) => setObservations(event.target.value)} /></div>
+			<label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={operatorConfirmed} onChange={(event) => setOperatorConfirmed(event.target.checked)} /><span>I confirm this exact packet, commit, decision, and rationale.</span></label>
+			{decisionError ? <p role="alert" className="text-xs text-destructive">{decisionError}</p> : null}
+			<Button type="submit" disabled={decisionMutation.isPending || !decisionReady}>{decisionMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <ClipboardCheck className="size-4" />}Record decision</Button>
+		</form> : null}
+		{recordedEffect ? <div className="rounded border border-info/30 bg-info/10 p-3 text-xs"><p>{recordedEffect.satisfactions ? `${recordedEffect.satisfactions} exact Ticket revision outcome${recordedEffect.satisfactions === 1 ? "" : "s"} recorded.` : "No Ticket completion effect was recorded."}</p>{recordedEffect.seeds.length ? <p className="mt-1">Remediation seed{recordedEffect.seeds.length === 1 ? "" : "s"}: {recordedEffect.seeds.join(", ")}. A Planner must form any remediation through the ordinary ticket route; no remediation is automatic.</p> : null}</div> : null}
       </section>
     </div>
   );

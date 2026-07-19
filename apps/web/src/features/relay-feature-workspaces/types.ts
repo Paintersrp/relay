@@ -67,3 +67,15 @@ export interface CreateDiscoveryTicketRequest { expectedVersion: number; ticketK
 export interface ResolveDiscoveryTicketRequest { expectedVersion: number; expectedTicketVersion: number; sequence: number; kind: "resolved" | "rejected" | "deferred"; artifactRowId?: number; retainedArtifactRowId?: number; artifactSha256: string; sourceClosureRowId?: number }
 export interface RouteFeatureWorkspaceRequest { expectedVersion: number; sequence: number; state: FeatureWorkspaceRoute; ticketId?: string }
 export interface PublishAuthorityRequest { expectedVersion: number; sourceClosureRowId?: number; layers: { kind: AuthorityLayerKind; artifactRowId?: number; retainedArtifactRowId?: number; artifactSha256: string; sourceClosureRowId?: number }[] }
+export interface FeatureCompletionStatus {
+  workspace: FeatureWorkspace;
+  gates: Array<{ name: "authority" | "tickets" | "integration" | "transitions" | "remediation" | "audit"; ready: boolean }>;
+  currentDecision?: { completionDecisionId: string; authorityRevisionRowId: number; sourceClosureRowId: number; decision: string; createdAt: string };
+}
+export interface CompleteFeatureWorkspaceRequest {
+  packetId: string;
+  operationId: string;
+  requiredDependencies: Array<{ class: string; key: string }>;
+  expectedVersion: number;
+  operatorConfirmed: boolean;
+}

@@ -12,7 +12,9 @@ import (
 
 	"relay/internal/api/shared"
 	featureapp "relay/internal/app/features"
+	appoperations "relay/internal/app/operations"
 	wayfinder "relay/internal/app/wayfinder"
+	"relay/internal/operations/registry"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -30,6 +32,11 @@ type WayfinderService interface {
 type AuthorityService interface {
 	ReadAuthority(context.Context, string) ([]featureapp.AuthorityRevisionDetail, error)
 	PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error)
+}
+
+type CompletionService interface {
+	Evaluate(context.Context, string) (appoperations.FeatureCompletionStatus, error)
+	Complete(context.Context, appoperations.FeatureCompletionOperationInput) (appoperations.FeatureCompletionResult, error)
 }
 
 type Workspace struct {
@@ -106,18 +113,19 @@ type TicketDetail struct {
 }
 
 type WorkspaceHandler struct {
-	wayfinder WayfinderService
-	authority AuthorityService
+	wayfinder  WayfinderService
+	authority  AuthorityService
+	completion CompletionService
 }
 
-func NewWorkspaceHandler(wayfinderService WayfinderService, authorityService AuthorityService) *WorkspaceHandler {
-	return &WorkspaceHandler{wayfinder: wayfinderService, authority: authorityService}
+func NewWorkspaceHandler(wayfinderService WayfinderService, authorityService AuthorityService, completionService CompletionService) *WorkspaceHandler {
+	return &WorkspaceHandler{wayfinder: wayfinderService, authority: authorityService, completion: completionService}
 }
 
 // NewWorkspaceHandlerFromServices binds the application owners to the HTTP
 // projection boundary without exposing persistence models from this package.
-func NewWorkspaceHandlerFromServices(wayfinderService *wayfinder.Service, authorityService *featureapp.Service) *WorkspaceHandler {
-	return NewWorkspaceHandler(appWayfinderAdapter{service: wayfinderService}, appAuthorityAdapter{service: authorityService})
+func NewWorkspaceHandlerFromServices(wayfinderService *wayfinder.Service, authorityService *featureapp.Service, completionService *appoperations.FeatureCompletionWorkflowService) *WorkspaceHandler {
+	return NewWorkspaceHandler(appWayfinderAdapter{service: wayfinderService}, appAuthorityAdapter{service: authorityService}, completionService)
 }
 
 type appWayfinderAdapter struct{ service *wayfinder.Service }
@@ -228,6 +236,17 @@ type publishAuthorityRequest struct {
 	ExpectedVersion    int64                   `json:"expectedVersion"`
 	SourceClosureRowID *int64                  `json:"sourceClosureRowId"`
 	Layers             []authorityLayerRequest `json:"layers"`
+}
+type completionDependencyRequest struct {
+	Class string `json:"class"`
+	Key   string `json:"key"`
+}
+type completeWorkspaceRequest struct {
+	PacketID             string                        `json:"packetId"`
+	OperationID          string                        `json:"operationId"`
+	RequiredDependencies []completionDependencyRequest `json:"requiredDependencies"`
+	ExpectedVersion      int64                         `json:"expectedVersion"`
+	OperatorConfirmed    bool                          `json:"operatorConfirmed"`
 }
 
 func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -346,6 +365,57 @@ func (h *WorkspaceHandler) PublishAuthority(w http.ResponseWriter, r *http.Reque
 	shared.JSON(w, http.StatusCreated, map[string]any{"authorityRevision": authorityDTO(revision), "workspace": workspaceDTO(workspace)})
 }
 
+func (h *WorkspaceHandler) CompletionStatus(w http.ResponseWriter, r *http.Request) {
+	if h.completion == nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature completion service is unavailable")
+		return
+	}
+	status, err := h.completion.Evaluate(r.Context(), workspaceID(r))
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, completionStatusDTO(status))
+}
+
+func (h *WorkspaceHandler) Complete(w http.ResponseWriter, r *http.Request) {
+	if h.completion == nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature completion service is unavailable")
+		return
+	}
+	var request completeWorkspaceRequest
+	if !decodeStrict(r, &request) {
+		badRequest(w, "Invalid feature completion request")
+		return
+	}
+	dependencies := make([]appoperations.DependencyRequirement, 0, len(request.RequiredDependencies))
+	for _, dependency := range request.RequiredDependencies {
+		dependencies = append(dependencies, appoperations.DependencyRequirement{Class: dependency.Class, Key: dependency.Key})
+	}
+	complete := featureapp.CompletionInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, OperatorConfirmed: request.OperatorConfirmed}
+	payload, err := appoperations.FeatureCompletionPayloadSHA256(complete)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature completion request could not be prepared")
+		return
+	}
+	result, err := h.completion.Complete(r.Context(), appoperations.FeatureCompletionOperationInput{
+		Admission: appoperations.FeatureCompletionOperationRequest{
+			PacketID: request.PacketID, OperationID: registry.OperationID(request.OperationID),
+			Action: registry.FeatureCompletionActionComplete, WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion,
+			PayloadSHA256: payload, RequiredDependencies: dependencies,
+		},
+		Complete: complete,
+	})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{
+		"workspace": workspaceDTO(Workspace{WorkspaceID: result.Workspace.WorkspaceID, FeatureSlug: result.Workspace.FeatureSlug, State: result.Workspace.State, Version: result.Workspace.Version, CreatedAt: result.Workspace.CreatedAt, UpdatedAt: result.Workspace.UpdatedAt}),
+		"decision":  completionDecisionDTO(result.Decision),
+	})
+}
+
 func workspaceID(r *http.Request) string { return strings.TrimSpace(chi.URLParam(r, "workspaceID")) }
 func nullableInt(value *int64) sql.NullInt64 {
 	if value == nil {
@@ -404,6 +474,26 @@ func authorityDTO(value featureapp.AuthorityRevisionDetail) map[string]any {
 		layers = append(layers, map[string]any{"kind": layer.LayerKind, "sequence": layer.Sequence, "artifactRowId": nullableIntDTO(layer.ArtifactRowID), "retainedArtifactRowId": nullableIntDTO(layer.RetainedArtifactRowID), "artifactSha256": layer.ArtifactSha256, "sourceClosureRowId": nullableIntDTO(layer.SourceClosureRowID)})
 	}
 	return map[string]any{"authorityRevisionId": value.Revision.AuthorityRevisionID, "revisionNumber": value.Revision.RevisionNumber, "sourceClosureRowId": nullableIntDTO(value.Revision.SourceClosureRowID), "layers": layers, "createdAt": value.Revision.CreatedAt}
+}
+func completionStatusDTO(value appoperations.FeatureCompletionStatus) map[string]any {
+	gates := make([]map[string]any, 0, len(value.Gates))
+	for _, gate := range value.Gates {
+		gates = append(gates, map[string]any{"name": gate.Name, "ready": gate.Ready})
+	}
+	response := map[string]any{
+		"workspace": workspaceDTO(Workspace{WorkspaceID: value.Workspace.WorkspaceID, FeatureSlug: value.Workspace.FeatureSlug, State: value.Workspace.State, Version: value.Workspace.Version, CreatedAt: value.Workspace.CreatedAt, UpdatedAt: value.Workspace.UpdatedAt}),
+		"gates":     gates,
+	}
+	if value.CurrentDecision != nil {
+		response["currentDecision"] = completionDecisionDTO(*value.CurrentDecision)
+	}
+	return response
+}
+func completionDecisionDTO(value appoperations.FeatureCompletionDecision) map[string]any {
+	return map[string]any{
+		"completionDecisionId": value.CompletionDecisionID, "authorityRevisionRowId": value.AuthorityRevisionRowID,
+		"sourceClosureRowId": value.SourceClosureRowID, "decision": value.Decision, "createdAt": value.CreatedAt,
+	}
 }
 func workspaceDetailDTO(detail wayfinder.WorkspaceDetail, authority []featureapp.AuthorityRevisionDetail) map[string]any {
 	inputs := make([]map[string]any, 0, len(detail.Inputs))
@@ -470,6 +560,10 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Feature workspace or discovery ticket was not found")
 	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict):
 		shared.Error(w, http.StatusConflict, "VERSION_CONFLICT", "Feature workspace was changed by another operator. Reload before retrying.")
+	case errors.Is(err, featureapp.ErrFeatureCompletionNotReady), errors.Is(err, featureapp.ErrFeatureCompletionRecorded), errors.Is(err, appoperations.ErrFeatureCompletionAdmission):
+		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently authorized or eligible. Reload the completion gates and packet evidence.")
+	case errors.Is(err, featureapp.ErrFeatureCompletionConfirmation):
+		badRequest(w, err.Error())
 	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest):
 		badRequest(w, err.Error())
 	default:
@@ -486,4 +580,6 @@ func MountWorkspaceRoutes(r chi.Router, handler *WorkspaceHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/discovery-tickets/{ticketID}/resolutions", handler.ResolveTicket)
 	r.Post("/feature-workspaces/{workspaceID}/routes", handler.Route)
 	r.Post("/feature-workspaces/{workspaceID}/authority-revisions", handler.PublishAuthority)
+	r.Get("/feature-workspaces/{workspaceID}/completion", handler.CompletionStatus)
+	r.Post("/feature-workspaces/{workspaceID}/completion", handler.Complete)
 }

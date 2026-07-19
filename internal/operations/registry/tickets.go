@@ -21,6 +21,7 @@ const (
 	PackageActionPrepare            AllowedAction = "prepare_execution_package"
 	PackageActionApprove            AllowedAction = "approve_execution_package"
 	MutationLeaseActionReconcile    AllowedAction = "reconcile_mutation_lease"
+	FeatureCompletionActionComplete AllowedAction = "complete_feature_workspace"
 )
 
 // TicketRoleProfile is the closed operation inventory for the ticket route.
@@ -55,7 +56,7 @@ var ticketOperations = []OperationDefinition{
 		OutputPersistence:        "durable_workspace",
 		SourcePolicy:             "current_clean_project_required_source",
 		HistoricalAuthority:      "none",
-		AllowedNonSourceActions:  []AllowedAction{TicketActionPublish, TicketActionApprove, TicketActionUpdatePriority, TicketActionReplaceDependencies, TicketActionSelect, PackageActionPrepare, PackageActionApprove, MutationLeaseActionReconcile},
+		AllowedNonSourceActions:  []AllowedAction{TicketActionPublish, TicketActionApprove, TicketActionUpdatePriority, TicketActionReplaceDependencies, TicketActionSelect, PackageActionPrepare, PackageActionApprove, MutationLeaseActionReconcile, FeatureCompletionActionComplete},
 		PacketSemanticProjection: "relay.semantic.ticket-mutation.v1",
 	},
 }
