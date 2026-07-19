@@ -295,20 +295,21 @@ type PlanPassDependency struct {
 }
 
 type Run struct {
-	ID                 int64
-	RunID              string
-	FeatureSlug        string
-	RepoTarget         string
-	PlanRowID          sql.NullInt64
-	PlanPassRowID      sql.NullInt64
-	RemediatesRunRowID sql.NullInt64
-	Status             string
-	Branch             string
-	BaseCommit         string
-	CanonicalSHA256    string
-	CreatedAt          string
-	UpdatedAt          string
-	CompletedAt        sql.NullString
+	ID                    int64
+	RunID                 string
+	FeatureSlug           string
+	RepoTarget            string
+	PlanRowID             sql.NullInt64
+	PlanPassRowID         sql.NullInt64
+	RemediatesRunRowID    sql.NullInt64
+	Status                string
+	Branch                string
+	BaseCommit            string
+	CanonicalSHA256       string
+	CreatedAt             string
+	UpdatedAt             string
+	CompletedAt           sql.NullString
+	ExecutionPackageRowID sql.NullInt64
 }
 
 type ExecutionAttempt struct {

@@ -105,6 +105,10 @@ func (tx *Tx) ListFeatureWorkspaceAuthorityRevisions(ctx context.Context, worksp
 	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceAuthorityRevisions(ctx, workspaceRowID)
 }
 
+func (tx *Tx) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, revisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
+	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceAuthorityLayers(ctx, revisionRowID)
+}
+
 func (tx *Tx) CreateFeatureWorkspace(ctx context.Context, params CreateFeatureWorkspaceParams) (FeatureWorkspace, error) {
 	return workflowgenerated.New(tx.tx).CreateFeatureWorkspace(ctx, params)
 }

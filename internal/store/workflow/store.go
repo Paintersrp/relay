@@ -479,7 +479,8 @@ func getRunByRunID(ctx context.Context, queryer rowQueryer, runID string) (Run, 
 	var value Run
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id,
-       status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+       status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at,
+       execution_package_row_id
 FROM runs
 WHERE run_id = ?`, runID).Scan(
 		&value.ID,
@@ -496,6 +497,7 @@ WHERE run_id = ?`, runID).Scan(
 		&value.CreatedAt,
 		&value.UpdatedAt,
 		&value.CompletedAt,
+		&value.ExecutionPackageRowID,
 	)
 	return value, err
 }
@@ -504,7 +506,8 @@ func getRunByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (Run, e
 	var value Run
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, remediates_run_row_id,
-       status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at
+       status, branch, base_commit, canonical_sha256, created_at, updated_at, completed_at,
+       execution_package_row_id
 FROM runs
 WHERE id = ?`, rowID).Scan(
 		&value.ID,
@@ -521,6 +524,7 @@ WHERE id = ?`, rowID).Scan(
 		&value.CreatedAt,
 		&value.UpdatedAt,
 		&value.CompletedAt,
+		&value.ExecutionPackageRowID,
 	)
 	return value, err
 }

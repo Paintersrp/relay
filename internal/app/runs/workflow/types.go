@@ -1,6 +1,10 @@
 package workflowruns
 
-import workflowstore "relay/internal/store/workflow"
+import (
+	"context"
+
+	workflowstore "relay/internal/store/workflow"
+)
 
 type CreateRunInput struct {
 	FeatureSlug      string
@@ -17,6 +21,23 @@ type CreateRunInput struct {
 type CreateRunResult struct {
 	Run       workflowstore.Run
 	Artifacts []workflowstore.Artifact
+}
+
+// PackageRunPreflight is executed inside the Run's artifact/database
+// transaction before the normal setup-ready Run is created. It lets the
+// ticket-package owner atomically validate and consume its own package basis
+// without creating a second Run lifecycle.
+type PackageRunPreflight func(context.Context, *workflowstore.Tx) error
+
+type CreatePackageRunInput struct {
+	FeatureSlug           string
+	RepoTarget            string
+	Branch                string
+	BaseCommit            string
+	CanonicalJSON         []byte
+	RenderedMarkdown      []byte
+	ExecutionPackageRowID int64
+	Preflight             PackageRunPreflight
 }
 
 type BeginExecutionAttemptInput struct {

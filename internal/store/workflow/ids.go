@@ -93,3 +93,7 @@ func NewDeliveryTicketSelectionID() string {
 func NewDeliveryTicketApprovalID() string {
 	return "approval-" + uuid.NewString()
 }
+
+func NewExecutionPackageID() string {
+	return "package-" + uuid.NewString()
+}

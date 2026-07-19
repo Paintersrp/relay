@@ -25,6 +25,24 @@ type (
 	CreateDeliveryTicketSelectionMemberParams    = workflowgenerated.CreateDeliveryTicketSelectionMemberParams
 )
 
+func getDeliveryTicketSelectionByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (DeliveryTicketSelection, error) {
+	var value DeliveryTicketSelection
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+FROM delivery_ticket_selections
+WHERE id = ?`, rowID).Scan(
+		&value.ID,
+		&value.SelectionID,
+		&value.WorkspaceRowID,
+		&value.State,
+		&value.Rationale,
+		&value.SourceClosureRowID,
+		&value.CreatedAt,
+		&value.UpdatedAt,
+	)
+	return value, err
+}
+
 func (s *Store) GetDeliveryTicketByTicketID(ctx context.Context, ticketID string) (DeliveryTicket, error) {
 	return workflowgenerated.New(s.db).GetDeliveryTicketByTicketID(ctx, ticketID)
 }
@@ -69,6 +87,10 @@ func (s *Store) GetDeliveryTicketSelectionBySelectionID(ctx context.Context, sel
 	return workflowgenerated.New(s.db).GetDeliveryTicketSelectionBySelectionID(ctx, selectionID)
 }
 
+func (s *Store) GetDeliveryTicketSelectionByRowID(ctx context.Context, rowID int64) (DeliveryTicketSelection, error) {
+	return getDeliveryTicketSelectionByRowID(ctx, s.db, rowID)
+}
+
 func (s *Store) ListDeliveryTicketSelectionsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicketSelection, error) {
 	return workflowgenerated.New(s.db).ListDeliveryTicketSelectionsByWorkspace(ctx, workspaceRowID)
 }
@@ -95,6 +117,14 @@ WHERE id = ?`, rowID).Scan(
 		&value.CurrentRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
 	)
 	return value, err
+}
+
+func (tx *Tx) GetDeliveryTicketSelectionBySelectionID(ctx context.Context, selectionID string) (DeliveryTicketSelection, error) {
+	return workflowgenerated.New(tx.tx).GetDeliveryTicketSelectionBySelectionID(ctx, selectionID)
+}
+
+func (tx *Tx) GetDeliveryTicketSelectionByRowID(ctx context.Context, rowID int64) (DeliveryTicketSelection, error) {
+	return getDeliveryTicketSelectionByRowID(ctx, tx.tx, rowID)
 }
 
 func (tx *Tx) ListDeliveryTicketsByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryTicket, error) {

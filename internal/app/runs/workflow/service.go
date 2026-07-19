@@ -201,6 +201,112 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 	return result, nil
 }
 
+// CreatePackageRun creates the same normal setup-ready Run as CreateRun, but
+// keeps Plan/pass fields unqualified and lets the package owner atomically
+// establish its approval and selection-consumption facts in the same commit.
+func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunInput) (CreateRunResult, error) {
+	if input.ExecutionPackageRowID < 1 || input.Preflight == nil {
+		return CreateRunResult{}, fmt.Errorf("%w: execution package and preflight are required", ErrInvalidRunInput)
+	}
+	if err := validateCreateRunInput(CreateRunInput{
+		FeatureSlug:      input.FeatureSlug,
+		RepoTarget:       input.RepoTarget,
+		Branch:           input.Branch,
+		BaseCommit:       input.BaseCommit,
+		CanonicalJSON:    input.CanonicalJSON,
+		RenderedMarkdown: input.RenderedMarkdown,
+	}); err != nil {
+		return CreateRunResult{}, err
+	}
+
+	runID := s.ids.RunID()
+	batch, err := s.store.ArtifactStore().Begin("runs/" + runID)
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	canonical, err := batch.Stage(
+		"execution_spec",
+		input.FeatureSlug+".execution-spec.json",
+		"application/json",
+		input.CanonicalJSON,
+	)
+	if err != nil {
+		_ = batch.Rollback()
+		return CreateRunResult{}, err
+	}
+	rendered, err := batch.Stage(
+		"executor_brief",
+		input.FeatureSlug+".executor-brief.md",
+		"text/markdown",
+		input.RenderedMarkdown,
+	)
+	if err != nil {
+		_ = batch.Rollback()
+		return CreateRunResult{}, err
+	}
+
+	result := CreateRunResult{}
+	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrRepositoryTargetNotFound, input.RepoTarget)
+		}
+		if err != nil {
+			return err
+		}
+		if registered.RepoTarget != input.RepoTarget {
+			return fmt.Errorf("%w: repository target %q must use registered key casing %q", ErrRepositoryTargetNotFound, input.RepoTarget, registered.RepoTarget)
+		}
+
+		if err := input.Preflight(ctx, tx); err != nil {
+			return fmt.Errorf("package Run preflight: %w", err)
+		}
+		run, err := tx.CreateRun(ctx, workflowstore.CreateRunParams{
+			RunID:           runID,
+			FeatureSlug:     input.FeatureSlug,
+			RepoTarget:      input.RepoTarget,
+			Status:          workflowstore.RunStatusCreated,
+			Branch:          input.Branch,
+			BaseCommit:      input.BaseCommit,
+			CanonicalSHA256: canonical.SHA256,
+		})
+		if err != nil {
+			return fmt.Errorf("create package Run: %w", err)
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusCreated, workflowstore.RunStatusSetupReady)
+		if err != nil {
+			return fmt.Errorf("mark package Run setup ready: %w", err)
+		}
+		run, err = tx.LinkRunToExecutionPackage(ctx, run.RunID, input.ExecutionPackageRowID)
+		if err != nil {
+			return fmt.Errorf("link package Run: %w", err)
+		}
+		result.Run = run
+
+		for _, staged := range []workflowartifacts.File{canonical, rendered} {
+			artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
+				ArtifactID:   s.ids.ArtifactID(),
+				OwnerType:    workflowstore.ArtifactOwnerRun,
+				RunRowID:     sql.NullInt64{Int64: run.ID, Valid: true},
+				Kind:         staged.Kind,
+				RelativePath: staged.RelativePath,
+				MediaType:    staged.MediaType,
+				SHA256:       staged.SHA256,
+				SizeBytes:    staged.SizeBytes,
+			})
+			if err != nil {
+				return fmt.Errorf("create package Run artifact metadata: %w", err)
+			}
+			result.Artifacts = append(result.Artifacts, artifact)
+		}
+		return nil
+	})
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	return result, nil
+}
+
 func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutionAttemptInput) (BeginExecutionAttemptResult, error) {
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.Adapter) == "" || strings.TrimSpace(input.Model) == "" {
 		return BeginExecutionAttemptResult{}, fmt.Errorf("run ID, adapter, and model are required")
