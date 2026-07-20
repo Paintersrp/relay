@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Loader2, MoveRight } from "lucide-react";
 
+import { RelayArtifactViewer } from "@/components/relay/RelayArtifactViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +21,7 @@ import {
   type WorkflowPlanDetail,
 } from "@/features/relay-plans";
 import type { WorkflowProject } from "@/features/relay-projects";
-import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
+import { RelayApiError } from "@/features/relay-runs";
 
 interface RelayCanonicalPlanDetailProps {
   detail: WorkflowPlanDetail;
@@ -163,16 +164,11 @@ export function RelayCanonicalPlanDetail({
         <div className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-5">
           <h2 className="text-sm font-semibold">Canonical artifacts</h2>
           {detail.artifacts.map((artifact) => (
-            <a
+            <RelayArtifactViewer
               key={artifact.artifactId}
-              href={`${API_BASE_URL}${artifact.contentUrl}`}
-              className="mt-3 block rounded border border-[var(--relay-row-border)] p-3 hover:bg-[var(--relay-content-bg)]"
-            >
-              <span className="text-xs font-medium">{artifact.kind}</span>
-              <span className="mt-1 block break-all font-mono text-[10px] text-muted-foreground">
-                {artifact.sha256}
-              </span>
-            </a>
+              artifact={artifact}
+              className="mt-3 p-3"
+            />
           ))}
         </div>
       </section>

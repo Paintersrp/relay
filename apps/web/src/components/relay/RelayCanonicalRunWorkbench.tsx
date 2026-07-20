@@ -13,6 +13,7 @@ import {
   Square,
 } from "lucide-react";
 
+import { RelayArtifactViewer } from "@/components/relay/RelayArtifactViewer";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { RelayMutationLeaseStatus } from "@/components/relay/RelayMutationLeaseStatus";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +46,6 @@ import {
   workflowRunKeys,
   workflowRunStageRoute,
   workflowSpecificationQueryOptions,
-  workflowApiUrl,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionAttemptStatus,
   type WorkflowExecutionAttemptSummary,
@@ -175,15 +175,7 @@ function SpecificationPanel({ runId }: { runId: string }) {
       </section>
       <div className="grid gap-3 sm:grid-cols-2">
         {[review.executionSpec, review.executorBrief].map((artifact) => (
-          <a
-            key={artifact.artifactId}
-            href={workflowApiUrl(artifact.contentUrl)}
-            className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--relay-accent)]"
-          >
-            <p className="text-sm font-medium">{artifact.kind}</p>
-            <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{artifact.artifactId}</p>
-            <p className="mt-3 text-xs text-muted-foreground">Open canonical artifact</p>
-          </a>
+          <RelayArtifactViewer key={artifact.artifactId} artifact={artifact} />
         ))}
       </div>
     </div>
@@ -298,6 +290,7 @@ function ExecutePanel({
 
   const selectedAttempt = attemptQuery.data ?? selectedSummary;
   const output = attemptQuery.data ? attemptOutput(attemptQuery.data) : "";
+  const selectedArtifacts = selectedAttempt?.artifacts ?? [];
   const selectedAttemptIsNonterminal = isNonterminalWorkflowAttemptStatus(
     selectedAttempt?.status,
   );
@@ -449,20 +442,31 @@ function ExecutePanel({
             Refreshing active attempt output.
           </p>
         ) : null}
-        {selectedAttempt && selectedAttempt.artifacts.length > 0 ? (
+        {selectedArtifacts.length > 0 ? (
           <div className="mt-4 space-y-2">
             <h3 className="text-xs font-semibold">Attempt artifacts</h3>
-            {selectedAttempt.artifacts.map((artifact) => (
-              <div
-                key={artifact.artifactId}
-                className="rounded border border-[var(--relay-row-border)] p-2 text-xs"
-              >
-                <p>{artifact.kind}</p>
-                <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
-                  {artifact.sha256}
-                </p>
-              </div>
-            ))}
+            {selectedArtifacts.map((artifact) => {
+              const artifactReference = selectedSummary?.artifacts.find(
+                (candidate) => candidate.artifactId === artifact.artifactId,
+              );
+              return artifactReference ? (
+                <RelayArtifactViewer
+                  key={artifact.artifactId}
+                  artifact={artifactReference}
+                  className="p-2"
+                />
+              ) : (
+                <div
+                  key={artifact.artifactId}
+                  className="rounded border border-[var(--relay-row-border)] p-2 text-xs"
+                >
+                  <p>{artifact.kind}</p>
+                  <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
+                    {artifact.sha256}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </section>
