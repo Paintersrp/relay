@@ -176,9 +176,6 @@ func (s *Store) GetRepositoryTarget(ctx context.Context, repoTarget string) (Rep
 func (s *Store) GetRepositoryTargetByLocalPath(ctx context.Context, localPath string) (RepositoryTarget, error) {
 	return getRepositoryTargetByLocalPath(ctx, s.db, localPath)
 }
-func (s *Store) GetSourceVaultByVaultID(ctx context.Context, vaultID string) (SourceVault, error) {
-	return getSourceVaultByVaultID(ctx, s.db, vaultID)
-}
 
 func (s *Store) GetSourceVaultByRepositoryTarget(ctx context.Context, repoTarget string) (SourceVault, error) {
 	return getSourceVaultByRepositoryTarget(ctx, s.db, repoTarget)

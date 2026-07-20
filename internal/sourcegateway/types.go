@@ -31,6 +31,9 @@ const (
 	CodeInvalidRange                 = "invalid_range"
 	CodeInvalidSelector              = "invalid_selector"
 	CodeInvalidCursor                = "invalid_cursor"
+	CodeInvalidTextProjection        = "invalid_text_projection"
+	CodeCommitUnreachable            = "commit_unreachable"
+	CodeIntegrityFailure             = "integrity_failure"
 	CodeInternalFailure              = "internal_failure"
 )
 
@@ -63,6 +66,12 @@ func (e *Error) Error() string {
 		return "source path selector is invalid"
 	case CodeInvalidCursor:
 		return "source continuation is invalid"
+	case CodeInvalidTextProjection:
+		return "source blob is not a valid UTF-8 text projection"
+	case CodeCommitUnreachable:
+		return "requested commit is not reachable from retained source authority"
+	case CodeIntegrityFailure:
+		return "source projection integrity validation failed"
 	default:
 		return "source gateway operation failed"
 	}
@@ -113,6 +122,8 @@ type SourceIdentity struct {
 	OperationID            registry.OperationID
 	ProjectID              string
 	RepositoryKey          string
+	DependencyKey          string
+	AnchorName             string
 	PublicationID          string
 	VaultRelationshipRowID int64
 	CommitOID              string

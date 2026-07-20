@@ -11,22 +11,37 @@ import (
 )
 
 type cursorPayload struct {
-	Version                string        `json:"version"`
-	Kind                   string        `json:"kind"`
-	PacketID               string        `json:"packet_id"`
-	PacketSHA256           string        `json:"packet_sha256"`
-	SurfaceContract        string        `json:"surface_contract"`
-	OperationID            string        `json:"operation_id"`
-	ProjectID              string        `json:"project_id"`
-	RepositoryKey          string        `json:"repository_key"`
-	PublicationID          string        `json:"publication_id"`
-	VaultRelationshipRowID int64         `json:"vault_relationship_row_id"`
-	CommitOID              string        `json:"commit_oid"`
-	TreeOID                string        `json:"tree_oid"`
-	RequestFingerprint     string        `json:"request_fingerprint"`
-	AfterPath              PathReference `json:"after_path,omitempty"`
-	NextOffset             int64         `json:"next_offset,omitempty"`
+	Version                         string        `json:"version"`
+	Kind                            string        `json:"kind"`
+	PacketID                        string        `json:"packet_id"`
+	PacketSHA256                    string        `json:"packet_sha256"`
+	SurfaceContract                 string        `json:"surface_contract"`
+	OperationID                     string        `json:"operation_id"`
+	ProjectID                       string        `json:"project_id"`
+	RepositoryKey                   string        `json:"repository_key"`
+	DependencyKey                   string        `json:"dependency_key,omitempty"`
+	AnchorName                      string        `json:"anchor_name,omitempty"`
+	PublicationID                   string        `json:"publication_id"`
+	VaultRelationshipRowID          int64         `json:"vault_relationship_row_id"`
+	CommitOID                       string        `json:"commit_oid"`
+	TreeOID                         string        `json:"tree_oid"`
+	SecondaryDependencyKey          string        `json:"secondary_dependency_key,omitempty"`
+	SecondaryAnchorName             string        `json:"secondary_anchor_name,omitempty"`
+	SecondaryPublicationID          string        `json:"secondary_publication_id,omitempty"`
+	SecondaryVaultRelationshipRowID int64         `json:"secondary_vault_relationship_row_id,omitempty"`
+	SecondaryCommitOID              string        `json:"secondary_commit_oid,omitempty"`
+	SecondaryTreeOID                string        `json:"secondary_tree_oid,omitempty"`
+	RequestFingerprint              string        `json:"request_fingerprint"`
+	ObjectOID                       string        `json:"object_oid,omitempty"`
+	PathID                          string        `json:"path_id,omitempty"`
+	AfterPath                       PathReference `json:"after_path,omitempty"`
+	LastCommitOID                   string        `json:"last_commit_oid,omitempty"`
+	LastEntryID                     string        `json:"last_entry_id,omitempty"`
+	NextIndex                       int64         `json:"next_index,omitempty"`
+	NextOffset                      int64         `json:"next_offset,omitempty"`
+	TextLineOpen                    bool          `json:"text_line_open,omitempty"`
 }
+
 type HMACCursorCodec struct{ key []byte }
 
 func NewHMACCursorCodec(key []byte) (*HMACCursorCodec, error) {
@@ -35,6 +50,7 @@ func NewHMACCursorCodec(key []byte) (*HMACCursorCodec, error) {
 	}
 	return &HMACCursorCodec{key: append([]byte(nil), key...)}, nil
 }
+
 func (c *HMACCursorCodec) Encode(value cursorPayload) (string, error) {
 	if c == nil || len(c.key) < 32 || value.Version != CursorVersion || value.Kind == "" {
 		return "", &Error{Code: CodeInvalidCursor}
@@ -51,6 +67,7 @@ func (c *HMACCursorCodec) Encode(value cursorPayload) (string, error) {
 	}
 	return token, nil
 }
+
 func (c *HMACCursorCodec) Decode(token string) (cursorPayload, error) {
 	if c == nil || len(c.key) < 32 || strings.TrimSpace(token) != token || token == "" || len(token) > MaxCursorTokenBytes {
 		return cursorPayload{}, &Error{Code: CodeInvalidCursor}
@@ -73,7 +90,7 @@ func (c *HMACCursorCodec) Decode(token string) (cursorPayload, error) {
 		return cursorPayload{}, &Error{Code: CodeInvalidCursor}
 	}
 	var value cursorPayload
-	if err := json.Unmarshal(payload, &value); err != nil || value.Version != CursorVersion || value.Kind == "" || !validLowerHex(value.PacketSHA256, 64) || !validLowerHex(value.CommitOID, 40) || !validLowerHex(value.TreeOID, 40) || !validLowerHex(value.RequestFingerprint, 64) {
+	if err := json.Unmarshal(payload, &value); err != nil || !validCursorPayload(value) {
 		return cursorPayload{}, &Error{Code: CodeInvalidCursor}
 	}
 	canonical, err := json.Marshal(value)
@@ -82,6 +99,28 @@ func (c *HMACCursorCodec) Decode(token string) (cursorPayload, error) {
 	}
 	return value, nil
 }
+
+func validCursorPayload(value cursorPayload) bool {
+	if value.Version != CursorVersion || value.Kind == "" || value.NextOffset < 0 || value.NextIndex < 0 || !validLowerHex(value.PacketSHA256, 64) || !validLowerHex(value.CommitOID, 40) || !validLowerHex(value.TreeOID, 40) || !validLowerHex(value.RequestFingerprint, 64) {
+		return false
+	}
+	for _, oid := range []string{value.ObjectOID, value.LastCommitOID, value.SecondaryCommitOID, value.SecondaryTreeOID} {
+		if oid != "" && !validLowerHex(oid, 40) {
+			return false
+		}
+	}
+	for _, digest := range []string{value.PathID, value.LastEntryID} {
+		if digest != "" && !validLowerHex(digest, 64) {
+			return false
+		}
+	}
+	secondaryPresent := value.SecondaryDependencyKey != "" || value.SecondaryAnchorName != "" || value.SecondaryPublicationID != "" || value.SecondaryVaultRelationshipRowID != 0 || value.SecondaryCommitOID != "" || value.SecondaryTreeOID != ""
+	if secondaryPresent && (value.SecondaryDependencyKey == "" || value.SecondaryPublicationID == "" || value.SecondaryVaultRelationshipRowID <= 0 || value.SecondaryCommitOID == "" || value.SecondaryTreeOID == "") {
+		return false
+	}
+	return true
+}
+
 func requestFingerprint(values ...string) string {
 	digest := sha256.New()
 	for _, value := range values {

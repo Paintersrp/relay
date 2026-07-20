@@ -40,7 +40,7 @@ func (s *Service) resolveAuthority(ctx context.Context, packetID string, surface
 	return value, nil
 }
 func sourceIdentity(value operations.SourceReadAuthority) SourceIdentity {
-	return SourceIdentity{PacketID: value.Summary.PacketID, PacketSHA256: value.Summary.PacketSHA256, LifecycleState: value.Summary.LifecycleState, SurfaceContract: value.Summary.SurfaceContract, OperationID: value.Summary.OperationID, ProjectID: value.Summary.ProjectID, RepositoryKey: value.RepositoryKey, PublicationID: value.PublicationID, VaultRelationshipRowID: value.Relationship.ID, CommitOID: value.Relationship.CommitOID, TreeOID: value.Relationship.TreeOID}
+	return SourceIdentity{PacketID: value.Summary.PacketID, PacketSHA256: value.Summary.PacketSHA256, LifecycleState: value.Summary.LifecycleState, SurfaceContract: value.Summary.SurfaceContract, OperationID: value.Summary.OperationID, ProjectID: value.Summary.ProjectID, RepositoryKey: value.RepositoryKey, DependencyKey: value.DependencyKey, AnchorName: value.AnchorName, PublicationID: value.PublicationID, VaultRelationshipRowID: value.Relationship.ID, CommitOID: value.Relationship.CommitOID, TreeOID: value.Relationship.TreeOID}
 }
 func (s *Service) makePathIdentity(ctx context.Context, authority operations.SourceReadAuthority, path []byte) (PathIdentity, error) {
 	if !validatePath(path, true) {
