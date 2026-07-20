@@ -703,6 +703,25 @@ type Run struct {
 	PackageApprovalRowID  sql.NullInt64  `json:"package_approval_row_id"`
 }
 
+type SourcePathSelector struct {
+	ID                     int64  `json:"id"`
+	SelectorID             string `json:"selector_id"`
+	PacketRowID            int64  `json:"packet_row_id"`
+	PacketID               string `json:"packet_id"`
+	SurfaceContractID      string `json:"surface_contract_id"`
+	OperationID            string `json:"operation_id"`
+	ProjectID              string `json:"project_id"`
+	RepositoryKey          string `json:"repository_key"`
+	PublicationID          string `json:"publication_id"`
+	VaultRelationshipRowID int64  `json:"vault_relationship_row_id"`
+	CommitOid              string `json:"commit_oid"`
+	TreeOid                string `json:"tree_oid"`
+	PathID                 string `json:"path_id"`
+	PathByteLength         int64  `json:"path_byte_length"`
+	PathBytes              []byte `json:"path_bytes"`
+	CreatedAt              string `json:"created_at"`
+}
+
 type SourceVault struct {
 	ID           int64  `json:"id"`
 	VaultID      string `json:"vault_id"`
