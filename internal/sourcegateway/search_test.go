@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -431,6 +432,19 @@ func runSearchGit(t *testing.T, repo string, args ...string) string {
 	commandArgs := append([]string{"-C", repo}, args...)
 	command := exec.Command("git", commandArgs...)
 	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(commandArgs, " "), err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func runSearchGitInput(t *testing.T, repo string, input []byte, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-C", repo}, args...)
+	command := exec.Command("git", commandArgs...)
+	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	command.Stdin = bytes.NewReader(input)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(commandArgs, " "), err, output)
@@ -1401,46 +1415,51 @@ func TestSearchObjectSizeInconsistencyFailsWithinCallAndAcrossResume(t *testing.
 func TestSearchRealRetainedGitCoversModesPathsAndNoSourceFallback(t *testing.T) {
 	ctx := context.Background()
 	repo := newSearchGitRepository(t)
-	deepDir := filepath.Join(repo, "deep", "nested")
-	if err := os.MkdirAll(deepDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	files := map[string][]byte{
-		"regular.txt":          []byte("needle regular\n"),
-		"executable.sh":        []byte("#!/bin/sh\necho needle\n"),
-		"deep/nested/text.txt": []byte("deep needle\n"),
-		"empty":                {},
-		"one":                  []byte("x"),
-		"raw.bin":              {0xff, 0, 0xff, 0},
-		"nul.txt":              {'n', 'e', 'e', 'd', 'l', 'e', 0},
-		"pointer.lfs":          []byte("version https://git-lfs.github.com/spec/v1\noid sha256:needle\nsize 1\n"),
-	}
-	for name, data := range files {
-		full := filepath.Join(repo, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, data, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Chmod(filepath.Join(repo, "executable.sh"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("target-needle", filepath.Join(repo, "link")); err != nil {
-		t.Fatal(err)
-	}
 	arbitraryName := string([]byte{'r', 'a', 'w', 0xfe})
-	if err := os.WriteFile(filepath.Join(repo, arbitraryName), []byte("needle arbitrary"), 0o600); err != nil {
-		t.Fatal(err)
+	entries := []struct {
+		mode string
+		path []byte
+		data []byte
+	}{
+		{mode: "100644", path: []byte("regular.txt"), data: []byte("needle regular\n")},
+		{mode: "100755", path: []byte("executable.sh"), data: []byte("#!/bin/sh\necho needle\n")},
+		{mode: "100644", path: []byte("deep/nested/text.txt"), data: []byte("deep needle\n")},
+		{mode: "100644", path: []byte("empty"), data: []byte{}},
+		{mode: "100644", path: []byte("one"), data: []byte("x")},
+		{mode: "100644", path: []byte("raw.bin"), data: []byte{0xff, 0, 0xff, 0}},
+		{mode: "100644", path: []byte("nul.txt"), data: []byte{'n', 'e', 'e', 'd', 'l', 'e', 0}},
+		{mode: "100644", path: []byte("pointer.lfs"), data: []byte("version https://git-lfs.github.com/spec/v1\noid sha256:needle\nsize 1\n")},
+		{mode: "100644", path: []byte(arbitraryName), data: []byte("needle arbitrary")},
+		{mode: "120000", path: []byte("link"), data: []byte("target-needle")},
 	}
-	runSearchGit(t, repo, "add", "-A")
-	runSearchGit(t, repo, "commit", "-m", "fixture")
-	gitlinkTarget := runSearchGit(t, repo, "rev-parse", "HEAD")
-	runSearchGit(t, repo, "update-index", "--add", "--cacheinfo", "160000,"+gitlinkTarget+",gitlink")
-	runSearchGit(t, repo, "commit", "-m", "gitlink")
+	var stream bytes.Buffer
+	for index, entry := range entries {
+		stream.WriteString("blob\nmark :")
+		stream.WriteString(strconv.Itoa(index + 1))
+		stream.WriteString("\ndata ")
+		stream.WriteString(strconv.Itoa(len(entry.data)))
+		stream.WriteByte('\n')
+		stream.Write(entry.data)
+		stream.WriteByte('\n')
+	}
+	stream.WriteString("commit refs/heads/main\nmark :10\ncommitter Relay Search Tests <relay-search@example.test> 0 +0000\ndata 7\nfixture\n")
+	for index, entry := range entries {
+		stream.WriteString("M ")
+		stream.WriteString(entry.mode)
+		stream.WriteString(" :")
+		stream.WriteString(strconv.Itoa(index + 1))
+		stream.WriteByte(' ')
+		stream.Write(entry.path)
+		stream.WriteByte('\n')
+	}
+	stream.WriteString("\ncommit refs/heads/main\ncommitter Relay Search Tests <relay-search@example.test> 0 +0000\ndata 7\ngitlink\nfrom :10\nM 160000 :10 gitlink\n\ndone\n")
+	runSearchGitInput(t, repo, stream.Bytes(), "fast-import", "--quiet")
 	commitOID := runSearchGit(t, repo, "rev-parse", "HEAD")
 	treeOID := runSearchGit(t, repo, "rev-parse", "HEAD^{tree}")
+	linkEntry := runSearchGit(t, repo, "ls-tree", "HEAD", "--", "link")
+	if !strings.HasPrefix(linkEntry, "120000 blob ") || !strings.HasSuffix(linkEntry, "\tlink") {
+		t.Fatalf("link tree entry=%q", linkEntry)
+	}
 
 	root := t.TempDir()
 	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
@@ -1475,20 +1494,7 @@ func TestSearchRealRetainedGitCoversModesPathsAndNoSourceFallback(t *testing.T) 
 	authority.Relationship = relationship
 	service := newFidelityService(t, manager, authority)
 
-	runSearchGit(t, repo, "checkout", "--orphan", "replacement")
-	runSearchGit(t, repo, "rm", "-rf", "--ignore-unmatch", ".")
-	if err := os.WriteFile(filepath.Join(repo, "replacement.txt"), []byte("replacement\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runSearchGit(t, repo, "add", "-A")
-	runSearchGit(t, repo, "commit", "-m", "replacement")
-	replacement := runSearchGit(t, repo, "rev-parse", "HEAD")
-	runSearchGit(t, repo, "checkout", "--detach", replacement)
-	runSearchGit(t, repo, "branch", "-D", "main")
-	runSearchGit(t, repo, "branch", "-D", "replacement")
-	if err := os.WriteFile(filepath.Join(repo, "dirty.txt"), []byte("dirty"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	runSearchGit(t, repo, "update-ref", "-d", "refs/heads/main")
 	runSearchGit(t, repo, "reflog", "expire", "--expire=now", "--all")
 	runSearchGit(t, repo, "gc", "--prune=now")
 	if err := os.RemoveAll(repo); err != nil {
