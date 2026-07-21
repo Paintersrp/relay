@@ -125,7 +125,10 @@ func fidelityAuthority(commitOID, treeOID, anchorName string, relationshipID int
 	}
 }
 
-func newFidelityService(t *testing.T, vault *fidelityVaultFake, authorities ...operations.SourceReadAuthority) *Service {
+func newFidelityService(t *testing.T, vault interface {
+	VaultReader
+	FidelityVaultReader
+}, authorities ...operations.SourceReadAuthority) *Service {
 	t.Helper()
 	values := make(map[string]operations.SourceReadAuthority, len(authorities))
 	for _, authority := range authorities {

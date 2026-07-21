@@ -44,7 +44,7 @@ func fidelitySourceIdentity(value operations.SourceReadAuthority) SourceIdentity
 	return SourceIdentity{PacketID: value.Summary.PacketID, PacketSHA256: value.Summary.PacketSHA256, LifecycleState: value.Summary.LifecycleState, SurfaceContract: value.Summary.SurfaceContract, OperationID: value.Summary.OperationID, ProjectID: value.Summary.ProjectID, RepositoryKey: value.RepositoryKey, DependencyKey: value.DependencyKey, AnchorName: value.AnchorName, PublicationID: value.PublicationID, VaultRelationshipRowID: value.Relationship.ID, CommitOID: value.Relationship.CommitOID, TreeOID: value.Relationship.TreeOID}
 }
 func revisionFingerprint(value operations.SourceReadAuthority) []string {
-	return []string{value.Summary.PacketID, string(value.Summary.SurfaceContract), string(value.Summary.OperationID), value.Summary.ProjectID, value.RepositoryKey, value.DependencyKey, value.PublicationID, strconv.FormatInt(value.Relationship.ID, 10), value.Relationship.CommitOID, value.Relationship.TreeOID}
+	return []string{value.Summary.PacketID, value.Summary.PacketSHA256, string(value.Summary.SurfaceContract), string(value.Summary.OperationID), value.Summary.ProjectID, strconv.FormatInt(value.PacketRowID, 10), value.RepositoryKey, value.DependencyKey, value.AnchorName, value.PublicationID, strconv.FormatInt(value.Relationship.ID, 10), value.Relationship.CommitOID, value.Relationship.TreeOID}
 }
 func pairFingerprint(before, after operations.SourceReadAuthority, values ...string) string {
 	parts := append([]string{}, revisionFingerprint(before)...)

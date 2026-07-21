@@ -40,6 +40,9 @@ type cursorPayload struct {
 	NextIndex                       int64         `json:"next_index,omitempty"`
 	NextOffset                      int64         `json:"next_offset,omitempty"`
 	TextLineOpen                    bool          `json:"text_line_open,omitempty"`
+	SearchPhase                     searchPhase   `json:"search_phase,omitempty"`
+	SearchObjectSize                int64         `json:"search_object_size,omitempty"`
+	SearchObjectSizeKnown           bool          `json:"search_object_size_known,omitempty"`
 }
 
 type HMACCursorCodec struct{ key []byte }
@@ -116,6 +119,13 @@ func validCursorPayload(value cursorPayload) bool {
 	}
 	secondaryPresent := value.SecondaryDependencyKey != "" || value.SecondaryAnchorName != "" || value.SecondaryPublicationID != "" || value.SecondaryVaultRelationshipRowID != 0 || value.SecondaryCommitOID != "" || value.SecondaryTreeOID != ""
 	if secondaryPresent && (value.SecondaryDependencyKey == "" || value.SecondaryPublicationID == "" || value.SecondaryVaultRelationshipRowID <= 0 || value.SecondaryCommitOID == "" || value.SecondaryTreeOID == "") {
+		return false
+	}
+	if value.Kind == "search" {
+		if !validSearchPhase(value.SearchPhase) || value.SearchObjectSize < 0 || (!value.SearchObjectSizeKnown && value.SearchObjectSize != 0) {
+			return false
+		}
+	} else if value.SearchPhase != "" || value.SearchObjectSize != 0 || value.SearchObjectSizeKnown {
 		return false
 	}
 	return true
