@@ -263,25 +263,14 @@ func (s *Service) validateSearchText(ctx context.Context, authority operations.S
 		}
 		return searchTextValidation{nextOffset: offset, totalSize: totalSize, totalSizeKnown: totalSizeKnown, complete: true}, nil
 	}
-	processed := 0
-	for processed < len(page.Bytes) {
-		remainingBytes := page.Bytes[processed:]
-		if !utf8.FullRune(remainingBytes) {
-			break
-		}
-		value, size := utf8.DecodeRune(remainingBytes)
-		if value == utf8.RuneError && size == 1 {
-			return searchTextValidation{nextOffset: offset + int64(processed), examined: int64(len(page.Bytes)), totalSize: totalSize, totalSizeKnown: totalSizeKnown, invalid: true}, nil
-		}
-		processed += size
+	scan := scanTextEligibility(page.Bytes, page.Offset+int64(len(page.Bytes)) == page.TotalSize)
+	if scan.ineligible {
+		return searchTextValidation{nextOffset: offset + int64(scan.consumed), examined: int64(len(page.Bytes)), totalSize: totalSize, totalSizeKnown: totalSizeKnown, invalid: true}, nil
 	}
-	if processed < len(page.Bytes) && offset+int64(len(page.Bytes)) == page.TotalSize {
-		return searchTextValidation{nextOffset: offset + int64(processed), examined: int64(len(page.Bytes)), totalSize: totalSize, totalSizeKnown: totalSizeKnown, invalid: true}, nil
-	}
-	if processed == 0 && offset < page.TotalSize {
+	if scan.consumed == 0 && offset < page.TotalSize {
 		return searchTextValidation{}, &Error{Code: CodeIntegrityFailure}
 	}
-	next := offset + int64(processed)
+	next := offset + int64(scan.consumed)
 	return searchTextValidation{nextOffset: next, examined: int64(len(page.Bytes)), totalSize: totalSize, totalSizeKnown: totalSizeKnown, complete: next == page.TotalSize}, nil
 }
 

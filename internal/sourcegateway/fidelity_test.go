@@ -188,6 +188,52 @@ func TestReadTextRejectsInvalidUTF8WithoutChangingBlobAuthority(t *testing.T) {
 	}
 }
 
+func TestTextEligibilityScanHandlesNULAndUTF8Boundaries(t *testing.T) {
+	cases := []struct {
+		name       string
+		data       []byte
+		terminal   bool
+		consumed   int
+		ineligible bool
+	}{
+		{name: "empty", data: []byte{}, terminal: true, consumed: 0},
+		{name: "valid multibyte", data: []byte("aéz"), terminal: true, consumed: len([]byte("aéz"))},
+		{name: "nonterminal partial rune", data: []byte{'a', 0xe2, 0x82}, terminal: false, consumed: 1},
+		{name: "terminal partial rune", data: []byte{'a', 0xe2, 0x82}, terminal: true, consumed: 1, ineligible: true},
+		{name: "invalid encoding", data: []byte{'a', 0xff}, terminal: true, consumed: 1, ineligible: true},
+		{name: "NUL prefix", data: []byte{0, 'a'}, terminal: true, consumed: 0, ineligible: true},
+		{name: "NUL middle", data: []byte{'a', 0, 'b'}, terminal: true, consumed: 1, ineligible: true},
+		{name: "NUL suffix", data: []byte{'a', 0}, terminal: true, consumed: 1, ineligible: true},
+		{name: "NUL between multibyte runes", data: []byte("é\x00é"), terminal: true, consumed: len([]byte("é")), ineligible: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			result := scanTextEligibility(test.data, test.terminal)
+			if result.consumed != test.consumed || result.ineligible != test.ineligible {
+				t.Fatalf("result=%#v want consumed=%d ineligible=%v", result, test.consumed, test.ineligible)
+			}
+		})
+	}
+}
+
+func TestReadTextRejectsNULWithoutChangingBlobAuthority(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	treeOID := strings.Repeat("2", 40)
+	blobOID := strings.Repeat("3", 40)
+	data := []byte{'a', 0, 'b'}
+	vault := &fidelityVaultFake{trees: map[string][]sourcevault.RetainedTreeEntry{treeOID: {{Name: []byte("nul.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}}, blobs: map[string][]byte{blobOID: data}, nodes: map[string]sourcevault.RetainedCommitNode{commitOID: {CommitOID: commitOID, TreeOID: treeOID, RawSize: 10, MessageOffset: 5, MessageSize: 5}}}
+	service := newFidelityService(t, vault, fidelityAuthority(commitOID, treeOID, "", 1))
+	path := PathReference{PathID: pathID([]byte("nul.txt")), InlineBase64: canonicalInline([]byte("nul.txt"))}
+	_, err := service.ReadText(context.Background(), ReadTextRequest{PacketID: "opkt-fidelity", SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", RepositoryKey: "relay", Path: path, Limit: MinTextPageBytes})
+	if ErrorCode(err) != CodeInvalidTextProjection {
+		t.Fatalf("NUL text error = %v", err)
+	}
+	blob, err := service.ReadBlob(context.Background(), ReadBlobRequest{PacketID: "opkt-fidelity", SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", RepositoryKey: "relay", Path: path, Limit: MaxBlobPageBytes})
+	if err != nil || !blob.Complete || !bytes.Equal(blob.Bytes, data) {
+		t.Fatalf("blob=%#v err=%v", blob, err)
+	}
+}
+
 func TestCommitHistoryIsDistanceFirstAndPathHistoryContinuesAfterAbsentStart(t *testing.T) {
 	rootCommit := strings.Repeat("1", 40)
 	leftCommit := strings.Repeat("2", 40)

@@ -42,7 +42,7 @@ func (s *Service) ReadText(ctx context.Context, r ReadTextRequest) (ReadTextResu
 		actual = c.NextOffset
 		open = c.TextLineOpen
 	}
-	total, e := s.validateUTF8Blob(ctx, a.Relationship, entry.ObjectOID)
+	total, e := s.validateTextBlob(ctx, a.Relationship, entry.ObjectOID)
 	if e != nil {
 		return ReadTextResult{}, e
 	}
@@ -75,7 +75,7 @@ func (s *Service) ReadText(ctx context.Context, r ReadTextRequest) (ReadTextResu
 	return out, nil
 }
 
-func (s *Service) validateUTF8Blob(ctx context.Context, r workflowstore.OperationPacketVaultRelationship, oid string) (int64, error) {
+func (s *Service) validateTextBlob(ctx context.Context, r workflowstore.OperationPacketVaultRelationship, oid string) (int64, error) {
 	var offset int64
 	var total int64 = -1
 	var carry []byte
@@ -93,18 +93,11 @@ func (s *Service) validateUTF8Blob(ctx context.Context, r workflowstore.Operatio
 			return 0, &Error{Code: CodeObjectMismatch}
 		}
 		data := append(append([]byte(nil), carry...), p.Bytes...)
-		carry = nil
-		for len(data) > 0 {
-			if !utf8.FullRune(data) {
-				carry = append(carry, data...)
-				break
-			}
-			runeValue, size := utf8.DecodeRune(data)
-			if runeValue == utf8.RuneError && size == 1 {
-				return 0, &Error{Code: CodeInvalidTextProjection}
-			}
-			data = data[size:]
+		scan := scanTextEligibility(data, p.Offset+int64(len(p.Bytes)) == p.TotalSize)
+		if scan.ineligible {
+			return 0, &Error{Code: CodeInvalidTextProjection}
 		}
+		carry = append(carry[:0], data[scan.consumed:]...)
 		offset += int64(len(p.Bytes))
 		if len(p.Bytes) == 0 && offset < total {
 			return 0, &Error{Code: CodeObjectMismatch}
