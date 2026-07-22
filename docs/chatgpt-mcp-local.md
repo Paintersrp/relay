@@ -12,7 +12,7 @@ status:   npm run chatgpt-mcp:status:all
 stop:     npm run chatgpt-mcp:stop:all
 ```
 
-`start:all` is the daily one-command workflow. It reuses a healthy Relay daemon, starts Relay only when none of the three role endpoints are healthy, connects all three native runtimes, waits for readiness, and fails closed on partial health. `stop:all` stops the three owned aliases and only stops Relay when this workflow started it.
+`start:all` is the daily one-command workflow. It reuses a healthy Relay daemon, starts Relay only when none of the three role endpoints are healthy, verifies each native runtime from structured status and health output, and fails closed on partial health. Native runtimes remain active after successful startup; the short-lived startup lock only prevents concurrent orchestration. `stop:all` stops the three configured aliases and only stops Relay when this workflow started it and its recorded process identity still matches.
 
 Three ChatGPT app registrations are required. Each registration selects a distinct tunnel ID: Wayfinder selects the Wayfinder tunnel, Planner selects the Planner tunnel, and Auditor selects the Auditor tunnel. A tunnel object is registered as a whole; the roles cannot be separate channels inside one tunnel.
 
@@ -37,7 +37,7 @@ RELAY_MCP_PLANNER_TUNNEL_ID=tunnel_REPLACE_ME
 RELAY_MCP_AUDITOR_TUNNEL_ID=tunnel_REPLACE_ME
 ```
 
-The three IDs must be unique and operator-provided. `init:all` attaches each existing ID to its exact role endpoint; it does not create remote tunnel objects.
+The three IDs must be unique and operator-provided. Each must match `tunnel_` followed by exactly 32 lowercase hexadecimal characters, for example `tunnel_11111111111111111111111111111111`. `init:all` attaches each existing ID to its exact role endpoint; it does not create remote tunnel objects.
 
 Optional aggregate overrides:
 
@@ -52,9 +52,6 @@ Optional aggregate overrides:
 # RELAY_MCP_WAYFINDER_PROFILE=relay-wayfinder
 # RELAY_MCP_PLANNER_PROFILE=relay-planner
 # RELAY_MCP_AUDITOR_PROFILE=relay-auditor
-# RELAY_MCP_WAYFINDER_HEALTH_ADDR=127.0.0.1:18201
-# RELAY_MCP_PLANNER_HEALTH_ADDR=127.0.0.1:18202
-# RELAY_MCP_AUDITOR_HEALTH_ADDR=127.0.0.1:18203
 # RELAY_MCP_STARTUP_TIMEOUT_MS=30000
 # RELAY_MCP_POLL_INTERVAL_MS=250
 # RELAY_MCP_STATE_FILE=data/transport/chatgpt-mcp-all.json
@@ -62,21 +59,21 @@ Optional aggregate overrides:
 
 The aggregate defaults are:
 
-| Role | Local endpoint | Native alias | Native profile | Health address |
+| Role | Local endpoint | Native alias | Native profile | Health URL |
 | --- | --- | --- | --- | --- |
-| Wayfinder | `http://127.0.0.1:8080/mcp/wayfinder` | `relay-wayfinder` | `relay-wayfinder` | `127.0.0.1:18201` |
-| Planner | `http://127.0.0.1:8080/mcp/planner` | `relay-planner` | `relay-planner` | `127.0.0.1:18202` |
-| Auditor | `http://127.0.0.1:8080/mcp/auditor` | `relay-auditor` | `relay-auditor` | `127.0.0.1:18203` |
+| Wayfinder | `http://127.0.0.1:8080/mcp/wayfinder` | `relay-wayfinder` | `relay-wayfinder` | native generated URL |
+| Planner | `http://127.0.0.1:8080/mcp/planner` | `relay-planner` | `relay-planner` | native generated URL |
+| Auditor | `http://127.0.0.1:8080/mcp/auditor` | `relay-auditor` | `relay-auditor` | native generated URL |
 
 No aggregate `/mcp` URL or retired `/mcp/v1/...` URL is used for the three app registrations. The role paths are fixed and derived from one role definition in the local Node tooling.
 
 ## Native runtime supervision
 
-The installed supported binary was inspected before implementation. Its `runtimes` commands provide `connect`, `list`, `status`, `stop`, and `rm`; `connect` accepts `--tunnel-id`, `--mcp-server-url`, `--alias`, `--profile`, and `--runtime-api-key`. Relay therefore uses native runtime supervision rather than maintaining a second Node process supervisor. The runtime key is passed as the supported `env:CONTROL_PLANE_API_KEY` reference, never as a command-line secret.
+The installed supported binary is tunnel-client `0.0.9+62b9b42f698ec5319d2115e0c0ff1dcf6557d7ae`. Its `runtimes` commands provide `connect`, `list`, `status`, `stop`, and `rm`; `connect` accepts `--tunnel-id`, `--mcp-server-url`, `--alias`, `--profile`, and `--runtime-api-key`, and emits JSON when requested. Native runtime profiles generate an ephemeral loopback health listener and expose the effective URL or URL file through runtime state. Relay passes that URL to `tunnel-client health --url ... --json` or `--url-file ... --json`; it never assigns aggregate health ports.
 
-`init:all` runs one `runtimes connect` command per role and reports every result. `doctor:all` checks configuration, tunnel-client availability, all three JSON-RPC `ping` endpoints, native runtime status/readiness, and role binding. `status:all` prints one redacted row for Relay and each role. Tunnel IDs are abbreviated and secrets are redacted from child output.
+`init:all` runs one `runtimes connect` command per role and requires each role's structured native status to have the exact alias, tunnel ID, profile, MCP endpoint, running process, healthy healthz, and ready readyz fields. A zero connect exit alone is not success. `doctor:all` and `status:all` use the same adapter. Tunnel IDs are abbreviated and secrets are redacted from child output. Existing correctly configured runtimes are reused; endpoint or profile drift stops and reconnects that alias before verification.
 
-The aggregate state file is local-only and records aliases, profiles, endpoints, health addresses, Relay ownership, and the Relay PID; it never records the control-plane key. A lock file prevents duplicate aggregate startup. Stale lock/state data is recoverable: a dead lock owner is removed, and `stop:all` is safe when runtimes are already stopped. On startup failure or termination, all successfully connected aliases are stopped and a launcher-owned Relay process is terminated. POSIX process groups and Windows process trees use platform-specific shutdown adapters.
+The aggregate state file is local-only and records desired bindings, aliases changed by the operation, and verified Relay ownership identity; it never records secrets or health ports. A lock file prevents duplicate aggregate startup and stale lock recovery checks the recorded lock PID. `SIGINT` and `SIGTERM` cancel readiness polling, prevent later connections, stop runtimes changed by the current operation, stop an owned Relay only after identity verification, and release the lock. If a saved Relay PID is stale or reused, `stop:all` preserves the live process, removes stale state, and reports an actionable diagnostic. POSIX process groups and Windows process trees use platform-specific shutdown adapters.
 
 ## Single-profile compatibility
 
@@ -101,6 +98,6 @@ The old `/mcp/v1/...` routes remain removed. HTTP checks use POST JSON-RPC `ping
 
 ## Troubleshooting
 
-Run `npm run chatgpt-mcp:doctor:all` first. It reports missing or duplicate IDs, duplicate aliases/profiles/health addresses, unavailable binaries, failed role pings, missing runtimes, readiness failures, and binding mismatches without printing secrets.
+Run `npm run chatgpt-mcp:doctor:all` first. It reports missing or duplicate IDs, duplicate aliases/profiles, unavailable binaries, failed role pings, missing runtimes or native health URLs, readiness failures, and binding mismatches without printing secrets.
 
 Do not claim live tunnel success without a valid operator runtime key and three existing tunnel IDs. Do not put real IDs or keys in `.env.example` or committed documentation.

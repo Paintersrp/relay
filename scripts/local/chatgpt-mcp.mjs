@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "child_process";
+import { createHash, randomUUID } from "crypto";
 import {
   accessSync,
   constants,
@@ -57,10 +58,8 @@ const ROLE_DEFINITIONS = [
     idEnv: "RELAY_MCP_WAYFINDER_TUNNEL_ID",
     aliasEnv: "RELAY_MCP_WAYFINDER_ALIAS",
     profileEnv: "RELAY_MCP_WAYFINDER_PROFILE",
-    healthEnv: "RELAY_MCP_WAYFINDER_HEALTH_ADDR",
     alias: "relay-wayfinder",
     profile: "relay-wayfinder",
-    healthAddress: "127.0.0.1:18201",
   },
   {
     key: "planner",
@@ -69,10 +68,8 @@ const ROLE_DEFINITIONS = [
     idEnv: "RELAY_MCP_PLANNER_TUNNEL_ID",
     aliasEnv: "RELAY_MCP_PLANNER_ALIAS",
     profileEnv: "RELAY_MCP_PLANNER_PROFILE",
-    healthEnv: "RELAY_MCP_PLANNER_HEALTH_ADDR",
     alias: "relay-planner",
     profile: "relay-planner",
-    healthAddress: "127.0.0.1:18202",
   },
   {
     key: "auditor",
@@ -81,10 +78,8 @@ const ROLE_DEFINITIONS = [
     idEnv: "RELAY_MCP_AUDITOR_TUNNEL_ID",
     aliasEnv: "RELAY_MCP_AUDITOR_ALIAS",
     profileEnv: "RELAY_MCP_AUDITOR_PROFILE",
-    healthEnv: "RELAY_MCP_AUDITOR_HEALTH_ADDR",
     alias: "relay-auditor",
     profile: "relay-auditor",
-    healthAddress: "127.0.0.1:18203",
   },
 ];
 
@@ -200,8 +195,6 @@ function getConfig() {
     tunnelId: process.env[definition.idEnv] || "",
     alias: process.env[definition.aliasEnv] || definition.alias,
     profile: process.env[definition.profileEnv] || definition.profile,
-    healthAddress:
-      process.env[definition.healthEnv] || definition.healthAddress,
     endpoint: `${relayBaseUrl}${definition.path}`,
   }));
 
@@ -295,8 +288,9 @@ function printHelp(config) {
   console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
   console.log(`Aggregate state file: ${config.stateFile}`);
   console.log("The three ChatGPT app registrations must select three distinct tunnel IDs.");
+  console.log("Native runtimes generate their own ephemeral loopback health URLs; no aggregate health ports are configured.");
   console.log("Process environment overrides .env.local, which overrides .env, which overrides defaults.");
-  console.log("Override names: RELAY_MCP_RELAY_COMMAND, RELAY_MCP_BASE_URL, RELAY_MCP_*_PROFILE, RELAY_MCP_*_ALIAS, RELAY_MCP_*_HEALTH_ADDR, RELAY_MCP_STARTUP_TIMEOUT_MS, RELAY_MCP_PROFILE_DIR, and TUNNEL_CLIENT_PATH.");
+  console.log("Override names: RELAY_MCP_RELAY_COMMAND, RELAY_MCP_BASE_URL, RELAY_MCP_*_PROFILE, RELAY_MCP_*_ALIAS, RELAY_MCP_STARTUP_TIMEOUT_MS, RELAY_MCP_PROFILE_DIR, and TUNNEL_CLIENT_PATH.");
 }
 
 function validateAggregateConfig(config) {
@@ -304,7 +298,6 @@ function validateAggregateConfig(config) {
   const ids = new Map();
   const profiles = new Map();
   const aliases = new Map();
-  const healthAddresses = new Map();
 
   for (const role of config.roles) {
     if (!isConfiguredTunnelId(role.tunnelId)) {
@@ -328,15 +321,6 @@ function validateAggregateConfig(config) {
     } else {
       profiles.set(role.profile, role.label);
     }
-    if (!role.healthAddress) {
-      errors.push(`${role.label}: health address is empty`);
-    } else if (healthAddresses.has(role.healthAddress)) {
-      errors.push(
-        `${role.label}: duplicate health address with ${healthAddresses.get(role.healthAddress)}`,
-      );
-    } else {
-      healthAddresses.set(role.healthAddress, role.label);
-    }
   }
 
   return errors;
@@ -349,90 +333,97 @@ async function runInitAll(config) {
     throw new ValidationError(errors.join("; "));
   }
   requireConfiguredApiKey(config, "init:all");
-  const tunnelClient = resolveTunnelClient(config);
+  const lockPath = `${config.stateFile}.lock`;
+  acquireAggregateLock(lockPath);
+  const cancellation = createAggregateCancellation();
+  const changedRoles = [];
+  const cleanup = onceAsync(() => stopRoles(config, changedRoles));
+  const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
+  const adapter = createNativeRuntimeAdapter(config);
   const results = [];
-
-  for (const role of config.roles) {
-    const result = await runNativeCommand(
-      tunnelClient,
-      buildNativeRuntimeConnectArgs(config, role),
-      config,
-      role,
-    );
-    results.push({ role, ok: result.code === 0, reason: result.code === 0 ? "connected" : summarizeFailure(result) });
+  try {
+    for (const role of config.roles) {
+      cancellation.check();
+      const prepared = await prepareRuntime(adapter, config, role, changedRoles, cancellation);
+      if (!prepared.ready) await waitForRuntimeReadiness(config, [role], adapter, cancellation);
+      results.push({ role, ok: true, reason: prepared.reused ? "already configured and ready" : "connected and verified" });
+    }
+    printAggregateResults("init", results);
+    writeAggregateState(config, { changedRoles, relay: null });
+    return 0;
+  } catch (error) {
+    await cleanup();
+    if (cancellation.cancelled) {
+      console.error(`init:all cancelled by ${cancellation.signalName}`);
+      return cancellation.exitCode;
+    }
+    if (error instanceof RuntimeCheckError) {
+      results.push({ role: error.role, ok: false, reason: error.message });
+      printAggregateResults("init", results);
+      throw new ValidationError(error.message);
+    }
+    throw error;
+  } finally {
+    removeSignals();
+    releaseAggregateLock(lockPath);
   }
-  printAggregateResults("init", results);
-  if (results.some((result) => !result.ok)) {
-    await stopRoles(config, results.filter((result) => result.ok).map((result) => result.role));
-    return 1;
-  }
-  writeAggregateState(config, { relayOwned: false, relayPid: null });
-  return 0;
 }
 
 async function runStartAll(config) {
   const errors = validateAggregateConfig(config);
-  if (errors.length) {
-    throw new ValidationError(errors.join("; "));
-  }
+  if (errors.length) throw new ValidationError(errors.join("; "));
   requireConfiguredApiKey(config, "start:all");
-  const tunnelClient = resolveTunnelClient(config);
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
-  let relayChild = null;
-  let relayOwned = false;
-  let connectedRoles = [];
-  const signalCleanup = installAggregateSignalCleanup(async () => {
-    await cleanupAggregate(config, connectedRoles, relayChild, relayOwned);
+  const cancellation = createAggregateCancellation();
+  const changedRoles = [];
+  let relay = null;
+  const adapter = createNativeRuntimeAdapter(config);
+  const cleanup = onceAsync(async () => {
+    await stopRoles(config, changedRoles);
+    if (relay?.owned) await stopOwnedRelay(relay.identity);
+    removeAggregateState(config);
   });
+  const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
 
   try {
-    const currentRelay = await checkAllRelayEndpoints(config);
+    cancellation.check();
+    const currentRelay = await checkAllRelayEndpoints(config, cancellation.signal);
     if (currentRelay.every((result) => result.ok)) {
       console.log("Relay: reusing healthy external daemon.");
     } else if (currentRelay.some((result) => result.ok)) {
-      throw new ValidationError(
-        "Relay is partially healthy; refusing to start or attach a partial tunnel set.",
-      );
+      throw new ValidationError("Relay is partially healthy; refusing to start or attach a partial tunnel set.");
     } else {
-      relayChild = startRelay(config);
-      relayOwned = true;
-      await waitForRelay(config);
+      relay = await startRelay(config);
+      relay.identity = await captureProcessIdentity(relay.child.pid, relay.expectedIdentity);
+      if (!relay.identity) throw new ValidationError("Relay started, but its process identity could not be verified.");
+      await waitForRelay(config, cancellation);
+      relay.child.unref?.();
     }
 
-    relayChild?.unref?.();
     for (const role of config.roles) {
-      connectedRoles.push(role);
-      const result = await runNativeCommand(
-        tunnelClient,
-        buildNativeRuntimeConnectArgs(config, role),
-        config,
-        role,
-      );
-      if (result.code !== 0) {
-        throw new ValidationError(`${role.label} runtime failed: ${summarizeFailure(result)}`);
-      }
-      console.log(`${role.label}: ${role.alias} connected to ${role.path}`);
+      cancellation.check();
+      const prepared = await prepareRuntime(adapter, config, role, changedRoles, cancellation);
+      if (!prepared.ready) await waitForRuntimeReadiness(config, [role], adapter, cancellation);
+      console.log(`${role.label}: ${prepared.reused ? "reused" : "connected"} ${role.alias} at ${role.path}`);
     }
-
-    await waitForRuntimeReadiness(config, connectedRoles);
-    const finalRelay = await checkAllRelayEndpoints(config);
+    cancellation.check();
+    const finalRelay = await checkAllRelayEndpoints(config, cancellation.signal);
     if (finalRelay.some((result) => !result.ok)) {
-      throw new ValidationError(
-        `Relay readiness failed: ${finalRelay.filter((result) => !result.ok).map((result) => result.role.label).join(", ")}`,
-      );
+      throw new ValidationError(`Relay readiness failed: ${finalRelay.filter((result) => !result.ok).map((result) => result.role.label).join(", ")}`);
     }
-    writeAggregateState(config, {
-      relayOwned,
-      relayPid: relayChild?.pid ?? null,
-    });
+    writeAggregateState(config, { changedRoles, relay });
     console.log("Relay: all three role endpoints healthy; aggregate startup complete.");
     return 0;
   } catch (error) {
-    await cleanupAggregate(config, connectedRoles, relayChild, relayOwned);
+    await cleanup();
+    if (cancellation.cancelled) {
+      console.error(`start:all cancelled by ${cancellation.signalName}`);
+      return cancellation.exitCode;
+    }
     throw error;
   } finally {
-    signalCleanup?.();
+    removeSignals();
     releaseAggregateLock(lockPath);
   }
 }
@@ -440,164 +431,197 @@ async function runStartAll(config) {
 async function runStopAll(config) {
   const state = readAggregateState(config);
   const results = await stopRoles(config, config.roles);
-  if (state?.relayOwned && state.relayPid) {
-    await terminateProcessTree(state.relayPid);
-    console.log("Relay: stopped launcher-owned daemon.");
+  let relayOk = true;
+  if (state?.relayOwned && !state.relay) {
+    relayOk = false;
+    console.error("Relay ownership state is stale and lacks a verifiable process identity; preserved any live process.");
+  } else if (state?.relay?.owned) {
+    const ownership = await verifyProcessIdentity(state.relay.identity);
+    if (ownership.ok) {
+      await terminateProcessTree(state.relay.identity.pid);
+      console.log("Relay: stopped verified launcher-owned daemon.");
+    } else {
+      relayOk = false;
+      console.error(`Relay ownership is stale; preserved PID ${state.relay.identity?.pid ?? "unknown"}: ${ownership.reason}`);
+    }
   } else {
     console.log("Relay: external daemon preserved.");
   }
   removeAggregateState(config);
-  return results.every((result) => result.ok) ? 0 : 1;
+  return results.every((result) => result.ok) && relayOk ? 0 : 1;
 }
 
 async function runStatusAll(config) {
-  let tunnelClient = null;
-  try {
-    tunnelClient = resolveTunnelClient(config);
-  } catch (error) {
-    if (!(error instanceof ValidationError)) throw error;
-  }
+  let adapter = null;
+  let availabilityError = null;
+  try { adapter = createNativeRuntimeAdapter(config); }
+  catch (error) { availabilityError = error instanceof Error ? error.message : String(error); }
   const state = readAggregateState(config);
-  const runtimeList = tunnelClient
-    ? await runNativeCommand(tunnelClient, ["runtimes", "list", "--json"], config)
-    : null;
   console.log("component  endpoint                                      tunnel       alias/profile                 runtime/readiness");
   const relayResults = await checkAllRelayEndpoints(config);
   console.log(`Relay      ${config.relayBaseUrl.padEnd(45)} ${"-".padEnd(12)} ${"-".padEnd(28)} ${relayResults.every((result) => result.ok) ? "healthy" : "unhealthy"}`);
   for (const role of config.roles) {
-    const relay = relayResults.find((result) => result.role.key === role.key);
-    const runtime = tunnelClient
-      ? await inspectRuntime(config, tunnelClient, role, runtimeList)
-      : { statusOk: false, readyOk: false, reason: "tunnel-client unavailable" };
-    const stateMark = state?.relayPid && isProcessAlive(state.relayPid) ? "managed" : "native";
-    const detail = runtime.statusOk && runtime.readyOk ? `${stateMark}/ready` : runtime.reason;
-    console.log(`${role.label.padEnd(10)} ${role.endpoint.padEnd(45)} ${abbreviateTunnelId(role.tunnelId).padEnd(12)} ${`${role.alias}/${role.profile}`.padEnd(28)} ${relay.ok ? detail : `endpoint: ${relay.reason}`}`);
+    const relayResult = relayResults.find((result) => result.role.key === role.key);
+    const runtime = adapter ? await inspectRuntime(adapter, role) : { statusOk: false, readyOk: false, bindingOk: false, reason: availabilityError };
+    const stateMark = state?.relay?.owned ? "managed" : "native";
+    const detail = runtime.statusOk && runtime.readyOk && runtime.bindingOk ? `${stateMark}/ready` : runtime.reason;
+    console.log(`${role.label.padEnd(10)} ${role.endpoint.padEnd(45)} ${abbreviateTunnelId(role.tunnelId).padEnd(12)} ${`${role.alias}/${role.profile}`.padEnd(28)} ${relayResult.ok ? detail : `endpoint: ${relayResult.reason}`}`);
   }
   return 0;
 }
 
 async function runDoctorAll(config) {
   const configErrors = validateAggregateConfig(config);
-  let tunnelClient = null;
+  let adapter = null;
   let availabilityError = null;
-  try {
-    tunnelClient = resolveTunnelClient(config);
-  } catch (error) {
-    availabilityError = error instanceof Error ? error.message : String(error);
-  }
+  try { adapter = createNativeRuntimeAdapter(config); }
+  catch (error) { availabilityError = error instanceof Error ? error.message : String(error); }
   const relayResults = await checkAllRelayEndpoints(config);
-  const runtimeList = tunnelClient
-    ? await runNativeCommand(tunnelClient, ["runtimes", "list", "--json"], config)
-    : null;
   const rows = [];
   for (const role of config.roles) {
-    const issues = [];
-    for (const error of configErrors.filter((item) => item.startsWith(`${role.label}:`))) {
-      issues.push(error.slice(role.label.length + 2));
-    }
-    const relay = relayResults.find((result) => result.role.key === role.key);
-    if (!relay.ok) issues.push(`endpoint ping: ${relay.reason}`);
-    let runtime = { statusOk: false, readyOk: false, bindingOk: false, reason: availabilityError || "tunnel-client unavailable" };
-    if (tunnelClient) runtime = await inspectRuntime(config, tunnelClient, role, runtimeList);
+    const issues = configErrors.filter((item) => item.startsWith(`${role.label}:`)).map((item) => item.slice(role.label.length + 2));
+    const relayResult = relayResults.find((result) => result.role.key === role.key);
+    if (!relayResult.ok) issues.push(`endpoint ping: ${relayResult.reason}`);
+    const runtime = adapter ? await inspectRuntime(adapter, role) : { statusOk: false, readyOk: false, bindingOk: false, reason: availabilityError || "tunnel-client unavailable" };
     if (!runtime.statusOk) issues.push(`runtime status: ${runtime.reason}`);
     if (!runtime.readyOk) issues.push(`runtime readiness: ${runtime.reason}`);
     if (!runtime.bindingOk) issues.push(`role binding: ${runtime.reason}`);
     rows.push({ role, ok: issues.length === 0, reason: issues.join("; ") || "healthy" });
   }
   console.log(`configuration: ${configErrors.length ? configErrors.join("; ") : "ok"}`);
-  console.log(`tunnel-client: ${tunnelClient ? tunnelClient : availabilityError}`);
+  console.log(`tunnel-client: ${adapter ? adapter.command : availabilityError}`);
   console.log(`control-plane key: ${isConfiguredApiKey(config.controlPlaneApiKey) ? "configured" : "missing"}`);
   printAggregateResults("doctor", rows);
   return configErrors.length || !isConfiguredApiKey(config.controlPlaneApiKey) || rows.some((row) => !row.ok) ? 1 : 0;
 }
 
-async function inspectRuntime(config, tunnelClient, role, runtimeList = null) {
-  const status = await runNativeCommand(
-    tunnelClient,
-    ["runtimes", "status", role.alias, "--json"],
-    config,
-    role,
-  );
-  const ready = await runNativeCommand(
-    tunnelClient,
-    ["health", "--url", healthUrl(role), "--json"],
-    config,
-    role,
-  );
-  const combined = `${status.stdout}\n${status.stderr}\n${runtimeList?.stdout || ""}\n${runtimeList?.stderr || ""}`;
-  const listOk = !runtimeList || runtimeList.code === 0;
-  const state = readAggregateState(config);
-  const stateBindingOk = state?.roles?.some((entry) =>
-    entry.key === role.key &&
-    entry.tunnelId === role.tunnelId &&
-    entry.alias === role.alias &&
-    entry.profile === role.profile &&
-    entry.endpoint === role.endpoint,
-  );
-  const bindingOk = status.code === 0 && listOk && (bindingMatches(combined, role) || stateBindingOk);
-  const reason = status.code !== 0
-    ? summarizeFailure(status)
-    : ready.code !== 0
-      ? summarizeFailure(ready)
-      : bindingOk
-        ? "healthy"
-        : "status did not confirm tunnel/profile/endpoint binding";
+class RuntimeCheckError extends Error {
+  constructor(role, message) { super(message); this.name = "RuntimeCheckError"; this.role = role; }
+}
+
+function createAggregateCancellation() {
+  const controller = new AbortController();
   return {
-    statusOk: status.code === 0 && listOk,
-    readyOk: ready.code === 0,
-    bindingOk,
-    reason,
+    signal: controller.signal,
+    cancelled: false,
+    signalName: null,
+    exitCode: 1,
+    cancel(signalName) {
+      if (this.cancelled) return;
+      this.cancelled = true;
+      this.signalName = signalName;
+      this.exitCode = signalName === "SIGINT" ? 130 : 143;
+      controller.abort(new Error(`cancelled by ${signalName}`));
+    },
+    check() {
+      if (this.cancelled) throw new ValidationError(`aggregate operation cancelled by ${this.signalName}`);
+    },
   };
 }
 
+function installAggregateSignalCleanup(cancellation, cleanup) {
+  const handler = (signal) => {
+    cancellation.cancel(signal);
+    void cleanup().catch((error) => console.error(`cleanup after ${signal} failed: ${error.message}`));
+  };
+  process.once("SIGINT", handler);
+  process.once("SIGTERM", handler);
+  return () => {
+    process.removeListener("SIGINT", handler);
+    process.removeListener("SIGTERM", handler);
+  };
+}
+
+function onceAsync(operation) {
+  let promise = null;
+  return () => promise || (promise = Promise.resolve().then(operation));
+}
+
+async function prepareRuntime(adapter, config, role, changedRoles, cancellation) {
+  const current = await inspectRuntime(adapter, role, cancellation.signal);
+  if (current.complete) return { ready: true, reused: true };
+  if (current.malformed || current.failed) {
+    throw new RuntimeCheckError(role, current.reason);
+  }
+  if (current.found) {
+    cancellation.check();
+    await adapter.stopRuntime(role, cancellation.signal);
+    addRoleOnce(changedRoles, role);
+  }
+  cancellation.check();
+  addRoleOnce(changedRoles, role);
+  const connected = await adapter.connectRuntime(role, cancellation.signal);
+  if (!connected.ok) throw new RuntimeCheckError(role, connected.reason);
+  return { ready: false, reused: false };
+}
+
+function addRoleOnce(roles, role) {
+  if (!roles.some((item) => item.key === role.key)) roles.push(role);
+}
+
+async function inspectRuntime(adapter, role, signal) {
+  const status = await adapter.getRuntimeStatus(role, signal);
+  if (!status.ok) return { statusOk: false, readyOk: false, bindingOk: false, found: !status.missing, malformed: status.kind === "malformed", failed: status.kind === "command" && !status.missing, reason: status.reason };
+  const bindingOk = runtimeMatchesRole(status.runtime, role);
+  const health = await adapter.getRuntimeHealth(role, status.runtime, signal);
+  const readyOk = health.ok && health.healthy && health.ready;
+  const reason = !bindingOk
+    ? "native status binding does not exactly match tunnel ID, profile, or MCP endpoint"
+    : !health.ok
+      ? health.reason
+      : !health.healthy
+        ? "native healthz is unhealthy"
+        : !health.ready
+          ? "native readyz is not ready"
+          : "healthy";
+  return { statusOk: status.processRunning, readyOk, bindingOk, complete: status.processRunning && bindingOk && readyOk, found: true, malformed: health.kind === "malformed", runtime: status.runtime, reason };
+}
+
+function runtimeMatchesRole(runtime, role) {
+  return runtime.alias === role.alias && runtime.tunnelId === role.tunnelId && runtime.profile === role.profile && runtime.endpoint === role.endpoint;
+}
+
 function bindingMatches(output, role) {
-  const normalized = output.toLowerCase();
-  return [role.alias, role.profile, role.tunnelId, role.endpoint].every((value) =>
-    normalized.includes(String(value).toLowerCase()),
-  );
+  try {
+    const payload = typeof output === "string" ? JSON.parse(output) : output;
+    const runtime = normalizeRuntimeStatus(payload);
+    return Boolean(runtime && runtimeMatchesRole(runtime, role));
+  } catch { return false; }
 }
 
-async function waitForRelay(config) {
-  return waitUntil(
-    config.startupTimeoutMs,
-    config.pollIntervalMs,
-    async () => {
-      const results = await checkAllRelayEndpoints(config);
-      return results.every((result) => result.ok);
-    },
-    "Relay role endpoints",
-  );
+async function waitForRelay(config, cancellation) {
+  return waitUntil(config.startupTimeoutMs, config.pollIntervalMs, async () => {
+    cancellation.check();
+    const results = await checkAllRelayEndpoints(config, cancellation.signal);
+    return results.every((result) => result.ok);
+  }, "Relay role endpoints", cancellation);
 }
 
-async function waitForRuntimeReadiness(config, roles) {
-  return waitUntil(
-    config.startupTimeoutMs,
-    config.pollIntervalMs,
-    async () => {
-      const tunnelClient = resolveTunnelClient(config);
-      const results = await Promise.all(roles.map((role) => inspectRuntime(config, tunnelClient, role)));
-      return results.every((result) => result.statusOk && result.readyOk && result.bindingOk);
-    },
-    "tunnel runtimes",
-  );
+async function waitForRuntimeReadiness(config, roles, adapter, cancellation) {
+  return waitUntil(config.startupTimeoutMs, config.pollIntervalMs, async () => {
+    cancellation.check();
+    const results = await Promise.all(roles.map((role) => inspectRuntime(adapter, role, cancellation.signal)));
+    return results.every((result) => result.complete);
+  }, "tunnel runtimes", cancellation);
 }
 
-async function waitUntil(timeoutMs, pollIntervalMs, check, label) {
+async function waitUntil(timeoutMs, pollIntervalMs, check, label, cancellation = null) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "not ready";
   do {
     try {
+      cancellation?.check();
       if (await check()) return;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
     if (Date.now() >= deadline) break;
-    await delay(Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())));
+    await delay(Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())), cancellation?.signal);
   } while (Date.now() < deadline);
   throw new ValidationError(`${label} did not become ready within ${timeoutMs}ms (${lastError}).`);
 }
 
-function startRelay(config) {
+async function startRelay(config) {
   const command = parseCommandLine(config.relayCommand);
   if (!command.length) throw new ValidationError("RELAY_MCP_RELAY_COMMAND cannot be empty.");
   const [file, ...args] = command;
@@ -611,49 +635,18 @@ function startRelay(config) {
     env: process.env,
   });
   child.on("error", () => {});
-  return child;
-}
-
-function installAggregateSignalCleanup(cleanup) {
-  let called = false;
-  const handler = async (signal) => {
-    if (called) return;
-    called = true;
-    try {
-      await cleanup();
-    } finally {
-      process.exitCode = signal === "SIGINT" ? 130 : 143;
-    }
-  };
-  process.once("SIGINT", handler);
-  process.once("SIGTERM", handler);
-  return () => {
-    process.removeListener("SIGINT", handler);
-    process.removeListener("SIGTERM", handler);
-  };
-}
-
-async function cleanupAggregate(config, roles, relayChild, relayOwned) {
-  if (roles.length) await stopRoles(config, roles);
-  if (relayOwned) {
-    await terminateProcessTree(relayChild?.pid);
-  }
-  removeAggregateState(config);
+  return { child, owned: true, expectedIdentity: { pid: child.pid, executable: file, args, commandFingerprint: fingerprintCommand(file, args) } };
 }
 
 async function stopRoles(config, roles) {
-  const tunnelClient = resolveTunnelClient(config);
+  if (!roles.length) return [];
+  const adapter = createNativeRuntimeAdapter(config);
   const results = [];
   for (const role of roles) {
-    const result = await runNativeCommand(
-      tunnelClient,
-      ["runtimes", "stop", role.alias, "--json"],
-      config,
-      role,
-    );
-    const ok = result.code === 0 || /not found|does not exist|not running|already stopped|stopped/u.test(`${result.stdout} ${result.stderr}`);
-    results.push({ role, ok, reason: ok ? "stopped" : summarizeFailure(result) });
-    console.log(`${role.label}: ${ok ? "stopped or already stopped" : `stop failed: ${summarizeFailure(result)}`}`);
+    const result = await adapter.stopRuntime(role);
+    const ok = result.ok || /not found|does not exist|not running|already stopped|stopped/u.test(result.reason || "");
+    results.push({ role, ok, reason: ok ? "stopped" : result.reason });
+    console.log(`${role.label}: ${ok ? "stopped or already stopped" : `stop failed: ${result.reason}`}`);
   }
   return results;
 }
@@ -673,15 +666,111 @@ function buildNativeRuntimeConnectArgs(config, role) {
     "--runtime-api-key",
     "env:CONTROL_PLANE_API_KEY",
   ];
+  args.push("--json");
   if (config.tunnelClientProfileDir) args.push("--profile-dir", config.tunnelClientProfileDir);
   if (config.tunnelClientPath) args.push("--tunnel-client-bin", config.tunnelClientPath);
   return args;
 }
 
-function checkAllRelayEndpoints(config) {
+function createNativeRuntimeAdapter(config) {
+  const command = resolveTunnelClient(config);
+  const invoke = (args, role, signal) => runNativeCommand(command, args, config, role, signal);
+  const parse = (result, operation) => parseNativeJsonResult(result, operation);
+  return {
+    command,
+    async connectRuntime(role, signal) {
+      const result = await invoke(buildNativeRuntimeConnectArgs(config, role), role, signal);
+      return parse(result, `connect ${role.alias}`);
+    },
+    async getRuntimeStatus(role, signal) {
+      const result = await invoke(["runtimes", "status", role.alias, "--json"], role, signal);
+      if (result.code !== 0) {
+        const reason = summarizeFailure(result);
+        return { ok: false, kind: "command", missing: /not known|not found|does not exist/u.test(reason), reason };
+      }
+      const parsed = parse(result, `status ${role.alias}`);
+      if (!parsed.ok) return parsed;
+      const runtime = normalizeRuntimeStatus(parsed.value);
+      if (!runtime) return { ok: false, kind: "malformed", missing: false, reason: `status ${role.alias} omitted required structured runtime fields` };
+      return { ok: true, runtime, processRunning: runtime.processRunning };
+    },
+    async getRuntimeHealth(role, runtime, signal) {
+      let args;
+      if (runtime.healthUrlFile) args = ["health", "--url-file", runtime.healthUrlFile, "--json"];
+      else if (runtime.healthUrl) args = ["health", "--url", runtime.healthUrl, "--json"];
+      else return { ok: false, kind: "malformed", reason: `status ${role.alias} omitted health_url and health_url_file` };
+      const result = await invoke(args, role, signal);
+      if (result.code !== 0) return { ok: false, kind: "command", reason: summarizeFailure(result) };
+      const parsed = parse(result, `health ${role.alias}`);
+      if (!parsed.ok) return parsed;
+      const health = normalizeRuntimeHealth(parsed.value);
+      return health ? { ok: true, ...health } : { ok: false, kind: "malformed", reason: `health ${role.alias} omitted structured healthz/readyz fields` };
+    },
+    async stopRuntime(role, signal) {
+      const result = await invoke(["runtimes", "stop", role.alias, "--json"], role, signal);
+      const parsed = parse(result, `stop ${role.alias}`);
+      if (parsed.ok) return { ok: true, reason: "stopped", raw: parsed.raw };
+      return { ok: false, reason: parsed.reason, raw: parsed.raw };
+    },
+    async listRuntimes(signal) {
+      const result = await invoke(["runtimes", "list", "--json"], null, signal);
+      return parse(result, "list runtimes");
+    },
+  };
+}
+
+function parseNativeJsonResult(result, operation) {
+  if (result.signal) return { ok: false, kind: "command", reason: `${operation} exited due to signal ${result.signal}`, raw: result };
+  if (result.code !== 0) return { ok: false, kind: "command", reason: summarizeFailure(result), raw: result };
+  const output = result.stdout.trim();
+  if (!output) return { ok: false, kind: "malformed", reason: `${operation} returned empty JSON output`, raw: result };
+  try {
+    return { ok: true, value: JSON.parse(output), raw: result };
+  } catch {
+    return { ok: false, kind: "malformed", reason: `${operation} returned malformed JSON`, raw: result };
+  }
+}
+
+function normalizeRuntimeStatus(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const roots = [payload, payload.runtime, payload.state, payload.binding, payload.config].filter((value) => value && typeof value === "object");
+  const read = (...keys) => {
+    for (const root of roots) for (const key of keys) if (root[key] !== undefined && root[key] !== null) return root[key];
+    return undefined;
+  };
+  const alias = read("alias");
+  const profile = read("profile", "profile_name", "profileName");
+  const tunnelId = read("tunnel_id", "tunnelId");
+  const endpoint = read("mcp_server_url", "mcpServerUrl", "endpoint", "server_url");
+  const healthUrl = read("health_url", "current_health_url", "healthUrl");
+  const healthUrlFile = read("health_url_file", "healthUrlFile");
+  const processRunning = read("process_running", "processRunning", "running") === true || read("runtime_state") === "running";
+  if (typeof alias !== "string" || typeof profile !== "string" || typeof tunnelId !== "string" || typeof endpoint !== "string") return null;
+  if (typeof healthUrl !== "string" && typeof healthUrlFile !== "string") return null;
+  return {
+    alias,
+    profile,
+    tunnelId,
+    endpoint,
+    processRunning,
+    pid: read("pid", "process_id", "processId") ?? null,
+    healthUrl: typeof healthUrl === "string" ? healthUrl : null,
+    healthUrlFile: typeof healthUrlFile === "string" ? healthUrlFile : null,
+    raw: payload,
+  };
+}
+
+function normalizeRuntimeHealth(payload) {
+  if (!payload || typeof payload !== "object" || !payload.healthz || !payload.readyz) return null;
+  if (typeof payload.healthz.ok !== "boolean" || typeof payload.readyz.ok !== "boolean") return null;
+  return { healthy: payload.healthz.ok, ready: payload.readyz.ok, raw: payload };
+}
+
+function checkAllRelayEndpoints(config, signal = null) {
   return Promise.all(config.roles.map(async (role) => {
+    if (signal?.aborted) throw new ValidationError("aggregate operation cancelled");
     try {
-      await assertRelayReachable(role.endpoint);
+      await assertRelayReachable(role.endpoint, signal);
       return { role, ok: true, reason: "healthy" };
     } catch (error) {
       return { role, ok: false, reason: error instanceof Error ? error.message : String(error) };
@@ -695,26 +784,38 @@ function printAggregateResults(command, results) {
   }
 }
 
-function runNativeCommand(command, args, config, role) {
+function runNativeCommand(command, args, config, role, signal = null) {
   const env = {
     ...process.env,
     CONTROL_PLANE_API_KEY: config.controlPlaneApiKey,
-    HEALTH_LISTEN_ADDR: role?.healthAddress || process.env.HEALTH_LISTEN_ADDR || "",
   };
-  return runCommandCapture(command, [...config.tunnelClientArgs, ...args], env, config.controlPlaneApiKey);
+  return runCommandCapture(command, [...config.tunnelClientArgs, ...args], env, config.controlPlaneApiKey, signal);
 }
 
-function runCommandCapture(command, args, env, secret) {
+function runCommandCapture(command, args, env, secret, signal = null) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(command, args, { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"], env });
+    let settled = false;
+    const abort = () => {
+      if (!settled) child.kill();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
     const stdoutSink = createRedactedSink(secret, (text) => process.stdout.write(text));
     const stderrSink = createRedactedSink(secret, (text) => process.stderr.write(text));
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => stdoutSink.push(chunk));
     child.stderr.on("data", (chunk) => stderrSink.push(chunk));
-    child.on("error", (error) => rejectPromise(new ValidationError(`Failed to start ${command}: ${error.message}`)));
-    child.on("close", (code, signal) => resolvePromise({ code: code ?? 1, signal, stdout: stdoutSink.finish(), stderr: stderrSink.finish() }));
+    child.on("error", (error) => {
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      rejectPromise(new ValidationError(`Failed to start ${command}: ${error.message}`));
+    });
+    child.on("close", (code, childSignal) => {
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      resolvePromise({ code: code ?? 1, signal: childSignal, stdout: stdoutSink.finish(), stderr: stderrSink.finish() });
+    });
   });
 }
 
@@ -817,7 +918,7 @@ function requireConfiguredApiKey(config, commandName) {
 }
 
 function isConfiguredTunnelId(value) {
-  return Boolean(value) && value !== "tunnel_REPLACE_ME" && /^tunnel_[A-Za-z0-9_-]+$/u.test(value);
+  return Boolean(value) && value !== "tunnel_REPLACE_ME" && /^tunnel_[0-9a-f]{32}$/u.test(value);
 }
 
 function isConfiguredApiKey(value) {
@@ -856,8 +957,8 @@ function buildCommandCandidates(commandName, extensions) {
   return [commandName, ...extensions.map((extension) => `${commandName}${extension}`)];
 }
 
-async function assertRelayReachable(relayMcpUrl) {
-  const response = await postJsonRpcPing(relayMcpUrl);
+async function assertRelayReachable(relayMcpUrl, signal = null) {
+  const response = await postJsonRpcPing(relayMcpUrl, signal);
   if (response.statusCode === 405) throw new ValidationError(`Relay endpoint returned HTTP 405 at ${relayMcpUrl}; use POST JSON-RPC ping.`);
   if (response.statusCode !== 200) throw new ValidationError(`Relay endpoint check failed with HTTP ${response.statusCode} at ${relayMcpUrl}.`);
   let payload;
@@ -865,7 +966,7 @@ async function assertRelayReachable(relayMcpUrl) {
   if (payload?.jsonrpc !== "2.0" || !Object.prototype.hasOwnProperty.call(payload, "result")) throw new ValidationError(`Relay endpoint returned HTTP 200 at ${relayMcpUrl}, but ping did not return a JSON-RPC result.`);
 }
 
-function postJsonRpcPing(relayMcpUrl) {
+function postJsonRpcPing(relayMcpUrl, signal = null) {
   return new Promise((resolvePromise, rejectPromise) => {
     let targetUrl;
     try { targetUrl = new URL(relayMcpUrl); }
@@ -883,6 +984,9 @@ function postJsonRpcPing(relayMcpUrl) {
       if (error instanceof ValidationError) { rejectPromise(error); return; }
       rejectPromise(new ValidationError(`Relay endpoint is not reachable at ${relayMcpUrl}.`));
     });
+    const abort = () => request.destroy(new ValidationError("aggregate operation cancelled"));
+    signal?.addEventListener("abort", abort, { once: true });
+    request.on("close", () => signal?.removeEventListener("abort", abort));
     request.write(body);
     request.end();
   });
@@ -943,11 +1047,6 @@ function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
 }
 
-function healthUrl(role) {
-  const address = role.healthAddress.startsWith("http") ? role.healthAddress : `http://${role.healthAddress}`;
-  return `${stripTrailingSlash(address)}/readyz`;
-}
-
 function summarizeFailure(result) {
   const message = `${result.stderr} ${result.stdout}`.replace(/\s+/gu, " ").trim();
   return message ? message.slice(0, 240) : `exit ${result.code}`;
@@ -959,8 +1058,20 @@ function abbreviateTunnelId(value) {
   return `${value.slice(0, 11)}…${value.slice(-4)}`;
 }
 
-function delay(milliseconds) {
-  return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+function delay(milliseconds, signal = null) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    if (signal?.aborted) { rejectPromise(new ValidationError("aggregate operation cancelled")); return; }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolvePromise();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      rejectPromise(new ValidationError("aggregate operation cancelled"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function acquireAggregateLock(lockPath) {
@@ -991,7 +1102,13 @@ function readAggregateState(config) {
 
 function writeAggregateState(config, state) {
   mkdirSync(dirname(config.stateFile), { recursive: true });
-  writeFileSync(config.stateFile, JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), relayOwned: Boolean(state.relayOwned), relayPid: state.relayPid ?? null, roles: config.roles.map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint, healthAddress: role.healthAddress })) }, null, 2) + "\n", "utf8");
+  writeFileSync(config.stateFile, JSON.stringify({
+    version: 2,
+    updatedAt: new Date().toISOString(),
+    desiredRoleBindings: config.roles.map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
+    runtimesChangedByOperation: (state.changedRoles || []).map((role) => role.alias),
+    relay: state.relay?.owned ? { owned: true, identity: state.relay.identity } : { owned: false },
+  }, null, 2) + "\n", "utf8");
 }
 
 function removeAggregateState(config) {
@@ -1001,6 +1118,86 @@ function removeAggregateState(config) {
 function isProcessAlive(pid) {
   if (!pid || !Number.isInteger(Number(pid))) return false;
   try { process.kill(Number(pid), 0); return true; } catch { return false; }
+}
+
+function fingerprintCommand(value) {
+  return createHash("sha256").update(String(value).replace(/\\/gu, "/").toLowerCase()).digest("hex");
+}
+
+function fingerprintCommandLine(value) {
+  return fingerprintCommand(String(value).replace(/\0/gu, " ").replace(/\s+/gu, " ").trim());
+}
+
+async function captureProcessIdentity(pid, expected) {
+  const observed = await inspectProcessIdentity(pid);
+  if (!observed) return null;
+  return {
+    pid: Number(pid),
+    startTime: observed.startTime,
+    executable: observed.executable || expected.executable,
+    commandFingerprint: fingerprintCommandLine(observed.commandLine),
+    expectedExecutable: expected.executable,
+    expectedArguments: expected.args,
+    launchToken: randomUUID(),
+  };
+}
+
+async function inspectProcessIdentity(pid) {
+  if (!isProcessAlive(pid)) return null;
+  if (process.platform !== "win32") {
+    try {
+      const stat = readFileSync(`/proc/${Number(pid)}/stat`, "utf8");
+      const commandLine = readFileSync(`/proc/${Number(pid)}/cmdline`, "utf8");
+      const executable = readFileSync(`/proc/${Number(pid)}/exe`, "utf8");
+      const fields = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/u);
+      return { startTime: fields[19] || null, executable, commandLine };
+    } catch { return null; }
+  }
+  const script = "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + Number(pid) + "'; if ($p) { $p | Select-Object ProcessId,CreationDate,ExecutablePath,CommandLine | ConvertTo-Json -Compress }";
+  const output = await captureSimpleCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
+  if (!output.trim()) return null;
+  try {
+    const value = JSON.parse(output);
+    return { startTime: value.CreationDate || null, executable: value.ExecutablePath || "", commandLine: value.CommandLine || "" };
+  } catch { return null; }
+}
+
+async function verifyProcessIdentity(identity) {
+  if (!identity?.pid) return { ok: false, reason: "no recorded Relay process identity" };
+  if (!isProcessAlive(identity.pid)) return { ok: false, stopped: true, reason: "recorded process is no longer alive" };
+  const observed = await inspectProcessIdentity(identity.pid);
+  if (!observed) return { ok: false, reason: "live process identity could not be inspected" };
+  if (identity.startTime && observed.startTime && String(identity.startTime) !== String(observed.startTime)) return { ok: false, reason: "process start time does not match" };
+  const expectedExecutable = String(identity.expectedExecutable || identity.executable || "").replace(/\\/gu, "/").toLowerCase();
+  const expectedName = expectedExecutable.split("/").pop().replace(/\.exe$/u, "");
+  const observedName = String(observed.executable).replace(/\\/gu, "/").toLowerCase().split("/").pop().replace(/\.exe$/u, "");
+  if (expectedName && observedName !== expectedName) return { ok: false, reason: "executable does not match" };
+  for (const argument of identity.expectedArguments || []) {
+    if (!String(observed.commandLine).replace(/\\/gu, "/").includes(String(argument).replace(/\\/gu, "/"))) return { ok: false, reason: "command fingerprint does not match" };
+  }
+  if (identity.commandFingerprint && fingerprintCommandLine(observed.commandLine) !== identity.commandFingerprint) return { ok: false, reason: "command fingerprint does not match" };
+  return { ok: true, stopped: false };
+}
+
+function captureSimpleCommand(command, args) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const chunks = [];
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => chunks.push(chunk));
+    child.on("error", () => resolvePromise(""));
+    child.on("close", () => resolvePromise(chunks.join("")));
+  });
+}
+
+async function stopOwnedRelay(identity) {
+  const ownership = await verifyProcessIdentity(identity);
+  if (!ownership.ok) {
+    console.error(`Relay ownership could not be confirmed; preserving live process: ${ownership.reason}`);
+    return ownership;
+  }
+  if (!ownership.stopped) await terminateProcessTree(identity.pid);
+  return { ok: true };
 }
 
 async function terminateProcessTree(pid) {
