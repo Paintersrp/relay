@@ -9,11 +9,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"relay/internal/api/shared"
 	appcutover "relay/internal/app/cutover"
-	workflowstore "relay/internal/store/workflow"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type ReadService interface {
@@ -23,24 +22,19 @@ type ReadService interface {
 }
 
 type WorkflowService interface {
+	Prepare(ctx context.Context, request appcutover.PrepareRequest) (*appcutover.State, error)
 	Activate(ctx context.Context, request appcutover.ActivationRequest) (*appcutover.State, error)
 	Rollback(ctx context.Context, request appcutover.RollbackRequest) (*appcutover.State, error)
-	CrossExecutionBoundary(ctx context.Context, request appcutover.BoundaryRequest) error
 	RecordRollForwardEvidence(ctx context.Context, request appcutover.RollForwardEvidenceRequest) error
 }
 
-type RunResolver interface {
-	GetRunByRunID(ctx context.Context, runID string) (workflowstore.Run, error)
-}
-
 type WorkflowHandler struct {
-	read       ReadService
-	mutations  WorkflowService
-	runStore   RunResolver
+	read      ReadService
+	mutations WorkflowService
 }
 
-func NewWorkflowHandler(read ReadService, mutations WorkflowService, runStore RunResolver) *WorkflowHandler {
-	return &WorkflowHandler{read: read, mutations: mutations, runStore: runStore}
+func NewWorkflowHandler(read ReadService, mutations WorkflowService) *WorkflowHandler {
+	return &WorkflowHandler{read: read, mutations: mutations}
 }
 
 func (h *WorkflowHandler) State(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +67,20 @@ func (h *WorkflowHandler) History(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.JSON(w, http.StatusOK, map[string]any{"items": values, "count": len(values)})
+}
+
+func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
+	var request appcutover.PrepareRequest
+	if !decodeStrict(r, &request) {
+		badRequest(w, "Invalid cutover preparation request")
+		return
+	}
+	state, err := h.mutations.Prepare(r.Context(), request)
+	if err != nil {
+		writeCutoverError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"activation": state})
 }
 
 type activateRequest struct {
@@ -111,38 +119,6 @@ func (h *WorkflowHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 	shared.JSON(w, http.StatusOK, map[string]any{"activation": state})
 }
 
-type boundaryRequest struct {
-	ActivationID string `json:"activationId"`
-	RunID        string `json:"runId"`
-}
-
-func (h *WorkflowHandler) Boundary(w http.ResponseWriter, r *http.Request) {
-	var request boundaryRequest
-	if !decodeStrict(r, &request) {
-		badRequest(w, "Invalid cutover boundary request")
-		return
-	}
-	if h.runStore == nil {
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Cutover boundary crossing is not available")
-		return
-	}
-	run, err := h.runStore.GetRunByRunID(r.Context(), request.RunID)
-	if err != nil {
-		writeCutoverError(w, err)
-		return
-	}
-	err = h.mutations.CrossExecutionBoundary(r.Context(), appcutover.BoundaryRequest{
-		ActivationID: request.ActivationID,
-		RunID:        request.RunID,
-		RunRowID:     run.ID,
-	})
-	if err != nil {
-		writeCutoverError(w, err)
-		return
-	}
-	shared.JSON(w, http.StatusOK, map[string]any{"crossed": true})
-}
-
 type rollForwardEvidenceRequest struct {
 	ActivationID      string `json:"activationId"`
 	CriterionSequence int64  `json:"criterionSequence"`
@@ -152,7 +128,7 @@ type rollForwardEvidenceRequest struct {
 func (h *WorkflowHandler) RollForwardEvidence(w http.ResponseWriter, r *http.Request) {
 	var request rollForwardEvidenceRequest
 	if !decodeStrict(r, &request) {
-		badRequest(w, "Invalid roll-forward evidence request")
+		badRequest(w, "Invalid cutover roll-forward evidence request")
 		return
 	}
 	err := h.mutations.RecordRollForwardEvidence(r.Context(), appcutover.RollForwardEvidenceRequest{
@@ -185,14 +161,20 @@ func writeCutoverError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, appcutover.ErrCutoverNotFound):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Cutover activation was not found")
+	case errors.Is(err, appcutover.ErrCutoverConfigurationInvalid):
+		shared.Error(w, http.StatusBadRequest, "CUTOVER_CONFIGURATION_INVALID", "Cutover gateway configuration is invalid")
+	case errors.Is(err, appcutover.ErrCutoverConfigurationMismatch):
+		shared.Error(w, http.StatusConflict, "CUTOVER_CONFIGURATION_MISMATCH", "Persisted cutover gateway configuration failed integrity validation")
 	case errors.Is(err, appcutover.ErrCutoverNotReady):
-		shared.Error(w, http.StatusConflict, "CONFLICT", "Cutover activation is not in prepared state")
+		shared.Error(w, http.StatusConflict, "CONFLICT", "Cutover activation is not in prepared ready state")
 	case errors.Is(err, appcutover.ErrCutoverAlreadyActive):
 		shared.Error(w, http.StatusConflict, "CONFLICT", "A cutover activation is already active")
 	case errors.Is(err, appcutover.ErrCutoverRollbackBlocked):
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Cutover rollback is blocked after first new execution")
+	case errors.Is(err, appcutover.ErrCutoverBoundaryQualification):
+		shared.Error(w, http.StatusConflict, "CUTOVER_BOUNDARY_QUALIFICATION_FAILED", "Run does not qualify for cutover boundary crossing")
 	case errors.Is(err, appcutover.ErrLegacyAdmissionClosed):
-		shared.Error(w, http.StatusConflict, "CONFLICT", "Legacy admission is closed")
+		shared.Error(w, http.StatusConflict, "LEGACY_ADMISSION_CLOSED", "Legacy admission is closed")
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Cutover operation failed")
 	}

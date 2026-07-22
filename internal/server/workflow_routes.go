@@ -126,7 +126,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		panic(err)
 	}
-	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService, workflowStore)
+	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -153,7 +153,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	}
 
 	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
-	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
+	router.Handle("/mcp", newCutoverAggregateHandler(cutoverService, mcp.NewHTTPHandler(mcpServer, log)))
 	for _, current := range mcpHandlers {
 		router.Handle(current.Path, current.Handler)
 	}
@@ -242,4 +242,30 @@ func workflowJSONNotFound(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = w.Write([]byte(`{"error":"NOT_FOUND","message":"API route not found"}`))
+}
+
+type legacyAdmissionState interface {
+	IsLegacyAdmissionClosed(context.Context) (bool, error)
+}
+
+type cutoverAggregateHandler struct {
+	state legacyAdmissionState
+	next  http.Handler
+}
+
+func newCutoverAggregateHandler(state legacyAdmissionState, next http.Handler) http.Handler {
+	return cutoverAggregateHandler{state: state, next: next}
+}
+
+func (handler cutoverAggregateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	closed, err := handler.state.IsLegacyAdmissionClosed(r.Context())
+	if err != nil {
+		shared.Error(w, http.StatusServiceUnavailable, "CUTOVER_STATE_UNAVAILABLE", "Cutover admission state is unavailable")
+		return
+	}
+	if closed {
+		shared.Error(w, http.StatusConflict, "LEGACY_ADMISSION_CLOSED", "Legacy MCP admission is closed")
+		return
+	}
+	handler.next.ServeHTTP(w, r)
 }

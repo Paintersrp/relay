@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -190,6 +191,69 @@ func TestCutoverActivationRollsBackAsOneTransaction(t *testing.T) {
 	assertWorkflowCount(t, store.DB(), "cutover_current_states", 0)
 }
 
+func TestGatewayCutoverConfigurationTablesRejectPartialAndDuplicateIdentity(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	queries := workflowgenerated.New(store.DB())
+	activation, err := queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, "cutover-gateway-config", seed.transitionPlanSHA256, "eligible"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_configurations (
+    activation_row_id, configuration_sha256, relay_repository, relay_commit_oid,
+    standing_repository, standing_commit_oid
+) VALUES (?, ?, 'Paintersrp/relay', ?, 'Paintersrp/relay-specs', ?)`,
+		activation.ID, workflowHash('a'), strings.Repeat("b", 40), strings.Repeat("c", 40)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_routes (
+    activation_row_id, sequence, route_path, role, surface_contract_id,
+    manifest_sha256, authority_commit_oid, authority_blob_oid
+) VALUES (?, 1, '/mcp/v1/wayfinder/workspace', 'wayfinder', 'wayfinder-workspace.v1', ?, ?, ?)`,
+		activation.ID, workflowHash('d'), strings.Repeat("c", 40), strings.Repeat("e", 40)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_routes (
+    activation_row_id, sequence, route_path, role, surface_contract_id,
+    manifest_sha256, authority_commit_oid, authority_blob_oid
+) VALUES (?, 2, '/mcp/v1/wayfinder/workspace', 'wayfinder', 'wayfinder-workspace.v1', ?, ?, ?)`,
+		activation.ID, workflowHash('f'), strings.Repeat("c", 40), strings.Repeat("f", 40)); err == nil {
+		t.Fatal("duplicate route path was accepted")
+	}
+	counts, err := queries.GetCutoverGatewayConfigurationCounts(ctx, activation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.RouteCount != 1 || counts.MappingCount != 0 || counts.StandingAuthorityCount != 0 {
+		t.Fatalf("partial configuration counts = %#v", counts)
+	}
+}
+
+func TestGatewayCutoverConfigurationRowsAreImmutable(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	queries := workflowgenerated.New(store.DB())
+	activation, err := queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, "cutover-gateway-immutable", seed.transitionPlanSHA256, "eligible"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_configurations (
+    activation_row_id, configuration_sha256, relay_repository, relay_commit_oid,
+    standing_repository, standing_commit_oid
+) VALUES (?, ?, 'Paintersrp/relay', ?, 'Paintersrp/relay-specs', ?)`,
+		activation.ID, workflowHash('a'), strings.Repeat("b", 40), strings.Repeat("c", 40)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`UPDATE cutover_gateway_configurations SET relay_repository = 'other' WHERE activation_row_id = ?`, activation.ID); err == nil {
+		t.Fatal("gateway configuration was mutable")
+	}
+}
 func TestCutoverStateMigrationPreservesHistoricalPlanPassAndRunState(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "workflow.sqlite")
 	database, err := sql.Open("sqlite", databasePath)
@@ -410,6 +474,9 @@ func activateCutoverState(
 		if err != nil {
 			return err
 		}
+		if err := seedCompleteGatewayConfigurationForTest(ctx, tx, activation.ID); err != nil {
+			return err
+		}
 		if _, err := queries.CreateCutoverActivationPrerequisiteEvidence(ctx, workflowgenerated.CreateCutoverActivationPrerequisiteEvidenceParams{
 			ActivationRowID: activation.ID,
 			Sequence:        1,
@@ -455,6 +522,58 @@ func activateCutoverState(
 		t.Fatal(err)
 	}
 	return activation, criterion
+}
+
+func seedCompleteGatewayConfigurationForTest(ctx context.Context, tx *Tx, activationRowID int64) error {
+	if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_configurations (
+    activation_row_id, configuration_sha256, relay_repository, relay_commit_oid,
+    standing_repository, standing_commit_oid
+) VALUES (?, ?, 'Paintersrp/relay', ?, 'Paintersrp/relay-specs', ?)`,
+		activationRowID, strings.Repeat("1", 64), strings.Repeat("a", 40), strings.Repeat("b", 40)); err != nil {
+		return err
+	}
+	for sequence := int64(1); sequence <= 7; sequence++ {
+		routePath := fmt.Sprintf("/mcp/v1/test/%d", sequence)
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_routes (
+    activation_row_id, sequence, route_path, role, surface_contract_id,
+    manifest_sha256, authority_commit_oid, authority_blob_oid
+) VALUES (?, ?, ?, 'wayfinder', ?, ?, ?, ?)`,
+			activationRowID, sequence, routePath, fmt.Sprintf("test-contract-%d", sequence),
+			strings.Repeat("2", 64), strings.Repeat("a", 40), strings.Repeat("b", 40)); err != nil {
+			return err
+		}
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_mappings (
+    activation_row_id, sequence, mapping_id, route_path, listener_identity,
+    upstream_identity, health_evidence_sha256, trace_evidence_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			activationRowID, sequence, fmt.Sprintf("test-mapping-%d", sequence), routePath,
+			fmt.Sprintf("test-listener-%d", sequence), fmt.Sprintf("test-upstream-%d", sequence),
+			strings.Repeat("3", 64), strings.Repeat("4", 64)); err != nil {
+			return err
+		}
+	}
+	for _, role := range []string{"wayfinder", "planner", "auditor"} {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_standing_authorities (
+    activation_row_id, role, repository, commit_oid, path, blob_oid, content_sha256
+) VALUES (?, ?, 'Paintersrp/relay-specs', ?, ?, ?, ?)`,
+			activationRowID, role, strings.Repeat("a", 40), "standing/"+role, strings.Repeat("b", 40), strings.Repeat("5", 64)); err != nil {
+			return err
+		}
+	}
+	for sequence := int64(1); sequence <= 3; sequence++ {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_dependency_outcomes (
+    activation_row_id, sequence, ticket_id, ticket_revision, outcome, evidence_sha256
+) VALUES (?, ?, ?, 1, 'completed_accepted', ?)`,
+			activationRowID, sequence, fmt.Sprintf("dependency-%d", sequence), strings.Repeat("6", 64)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, seed cutoverStateSeed) Run {
@@ -534,12 +653,13 @@ func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, s
 		if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
 			return err
 		}
-		if _, err := queries.CreateExecutionPackageApproval(ctx, workflowgenerated.CreateExecutionPackageApprovalParams{
-			ApprovalID:                  "pkg-approval-cutover-boundary",
-			PackageRowID:                executionPackage.ID,
-			PackageSha256:               workflowHash('1'),
+		packageApproval, err := queries.CreateExecutionPackageApproval(ctx, workflowgenerated.CreateExecutionPackageApprovalParams{
+			ApprovalID:                   "pkg-approval-cutover-boundary",
+			PackageRowID:                 executionPackage.ID,
+			PackageSha256:                workflowHash('1'),
 			OperatorConfirmationEvidence: "package approved for cutover boundary crossing test",
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
 		run, err = tx.CreateRun(ctx, CreateRunParams{
@@ -554,7 +674,13 @@ func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, s
 		if err != nil {
 			return err
 		}
-		_, err = tx.LinkRunToExecutionPackage(ctx, run.RunID, executionPackage.ID)
+		if _, err = tx.LinkRunToExecutionPackage(ctx, run.RunID, executionPackage.ID); err != nil {
+			return err
+		}
+		_, err = tx.LinkRunToExecutionPackageApproval(ctx, LinkRunToExecutionPackageApprovalParams{
+			PackageApprovalRowID: sql.NullInt64{Int64: packageApproval.ID, Valid: true},
+			RunID:                run.RunID,
+		})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -834,12 +960,13 @@ func createOrdinaryTicketRunTx(t *testing.T, ctx context.Context, tx *Tx, seed c
 	if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
 		return err
 	}
-	if _, err := queries.CreateExecutionPackageApproval(ctx, workflowgenerated.CreateExecutionPackageApprovalParams{
-		ApprovalID:                  "pkg-approval-" + runID,
-		PackageRowID:                executionPackage.ID,
-		PackageSha256:               workflowHash('a'),
+	packageApproval, err := queries.CreateExecutionPackageApproval(ctx, workflowgenerated.CreateExecutionPackageApprovalParams{
+		ApprovalID:                   "pkg-approval-" + runID,
+		PackageRowID:                 executionPackage.ID,
+		PackageSha256:                workflowHash('0'),
 		OperatorConfirmationEvidence: "package approved for ordinary ticket cutover boundary crossing",
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	created, err := tx.CreateRun(ctx, CreateRunParams{
@@ -855,6 +982,13 @@ func createOrdinaryTicketRunTx(t *testing.T, ctx context.Context, tx *Tx, seed c
 		return err
 	}
 	linked, err := tx.LinkRunToExecutionPackage(ctx, created.RunID, executionPackage.ID)
+	if err != nil {
+		return err
+	}
+	linked, err = tx.LinkRunToExecutionPackageApproval(ctx, LinkRunToExecutionPackageApprovalParams{
+		PackageApprovalRowID: sql.NullInt64{Int64: packageApproval.ID, Valid: true},
+		RunID:                created.RunID,
+	})
 	if err != nil {
 		return err
 	}
@@ -928,46 +1062,46 @@ func createOrdinaryTicketRunWithoutApproval(t *testing.T, ctx context.Context, s
 			BaseCommit:             seed.closure.CommitOID,
 			SourceClosureRowID:     seed.closure.ID,
 			AuthorityRevisionRowID: seed.authority.ID,
-		PackageSha256:          workflowHash('8'),
-		AuthoritySha256:        seed.authoritySHA256,
-		SourceSha256:           workflowHash('9'),
-		DesignBriefSha256:      workflowHash('0'),
-		ExecutionSpecSha256:    workflowHash('1'),
-	})
-	if err != nil {
-		return err
-	}
-	member, err := queries.CreateExecutionPackageMember(ctx, workflowgenerated.CreateExecutionPackageMemberParams{
-		PackageRowID:         executionPackage.ID,
-		SelectionMemberRowID: selectionMember.ID,
-		Sequence:             1,
-		RevisionRowID:        ordinaryRevision.ID,
-		MemberSha256:         workflowHash('2'),
-	})
-	if err != nil {
-		return err
-	}
-	if _, err := queries.CreateExecutionPackageApprovalBinding(ctx, workflowgenerated.CreateExecutionPackageApprovalBindingParams{
-		PackageRowID:           executionPackage.ID,
-		PackageMemberRowID:     member.ID,
-		ApprovalRowID:          approval.ID,
-		AuthorityRevisionRowID: seed.authority.ID,
-		SourceClosureRowID:     seed.closure.ID,
-		ApprovalBasisSha256:    workflowHash('3'),
-	}); err != nil {
-		return err
-	}
-	if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
-		return err
-	}
-	created, err := tx.CreateRun(ctx, CreateRunParams{
-		RunID:           runID,
-		FeatureSlug:     seed.workspace.FeatureSlug,
-		RepoTarget:      "relay",
-		Status:          RunStatusCreated,
-		Branch:          "main",
-		BaseCommit:      seed.closure.CommitOID,
-		CanonicalSHA256: workflowHash('4'),
+			PackageSha256:          workflowHash('8'),
+			AuthoritySha256:        seed.authoritySHA256,
+			SourceSha256:           workflowHash('9'),
+			DesignBriefSha256:      workflowHash('0'),
+			ExecutionSpecSha256:    workflowHash('1'),
+		})
+		if err != nil {
+			return err
+		}
+		member, err := queries.CreateExecutionPackageMember(ctx, workflowgenerated.CreateExecutionPackageMemberParams{
+			PackageRowID:         executionPackage.ID,
+			SelectionMemberRowID: selectionMember.ID,
+			Sequence:             1,
+			RevisionRowID:        ordinaryRevision.ID,
+			MemberSha256:         workflowHash('2'),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := queries.CreateExecutionPackageApprovalBinding(ctx, workflowgenerated.CreateExecutionPackageApprovalBindingParams{
+			PackageRowID:           executionPackage.ID,
+			PackageMemberRowID:     member.ID,
+			ApprovalRowID:          approval.ID,
+			AuthorityRevisionRowID: seed.authority.ID,
+			SourceClosureRowID:     seed.closure.ID,
+			ApprovalBasisSha256:    workflowHash('3'),
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.ConsumeDeliveryTicketSelection(ctx, selection.SelectionID); err != nil {
+			return err
+		}
+		created, err := tx.CreateRun(ctx, CreateRunParams{
+			RunID:           runID,
+			FeatureSlug:     seed.workspace.FeatureSlug,
+			RepoTarget:      "relay",
+			Status:          RunStatusCreated,
+			Branch:          "main",
+			BaseCommit:      seed.closure.CommitOID,
+			CanonicalSHA256: workflowHash('4'),
 		})
 		if err != nil {
 			return err

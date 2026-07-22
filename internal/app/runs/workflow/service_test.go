@@ -590,4 +590,71 @@ func assertNoRunFiles(t *testing.T, root string) {
 	}
 }
 
+func TestBeginExecutionAttemptRollsBackWhenCutoverQualificationFails(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openRunTestStore(t)
+	registerRunTestRepo(t, ctx, store, "relay")
+	service := newRunTestService(t, store, &sequenceIDs{
+		runIDs:      []string{"run-cutover-qualification"},
+		attemptIDs:  []string{"attempt-must-not-exist"},
+		artifactIDs: []string{"artifact-cutover-1", "artifact-cutover-2"},
+	})
+	created, err := service.CreateRun(ctx, CreateRunInput{
+		FeatureSlug: "feature", RepoTarget: "relay", Branch: "main",
+		BaseCommit: strings.Repeat("a", 40), CanonicalJSON: []byte("{}\n"),
+		RenderedMarkdown: []byte("# Brief\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedActiveCutoverForRunTest(t, store)
+	if _, err := service.BeginExecutionAttempt(ctx, BeginExecutionAttemptInput{
+		RunID: created.Run.RunID, Adapter: "opencode_go", Model: "test-model",
+	}); err == nil {
+		t.Fatal("non-package Run crossed an active open cutover")
+	}
+	current, err := store.GetRunByRunID(ctx, created.Run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != workflowstore.RunStatusSetupReady {
+		t.Fatalf("failed crossing left Run in %q", current.Status)
+	}
+	assertRunTableCount(t, store.DB(), "execution_attempts", 0)
+}
+
+func seedActiveCutoverForRunTest(t *testing.T, store *workflowstore.Store) {
+	t.Helper()
+	database := store.DB()
+	if _, err := database.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`DROP TRIGGER IF EXISTS cutover_activation_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO cutover_activations (
+    cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id,
+    transition_plan_ticket_id, transition_plan_ticket_revision,
+    transition_plan_authority_layer_row_id, transition_plan_sha256,
+    authority_revision_row_id, authority_revision_id, authority_revision_number,
+    authority_sha256, rollback_eligibility, activation_status, activated_at,
+    execution_boundary_status, rollback_status, roll_forward_status
+) VALUES (
+    'cutover-run-test', 1, 1, 'AGGREGATE-CUTOVER', 2, 1, ?,
+    1, 'authority-run-test', 1, ?, 'eligible', 'active',
+    '2000-01-01T00:00:00.000000000Z', 'open', 'available', 'pending'
+)`, strings.Repeat("b", 64), strings.Repeat("c", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO cutover_current_states (singleton_id, activation_row_id)
+SELECT 1, id FROM cutover_activations WHERE cutover_activation_id = 'cutover-run-test'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 var _ = workflowartifacts.File{}

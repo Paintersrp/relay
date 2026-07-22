@@ -507,6 +507,40 @@ RETURNING *;
 SELECT *
 FROM cutover_activations
 WHERE cutover_activation_id = ?;
+-- name: GetCutoverGatewayConfigurationCounts :one
+SELECT
+    configuration.configuration_sha256,
+    (SELECT COUNT(*) FROM cutover_gateway_routes WHERE activation_row_id = configuration.activation_row_id) AS route_count,
+    (SELECT COUNT(*) FROM cutover_gateway_mappings WHERE activation_row_id = configuration.activation_row_id) AS mapping_count,
+    (SELECT COUNT(*) FROM cutover_gateway_standing_authorities WHERE activation_row_id = configuration.activation_row_id) AS standing_authority_count,
+    (SELECT COUNT(*) FROM cutover_gateway_dependency_outcomes WHERE activation_row_id = configuration.activation_row_id) AS dependency_outcome_count
+FROM cutover_gateway_configurations AS configuration
+WHERE configuration.activation_row_id = ?;
+
+-- name: ListCutoverGatewayRoutes :many
+SELECT *
+FROM cutover_gateway_routes
+WHERE activation_row_id = ?
+ORDER BY sequence;
+
+-- name: ListCutoverGatewayMappings :many
+SELECT *
+FROM cutover_gateway_mappings
+WHERE activation_row_id = ?
+ORDER BY sequence;
+
+-- name: ListCutoverGatewayStandingAuthorities :many
+SELECT *
+FROM cutover_gateway_standing_authorities
+WHERE activation_row_id = ?
+ORDER BY role;
+
+-- name: ListCutoverGatewayDependencyOutcomes :many
+SELECT *
+FROM cutover_gateway_dependency_outcomes
+WHERE activation_row_id = ?
+ORDER BY sequence;
+
 
 -- name: ListCutoverActivations :many
 SELECT *
@@ -611,9 +645,8 @@ WHERE cutover_activation_id = ?
 RETURNING *;
 
 -- name: CrossCutoverBoundary :one
--- Conditionally cross the active cutover boundary for a qualifying ticket-oriented Run.
--- Validates route (execution package), post-activation timing, matching package authority,
--- immutable package approval, and unset boundary before atomically recording the first Run.
+-- Cross only for the first post-activation approved package execution while
+-- the persisted gateway configuration remains complete.
 UPDATE cutover_activations
 SET execution_boundary_status = 'crossed',
     first_new_execution_run_row_id = ?,
@@ -623,17 +656,28 @@ SET execution_boundary_status = 'crossed',
 WHERE cutover_activation_id = ?
   AND activation_status = 'active'
   AND execution_boundary_status = 'open'
+  AND rollback_status IN ('available', 'not_eligible')
+  AND first_new_execution_run_row_id IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM cutover_gateway_configurations AS configuration
+      WHERE configuration.activation_row_id = cutover_activations.id
+        AND (SELECT COUNT(*) FROM cutover_gateway_routes WHERE activation_row_id = configuration.activation_row_id) = 7
+        AND (SELECT COUNT(*) FROM cutover_gateway_mappings WHERE activation_row_id = configuration.activation_row_id) = 7
+        AND (SELECT COUNT(*) FROM cutover_gateway_standing_authorities WHERE activation_row_id = configuration.activation_row_id) = 3
+        AND (SELECT COUNT(*) FROM cutover_gateway_dependency_outcomes WHERE activation_row_id = configuration.activation_row_id) >= 3
+  )
   AND EXISTS (
       SELECT 1
       FROM runs AS run
       JOIN execution_packages AS package ON package.id = run.execution_package_row_id
+      JOIN execution_package_approvals AS approval
+        ON approval.id = run.package_approval_row_id
+       AND approval.package_row_id = package.id
+       AND approval.package_sha256 = package.package_sha256
       WHERE run.id = ?
-        AND run.created_at >= activated_at
-        AND package.authority_revision_row_id = authority_revision_row_id
-        AND EXISTS (
-            SELECT 1 FROM execution_package_approvals
-            WHERE execution_package_approvals.package_row_id = package.id
-        )
+        AND run.created_at >= cutover_activations.activated_at
+        AND package.authority_revision_row_id = cutover_activations.authority_revision_row_id
   )
 RETURNING *;
 

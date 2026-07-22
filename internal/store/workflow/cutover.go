@@ -75,12 +75,62 @@ type CutoverCurrentState struct {
 	CreatedAt       string
 	UpdatedAt       string
 }
+type CutoverGatewayConfiguration struct {
+	ActivationRowID     int64
+	ConfigurationSHA256 string
+	RelayRepository     string
+	RelayCommitOID      string
+	StandingRepository  string
+	StandingCommitOID   string
+	Routes              []CutoverGatewayRoute
+	Mappings            []CutoverGatewayMapping
+	StandingAuthorities []CutoverGatewayStandingAuthority
+	DependencyOutcomes  []CutoverGatewayDependencyOutcome
+}
+
+type CutoverGatewayRoute struct {
+	Sequence           int64
+	RoutePath          string
+	Role               string
+	SurfaceContractID  string
+	ManifestSHA256     string
+	AuthorityCommitOID string
+	AuthorityBlobOID   string
+}
+
+type CutoverGatewayMapping struct {
+	Sequence             int64
+	MappingID            string
+	RoutePath            string
+	ListenerIdentity     string
+	UpstreamIdentity     string
+	HealthEvidenceSHA256 string
+	TraceEvidenceSHA256  string
+}
+
+type CutoverGatewayStandingAuthority struct {
+	Role          string
+	Repository    string
+	CommitOID     string
+	Path          string
+	BlobOID       string
+	ContentSHA256 string
+}
+
+type CutoverGatewayDependencyOutcome struct {
+	Sequence       int64
+	TicketID       string
+	TicketRevision int64
+	Outcome        string
+	EvidenceSHA256 string
+}
 
 var (
-	ErrCutoverNotFound      = errors.New("cutover activation not found")
-	ErrCutoverAlreadyActive = errors.New("a cutover activation is already active")
-	ErrCutoverNotPrepared   = errors.New("cutover activation is not in prepared state")
-	ErrCutoverStateConflict = errors.New("cutover state transition conflict")
+	ErrCutoverNotFound              = errors.New("cutover activation not found")
+	ErrCutoverAlreadyActive         = errors.New("a cutover activation is already active")
+	ErrCutoverNotPrepared           = errors.New("cutover activation is not in prepared state")
+	ErrCutoverStateConflict         = errors.New("cutover state transition conflict")
+	ErrCutoverBoundaryQualification = errors.New("Run does not qualify for cutover boundary crossing")
 )
 
 const cutoverActivationColumns = `
@@ -254,6 +304,156 @@ RETURNING `+cutoverActivationColumns,
 	))
 	return value, err
 }
+func (tx *Tx) CreateCutoverGatewayConfiguration(ctx context.Context, activationRowID int64, value CutoverGatewayConfiguration) error {
+	if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_configurations (
+    activation_row_id, configuration_sha256, relay_repository, relay_commit_oid,
+    standing_repository, standing_commit_oid
+) VALUES (?, ?, ?, ?, ?, ?)`,
+		activationRowID, value.ConfigurationSHA256, value.RelayRepository, value.RelayCommitOID,
+		value.StandingRepository, value.StandingCommitOID); err != nil {
+		return err
+	}
+	for _, route := range value.Routes {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_routes (
+    activation_row_id, sequence, route_path, role, surface_contract_id,
+    manifest_sha256, authority_commit_oid, authority_blob_oid
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			activationRowID, route.Sequence, route.RoutePath, route.Role, route.SurfaceContractID,
+			route.ManifestSHA256, route.AuthorityCommitOID, route.AuthorityBlobOID); err != nil {
+			return err
+		}
+	}
+	for _, mapping := range value.Mappings {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_mappings (
+    activation_row_id, sequence, mapping_id, route_path, listener_identity,
+    upstream_identity, health_evidence_sha256, trace_evidence_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			activationRowID, mapping.Sequence, mapping.MappingID, mapping.RoutePath,
+			mapping.ListenerIdentity, mapping.UpstreamIdentity,
+			mapping.HealthEvidenceSHA256, mapping.TraceEvidenceSHA256); err != nil {
+			return err
+		}
+	}
+	for _, authority := range value.StandingAuthorities {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_standing_authorities (
+    activation_row_id, role, repository, commit_oid, path, blob_oid, content_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			activationRowID, authority.Role, authority.Repository, authority.CommitOID,
+			authority.Path, authority.BlobOID, authority.ContentSHA256); err != nil {
+			return err
+		}
+	}
+	for _, dependency := range value.DependencyOutcomes {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_dependency_outcomes (
+    activation_row_id, sequence, ticket_id, ticket_revision, outcome, evidence_sha256
+) VALUES (?, ?, ?, ?, ?, ?)`,
+			activationRowID, dependency.Sequence, dependency.TicketID,
+			dependency.TicketRevision, dependency.Outcome, dependency.EvidenceSHA256); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) LoadCutoverGatewayConfiguration(ctx context.Context, activationRowID int64) (CutoverGatewayConfiguration, error) {
+	return loadCutoverGatewayConfiguration(ctx, s.db, activationRowID)
+}
+
+func (tx *Tx) LoadCutoverGatewayConfiguration(ctx context.Context, activationRowID int64) (CutoverGatewayConfiguration, error) {
+	return loadCutoverGatewayConfiguration(ctx, tx.tx, activationRowID)
+}
+
+type cutoverConfigurationQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func loadCutoverGatewayConfiguration(ctx context.Context, queryer cutoverConfigurationQueryer, activationRowID int64) (CutoverGatewayConfiguration, error) {
+	result := CutoverGatewayConfiguration{ActivationRowID: activationRowID}
+	if err := queryer.QueryRowContext(ctx, `
+SELECT configuration_sha256, relay_repository, relay_commit_oid, standing_repository, standing_commit_oid
+FROM cutover_gateway_configurations
+WHERE activation_row_id = ?`, activationRowID).Scan(
+		&result.ConfigurationSHA256,
+		&result.RelayRepository,
+		&result.RelayCommitOID,
+		&result.StandingRepository,
+		&result.StandingCommitOID,
+	); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	routeRows, err := queryer.QueryContext(ctx, `
+SELECT sequence, route_path, role, surface_contract_id, manifest_sha256, authority_commit_oid, authority_blob_oid
+FROM cutover_gateway_routes WHERE activation_row_id = ? ORDER BY sequence`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer routeRows.Close()
+	for routeRows.Next() {
+		var value CutoverGatewayRoute
+		if err := routeRows.Scan(&value.Sequence, &value.RoutePath, &value.Role, &value.SurfaceContractID, &value.ManifestSHA256, &value.AuthorityCommitOID, &value.AuthorityBlobOID); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.Routes = append(result.Routes, value)
+	}
+	if err := routeRows.Err(); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	mappingRows, err := queryer.QueryContext(ctx, `
+SELECT sequence, mapping_id, route_path, listener_identity, upstream_identity, health_evidence_sha256, trace_evidence_sha256
+FROM cutover_gateway_mappings WHERE activation_row_id = ? ORDER BY sequence`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer mappingRows.Close()
+	for mappingRows.Next() {
+		var value CutoverGatewayMapping
+		if err := mappingRows.Scan(&value.Sequence, &value.MappingID, &value.RoutePath, &value.ListenerIdentity, &value.UpstreamIdentity, &value.HealthEvidenceSHA256, &value.TraceEvidenceSHA256); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.Mappings = append(result.Mappings, value)
+	}
+	if err := mappingRows.Err(); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	standingRows, err := queryer.QueryContext(ctx, `
+SELECT role, repository, commit_oid, path, blob_oid, content_sha256
+FROM cutover_gateway_standing_authorities WHERE activation_row_id = ? ORDER BY role`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer standingRows.Close()
+	for standingRows.Next() {
+		var value CutoverGatewayStandingAuthority
+		if err := standingRows.Scan(&value.Role, &value.Repository, &value.CommitOID, &value.Path, &value.BlobOID, &value.ContentSHA256); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.StandingAuthorities = append(result.StandingAuthorities, value)
+	}
+	if err := standingRows.Err(); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	dependencyRows, err := queryer.QueryContext(ctx, `
+SELECT sequence, ticket_id, ticket_revision, outcome, evidence_sha256
+FROM cutover_gateway_dependency_outcomes WHERE activation_row_id = ? ORDER BY sequence`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer dependencyRows.Close()
+	for dependencyRows.Next() {
+		var value CutoverGatewayDependencyOutcome
+		if err := dependencyRows.Scan(&value.Sequence, &value.TicketID, &value.TicketRevision, &value.Outcome, &value.EvidenceSHA256); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.DependencyOutcomes = append(result.DependencyOutcomes, value)
+	}
+	return result, dependencyRows.Err()
+}
 
 func (tx *Tx) ActivateCutover(ctx context.Context, activationID string, activatedAt string, rollbackEligibility string) (CutoverActivation, error) {
 	rollbackStatus := "available"
@@ -322,21 +522,37 @@ func (tx *Tx) ConditionalCrossCutoverExecutionBoundary(ctx context.Context, acti
 }
 
 func (tx *Tx) AttemptCrossCutoverBoundaryForRun(ctx context.Context, runRowID int64, runExecutionPackageRowID sql.NullInt64) error {
-	if !runExecutionPackageRowID.Valid {
+	current, err := workflowgenerated.New(tx.tx).GetCurrentCutoverActivation(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
-	current, err := workflowgenerated.New(tx.tx).GetCurrentCutoverActivation(ctx)
 	if err != nil {
-		return nil
+		return err
 	}
 	if current.ExecutionBoundaryStatus == "crossed" {
 		return nil
 	}
+	if !runExecutionPackageRowID.Valid {
+		return ErrCutoverBoundaryQualification
+	}
 	_, err = tx.ConditionalCrossCutoverExecutionBoundary(ctx, current.CutoverActivationID, runRowID)
-	if errors.Is(err, ErrCutoverStateConflict) {
+	if err == nil {
 		return nil
 	}
-	return err
+	if !errors.Is(err, ErrCutoverStateConflict) {
+		return err
+	}
+	reloaded, reloadErr := workflowgenerated.New(tx.tx).GetCurrentCutoverActivation(ctx)
+	if errors.Is(reloadErr, sql.ErrNoRows) {
+		return nil
+	}
+	if reloadErr != nil {
+		return reloadErr
+	}
+	if reloaded.ExecutionBoundaryStatus == "crossed" {
+		return nil
+	}
+	return ErrCutoverBoundaryQualification
 }
 
 func toCutoverActivation(g workflowgenerated.CutoverActivation) CutoverActivation {

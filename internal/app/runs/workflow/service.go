@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	workflowartifacts "relay/internal/artifacts/workflow"
 	appcutover "relay/internal/app/cutover"
+	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -352,6 +352,9 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		default:
 			return fmt.Errorf("run %q cannot start execution from status %q", run.RunID, run.Status)
 		}
+		// The Run transition, first cutover crossing, and attempt creation commit together.
+		// Any crossing failure rolls the Run back to its prior persisted status and
+		// prevents an executor adapter from receiving an attempt.
 		run, err = tx.TransitionRun(ctx, run.RunID, run.Status, workflowstore.RunStatusExecuting)
 		if err != nil {
 			return fmt.Errorf("start run execution: %w", err)

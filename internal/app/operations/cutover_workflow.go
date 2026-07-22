@@ -18,6 +18,10 @@ func NewCutoverWorkflowService(packets PacketMutationAuthorizer, owner *appcutov
 	return &CutoverWorkflowService{owner: owner}, nil
 }
 
+func (s *CutoverWorkflowService) Prepare(ctx context.Context, request appcutover.PrepareRequest) (*appcutover.State, error) {
+	return s.owner.Prepare(ctx, request)
+}
+
 func (s *CutoverWorkflowService) Activate(ctx context.Context, request appcutover.ActivationRequest) (*appcutover.State, error) {
 	return s.owner.Activate(ctx, request)
 }
@@ -46,4 +50,4 @@ func (s *CutoverWorkflowService) History(ctx context.Context) ([]appcutover.Stat
 	return s.owner.History(ctx)
 }
 
-var _ registry.OperationID = "" // silence unused import
+var _ registry.OperationID = ""

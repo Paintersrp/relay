@@ -155,6 +155,57 @@ type CutoverCurrentState struct {
 	UpdatedAt       string        `json:"updated_at"`
 }
 
+type CutoverGatewayConfiguration struct {
+	ActivationRowID     int64  `json:"activation_row_id"`
+	ConfigurationSha256 string `json:"configuration_sha256"`
+	RelayRepository     string `json:"relay_repository"`
+	RelayCommitOid      string `json:"relay_commit_oid"`
+	StandingRepository  string `json:"standing_repository"`
+	StandingCommitOid   string `json:"standing_commit_oid"`
+	CreatedAt           string `json:"created_at"`
+}
+
+type CutoverGatewayDependencyOutcome struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	Sequence        int64  `json:"sequence"`
+	TicketID        string `json:"ticket_id"`
+	TicketRevision  int64  `json:"ticket_revision"`
+	Outcome         string `json:"outcome"`
+	EvidenceSha256  string `json:"evidence_sha256"`
+}
+
+type CutoverGatewayMapping struct {
+	ActivationRowID      int64  `json:"activation_row_id"`
+	Sequence             int64  `json:"sequence"`
+	MappingID            string `json:"mapping_id"`
+	RoutePath            string `json:"route_path"`
+	ListenerIdentity     string `json:"listener_identity"`
+	UpstreamIdentity     string `json:"upstream_identity"`
+	HealthEvidenceSha256 string `json:"health_evidence_sha256"`
+	TraceEvidenceSha256  string `json:"trace_evidence_sha256"`
+}
+
+type CutoverGatewayRoute struct {
+	ActivationRowID    int64  `json:"activation_row_id"`
+	Sequence           int64  `json:"sequence"`
+	RoutePath          string `json:"route_path"`
+	Role               string `json:"role"`
+	SurfaceContractID  string `json:"surface_contract_id"`
+	ManifestSha256     string `json:"manifest_sha256"`
+	AuthorityCommitOid string `json:"authority_commit_oid"`
+	AuthorityBlobOid   string `json:"authority_blob_oid"`
+}
+
+type CutoverGatewayStandingAuthority struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	Role            string `json:"role"`
+	Repository      string `json:"repository"`
+	CommitOid       string `json:"commit_oid"`
+	Path            string `json:"path"`
+	BlobOid         string `json:"blob_oid"`
+	ContentSha256   string `json:"content_sha256"`
+}
+
 type CutoverRollForwardCriterium struct {
 	ID                  int64  `json:"id"`
 	ActivationRowID     int64  `json:"activation_row_id"`

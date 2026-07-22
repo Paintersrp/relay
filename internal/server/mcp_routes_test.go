@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,43 +10,60 @@ import (
 	"relay/internal/mcp/routecontracts"
 )
 
+type aggregateStateStub struct {
+	closed bool
+	err    error
+}
+
+func (stub aggregateStateStub) IsLegacyAdmissionClosed(context.Context) (bool, error) {
+	return stub.closed, stub.err
+}
+
 func newMCPRouteTestHandler(t *testing.T) http.Handler {
 	set, err := routecontracts.BuildMCPRouteManifests()
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	aggregatePath := "/" + "mcp"
+	mux.Handle(aggregatePath, newCutoverAggregateHandler(aggregateStateStub{}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
 	for _, manifest := range set.Manifests {
 		mux.HandleFunc(manifest.RoutePath, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	}
 	return mux
 }
 
-func newMCPRouteFailureTestHandler(t *testing.T) (handler http.Handler) {
-	_ = t
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.NotFound(w, nil) })
-}
-
-func TestMCPRoutesPublishCompleteSetBesideAggregate(t *testing.T) {
+func TestMCPRoutesPublishCompleteSetBesideAggregateBeforeActivation(t *testing.T) {
 	handler := newMCPRouteTestHandler(t)
 	for _, path := range []string{"/mcp", "/mcp/v1/wayfinder/workspace", "/mcp/v1/wayfinder/discovery", "/mcp/v1/wayfinder/investigation", "/mcp/v1/planner/authoring", "/mcp/v1/planner/frontier", "/mcp/v1/auditor/review", "/mcp/v1/auditor/audit"} {
-		request := httptest.NewRequest("POST", path, nil)
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code == 404 {
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+		if response.Code == http.StatusNotFound {
 			t.Fatalf("%s not mounted", path)
 		}
 	}
 }
-func TestMCPPrebuildFailurePublishesNoRoute(t *testing.T) {
-	handler := newMCPRouteFailureTestHandler(t)
-	for _, path := range []string{"/mcp/v1/wayfinder/workspace", "/mcp/v1/planner/authoring", "/mcp/v1/auditor/audit"} {
-		request := httptest.NewRequest("POST", path, nil)
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != 404 {
-			t.Fatalf("%s published: %d", path, response.Code)
-		}
+
+func TestAggregateClosesWithoutAffectingVersionedRoutes(t *testing.T) {
+	aggregate := newCutoverAggregateHandler(aggregateStateStub{closed: true}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("closed aggregate request dispatched")
+	}))
+	response := httptest.NewRecorder()
+	aggregate.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("closed aggregate status = %d", response.Code)
+	}
+}
+
+func TestAggregateFailsClosedWhenStateUnavailable(t *testing.T) {
+	aggregate := newCutoverAggregateHandler(aggregateStateStub{err: errors.New("unavailable")}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("unavailable state dispatched")
+	}))
+	response := httptest.NewRecorder()
+	aggregate.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable aggregate status = %d", response.Code)
 	}
 }
