@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -12,10 +13,10 @@ type Server struct {
 	mux http.Handler
 }
 
-func NewWorkflow(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string) *Server {
+func NewWorkflow(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) *Server {
 	return &Server{
 		log: log,
-		mux: BuildWorkflowRoutes(store, log, ownerInstanceID),
+		mux: BuildWorkflowRoutes(store, log, ownerInstanceID, sourceVaults...),
 	}
 }
 

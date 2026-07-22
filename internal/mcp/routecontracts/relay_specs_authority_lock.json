@@ -1,0 +1,328 @@
+{
+  "schema_version": "relay.mcp.authority-lock.v1",
+  "repository": "Paintersrp/relay-specs",
+  "commit": "d9b688e9f4040ca6870521172b9a6435f47ee55c",
+  "standing_instructions": {
+    "wayfinder": {
+      "path": "agents/wayfinder.md",
+      "blob_oid": "983114272266d10f80b378b29539ba1e1293f07f"
+    },
+    "planner": {
+      "path": "agents/planner.md",
+      "blob_oid": "2a11a518ad8b65a6af39cba50f34f490701a1e23"
+    },
+    "auditor": {
+      "path": "agents/auditor.md",
+      "blob_oid": "c9be52345776ffdbbdafad34ad53bdc30200e257"
+    }
+  },
+  "manifests": {
+    "planner": {
+      "path": "planner-source-manifest.json",
+      "blob_oid": "03eac8552696058b1a4bbc7e953578e773a48b47",
+      "manifest_version": "1.0",
+      "domains": [
+        {
+          "name": "requirements",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/requirements.md",
+              "blob_oid": "4dc8819f40bbe75271427154a7db2b8f76e15e6d"
+            }
+          ]
+        },
+        {
+          "name": "shared_design",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/design.md",
+              "blob_oid": "61211c1aa69a85c3283b120d7a12e2bc5ddc673d"
+            }
+          ]
+        },
+        {
+          "name": "delivery_ticket",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            }
+          ]
+        },
+        {
+          "name": "transition_plan",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/transition-plan.md",
+              "blob_oid": "c386981ac834d4fcd8a888607e1801c7d9adaa3f"
+            }
+          ]
+        },
+        {
+          "name": "ticket_design_brief",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/plan.md",
+              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/design-brief.md",
+              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+            }
+          ]
+        },
+        {
+          "name": "selected_execution_spec",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/plan.md",
+              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/design-brief.md",
+              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+            },
+            {
+              "path": "contracts/execution-spec.md",
+              "blob_oid": "62c06272ed4ac3691a156ab31d47ded2d7be4666"
+            }
+          ]
+        }
+      ]
+    },
+    "auditor": {
+      "path": "auditor-source-manifest.json",
+      "blob_oid": "b81a729a507b92b427d2e882f976524e34dde566",
+      "manifest_version": "1.0",
+      "domains": [
+        {
+          "name": "requirements_review",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+            },
+            {
+              "path": "contracts/requirements.md",
+              "blob_oid": "4dc8819f40bbe75271427154a7db2b8f76e15e6d"
+            }
+          ]
+        },
+        {
+          "name": "shared_design_review",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/design.md",
+              "blob_oid": "61211c1aa69a85c3283b120d7a12e2bc5ddc673d"
+            }
+          ]
+        },
+        {
+          "name": "delivery_ticket_review",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            }
+          ]
+        },
+        {
+          "name": "transition_plan_review",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/transition-plan.md",
+              "blob_oid": "c386981ac834d4fcd8a888607e1801c7d9adaa3f"
+            }
+          ]
+        },
+        {
+          "name": "ticket_design_brief_review",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/plan.md",
+              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/design-brief.md",
+              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+            }
+          ]
+        },
+        {
+          "name": "selected_execution_spec_review",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+            },
+            {
+              "path": "contracts/requirements-to-design.md",
+              "blob_oid": "e87993cc029051ed8b6a6de67d5c0aa0b5186981"
+            },
+            {
+              "path": "contracts/plan.md",
+              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/design-brief.md",
+              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+            },
+            {
+              "path": "contracts/execution-spec.md",
+              "blob_oid": "62c06272ed4ac3691a156ab31d47ded2d7be4666"
+            }
+          ]
+        },
+        {
+          "name": "audit",
+          "members": [
+            {
+              "path": "contracts/cross-cutting.md",
+              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+            },
+            {
+              "path": "contracts/audit.md",
+              "blob_oid": "661ea7a071a0b3997a705aa5b12759bb66b57019"
+            },
+            {
+              "path": "schemas/audit-packet.schema.json",
+              "blob_oid": "b22ab2b6e6f85617b8c5e9f21c17cb020bcf2ae8"
+            },
+            {
+              "path": "contracts/plan.md",
+              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+            },
+            {
+              "path": "contracts/delivery-ticket.md",
+              "blob_oid": "4c0aad3148e5e14469fd1c86b390bf729243655a"
+            },
+            {
+              "path": "contracts/transition-plan.md",
+              "blob_oid": "c386981ac834d4fcd8a888607e1801c7d9adaa3f"
+            },
+            {
+              "path": "contracts/execution-spec.md",
+              "blob_oid": "62c06272ed4ac3691a156ab31d47ded2d7be4666"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

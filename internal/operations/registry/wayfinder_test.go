@@ -4,7 +4,7 @@ import "testing"
 
 func TestWayfinderOperationInventoryIsClosedAndStable(t *testing.T) {
 	profiles := WayfinderRoleProfiles()
-	if len(profiles) != 4 {
+	if len(profiles) != 3 {
 		t.Fatalf("profile count = %d", len(profiles))
 	}
 	for _, profile := range profiles {

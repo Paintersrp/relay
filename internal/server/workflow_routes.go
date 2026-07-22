@@ -33,13 +33,14 @@ import (
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
 	"relay/internal/mcp"
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string) http.Handler {
+func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) http.Handler {
 	if workflowStore == nil {
 		panic("workflow store is required")
 	}
@@ -130,9 +131,22 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err := mcp.ValidateCompiledSurfaceCatalog(); err != nil {
 		panic(err)
 	}
+	var mcpHandlers []mcpHandler
+	if len(sourceVaults) > 1 || (len(sourceVaults) == 1 && sourceVaults[0] == nil) {
+		panic("source vault manager is invalid")
+	}
+	if len(sourceVaults) == 1 {
+		mcpHandlers, err = buildMCPHandlers(workflowStore, sourceVaults[0], projectService, packetService, wayfinderService, ticketService, auditService, log)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
 	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
+	for _, current := range mcpHandlers {
+		router.Handle(current.Path, current.Handler)
+	}
 
 	router.Route("/api", func(api chi.Router) {
 		api.Use(shared.CORSMiddleware)

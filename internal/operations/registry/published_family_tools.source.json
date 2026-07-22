@@ -1,0 +1,568 @@
+{
+  "schema_version": "relay.mcp.operation-family-tools.v1",
+  "input_contract": {
+    "root": "OpenOperationFamilyContextRequest",
+    "property_order": [
+      "packet_id",
+      "expected_packet_sha256"
+    ],
+    "additional_properties": false,
+    "properties": {
+      "packet_id": {
+        "$ref": "#/$defs/OpaqueID"
+      },
+      "expected_packet_sha256": {
+        "$ref": "#/$defs/SHA256"
+      }
+    }
+  },
+  "output_contract": {
+    "root": "OpenOperationFamilyContextResult",
+    "property_order": [
+      "route_path",
+      "role",
+      "surface_contract",
+      "operation_id",
+      "manifest_domain",
+      "standing_authority",
+      "domain_authority",
+      "packet",
+      "inputs",
+      "repositories",
+      "readiness",
+      "blockers"
+    ],
+    "additional_properties": false,
+    "properties": {
+      "route_path": {
+        "type": "string",
+        "const_from_route": true
+      },
+      "role": {
+        "type": "string",
+        "const_from_route": true
+      },
+      "surface_contract": {
+        "type": "string",
+        "const_from_route": true
+      },
+      "operation_id": {
+        "type": "string",
+        "const_from_tool": true
+      },
+      "manifest_domain": {
+        "type": "string",
+        "const_from_operation_or_empty": true
+      },
+      "standing_authority": {
+        "$ref": "#/$defs/StandingAuthorityIdentity"
+      },
+      "domain_authority": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/DomainAuthorityIdentity"
+        }
+      },
+      "packet": {
+        "$ref": "#/$defs/OperationPacketView"
+      },
+      "inputs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/OperationInputView"
+        }
+      },
+      "repositories": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/OperationRepositoryView"
+        }
+      },
+      "readiness": {
+        "$ref": "#/$defs/PacketReadinessState"
+      },
+      "blockers": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Blocker"
+        }
+      }
+    }
+  },
+  "behavior": [
+    "Require the exact active packet identity named by packet_id and expected_packet_sha256.",
+    "Require packet role, surface contract, and operation ID to equal the route and tool constants.",
+    "Return exact packet input, repository, standing-authority, manifest-domain, readiness, and blocker projections.",
+    "Do not create, refresh, close, approve, submit, persist, or mutate an artifact or workflow record."
+  ],
+  "tools": [
+    {
+      "name": "open_requirements",
+      "title": "Requirements",
+      "description": "Open the exact active packet-bound context for Planner Requirements authoring.",
+      "semantic_tool_id": "relay.planner.requirements.context.v1",
+      "operation_id": "planner.requirements",
+      "invoking": "Opening Requirements context",
+      "invoked": "Requirements context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_shared_design",
+      "title": "Shared Design",
+      "description": "Open the exact active packet-bound context for Planner Shared Design authoring.",
+      "semantic_tool_id": "relay.planner.shared-design.context.v1",
+      "operation_id": "planner.shared_design",
+      "invoking": "Opening Shared Design context",
+      "invoked": "Shared Design context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_delivery_ticket",
+      "title": "Delivery Ticket",
+      "description": "Open the exact active packet-bound context for Planner Delivery Ticket authoring.",
+      "semantic_tool_id": "relay.planner.delivery-ticket.context.v1",
+      "operation_id": "planner.delivery_ticket",
+      "invoking": "Opening Delivery Ticket context",
+      "invoked": "Delivery Ticket context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_transition_plan",
+      "title": "Transition Plan",
+      "description": "Open the exact active packet-bound context for Planner Transition Plan authoring.",
+      "semantic_tool_id": "relay.planner.transition-plan.context.v1",
+      "operation_id": "planner.transition_plan",
+      "invoking": "Opening Transition Plan context",
+      "invoked": "Transition Plan context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_ticket_design_brief",
+      "title": "Ticket Design Brief",
+      "description": "Open the exact active packet-bound context for Planner Ticket Design Brief authoring.",
+      "semantic_tool_id": "relay.planner.ticket-design-brief.context.v1",
+      "operation_id": "planner.ticket_design_brief",
+      "invoking": "Opening Ticket Design Brief context",
+      "invoked": "Ticket Design Brief context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_selected_execution_spec",
+      "title": "Selected Execution Spec",
+      "description": "Open the exact active packet-bound context for Planner selected-package Execution Spec authoring.",
+      "semantic_tool_id": "relay.planner.selected-execution-spec.context.v1",
+      "operation_id": "planner.selected_execution_spec",
+      "invoking": "Opening selected Execution Spec context",
+      "invoked": "Selected Execution Spec context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_requirements_review",
+      "title": "Requirements Review",
+      "description": "Open the exact active packet-bound context for independent Requirements review.",
+      "semantic_tool_id": "relay.auditor.requirements-review.context.v1",
+      "operation_id": "auditor.requirements_review",
+      "invoking": "Opening Requirements review context",
+      "invoked": "Requirements review context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_shared_design_review",
+      "title": "Shared Design Review",
+      "description": "Open the exact active packet-bound context for independent Shared Design review.",
+      "semantic_tool_id": "relay.auditor.shared-design-review.context.v1",
+      "operation_id": "auditor.shared_design_review",
+      "invoking": "Opening Shared Design review context",
+      "invoked": "Shared Design review context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_delivery_ticket_review",
+      "title": "Delivery Ticket Review",
+      "description": "Open the exact active packet-bound context for independent Delivery Ticket review.",
+      "semantic_tool_id": "relay.auditor.delivery-ticket-review.context.v1",
+      "operation_id": "auditor.delivery_ticket_review",
+      "invoking": "Opening Delivery Ticket review context",
+      "invoked": "Delivery Ticket review context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_transition_plan_review",
+      "title": "Transition Plan Review",
+      "description": "Open the exact active packet-bound context for independent Transition Plan review.",
+      "semantic_tool_id": "relay.auditor.transition-plan-review.context.v1",
+      "operation_id": "auditor.transition_plan_review",
+      "invoking": "Opening Transition Plan review context",
+      "invoked": "Transition Plan review context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_ticket_design_brief_review",
+      "title": "Ticket Design Brief Review",
+      "description": "Open the exact active packet-bound context for independent Ticket Design Brief review.",
+      "semantic_tool_id": "relay.auditor.ticket-design-brief-review.context.v1",
+      "operation_id": "auditor.ticket_design_brief_review",
+      "invoking": "Opening Ticket Design Brief review context",
+      "invoked": "Ticket Design Brief review context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_selected_execution_spec_review",
+      "title": "Selected Execution Spec Review",
+      "description": "Open the exact active packet-bound context for independent selected-package Execution Spec review.",
+      "semantic_tool_id": "relay.auditor.selected-execution-spec-review.context.v1",
+      "operation_id": "auditor.selected_execution_spec_review",
+      "invoking": "Opening selected Execution Spec review context",
+      "invoked": "Selected Execution Spec review context ready",
+      "category": "operation_family",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "input_root": "OpenOperationFamilyContextRequest",
+      "input_required": [
+        "packet_id",
+        "expected_packet_sha256"
+      ],
+      "output_root": "OpenOperationFamilyContextResult",
+      "output_required": [
+        "route_path",
+        "role",
+        "surface_contract",
+        "operation_id",
+        "manifest_domain",
+        "standing_authority",
+        "domain_authority",
+        "packet",
+        "inputs",
+        "repositories",
+        "readiness",
+        "blockers"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    }
+  ]
+}

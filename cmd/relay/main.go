@@ -56,7 +56,7 @@ func main() {
 	}
 
 	ownerInstanceID := executor.NewOwnerInstanceID()
-	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID)
+	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID, sourceVaults)
 
 	port := "8080"
 	if value := os.Getenv("PORT"); value != "" {

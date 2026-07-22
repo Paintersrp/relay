@@ -5,10 +5,6 @@ import (
 	"encoding/hex"
 )
 
-// WayfinderRoleProfile is the closed inventory consumed by the Wayfinder and
-// Features mutation surfaces.  It is deliberately separate from the legacy
-// Planner/Auditor public-contract catalog: these operations are admitted by a
-// packet before a durable owner is selected, not exposed as source tooling.
 type WayfinderRoleProfile struct {
 	Role            Role
 	SurfaceContract SurfaceContractID
@@ -16,33 +12,37 @@ type WayfinderRoleProfile struct {
 	ManifestSHA256  string
 }
 
-var wayfinderOperations = []OperationDefinition{
-	{OperationID: "wayfinder.workspace", Role: "wayfinder", SurfaceContract: "wayfinder-workspace.v1", ManifestDomain: "feature_workspace", OutputKind: "feature_workspace", OutputPersistence: "durable_workspace", SourcePolicy: "current_clean_project_required_source", HistoricalAuthority: "none", AllowedNonSourceActions: []AllowedAction{"create_workspace", "admit_workspace_input", "add_workspace_destination", "route_workspace"}, PacketSemanticProjection: "relay.semantic.wayfinder-mutation.v1"},
-	{OperationID: "wayfinder.discovery", Role: "wayfinder", SurfaceContract: "wayfinder-discovery.v1", ManifestDomain: "feature_discovery", OutputKind: "feature_discovery", OutputPersistence: "durable_workspace", SourcePolicy: "current_clean_project_required_source", HistoricalAuthority: "none", AllowedNonSourceActions: []AllowedAction{"create_discovery_ticket", "resolve_discovery_ticket"}, PacketSemanticProjection: "relay.semantic.wayfinder-mutation.v1"},
-	{OperationID: "wayfinder.investigation", Role: "wayfinder", SurfaceContract: "wayfinder-investigation.v1", ManifestDomain: "feature_investigation", OutputKind: "feature_investigation", OutputPersistence: "durable_workspace", SourcePolicy: "current_clean_project_required_source", HistoricalAuthority: "none", AllowedNonSourceActions: []AllowedAction{"attach_investigation"}, PacketSemanticProjection: "relay.semantic.wayfinder-mutation.v1"},
-	{OperationID: "features.authority", Role: "features", SurfaceContract: "features-authority.v1", ManifestDomain: "feature_authority", OutputKind: "feature_authority_revision", OutputPersistence: "durable_workspace", SourcePolicy: "current_clean_project_required_source", HistoricalAuthority: "none", AllowedNonSourceActions: []AllowedAction{"publish_authority", "record_authority_approval", "publish_approved_authority"}, PacketSemanticProjection: "relay.semantic.wayfinder-mutation.v1"},
-}
-
-// WayfinderOperations returns a defensive copy of the stable operation IDs
-// and their packet-authorized mutation inventories.
 func WayfinderOperations() []OperationDefinition {
-	out := make([]OperationDefinition, len(wayfinderOperations))
-	for i, operation := range wayfinderOperations {
-		out[i] = cloneOperation(operation)
+	ids := []OperationID{"wayfinder.workspace", "wayfinder.discovery", "wayfinder.investigation"}
+	operations := make([]OperationDefinition, 0, len(ids))
+	for _, id := range ids {
+		if value, ok := LookupPublishedOperation(id); ok {
+			operations = append(operations, publishedOperationAsLegacy(value))
+		}
 	}
-	return out
+	return operations
 }
 
 func WayfinderRoleProfiles() []WayfinderRoleProfile {
-	profiles := []WayfinderRoleProfile{
-		{Role: "wayfinder", SurfaceContract: "wayfinder-workspace.v1", Operations: []OperationID{"wayfinder.workspace"}},
-		{Role: "wayfinder", SurfaceContract: "wayfinder-discovery.v1", Operations: []OperationID{"wayfinder.discovery"}},
-		{Role: "wayfinder", SurfaceContract: "wayfinder-investigation.v1", Operations: []OperationID{"wayfinder.investigation"}},
-		{Role: "features", SurfaceContract: "features-authority.v1", Operations: []OperationID{"features.authority"}},
+	operations := WayfinderOperations()
+	roleProfiles := make([]WayfinderRoleProfile, len(operations))
+	for i, op := range operations {
+		roleProfiles[i] = WayfinderRoleProfile{Role: op.Role, SurfaceContract: op.SurfaceContract, Operations: []OperationID{op.OperationID}, ManifestSHA256: roleProfileSHA256(op.Role, op.SurfaceContract, op.OperationID)}
 	}
-	for i := range profiles {
-		hash := sha256.Sum256([]byte(string(profiles[i].Role) + "\x00" + string(profiles[i].SurfaceContract) + "\x00" + string(profiles[i].Operations[0])))
-		profiles[i].ManifestSHA256 = hex.EncodeToString(hash[:])
+	return roleProfiles
+}
+
+func roleProfileSHA256(role Role, surface SurfaceContractID, operation OperationID) string {
+	sum := sha256.Sum256([]byte(string(role) + "\x00" + string(surface) + "\x00" + string(operation)))
+	return hex.EncodeToString(sum[:])
+}
+
+func publishedOperationAsLegacy(value PublishedOperationDefinition) OperationDefinition {
+	return OperationDefinition{
+		OperationID: value.OperationID, Role: value.Role, SurfaceContract: value.SurfaceContract,
+		ManifestDomain: value.ManifestDomain, OutputKind: value.OutputKind, OutputPersistence: value.OutputPersistence,
+		RequiredInputs: clonePublishedSlots(value.RequiredInputs), ConditionalRefreshInputs: clonePublishedSlots(value.ConditionalRefreshInputs), DerivedInputs: clonePublishedSlots(value.DerivedInputs),
+		WorkflowReferenceKinds: append([]WorkflowReferenceKind(nil), value.WorkflowReferenceKinds...), ComparisonAnchorPurposes: append([]AnchorPurpose(nil), value.ComparisonAnchorPurposes...),
+		SourcePolicy: value.SourcePolicy, HistoricalAuthority: value.HistoricalAuthority, AllowedNonSourceActions: append([]AllowedAction(nil), value.AllowedNonSourceActions...), PacketSemanticProjection: value.PacketSemanticProjection,
 	}
-	return profiles
 }

@@ -1,0 +1,327 @@
+{
+  "schema_version": "relay.mcp.published-runtime-bindings.v1",
+  "binding_order": [
+    "list_projects",
+    "get_active_operation_packet",
+    "create_operation_packet",
+    "refresh_operation_packet",
+    "close_operation_packet",
+    "read_operation_input",
+    "list_operation_repositories",
+    "list_source_tree",
+    "search_source",
+    "read_source_text",
+    "read_source_blob",
+    "get_source_commit",
+    "list_source_history",
+    "compare_source",
+    "read_source_diff",
+    "create_workspace",
+    "admit_workspace_input",
+    "add_workspace_destination",
+    "route_workspace",
+    "create_discovery_ticket",
+    "resolve_discovery_ticket",
+    "attach_investigation",
+    "read_ticket_frontier",
+    "get_audit_packet",
+    "get_run_artifact",
+    "record_audit_decision",
+    "get_audit_effects",
+    "get_remediation_seed",
+    "open_requirements",
+    "open_shared_design",
+    "open_delivery_ticket",
+    "open_transition_plan",
+    "open_ticket_design_brief",
+    "open_selected_execution_spec",
+    "open_requirements_review",
+    "open_shared_design_review",
+    "open_delivery_ticket_review",
+    "open_transition_plan_review",
+    "open_ticket_design_brief_review",
+    "open_selected_execution_spec_review"
+  ],
+  "bindings": {
+    "list_projects": {
+      "tool_name": "list_projects",
+      "category": "packet",
+      "adapter": "projects_list",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp.HandleListProjects -> internal/app/projects/workflow.Service"
+    },
+    "get_active_operation_packet": {
+      "tool_name": "get_active_operation_packet",
+      "category": "packet",
+      "adapter": "packet_get_active",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    "create_operation_packet": {
+      "tool_name": "create_operation_packet",
+      "category": "packet",
+      "adapter": "packet_create",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    "refresh_operation_packet": {
+      "tool_name": "refresh_operation_packet",
+      "category": "packet",
+      "adapter": "packet_refresh",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    "close_operation_packet": {
+      "tool_name": "close_operation_packet",
+      "category": "packet",
+      "adapter": "packet_close",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    "read_operation_input": {
+      "tool_name": "read_operation_input",
+      "category": "packet",
+      "adapter": "packet_read_input",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    "list_operation_repositories": {
+      "tool_name": "list_operation_repositories",
+      "category": "packet",
+      "adapter": "packet_list_repositories",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    "list_source_tree": {
+      "tool_name": "list_source_tree",
+      "category": "source",
+      "adapter": "source_list_tree",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "search_source": {
+      "tool_name": "search_source",
+      "category": "source",
+      "adapter": "source_search",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "read_source_text": {
+      "tool_name": "read_source_text",
+      "category": "source",
+      "adapter": "source_read_text",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "read_source_blob": {
+      "tool_name": "read_source_blob",
+      "category": "source",
+      "adapter": "source_read_blob",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "get_source_commit": {
+      "tool_name": "get_source_commit",
+      "category": "source",
+      "adapter": "source_get_commit",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "list_source_history": {
+      "tool_name": "list_source_history",
+      "category": "source",
+      "adapter": "source_list_history",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "compare_source": {
+      "tool_name": "compare_source",
+      "category": "source",
+      "adapter": "source_compare",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "read_source_diff": {
+      "tool_name": "read_source_diff",
+      "category": "source",
+      "adapter": "source_read_diff",
+      "operation_id": "",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    "create_workspace": {
+      "tool_name": "create_workspace",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_create_workspace",
+      "operation_id": "wayfinder.workspace",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "admit_workspace_input": {
+      "tool_name": "admit_workspace_input",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_admit_workspace_input",
+      "operation_id": "wayfinder.workspace",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "add_workspace_destination": {
+      "tool_name": "add_workspace_destination",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_add_workspace_destination",
+      "operation_id": "wayfinder.workspace",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "route_workspace": {
+      "tool_name": "route_workspace",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_route_workspace",
+      "operation_id": "wayfinder.workspace",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "create_discovery_ticket": {
+      "tool_name": "create_discovery_ticket",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_create_discovery_ticket",
+      "operation_id": "wayfinder.discovery",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "resolve_discovery_ticket": {
+      "tool_name": "resolve_discovery_ticket",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_resolve_discovery_ticket",
+      "operation_id": "wayfinder.discovery",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "attach_investigation": {
+      "tool_name": "attach_investigation",
+      "category": "wayfinder_action",
+      "adapter": "wayfinder_attach_investigation",
+      "operation_id": "wayfinder.investigation",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    "read_ticket_frontier": {
+      "tool_name": "read_ticket_frontier",
+      "category": "frontier",
+      "adapter": "ticket_frontier",
+      "operation_id": "planner.ticket_frontier",
+      "dispatcher_owner": "internal/mcp frontier adapter -> internal/app/tickets.Service"
+    },
+    "get_audit_packet": {
+      "tool_name": "get_audit_packet",
+      "category": "audit",
+      "adapter": "audit_get_audit_packet",
+      "operation_id": "auditor.audit",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    "get_run_artifact": {
+      "tool_name": "get_run_artifact",
+      "category": "audit",
+      "adapter": "audit_get_run_artifact",
+      "operation_id": "auditor.audit",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    "record_audit_decision": {
+      "tool_name": "record_audit_decision",
+      "category": "audit",
+      "adapter": "audit_record_audit_decision",
+      "operation_id": "auditor.audit",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    "get_audit_effects": {
+      "tool_name": "get_audit_effects",
+      "category": "audit",
+      "adapter": "audit_get_audit_effects",
+      "operation_id": "auditor.audit",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    "get_remediation_seed": {
+      "tool_name": "get_remediation_seed",
+      "category": "audit",
+      "adapter": "audit_get_remediation_seed",
+      "operation_id": "auditor.audit",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    "open_requirements": {
+      "tool_name": "open_requirements",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "planner.requirements",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_shared_design": {
+      "tool_name": "open_shared_design",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "planner.shared_design",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_delivery_ticket": {
+      "tool_name": "open_delivery_ticket",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "planner.delivery_ticket",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_transition_plan": {
+      "tool_name": "open_transition_plan",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "planner.transition_plan",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_ticket_design_brief": {
+      "tool_name": "open_ticket_design_brief",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "planner.ticket_design_brief",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_selected_execution_spec": {
+      "tool_name": "open_selected_execution_spec",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "planner.selected_execution_spec",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_requirements_review": {
+      "tool_name": "open_requirements_review",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "auditor.requirements_review",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_shared_design_review": {
+      "tool_name": "open_shared_design_review",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "auditor.shared_design_review",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_delivery_ticket_review": {
+      "tool_name": "open_delivery_ticket_review",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "auditor.delivery_ticket_review",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_transition_plan_review": {
+      "tool_name": "open_transition_plan_review",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "auditor.transition_plan_review",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_ticket_design_brief_review": {
+      "tool_name": "open_ticket_design_brief_review",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "auditor.ticket_design_brief_review",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    "open_selected_execution_spec_review": {
+      "tool_name": "open_selected_execution_spec_review",
+      "category": "operation_family",
+      "adapter": "operation_family",
+      "operation_id": "auditor.selected_execution_spec_review",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    }
+  }
+}

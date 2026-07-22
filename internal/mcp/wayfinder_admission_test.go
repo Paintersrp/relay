@@ -31,7 +31,7 @@ func TestWayfinderMutationIdentityRejectsUnregisteredAndDuplicateDependencies(t 
 
 func TestWayfinderRoleSurfacesExposeNoSourceTooling(t *testing.T) {
 	surfaces := WayfinderRoleSurfaces()
-	if len(surfaces) != 4 {
+	if len(surfaces) != 3 {
 		t.Fatalf("surface count = %d", len(surfaces))
 	}
 	for _, surface := range surfaces {

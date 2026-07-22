@@ -1,0 +1,714 @@
+{
+  "schema_version": "relay.mcp.published-tool-metadata.v1",
+  "metadata_property_order": [
+    "name",
+    "category",
+    "semantic_tool_id",
+    "operation_id",
+    "annotations",
+    "file_params",
+    "metadata_source",
+    "schema_owner",
+    "dispatcher_owner"
+  ],
+  "annotation_property_order": [
+    "readOnlyHint",
+    "destructiveHint",
+    "idempotentHint",
+    "openWorldHint"
+  ],
+  "inheritance_rule": {
+    "legacy_exact_copy": "The published contract repeats the exact aggregate public-contract values for the named tool. Generation tests compare semantic ID, annotations, file_params, and schema roots by exact value. MCP runtime reads only the published contract; a later aggregate change does not flow automatically.",
+    "published_explicit": "The published contract is the first and sole metadata authority for the tool. No aggregate fallback or inferred default is permitted."
+  },
+  "legacy_exact_copy_tools": [
+    "list_projects",
+    "get_active_operation_packet",
+    "create_operation_packet",
+    "refresh_operation_packet",
+    "close_operation_packet",
+    "read_operation_input",
+    "list_operation_repositories",
+    "list_source_tree",
+    "search_source",
+    "read_source_text",
+    "read_source_blob",
+    "get_source_commit",
+    "list_source_history",
+    "compare_source",
+    "read_source_diff",
+    "get_audit_packet",
+    "get_run_artifact",
+    "record_audit_decision"
+  ],
+  "published_explicit_tools": [
+    "create_workspace",
+    "admit_workspace_input",
+    "add_workspace_destination",
+    "route_workspace",
+    "create_discovery_ticket",
+    "resolve_discovery_ticket",
+    "attach_investigation",
+    "read_ticket_frontier",
+    "get_audit_effects",
+    "get_remediation_seed",
+    "open_requirements",
+    "open_shared_design",
+    "open_delivery_ticket",
+    "open_transition_plan",
+    "open_ticket_design_brief",
+    "open_selected_execution_spec",
+    "open_requirements_review",
+    "open_shared_design_review",
+    "open_delivery_ticket_review",
+    "open_transition_plan_review",
+    "open_ticket_design_brief_review",
+    "open_selected_execution_spec_review"
+  ],
+  "tools": [
+    {
+      "name": "list_projects",
+      "category": "packet",
+      "semantic_tool_id": "relay.project.list.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp.HandleListProjects -> internal/app/projects/workflow.Service"
+    },
+    {
+      "name": "get_active_operation_packet",
+      "category": "packet",
+      "semantic_tool_id": "relay.operation-packet.get-active.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    {
+      "name": "create_operation_packet",
+      "category": "packet",
+      "semantic_tool_id": "relay.operation-packet.create.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [
+        "files"
+      ],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    {
+      "name": "refresh_operation_packet",
+      "category": "packet",
+      "semantic_tool_id": "relay.operation-packet.refresh.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    {
+      "name": "close_operation_packet",
+      "category": "packet",
+      "semantic_tool_id": "relay.operation-packet.close.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    {
+      "name": "read_operation_input",
+      "category": "packet",
+      "semantic_tool_id": "relay.operation-packet.read-input.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    {
+      "name": "list_operation_repositories",
+      "category": "packet",
+      "semantic_tool_id": "relay.operation-packet.list-repositories.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
+    },
+    {
+      "name": "list_source_tree",
+      "category": "source",
+      "semantic_tool_id": "relay.source.list-tree.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "search_source",
+      "category": "source",
+      "semantic_tool_id": "relay.source.search.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "read_source_text",
+      "category": "source",
+      "semantic_tool_id": "relay.source.read-text.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "read_source_blob",
+      "category": "source",
+      "semantic_tool_id": "relay.source.read-blob.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "get_source_commit",
+      "category": "source",
+      "semantic_tool_id": "relay.source.get-commit.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "list_source_history",
+      "category": "source",
+      "semantic_tool_id": "relay.source.list-history.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "compare_source",
+      "category": "source",
+      "semantic_tool_id": "relay.source.compare.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "read_source_diff",
+      "category": "source",
+      "semantic_tool_id": "relay.source.read-diff.v1",
+      "operation_id": "",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
+    },
+    {
+      "name": "create_workspace",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.workspace.create.v1",
+      "operation_id": "wayfinder.workspace",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "admit_workspace_input",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.workspace.admit-input.v1",
+      "operation_id": "wayfinder.workspace",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [
+        "files"
+      ],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "add_workspace_destination",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.workspace.add-destination.v1",
+      "operation_id": "wayfinder.workspace",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "route_workspace",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.workspace.route.v1",
+      "operation_id": "wayfinder.workspace",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "create_discovery_ticket",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.discovery.create-ticket.v1",
+      "operation_id": "wayfinder.discovery",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "resolve_discovery_ticket",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.discovery.resolve-ticket.v1",
+      "operation_id": "wayfinder.discovery",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "attach_investigation",
+      "category": "wayfinder_action",
+      "semantic_tool_id": "relay.wayfinder.investigation.attach.v1",
+      "operation_id": "wayfinder.investigation",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp Wayfinder adapter -> internal/app/wayfinder.Service"
+    },
+    {
+      "name": "read_ticket_frontier",
+      "category": "frontier",
+      "semantic_tool_id": "relay.ticket-frontier.read.v1",
+      "operation_id": "planner.ticket_frontier",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp frontier adapter -> internal/app/tickets.Service"
+    },
+    {
+      "name": "get_audit_packet",
+      "category": "audit",
+      "semantic_tool_id": "relay.audit.get-packet.v1",
+      "operation_id": "auditor.audit",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    {
+      "name": "get_run_artifact",
+      "category": "audit",
+      "semantic_tool_id": "relay.run.get-artifact.v1",
+      "operation_id": "auditor.audit",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    {
+      "name": "record_audit_decision",
+      "category": "audit",
+      "semantic_tool_id": "relay.audit.record-decision.v1",
+      "operation_id": "auditor.audit",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "legacy_exact_copy",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    {
+      "name": "get_audit_effects",
+      "category": "audit",
+      "semantic_tool_id": "relay.audit.get-effects.v1",
+      "operation_id": "auditor.audit",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    {
+      "name": "get_remediation_seed",
+      "category": "audit",
+      "semantic_tool_id": "relay.audit.get-remediation-seed.v1",
+      "operation_id": "auditor.audit",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "published_public_contract.json",
+      "dispatcher_owner": "internal/mcp audit adapter -> internal/app/audits.WorkflowAuditService"
+    },
+    {
+      "name": "open_requirements",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.planner.requirements.context.v1",
+      "operation_id": "planner.requirements",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_shared_design",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.planner.shared-design.context.v1",
+      "operation_id": "planner.shared_design",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_delivery_ticket",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.planner.delivery-ticket.context.v1",
+      "operation_id": "planner.delivery_ticket",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_transition_plan",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.planner.transition-plan.context.v1",
+      "operation_id": "planner.transition_plan",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_ticket_design_brief",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.planner.ticket-design-brief.context.v1",
+      "operation_id": "planner.ticket_design_brief",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_selected_execution_spec",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.planner.selected-execution-spec.context.v1",
+      "operation_id": "planner.selected_execution_spec",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_requirements_review",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.auditor.requirements-review.context.v1",
+      "operation_id": "auditor.requirements_review",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_shared_design_review",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.auditor.shared-design-review.context.v1",
+      "operation_id": "auditor.shared_design_review",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_delivery_ticket_review",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.auditor.delivery-ticket-review.context.v1",
+      "operation_id": "auditor.delivery_ticket_review",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_transition_plan_review",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.auditor.transition-plan-review.context.v1",
+      "operation_id": "auditor.transition_plan_review",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_ticket_design_brief_review",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.auditor.ticket-design-brief-review.context.v1",
+      "operation_id": "auditor.ticket_design_brief_review",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    },
+    {
+      "name": "open_selected_execution_spec_review",
+      "category": "operation_family",
+      "semantic_tool_id": "relay.auditor.selected-execution-spec-review.context.v1",
+      "operation_id": "auditor.selected_execution_spec_review",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "file_params": [],
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/published_public_contract.json",
+      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
+    }
+  ]
+}

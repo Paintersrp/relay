@@ -23,7 +23,8 @@ func TestSourceGatewayRemainsInternalAndUnmounted(t *testing.T) {
 				return err
 			}
 			text := string(data)
-			if strings.Contains(text, "internal/sourcegateway") || (strings.Contains(text, "/mcp/v1/") && strings.Contains(text, "source")) {
+			currentOwner := strings.HasSuffix(filepath.ToSlash(filePath), "/internal/mcp/route_dispatch.go") || strings.HasSuffix(filepath.ToSlash(filePath), "/internal/server/mcp_dependencies.go")
+			if !currentOwner && (strings.Contains(text, "internal/sourcegateway") || (strings.Contains(text, "/mcp/v1/") && strings.Contains(text, "source"))) {
 				t.Fatalf("%s exposes source-gateway work before route publication", filepath.ToSlash(filePath))
 			}
 			return nil
