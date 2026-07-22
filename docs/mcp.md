@@ -1,6 +1,6 @@
 # Relay MCP
 
-Relay exposes one canonical JSON-RPC tool registry over stdio and HTTP. The registry is implemented in `internal/mcp`; both transports list and dispatch the same profile-selected definitions.
+Relay exposes the aggregate profile-selected JSON-RPC registry over stdio and HTTP and seven route-specific HTTP registries on the Relay daemon. Private ingress maps one independently supervised local listener to each fixed versioned route without changing its tool inventory or dispatch owner.
 
 ## Transports
 
@@ -10,12 +10,50 @@ Relay exposes one canonical JSON-RPC tool registry over stdio and HTTP. The regi
 
 ### HTTP
 
-`cmd/relay` serves the same registry at `POST /mcp` on the normal Relay daemon, which defaults to `http://localhost:8080`.
+`cmd/relay` serves aggregate `POST /mcp` and the seven fixed versioned route paths on the normal Relay daemon, which defaults to `http://localhost:8080`. It also supervises the private route ingress mappings documented below.
 
 - Methods other than POST return HTTP 405.
 - When `RELAY_MCP_AUTH_TOKEN` is configured, requests require `Authorization: Bearer <token>`.
 - An empty token leaves the endpoint unauthenticated and emits a warning. That mode is for loopback-only connector proof and must not be exposed.
 - `RELAY_MCP_DISABLE_AUTH=true` explicitly disables enforcement for local development; it is not production exposure guidance.
+
+## Private route ingress
+
+`cmd/relay` also supervises seven isolated private listeners. Each listener forwards to one fixed versioned MCP route on the main Relay daemon. Request content cannot select an upstream, another route, or aggregate `/mcp`.
+
+| Mapping | Route | Listener override | Default |
+| --- | --- | --- | --- |
+| `wayfinder-workspace` | `/mcp/v1/wayfinder/workspace` | `RELAY_MCP_INGRESS_WAYFINDER_WORKSPACE_ADDR` | `127.0.0.1:18101` |
+| `wayfinder-discovery` | `/mcp/v1/wayfinder/discovery` | `RELAY_MCP_INGRESS_WAYFINDER_DISCOVERY_ADDR` | `127.0.0.1:18102` |
+| `wayfinder-investigation` | `/mcp/v1/wayfinder/investigation` | `RELAY_MCP_INGRESS_WAYFINDER_INVESTIGATION_ADDR` | `127.0.0.1:18103` |
+| `planner-authoring` | `/mcp/v1/planner/authoring` | `RELAY_MCP_INGRESS_PLANNER_AUTHORING_ADDR` | `127.0.0.1:18104` |
+| `planner-frontier` | `/mcp/v1/planner/frontier` | `RELAY_MCP_INGRESS_PLANNER_FRONTIER_ADDR` | `127.0.0.1:18105` |
+| `auditor-review` | `/mcp/v1/auditor/review` | `RELAY_MCP_INGRESS_AUDITOR_REVIEW_ADDR` | `127.0.0.1:18106` |
+| `auditor-audit` | `/mcp/v1/auditor/audit` | `RELAY_MCP_INGRESS_AUDITOR_AUDIT_ADDR` | `127.0.0.1:18107` |
+
+Listener overrides accept only loopback, RFC 1918 private IPv4, or IPv6 unique-local IP literals with nonzero ports. Hostnames, wildcard, unspecified, public, link-local, multicast, and port-zero addresses are rejected.
+
+`RELAY_MCP_INGRESS_UPSTREAM_BASE_URL` optionally replaces the default `http://127.0.0.1:<Relay port>` private upstream base. It must use `http` or `https`, an IP-literal private or loopback host, an explicit nonzero port, and no path, query, fragment, or user information. Relay appends each mapping's fixed route path.
+
+Each listener accepts only `POST` to its exact MCP route and `GET /healthz`. A mapping probes its fixed upstream route independently, reports only bounded health metadata, and restarts independently. One listener, upstream, trace, or client failure cannot redirect to another route, stop another mapping, or stop the main Relay daemon.
+
+### Local-hop bearer
+
+`RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN` optionally configures the bearer used from private ingress to the main Relay handler. The ingress always removes client `Authorization`; when configured, it injects exactly one upstream bearer. Startup output reports only whether a bearer is configured. The value is never included in health, traces, errors, descriptors, tool arguments, responses, or logs.
+
+### Metadata traces
+
+`RELAY_MCP_TRACE_DIR` selects the trace root; the default is `data/transport/mcp-traces`. Each mapping writes independent canonical JSON Lines segments with directory mode `0700` and file mode `0600`.
+
+A trace contains route and request identities, allowlisted source identities, byte counts, the SHA-256 of exact response bytes attempted downstream, completion classification, bounded outcome and error classes, and downstream write evidence. It never stores request or response bodies, source content, artifacts, conversations, mutation payloads, credentials, authorization, signed URLs, raw cursors, raw paths, or protected diagnostics.
+
+Retention is the earlier of:
+
+- `RELAY_MCP_TRACE_MAX_AGE`, default and maximum `336h`, minimum `1h`;
+- `RELAY_MCP_TRACE_MAX_BYTES`, default and maximum `104857600`, minimum `1048576`.
+
+Segments rotate at eight mebibytes. Trace persistence failure leaves the authoritative MCP response unchanged and marks only that mapping unhealthy.
+
 
 ## Profiles
 
@@ -158,6 +196,11 @@ The canonical runtime has no handoff, context-broker, source-snapshot, Plan Seed
 Use the current repository-owned checks:
 
 ```bash
+go test ./internal/mcp -run 'Trace'
+go test ./internal/transport/transporttrace
+go test ./internal/transport/mcpingress
+go test ./internal/server -run 'MCPIngress|MCPRoutes'
+go test ./cmd/relay -run 'PrivateMCPIngress'
 make mcp-test
 make mcp-smoke
 npm run test:local-scripts

@@ -41,6 +41,11 @@ import (
 )
 
 func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) http.Handler {
+	handler, _ := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, sourceVaults...)
+	return handler
+}
+
+func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) (http.Handler, []MCPRouteDescriptor) {
 	if workflowStore == nil {
 		panic("workflow store is required")
 	}
@@ -142,6 +147,11 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		}
 	}
 
+	mcpRoutes, err := mcpRouteDescriptors(mcpHandlers)
+	if err != nil {
+		panic(err)
+	}
+
 	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
 	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
 	for _, current := range mcpHandlers {
@@ -188,7 +198,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 		)
 	})
 
-	return router
+	return router, mcpRoutes
 }
 
 type ticketReadService struct {

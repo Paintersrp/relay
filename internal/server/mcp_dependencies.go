@@ -21,8 +21,10 @@ import (
 )
 
 type mcpHandler struct {
-	Path    string
-	Handler http.Handler
+	Path                string
+	SurfaceContract     string
+	RouteManifestSHA256 string
+	Handler             http.Handler
 }
 
 func buildMCPHandlers(store *workflowstore.Store, vaults *sourcevault.Manager, projects *workflowprojects.Service, packets *appoperations.Service, wayfinder *appwayfinder.Service, tickets *apptickets.Service, audits *appaudits.WorkflowAuditService, log *slog.Logger) ([]mcpHandler, error) {
@@ -75,7 +77,12 @@ func buildMCPHandlers(store *workflowstore.Store, vaults *sourcevault.Manager, p
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, mcpHandler{manifest.RoutePath, mcp.NewHTTPHandler(server, log)})
+		out = append(out, mcpHandler{
+			Path:                manifest.RoutePath,
+			SurfaceContract:     manifest.SurfaceContract,
+			RouteManifestSHA256: manifest.ManifestSHA256,
+			Handler:             mcp.NewHTTPHandler(server, log),
+		})
 	}
 	if len(out) != 7 {
 		return nil, fmt.Errorf("MCP_ROUTE_SET_INCOMPLETE")
