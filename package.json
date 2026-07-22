@@ -13,7 +13,12 @@
     "chatgpt-mcp:init": "node scripts/local/chatgpt-mcp.mjs init",
     "chatgpt-mcp:start": "node scripts/local/chatgpt-mcp.mjs start",
     "chatgpt-mcp:doctor": "node scripts/local/chatgpt-mcp.mjs doctor",
-    "chatgpt-mcp:help": "node scripts/local/chatgpt-mcp.mjs help"
+    "chatgpt-mcp:help": "node scripts/local/chatgpt-mcp.mjs help",
+    "chatgpt-mcp:init:all": "node scripts/local/chatgpt-mcp.mjs init:all",
+    "chatgpt-mcp:doctor:all": "node scripts/local/chatgpt-mcp.mjs doctor:all",
+    "chatgpt-mcp:start:all": "node scripts/local/chatgpt-mcp.mjs start:all",
+    "chatgpt-mcp:stop:all": "node scripts/local/chatgpt-mcp.mjs stop:all",
+    "chatgpt-mcp:status:all": "node scripts/local/chatgpt-mcp.mjs status:all"
   },
   "devDependencies": {},
   "dependencies": {}
