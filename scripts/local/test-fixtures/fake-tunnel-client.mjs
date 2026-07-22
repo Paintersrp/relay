@@ -48,6 +48,10 @@ function emit(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
+function stopFailure(alias) {
+  return process.env.FAKE_TUNNEL_FAIL_STOP_ALIAS === alias || process.env.FAKE_TUNNEL_MALFORMED_STOP_ALIAS === alias;
+}
+
 function runtimeHealth(runtime) {
   const notReady = process.env.FAKE_TUNNEL_NOT_READY_ALIAS === runtime.alias;
   const failHealth = process.env.FAKE_TUNNEL_UNHEALTHY_ALIAS === runtime.alias;
@@ -79,21 +83,22 @@ async function main() {
     const healthUrl = `http://127.0.0.1:${healthPort}/readyz`;
     const runtime = {
       alias,
-      profile: value("--profile"),
+      profile_name: value("--profile"),
       tunnel_id: value("--tunnel-id"),
-      mcp_server_url: value("--mcp-server-url"),
-      process_running: true,
-      pid: process.pid,
-      healthy: true,
-      ready: true,
       health_url: healthUrl,
       health_url_file: process.env.FAKE_TUNNEL_HEALTH_URL_FILE ? `${statePath}.${alias}.health-url` : null,
+      process_running: true,
+      process: {
+        target_kind: "server_url",
+        target_value: value("--mcp-server-url"),
+        pid: process.pid,
+      },
       healthCalls: 0,
     };
     if (runtime.health_url_file) writeFileSync(runtime.health_url_file, `${healthUrl}\n`, "utf8");
     state.runtimes[alias] = runtime;
     saveState(state);
-    emit({ ...runtime, tunnel_id: runtime.tunnel_id, mcp_server_url: runtime.mcp_server_url });
+    emit(runtime);
     return;
   }
 
@@ -122,9 +127,16 @@ async function main() {
       console.error(`alias ${args[2]} is not known; already stopped`);
       return;
     }
+    if (stopFailure(args[2])) {
+      if (process.env.FAKE_TUNNEL_MALFORMED_STOP_ALIAS === args[2]) {
+        process.stdout.write("not-json\n");
+      } else {
+        console.error(`stop failed for ${args[2]}`);
+        process.exitCode = 9;
+      }
+      return;
+    }
     runtime.process_running = false;
-    runtime.healthy = false;
-    runtime.ready = false;
     saveState(state);
     emit({ ...runtime, stopped: true });
     return;

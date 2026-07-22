@@ -8,6 +8,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   unlinkSync,
   writeFileSync,
 } from "fs";
@@ -337,11 +338,16 @@ async function runInitAll(config) {
   acquireAggregateLock(lockPath);
   const cancellation = createAggregateCancellation();
   const changedRoles = [];
-  const cleanup = onceAsync(() => stopRoles(config, changedRoles));
+  let cleanupResult = null;
+  const cleanup = onceAsync(async () => {
+    cleanupResult = await cleanupAggregate(config, { roles: changedRoles, relay: null });
+    reportCleanupFailures(cleanupResult);
+    return cleanupResult;
+  });
   const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
-  const adapter = createNativeRuntimeAdapter(config);
   const results = [];
   try {
+    const adapter = createNativeRuntimeAdapter(config);
     for (const role of config.roles) {
       cancellation.check();
       const prepared = await prepareRuntime(adapter, config, role, changedRoles, cancellation);
@@ -352,7 +358,7 @@ async function runInitAll(config) {
     writeAggregateState(config, { changedRoles, relay: null });
     return 0;
   } catch (error) {
-    await cleanup();
+    cleanupResult = await cleanup();
     if (cancellation.cancelled) {
       console.error(`init:all cancelled by ${cancellation.signalName}`);
       return cancellation.exitCode;
@@ -360,9 +366,9 @@ async function runInitAll(config) {
     if (error instanceof RuntimeCheckError) {
       results.push({ role: error.role, ok: false, reason: error.message });
       printAggregateResults("init", results);
-      throw new ValidationError(error.message);
+      throw withCleanupFailures(new ValidationError(error.message), cleanupResult);
     }
-    throw error;
+    throw withCleanupFailures(error, cleanupResult);
   } finally {
     removeSignals();
     releaseAggregateLock(lockPath);
@@ -378,11 +384,12 @@ async function runStartAll(config) {
   const cancellation = createAggregateCancellation();
   const changedRoles = [];
   let relay = null;
-  const adapter = createNativeRuntimeAdapter(config);
+  let adapter = null;
+  let cleanupResult = null;
   const cleanup = onceAsync(async () => {
-    await stopRoles(config, changedRoles);
-    if (relay?.owned) await stopOwnedRelay(relay.identity);
-    removeAggregateState(config);
+    cleanupResult = await cleanupAggregate(config, { roles: changedRoles, relay });
+    reportCleanupFailures(cleanupResult);
+    return cleanupResult;
   });
   const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
 
@@ -396,11 +403,16 @@ async function runStartAll(config) {
     } else {
       relay = await startRelay(config);
       relay.identity = await captureProcessIdentity(relay.child.pid, relay.expectedIdentity);
-      if (!relay.identity) throw new ValidationError("Relay started, but its process identity could not be verified.");
+      if (!relay.identity) {
+        await terminateProcessTree(relay.child.pid, { wait: true });
+        relay.terminatedOnStartup = true;
+        throw new ValidationError("Relay started, but its process identity could not be captured; the new process was terminated.");
+      }
       await waitForRelay(config, cancellation);
       relay.child.unref?.();
     }
 
+    adapter = createNativeRuntimeAdapter(config);
     for (const role of config.roles) {
       cancellation.check();
       const prepared = await prepareRuntime(adapter, config, role, changedRoles, cancellation);
@@ -416,12 +428,12 @@ async function runStartAll(config) {
     console.log("Relay: all three role endpoints healthy; aggregate startup complete.");
     return 0;
   } catch (error) {
-    await cleanup();
+    cleanupResult = await cleanup();
     if (cancellation.cancelled) {
       console.error(`start:all cancelled by ${cancellation.signalName}`);
       return cancellation.exitCode;
     }
-    throw error;
+    throw withCleanupFailures(error, cleanupResult);
   } finally {
     removeSignals();
     releaseAggregateLock(lockPath);
@@ -429,26 +441,19 @@ async function runStartAll(config) {
 }
 
 async function runStopAll(config) {
+  const lockPath = `${config.stateFile}.lock`;
+  acquireAggregateLock(lockPath);
+  try {
   const state = readAggregateState(config);
-  const results = await stopRoles(config, config.roles);
-  let relayOk = true;
-  if (state?.relayOwned && !state.relay) {
-    relayOk = false;
-    console.error("Relay ownership state is stale and lacks a verifiable process identity; preserved any live process.");
-  } else if (state?.relay?.owned) {
-    const ownership = await verifyProcessIdentity(state.relay.identity);
-    if (ownership.ok) {
-      await terminateProcessTree(state.relay.identity.pid);
-      console.log("Relay: stopped verified launcher-owned daemon.");
-    } else {
-      relayOk = false;
-      console.error(`Relay ownership is stale; preserved PID ${state.relay.identity?.pid ?? "unknown"}: ${ownership.reason}`);
-    }
-  } else {
-    console.log("Relay: external daemon preserved.");
+  const cleanupResult = await cleanupAggregate(config, {
+    roles: config.roles,
+    relay: state?.relay?.owned ? state.relay : state?.relayOwned ? { owned: true, identity: null } : null,
+  });
+  reportCleanupFailures(cleanupResult);
+  return cleanupResult.ok ? 0 : 1;
+  } finally {
+    releaseAggregateLock(lockPath);
   }
-  removeAggregateState(config);
-  return results.every((result) => result.ok) && relayOk ? 0 : 1;
 }
 
 async function runStatusAll(config) {
@@ -634,21 +639,81 @@ async function startRelay(config) {
     stdio: ["ignore", "ignore", "ignore"],
     env: process.env,
   });
-  child.on("error", () => {});
-  return { child, owned: true, expectedIdentity: { pid: child.pid, executable: file, args, commandFingerprint: fingerprintCommand(file, args) } };
+  await new Promise((resolvePromise, rejectPromise) => {
+    child.once("spawn", resolvePromise);
+    child.once("error", (error) => rejectPromise(new ValidationError(`Failed to start Relay: ${error.message}`)));
+  });
+  return { child, owned: true, expectedIdentity: { pid: child.pid, executable: file, args } };
 }
 
-async function stopRoles(config, roles) {
+async function stopRoles(config, roles, adapter = null) {
   if (!roles.length) return [];
-  const adapter = createNativeRuntimeAdapter(config);
+  let runtimeAdapter = adapter;
+  let resolutionError = null;
+  if (!runtimeAdapter) {
+    try { runtimeAdapter = createNativeRuntimeAdapter(config); }
+    catch (error) { resolutionError = error instanceof Error ? error.message : String(error); }
+  }
   const results = [];
   for (const role of roles) {
-    const result = await adapter.stopRuntime(role);
+    let result;
+    if (resolutionError) result = { ok: false, reason: resolutionError };
+    else {
+      try { result = await runtimeAdapter.stopRuntime(role); }
+      catch (error) { result = { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
+    }
     const ok = result.ok || /not found|does not exist|not running|already stopped|stopped/u.test(result.reason || "");
     results.push({ role, ok, reason: ok ? "stopped" : result.reason });
     console.log(`${role.label}: ${ok ? "stopped or already stopped" : `stop failed: ${result.reason}`}`);
   }
   return results;
+}
+
+async function cleanupAggregate(config, { roles, relay }) {
+  const runtimeResults = await stopRoles(config, roles);
+  let relayResult = { ok: true, reason: "external Relay preserved" };
+  if (relay?.owned) {
+    if (relay.terminatedOnStartup) {
+      relayResult = { ok: true, reason: "new Relay process terminated after identity capture failure" };
+    } else if (!relay.identity) {
+      relayResult = { ok: false, reason: "Relay ownership state lacks a verifiable process identity; live process preserved" };
+    } else {
+      try {
+        relayResult = await stopOwnedRelay(relay.identity);
+      } catch (error) {
+        relayResult = { ok: false, reason: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    if (relayResult.ok) console.log("Relay: stopped verified launcher-owned daemon.");
+    else console.error(`Relay cleanup failed: ${relayResult.reason}`);
+  } else {
+    console.log("Relay: external daemon preserved.");
+  }
+  const stateResult = removeAggregateState(config);
+  return {
+    runtimeResults,
+    relayResult,
+    stateResult,
+    ok: runtimeResults.every((result) => result.ok) && relayResult.ok && stateResult.ok,
+  };
+}
+
+function cleanupFailureMessages(result) {
+  const failures = result.runtimeResults.filter((item) => !item.ok).map((item) => `runtime ${item.role.alias}: ${item.reason}`);
+  if (!result.relayResult.ok) failures.push(`Relay: ${result.relayResult.reason}`);
+  if (!result.stateResult.ok) failures.push(`state: ${result.stateResult.reason}`);
+  return failures;
+}
+
+function reportCleanupFailures(result) {
+  const failures = cleanupFailureMessages(result);
+  if (failures.length) console.error(`cleanup failed: ${failures.join("; ")}`);
+}
+
+function withCleanupFailures(error, result) {
+  const failures = cleanupFailureMessages(result);
+  if (!failures.length) return error;
+  return new ValidationError(`${error instanceof Error ? error.message : String(error)} Cleanup failed: ${failures.join("; ")}`);
 }
 
 function buildNativeRuntimeConnectArgs(config, role) {
@@ -733,31 +798,39 @@ function parseNativeJsonResult(result, operation) {
 
 function normalizeRuntimeStatus(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const roots = [payload, payload.runtime, payload.state, payload.binding, payload.config].filter((value) => value && typeof value === "object");
-  const read = (...keys) => {
-    for (const root of roots) for (const key of keys) if (root[key] !== undefined && root[key] !== null) return root[key];
-    return undefined;
-  };
-  const alias = read("alias");
-  const profile = read("profile", "profile_name", "profileName");
-  const tunnelId = read("tunnel_id", "tunnelId");
-  const endpoint = read("mcp_server_url", "mcpServerUrl", "endpoint", "server_url");
-  const healthUrl = read("health_url", "current_health_url", "healthUrl");
-  const healthUrlFile = read("health_url_file", "healthUrlFile");
-  const processRunning = read("process_running", "processRunning", "running") === true || read("runtime_state") === "running";
-  if (typeof alias !== "string" || typeof profile !== "string" || typeof tunnelId !== "string" || typeof endpoint !== "string") return null;
+  const processState = payload.process;
+  const alias = payload.alias;
+  const profile = payload.profile_name;
+  const tunnelId = payload.tunnel_id;
+  const endpoint = processState?.target_value;
+  const healthUrl = payload.health_url;
+  const healthUrlFile = payload.health_url_file;
+  const processRunning = payload.process_running;
+  if (typeof alias !== "string" || typeof tunnelId !== "string" || typeof profile !== "string") return null;
+  if (processState === null || typeof processState !== "object" || Array.isArray(processState)) return null;
+  if (processState.target_kind !== "server_url" || !isHttpUrl(endpoint)) return null;
   if (typeof healthUrl !== "string" && typeof healthUrlFile !== "string") return null;
+  if (typeof processRunning !== "boolean") return null;
   return {
     alias,
     profile,
     tunnelId,
     endpoint,
     processRunning,
-    pid: read("pid", "process_id", "processId") ?? null,
+    pid: processState.pid ?? null,
     healthUrl: typeof healthUrl === "string" ? healthUrl : null,
     healthUrlFile: typeof healthUrlFile === "string" ? healthUrlFile : null,
     raw: payload,
   };
+}
+
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function normalizeRuntimeHealth(payload) {
@@ -1112,7 +1185,13 @@ function writeAggregateState(config, state) {
 }
 
 function removeAggregateState(config) {
-  try { unlinkSync(config.stateFile); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+  try {
+    unlinkSync(config.stateFile);
+    return { ok: true, reason: "aggregate state removed" };
+  } catch (error) {
+    if (error?.code === "ENOENT") return { ok: true, reason: "aggregate state already absent" };
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function isProcessAlive(pid) {
@@ -1130,35 +1209,66 @@ function fingerprintCommandLine(value) {
 
 async function captureProcessIdentity(pid, expected) {
   const observed = await inspectProcessIdentity(pid);
-  if (!observed) return null;
+  if (!observed || !observed.startIdentity || !observed.executablePath || !observed.commandLine) return null;
   return {
     pid: Number(pid),
-    startTime: observed.startTime,
-    executable: observed.executable || expected.executable,
+    startIdentity: boundText(observed.startIdentity),
+    executablePath: boundText(observed.executablePath || expected.executable),
+    commandLine: boundText(observed.commandLine),
     commandFingerprint: fingerprintCommandLine(observed.commandLine),
-    expectedExecutable: expected.executable,
-    expectedArguments: expected.args,
+    expectedExecutable: boundText(expected.executable),
+    expectedArguments: expected.args.map((argument) => boundText(argument)),
     launchToken: randomUUID(),
   };
 }
 
 async function inspectProcessIdentity(pid) {
   if (!isProcessAlive(pid)) return null;
-  if (process.platform !== "win32") {
+  if (process.platform === "linux") {
     try {
       const stat = readFileSync(`/proc/${Number(pid)}/stat`, "utf8");
       const commandLine = readFileSync(`/proc/${Number(pid)}/cmdline`, "utf8");
-      const executable = readFileSync(`/proc/${Number(pid)}/exe`, "utf8");
-      const fields = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/u);
-      return { startTime: fields[19] || null, executable, commandLine };
+      const executablePath = readlinkSync(`/proc/${Number(pid)}/exe`);
+      return {
+        startIdentity: parseLinuxProcStatStartIdentity(stat),
+        executablePath,
+        commandLine: commandLine.replace(/\0/gu, " ").trim(),
+      };
     } catch { return null; }
+  }
+  if (process.platform === "darwin") {
+    const output = await captureSimpleCommand("ps", ["-ww", "-p", String(pid), "-o", "pid=,lstart=,comm=,args="], { LC_ALL: "C" });
+    return parseMacPsOutput(output, pid);
   }
   const script = "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + Number(pid) + "'; if ($p) { $p | Select-Object ProcessId,CreationDate,ExecutablePath,CommandLine | ConvertTo-Json -Compress }";
   const output = await captureSimpleCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
-  if (!output.trim()) return null;
+  return parseWindowsCimJson(output, pid);
+}
+
+function parseLinuxProcStatStartIdentity(stat) {
+  const close = stat.lastIndexOf(")");
+  if (close < 0 || stat.slice(close + 1, close + 2) !== " ") return null;
+  const fields = stat.slice(close + 2).trim().split(/\s+/u);
+  return fields[19] || null;
+}
+
+function parseMacPsOutput(output, expectedPid = null) {
+  const line = String(output).trim();
+  const match = line.match(/^(\d+)\s+(.{24})\s+(\S+)\s+(.+)$/u);
+  if (!match || (expectedPid !== null && Number(match[1]) !== Number(expectedPid))) return null;
+  return { startIdentity: match[2].trim(), executablePath: match[3], commandLine: match[4].trim() };
+}
+
+function parseWindowsCimJson(output, expectedPid = null) {
+  if (!String(output).trim()) return null;
   try {
     const value = JSON.parse(output);
-    return { startTime: value.CreationDate || null, executable: value.ExecutablePath || "", commandLine: value.CommandLine || "" };
+    if (!value || (expectedPid !== null && Number(value.ProcessId) !== Number(expectedPid))) return null;
+    return {
+      startIdentity: value.CreationDate || null,
+      executablePath: value.ExecutablePath || null,
+      commandLine: value.CommandLine || null,
+    };
   } catch { return null; }
 }
 
@@ -1167,21 +1277,35 @@ async function verifyProcessIdentity(identity) {
   if (!isProcessAlive(identity.pid)) return { ok: false, stopped: true, reason: "recorded process is no longer alive" };
   const observed = await inspectProcessIdentity(identity.pid);
   if (!observed) return { ok: false, reason: "live process identity could not be inspected" };
-  if (identity.startTime && observed.startTime && String(identity.startTime) !== String(observed.startTime)) return { ok: false, reason: "process start time does not match" };
-  const expectedExecutable = String(identity.expectedExecutable || identity.executable || "").replace(/\\/gu, "/").toLowerCase();
-  const expectedName = expectedExecutable.split("/").pop().replace(/\.exe$/u, "");
-  const observedName = String(observed.executable).replace(/\\/gu, "/").toLowerCase().split("/").pop().replace(/\.exe$/u, "");
-  if (expectedName && observedName !== expectedName) return { ok: false, reason: "executable does not match" };
-  for (const argument of identity.expectedArguments || []) {
-    if (!String(observed.commandLine).replace(/\\/gu, "/").includes(String(argument).replace(/\\/gu, "/"))) return { ok: false, reason: "command fingerprint does not match" };
-  }
-  if (identity.commandFingerprint && fingerprintCommandLine(observed.commandLine) !== identity.commandFingerprint) return { ok: false, reason: "command fingerprint does not match" };
+  const expectedStart = identity.startIdentity ?? identity.startTime;
+  if (!expectedStart || !observed.startIdentity || String(expectedStart) !== String(observed.startIdentity)) return { ok: false, reason: "process start identity does not match" };
+  const expectedExecutable = normalizeIdentityPath(identity.executablePath || identity.expectedExecutable || identity.executable);
+  const observedExecutable = normalizeIdentityPath(observed.executablePath);
+  if (!expectedExecutable || !observedExecutable || !sameExecutable(expectedExecutable, observedExecutable)) return { ok: false, reason: "executable identity does not match" };
+  const observedCommand = String(observed.commandLine || "");
+  if (!observedCommand) return { ok: false, reason: "command line identity could not be inspected" };
+  const fingerprintMatches = identity.commandFingerprint && fingerprintCommandLine(observedCommand) === identity.commandFingerprint;
+  const argumentsMatch = Array.isArray(identity.expectedArguments) && identity.expectedArguments.length > 0 && identity.expectedArguments.every((argument) => observedCommand.replace(/\\/gu, "/").includes(String(argument).replace(/\\/gu, "/")));
+  if (!fingerprintMatches && !argumentsMatch) return { ok: false, reason: "command fingerprint or expected command arguments do not match" };
   return { ok: true, stopped: false };
 }
 
-function captureSimpleCommand(command, args) {
+function normalizeIdentityPath(value) {
+  return String(value || "").replace(/\\/gu, "/").toLowerCase();
+}
+
+function sameExecutable(expected, observed) {
+  if (expected === observed) return true;
+  return expected.split("/").pop().replace(/\.exe$/u, "") === observed.split("/").pop().replace(/\.exe$/u, "");
+}
+
+function boundText(value) {
+  return String(value ?? "").slice(0, 1024);
+}
+
+function captureSimpleCommand(command, args, environment = null) {
   return new Promise((resolvePromise) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"], env: environment ? { ...process.env, ...environment } : process.env });
     const chunks = [];
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => chunks.push(chunk));
@@ -1196,18 +1320,31 @@ async function stopOwnedRelay(identity) {
     console.error(`Relay ownership could not be confirmed; preserving live process: ${ownership.reason}`);
     return ownership;
   }
-  if (!ownership.stopped) await terminateProcessTree(identity.pid);
+  if (!ownership.stopped) await terminateProcessTree(identity.pid, { wait: true });
   return { ok: true };
 }
 
-async function terminateProcessTree(pid) {
+async function terminateProcessTree(pid, { wait = false } = {}) {
   if (!pid || !isProcessAlive(pid)) return;
   const shutdown = buildProcessShutdownPlan(pid, process.platform);
   if (shutdown.command) {
     await runSimpleCommand(shutdown.command, shutdown.args);
-    return;
+  } else {
+    try { process.kill(-Number(pid), "SIGTERM"); } catch { try { process.kill(Number(pid), "SIGTERM"); } catch { /* already stopped */ } }
   }
-  try { process.kill(-Number(pid), "SIGTERM"); } catch { try { process.kill(Number(pid), "SIGTERM"); } catch { /* already stopped */ } }
+  if (wait) {
+    const exited = await waitForProcessExit(pid);
+    if (!exited && process.platform !== "win32") {
+      try { process.kill(-Number(pid), "SIGKILL"); } catch { try { process.kill(Number(pid), "SIGKILL"); } catch { /* already stopped */ } }
+      await waitForProcessExit(pid, 1000);
+    }
+  }
+}
+
+async function waitForProcessExit(pid, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (isProcessAlive(pid) && Date.now() < deadline) await delay(25);
+  return !isProcessAlive(pid);
 }
 
 function buildProcessShutdownPlan(pid, platform = process.platform) {
@@ -1235,12 +1372,20 @@ export {
   bindingMatches,
   buildNativeRuntimeConnectArgs,
   buildProcessShutdownPlan,
+  captureProcessIdentity,
   getConfig,
   loadEnvFile,
   acquireAggregateLock,
   releaseAggregateLock,
   normalizeRelayMcpProfile,
+  normalizeRuntimeStatus,
+  parseLinuxProcStatStartIdentity,
+  parseMacPsOutput,
+  parseWindowsCimJson,
   redactSecrets,
+  inspectProcessIdentity,
+  terminateProcessTree,
+  verifyProcessIdentity,
   validateAggregateConfig,
 };
 
