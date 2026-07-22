@@ -32,8 +32,8 @@ func (s *Service) Prepare(ctx context.Context, request PrepareRequest) (*State, 
 		return nil, ErrCutoverConfigurationInvalid
 	}
 	configuration, err := normalizeGatewayConfiguration(request.GatewayConfiguration)
-	if err != nil {
-		return nil, err
+	if err != nil || configuration.TopologyVersion != appSurfaceTopologyVersion {
+		return nil, ErrCutoverConfigurationInvalid
 	}
 	if len(request.Prerequisites) == 0 || len(request.ActivationEvidence) == 0 ||
 		len(request.RollForwardCriteria) == 0 ||
@@ -150,6 +150,9 @@ func (s *Service) Readiness(ctx context.Context, activationID string) (*Readines
 		result.RollForwardCriteria = append(result.RollForwardCriteria, c.CompletionCriterion)
 	}
 	configuration, configErr := s.loadVerifiedConfiguration(ctx, activation.ID)
+	if configErr == nil && configuration.TopologyVersion != appSurfaceTopologyVersion {
+		configErr = ErrCutoverConfigurationInvalid
+	}
 	if configErr != nil {
 		result.ConfigurationErrors = append(result.ConfigurationErrors, configErr.Error())
 	} else {
@@ -382,7 +385,7 @@ func (s *Service) loadVerifiedConfiguration(ctx context.Context, activationRowID
 	return normalized, nil
 }
 
-func normalizeGatewayConfiguration(input GatewayConfigurationIdentity) (GatewayConfigurationIdentity, error) {
+func normalizeLegacyGatewayConfiguration(input GatewayConfigurationIdentity) (GatewayConfigurationIdentity, error) {
 	input.RelayRepository = strings.TrimSpace(input.RelayRepository)
 	input.StandingRepository = strings.TrimSpace(input.StandingRepository)
 	if input.RelayRepository == "" || input.StandingRepository == "" ||
@@ -514,6 +517,23 @@ func toStoreGatewayConfiguration(value GatewayConfigurationIdentity) workflowsto
 			HealthEvidenceSHA256: mapping.HealthEvidenceSHA256, TraceEvidenceSHA256: mapping.TraceEvidenceSHA256,
 		})
 	}
+	for _, surface := range value.AppSurfaces {
+		result.AppSurfaces = append(result.AppSurfaces, workflowstore.CutoverGatewayAppSurface{
+			Sequence: surface.Sequence, Surface: surface.Surface, PublicPath: surface.PublicPath, ManifestSHA256: surface.ManifestSHA256,
+		})
+	}
+	for _, membership := range value.RouteMemberships {
+		result.RouteMemberships = append(result.RouteMemberships, workflowstore.CutoverGatewayRouteMembership{
+			RoutePath: membership.RoutePath, PublicSurface: membership.PublicSurface,
+		})
+	}
+	for _, mapping := range value.AppSurfaceMappings {
+		result.AppSurfaceMappings = append(result.AppSurfaceMappings, workflowstore.CutoverGatewayAppSurfaceMapping{
+			Sequence: mapping.Sequence, MappingID: mapping.MappingID, PublicSurface: mapping.PublicSurface, PublicPath: mapping.PublicPath,
+			ListenerIdentity: mapping.ListenerIdentity, UpstreamIdentity: mapping.UpstreamIdentity,
+			HealthEvidenceSHA256: mapping.HealthEvidenceSHA256, TraceEvidenceSHA256: mapping.TraceEvidenceSHA256,
+		})
+	}
 	for _, authority := range value.StandingAuthorities {
 		result.StandingAuthorities = append(result.StandingAuthorities, workflowstore.CutoverGatewayStandingAuthority{
 			Role: authority.Role, Repository: authority.Repository, CommitOID: authority.CommitOID,
@@ -551,6 +571,23 @@ func fromStoreGatewayConfiguration(value workflowstore.CutoverGatewayConfigurati
 			HealthEvidenceSHA256: mapping.HealthEvidenceSHA256, TraceEvidenceSHA256: mapping.TraceEvidenceSHA256,
 		})
 	}
+	for _, surface := range value.AppSurfaces {
+		result.AppSurfaces = append(result.AppSurfaces, AppSurfaceIdentity{
+			Sequence: surface.Sequence, Surface: surface.Surface, PublicPath: surface.PublicPath, ManifestSHA256: surface.ManifestSHA256,
+		})
+	}
+	for _, membership := range value.RouteMemberships {
+		result.RouteMemberships = append(result.RouteMemberships, RouteMembershipIdentity{
+			RoutePath: membership.RoutePath, PublicSurface: membership.PublicSurface,
+		})
+	}
+	for _, mapping := range value.AppSurfaceMappings {
+		result.AppSurfaceMappings = append(result.AppSurfaceMappings, AppSurfaceMappingIdentity{
+			Sequence: mapping.Sequence, MappingID: mapping.MappingID, PublicSurface: mapping.PublicSurface, PublicPath: mapping.PublicPath,
+			ListenerIdentity: mapping.ListenerIdentity, UpstreamIdentity: mapping.UpstreamIdentity,
+			HealthEvidenceSHA256: mapping.HealthEvidenceSHA256, TraceEvidenceSHA256: mapping.TraceEvidenceSHA256,
+		})
+	}
 	for _, authority := range value.StandingAuthorities {
 		result.StandingAuthorities = append(result.StandingAuthorities, StandingAuthorityIdentity{
 			Role: authority.Role, Repository: authority.Repository, CommitOID: authority.CommitOID,
@@ -562,6 +599,9 @@ func fromStoreGatewayConfiguration(value workflowstore.CutoverGatewayConfigurati
 			Sequence: dependency.Sequence, TicketID: dependency.TicketID, TicketRevision: dependency.TicketRevision,
 			Outcome: dependency.Outcome, EvidenceSHA256: dependency.EvidenceSHA256,
 		})
+	}
+	if len(result.AppSurfaces) != 0 {
+		result.TopologyVersion = appSurfaceTopologyVersion
 	}
 	return result
 }

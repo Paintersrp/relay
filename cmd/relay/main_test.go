@@ -23,13 +23,9 @@ import (
 )
 
 var ingressListenerEnvironment = []string{
-	"RELAY_MCP_INGRESS_WAYFINDER_WORKSPACE_ADDR",
-	"RELAY_MCP_INGRESS_WAYFINDER_DISCOVERY_ADDR",
-	"RELAY_MCP_INGRESS_WAYFINDER_INVESTIGATION_ADDR",
-	"RELAY_MCP_INGRESS_PLANNER_AUTHORING_ADDR",
-	"RELAY_MCP_INGRESS_PLANNER_FRONTIER_ADDR",
-	"RELAY_MCP_INGRESS_AUDITOR_REVIEW_ADDR",
-	"RELAY_MCP_INGRESS_AUDITOR_AUDIT_ADDR",
+	"RELAY_MCP_INGRESS_WAYFINDER_ADDR",
+	"RELAY_MCP_INGRESS_PLANNER_ADDR",
+	"RELAY_MCP_INGRESS_AUDITOR_ADDR",
 }
 
 func TestPrivateMCPIngressRoutesTraceAndFailureIsolation(t *testing.T) {
@@ -72,7 +68,7 @@ func TestPrivateMCPIngressRoutesTraceAndFailureIsolation(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("Relay did not become ready")
 	}
-	if len(runtime.MCPIngress.Mappings) != 7 {
+	if len(runtime.MCPIngress.Mappings) != 3 {
 		t.Fatalf("mappings=%d", len(runtime.MCPIngress.Mappings))
 	}
 
@@ -82,35 +78,39 @@ func TestPrivateMCPIngressRoutesTraceAndFailureIsolation(t *testing.T) {
 		t.Fatalf("aggregate ping=%#v", mainResponse.Error)
 	}
 
-	set, err := routecontracts.BuildMCPRouteManifests()
+	surfaces, err := routecontracts.BuildMCPAppSurfaceManifests()
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifestByPath := map[string]routecontracts.RouteManifest{}
-	for _, manifest := range set.Manifests {
-		manifestByPath[manifest.RoutePath] = manifest
+	surfaceByPath := make(map[string]routecontracts.AppSurfaceManifest, len(surfaces.Surfaces))
+	for _, surface := range surfaces.Surfaces {
+		surfaceByPath[surface.PublicPath] = surface
 	}
 
 	for index := 1; index < len(runtime.MCPIngress.Mappings); index++ {
-		assertPrivateRoute(t, client, runtime.MCPIngress.Mappings[index].RoutePath, addresses[index], manifestByPath)
+		assertPrivateRoute(t, client, runtime.MCPIngress.Mappings[index].RoutePath, addresses[index], surfaceByPath)
 	}
 
 	_ = blocker.Close()
 	blocker = nil
 	waitForEndpoint(t, client, "http://"+addresses[0]+"/healthz")
-	assertPrivateRoute(t, client, runtime.MCPIngress.Mappings[0].RoutePath, addresses[0], manifestByPath)
+	assertPrivateRoute(t, client, runtime.MCPIngress.Mappings[0].RoutePath, addresses[0], surfaceByPath)
+	wayfinder, ok := surfaceByPath[runtime.MCPIngress.Mappings[0].RoutePath]
+	if !ok || len(wayfinder.Tools) == 0 {
+		t.Fatalf("wayfinder app surface missing for %s", runtime.MCPIngress.Mappings[0].RoutePath)
+	}
 	protectedRequest := mcp.Request{
 		JSONRPC: mcp.JSONRPCVersion,
 		ID:      json.RawMessage(`9`),
 		Method:  "tools/call",
 		Params: mustJSON(t, map[string]any{
-			"name":      "list_projects",
+			"name":      wayfinder.Tools[0].AdvertisedName,
 			"arguments": map[string]any{"status": "active", "limit": 10, "protected_body": "BODY_SENTINEL"},
 		}),
 	}
 	_ = postRPC(t, client, "http://"+addresses[0]+runtime.MCPIngress.Mappings[0].RoutePath, "client-credential-must-be-stripped", protectedRequest)
 
-	waitForTraceMappings(t, traceRoot, 7)
+	waitForTraceMappings(t, traceRoot, 3)
 	inspectTraceFiles(t, traceRoot, []string{"upstream-secret", "client-credential-must-be-stripped", "BODY_SENTINEL"})
 
 	cancel()
@@ -142,33 +142,44 @@ func reserveIngressAddresses(t *testing.T) ([]string, net.Listener) {
 	return addresses, listeners[0]
 }
 
-func assertPrivateRoute(t *testing.T, client *http.Client, routePath, address string, manifests map[string]routecontracts.RouteManifest) {
+func assertPrivateRoute(t *testing.T, client *http.Client, routePath, address string, surfaces map[string]routecontracts.AppSurfaceManifest) {
 	t.Helper()
 	target := "http://" + address + routePath
 	ping := postRPC(t, client, target, "client-credential-must-be-stripped", mcp.Request{JSONRPC: mcp.JSONRPCVersion, ID: json.RawMessage(`1`), Method: "ping"})
 	if ping.Error != nil {
 		t.Fatalf("%s ping=%#v", routePath, ping.Error)
 	}
-	listed := postRPC(t, client, target, "client-credential-must-be-stripped", mcp.Request{JSONRPC: mcp.JSONRPCVersion, ID: json.RawMessage(`2`), Method: "tools/list"})
-	if listed.Error != nil {
-		t.Fatalf("%s tools/list=%#v", routePath, listed.Error)
-	}
-	var tools mcp.ToolsListResult
-	data, _ := json.Marshal(listed.Result)
-	if err := json.Unmarshal(data, &tools); err != nil {
-		t.Fatal(err)
-	}
-	manifest, ok := manifests[routePath]
+	surface, ok := surfaces[routePath]
 	if !ok {
-		t.Fatalf("manifest missing for %s", routePath)
+		t.Fatalf("app surface missing for %s", routePath)
 	}
-	want := make([]string, len(manifest.Tools))
-	for index, tool := range manifest.Tools {
-		want[index] = tool.Name
+	got := make([]string, 0, len(surface.Tools))
+	cursor := ""
+	for {
+		var params json.RawMessage
+		if cursor != "" {
+			params = mustJSON(t, map[string]string{"cursor": cursor})
+		}
+		listed := postRPC(t, client, target, "client-credential-must-be-stripped", mcp.Request{JSONRPC: mcp.JSONRPCVersion, ID: json.RawMessage(`2`), Method: "tools/list", Params: params})
+		if listed.Error != nil {
+			t.Fatalf("%s tools/list=%#v", routePath, listed.Error)
+		}
+		var tools mcp.ToolsListResult
+		data, _ := json.Marshal(listed.Result)
+		if err := json.Unmarshal(data, &tools); err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range tools.Tools {
+			got = append(got, tool.Name)
+		}
+		if tools.NextCursor == "" {
+			break
+		}
+		cursor = tools.NextCursor
 	}
-	got := make([]string, len(tools.Tools))
-	for index, tool := range tools.Tools {
-		got[index] = tool.Name
+	want := make([]string, len(surface.Tools))
+	for index, tool := range surface.Tools {
+		want[index] = tool.AdvertisedName
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%s tools=%v want=%v", routePath, got, want)
@@ -281,7 +292,7 @@ func inspectTraceFiles(t *testing.T, root string, prohibited []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(seenMappings) != 7 {
+	if len(seenMappings) != len(ingressListenerEnvironment) {
 		t.Fatalf("traced mappings=%v", seenMappings)
 	}
 }

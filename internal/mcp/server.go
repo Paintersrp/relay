@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const toolsListPageSize = 50
+const toolsListPageSize = 16
 
 // Server is the MCP stdio server. It reads newline-delimited JSON-RPC 2.0
 // requests from r and writes responses to w.

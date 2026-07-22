@@ -5,11 +5,11 @@ import (
 )
 
 func TestIntegratedGatewayConfigurationDigestIsStable(t *testing.T) {
-	first, err := normalizeGatewayConfiguration(validGatewayConfigurationFixture())
+	first, err := normalizeGatewayConfiguration(validGatewayConfigurationFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := normalizeGatewayConfiguration(validGatewayConfigurationFixture())
+	second, err := normalizeGatewayConfiguration(validGatewayConfigurationFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,10 +18,10 @@ func TestIntegratedGatewayConfigurationDigestIsStable(t *testing.T) {
 	}
 }
 
-func TestIntegratedGatewayConfigurationRejectsMappingRouteMismatch(t *testing.T) {
-	configuration := validGatewayConfigurationFixture()
-	configuration.Mappings[0].RoutePath = "/mcp/v1/auditor/audit"
+func TestIntegratedGatewayConfigurationRejectsPublicMappingMismatch(t *testing.T) {
+	configuration := validGatewayConfigurationFixture(t)
+	configuration.AppSurfaceMappings[0].PublicPath = "/mcp/auditor"
 	if _, err := normalizeGatewayConfiguration(configuration); err == nil {
-		t.Fatal("mapping-to-route mismatch was accepted")
+		t.Fatal("mapping-to-public-surface mismatch was accepted")
 	}
 }

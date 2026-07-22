@@ -155,6 +155,26 @@ type CutoverCurrentState struct {
 	UpdatedAt       string        `json:"updated_at"`
 }
 
+type CutoverGatewayAppSurface struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	Sequence        int64  `json:"sequence"`
+	AppSurface      string `json:"app_surface"`
+	PublicPath      string `json:"public_path"`
+	ManifestSha256  string `json:"manifest_sha256"`
+}
+
+type CutoverGatewayAppSurfaceMapping struct {
+	ActivationRowID      int64  `json:"activation_row_id"`
+	Sequence             int64  `json:"sequence"`
+	MappingID            string `json:"mapping_id"`
+	AppSurface           string `json:"app_surface"`
+	PublicPath           string `json:"public_path"`
+	ListenerIdentity     string `json:"listener_identity"`
+	UpstreamIdentity     string `json:"upstream_identity"`
+	HealthEvidenceSha256 string `json:"health_evidence_sha256"`
+	TraceEvidenceSha256  string `json:"trace_evidence_sha256"`
+}
+
 type CutoverGatewayConfiguration struct {
 	ActivationRowID     int64  `json:"activation_row_id"`
 	ConfigurationSha256 string `json:"configuration_sha256"`
@@ -194,6 +214,12 @@ type CutoverGatewayRoute struct {
 	ManifestSha256     string `json:"manifest_sha256"`
 	AuthorityCommitOid string `json:"authority_commit_oid"`
 	AuthorityBlobOid   string `json:"authority_blob_oid"`
+}
+
+type CutoverGatewayRouteMembership struct {
+	ActivationRowID int64  `json:"activation_row_id"`
+	RoutePath       string `json:"route_path"`
+	AppSurface      string `json:"app_surface"`
 }
 
 type CutoverGatewayStandingAuthority struct {

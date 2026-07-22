@@ -542,9 +542,17 @@ Records one roll-forward evidence item. The cutover completes roll-forward when 
 
 ## MCP
 
-`POST /mcp` remains the canonical ChatGPT-facing JSON-RPC endpoint.
+The ChatGPT-facing HTTP role apps are:
 
-Canonical tool inventories remain profile-specific:
+- `POST /mcp/wayfinder`
+- `POST /mcp/planner`
+- `POST /mcp/auditor`
+
+Each app publishes only its compiled role catalog. `tools/list` exposes only catalog advertised names; collisions are deterministic aliases statically bound to one immutable internal route and authority identity. A request cannot select another route, role, or authority. The generated and tested inventory is built by `BuildMCPAppSurfaceManifests`.
+
+`POST /mcp` remains the aggregate compatibility surface for profile-selected behavior, but it returns `409` while a cutover activation is active. It is not a role-app connector URL. The former seven `/mcp/v1/...` endpoints are removed and return `404`.
+
+Aggregate inventories remain profile-specific:
 
 - Planner: `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run`
 - Auditor: `validate_artifact`, `create_run`, `get_audit_packet`, `record_audit_decision`

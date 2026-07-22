@@ -30,7 +30,7 @@ TUNNEL_ID=tunnel_REPLACE_ME
 CONTROL_PLANE_API_KEY=sk-REPLACE_ME
 ```
 
-Default transport and profile:
+Default transport and aggregate profile:
 
 ```dotenv
 TUNNEL_MCP_TRANSPORT=stdio
@@ -46,9 +46,9 @@ TUNNEL_CLIENT_PATH=C:\Tools\relay-mcp-tunnel\tunnel-client.exe
 
 Process environment values take precedence over `.env` and `.env.local`. Never commit real tunnel IDs, control-plane keys, bearer tokens, or signed artifact URLs.
 
-## Profiles
+## Aggregate profiles
 
-`RELAY_MCP_PROFILE` accepts exactly:
+`RELAY_MCP_PROFILE` applies only to the aggregate stdio launcher (and aggregate `/mcp` HTTP surface). It accepts exactly:
 
 - `planner` — five Plan and Run preparation actions;
 - `auditor` — five validation, Run, packet, artifact, and decision actions;
@@ -61,7 +61,7 @@ Missing or invalid input fails closed to `planner` and prints an explicit fallba
 Stdio is the supported default:
 
 1. `chatgpt-mcp:init` supplies the tunnel client with the command for `scripts/local/relay-mcp-stdio.mjs`.
-2. The launcher starts `cmd/mcpserver` using the selected profile.
+2. The launcher starts `cmd/mcpserver` using the selected aggregate profile.
 3. JSON-RPC travels through stdin/stdout.
 4. The launcher proxies termination signals and keeps server stderr separate from protocol stdout.
 
@@ -76,14 +76,22 @@ The launcher's `--self-test` mode verifies:
 
 `doctor` runs this self-test in stdio mode unless `--skip-relay-check` is supplied.
 
-## Advanced HTTP transport
+## Advanced role-app HTTP transport
 
-HTTP mode is for advanced or development use:
+HTTP mode is for advanced or development use. Select one role-level app endpoint; do not configure the aggregate `/mcp` URL for a role connector because it closes with HTTP `409` while a cutover activation is active.
 
 ```dotenv
 TUNNEL_MCP_TRANSPORT=http
-RELAY_MCP_URL=http://127.0.0.1:8080/mcp
+RELAY_MCP_URL=http://127.0.0.1:8080/mcp/planner
 ```
+
+The supported role endpoints are:
+
+- Wayfinder: `http://127.0.0.1:8080/mcp/wayfinder`
+- Planner: `http://127.0.0.1:8080/mcp/planner`
+- Auditor: `http://127.0.0.1:8080/mcp/auditor`
+
+The seven former `/mcp/v1/...` URLs are removed and return `404`. Role apps publish a catalog-only, collision-free `tools/list`: each advertised name has a static internal route and authority binding, and a client cannot select either identity in request arguments.
 
 Start the Relay daemon separately:
 
@@ -91,9 +99,9 @@ Start the Relay daemon separately:
 go run ./cmd/relay
 ```
 
-The helper checks `/mcp` with POST JSON-RPC `ping` before initialization, start, or diagnostics unless the check is skipped.
+The helper checks the configured role URL with POST JSON-RPC `ping` before initialization, start, or diagnostics unless the check is skipped.
 
-When `RELAY_MCP_AUTH_TOKEN` is configured on the Relay daemon, `/mcp` requires a bearer token. The current helper reachability check does not attach an Authorization header, so the built-in HTTP tunnel workflow is intended for loopback-only tokenless connector proof. Prefer stdio. Do not expose an unauthenticated HTTP endpoint.
+When `RELAY_MCP_AUTH_TOKEN` is configured on the Relay daemon, each role URL requires a bearer token. The current helper reachability check does not attach an Authorization header, so the built-in HTTP tunnel workflow is intended for loopback-only tokenless connector proof. Prefer stdio. Do not expose an unauthenticated HTTP endpoint.
 
 ## Health listener
 
@@ -118,8 +126,8 @@ The report includes:
 - tunnel ID configuration state;
 - control-plane key configuration state without printing the key;
 - resolved tunnel-client path;
-- selected MCP transport and profile;
-- stdio self-test or HTTP ping result;
+- selected MCP transport and aggregate profile;
+- stdio self-test or configured role-app HTTP ping result;
 - tunnel health listener.
 
 Tunnel-client stdout and stderr are passed through `CONTROL_PLANE_API_KEY` redaction before display.
@@ -146,8 +154,8 @@ Confirm Go is available and the workflow database/artifact paths are writable.
 
 ### HTTP ping fails
 
-Confirm `go run ./cmd/relay` is running and `RELAY_MCP_URL` points to `http://127.0.0.1:8080/mcp`. HTTP accepts POST only.
+Confirm `go run ./cmd/relay` is running and `RELAY_MCP_URL` points to one role endpoint, such as `http://127.0.0.1:8080/mcp/planner`. HTTP accepts POST only.
 
 ### Wrong tool inventory
 
-Check `RELAY_MCP_PROFILE`. The server and launcher require exact profile membership and order; there is no compatibility or legacy profile.
+For stdio, check `RELAY_MCP_PROFILE`. For HTTP, check that `RELAY_MCP_URL` selects Wayfinder, Planner, or Auditor. Role-app inventories come only from their compiled catalog; there is no compatibility or legacy endpoint.

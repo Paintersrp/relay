@@ -1,26 +1,36 @@
 package mcpingress
 
-import (
-	"net/url"
-)
+import "net/url"
 
 type MappingID string
 
 const (
-	MappingWayfinderWorkspace     MappingID = "wayfinder-workspace"
-	MappingWayfinderDiscovery     MappingID = "wayfinder-discovery"
-	MappingWayfinderInvestigation MappingID = "wayfinder-investigation"
-	MappingAuthoring              MappingID = "planner-authoring"
-	MappingTicketFrontier         MappingID = "planner-frontier"
-	MappingArtifactReview         MappingID = "auditor-review"
-	MappingRunAudit               MappingID = "auditor-audit"
+	MappingWayfinder AppMappingID = "wayfinder"
+	MappingPlanner   AppMappingID = "planner"
+	MappingAuditor   AppMappingID = "auditor"
 )
 
+// AppMappingID names one independently supervised public app ingress.
+type AppMappingID = MappingID
+
+type ToolIdentity struct {
+	AdvertisedName              string
+	InternalToolName            string
+	InternalRoutePath           string
+	SurfaceContract             string
+	RouteManifestSHA256         string
+	StandingAuthorityRepository string
+	StandingAuthorityCommitOID  string
+	StandingAuthorityPath       string
+	StandingAuthorityBlobOID    string
+}
+
 type RouteDescriptor struct {
-	MappingID           MappingID
-	RoutePath           string
-	SurfaceContract     string
-	RouteManifestSHA256 string
+	MappingID                   MappingID
+	RoutePath                   string
+	PublicSurface               string
+	PublicSurfaceManifestSHA256 string
+	ToolIdentities              []ToolIdentity
 }
 
 type PrivateAddress struct{ value string }
@@ -33,12 +43,13 @@ func (target UpstreamTarget) URL() url.URL   { return target.value }
 func (target UpstreamTarget) String() string { return target.value.String() }
 
 type MappingSpec struct {
-	ID                  MappingID
-	RoutePath           string
-	SurfaceContract     string
-	RouteManifestSHA256 string
-	Listener            PrivateAddress
-	Upstream            UpstreamTarget
+	ID                          MappingID
+	RoutePath                   string
+	PublicSurface               string
+	PublicSurfaceManifestSHA256 string
+	ToolIdentities              []ToolIdentity
+	Listener                    PrivateAddress
+	Upstream                    UpstreamTarget
 }
 
 type catalogEntry struct {
@@ -49,13 +60,9 @@ type catalogEntry struct {
 }
 
 var mappingCatalog = []catalogEntry{
-	{MappingWayfinderWorkspace, "/mcp/v1/wayfinder/workspace", "RELAY_MCP_INGRESS_WAYFINDER_WORKSPACE_ADDR", "127.0.0.1:18101"},
-	{MappingWayfinderDiscovery, "/mcp/v1/wayfinder/discovery", "RELAY_MCP_INGRESS_WAYFINDER_DISCOVERY_ADDR", "127.0.0.1:18102"},
-	{MappingWayfinderInvestigation, "/mcp/v1/wayfinder/investigation", "RELAY_MCP_INGRESS_WAYFINDER_INVESTIGATION_ADDR", "127.0.0.1:18103"},
-	{MappingAuthoring, "/mcp/v1/planner/authoring", "RELAY_MCP_INGRESS_PLANNER_AUTHORING_ADDR", "127.0.0.1:18104"},
-	{MappingTicketFrontier, "/mcp/v1/planner/frontier", "RELAY_MCP_INGRESS_PLANNER_FRONTIER_ADDR", "127.0.0.1:18105"},
-	{MappingArtifactReview, "/mcp/v1/auditor/review", "RELAY_MCP_INGRESS_AUDITOR_REVIEW_ADDR", "127.0.0.1:18106"},
-	{MappingRunAudit, "/mcp/v1/auditor/audit", "RELAY_MCP_INGRESS_AUDITOR_AUDIT_ADDR", "127.0.0.1:18107"},
+	{MappingWayfinder, "/mcp/wayfinder", "RELAY_MCP_INGRESS_WAYFINDER_ADDR", "127.0.0.1:18101"},
+	{MappingPlanner, "/mcp/planner", "RELAY_MCP_INGRESS_PLANNER_ADDR", "127.0.0.1:18102"},
+	{MappingAuditor, "/mcp/auditor", "RELAY_MCP_INGRESS_AUDITOR_ADDR", "127.0.0.1:18103"},
 }
 
 func Catalog() []RouteDescriptor {

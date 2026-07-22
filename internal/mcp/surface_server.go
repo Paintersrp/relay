@@ -14,8 +14,10 @@ import (
 type SurfaceHandler func(json.RawMessage) ToolCallResult
 
 type surfaceDispatch struct {
-	surface registry.SurfaceContractID
-	handle  SurfaceHandler
+	surface    registry.SurfaceContractID
+	toolName   string
+	routeBound bool
+	handle     SurfaceHandler
 }
 
 type SurfaceToolHandler struct {
@@ -56,7 +58,7 @@ func NewServerForSurface(log *slog.Logger, deps *MCPDeps, surface registry.Surfa
 		if handler.ReadOnly != tool.Annotations.ReadOnlyHint {
 			return nil, fmt.Errorf("surface %q handler %q read-only classification differs from manifest", surface, handler.Name)
 		}
-		dispatch[handler.Name] = surfaceDispatch{surface: surface, handle: handler.Handle}
+		dispatch[handler.Name] = surfaceDispatch{surface: surface, toolName: handler.Name, handle: handler.Handle}
 		definitions[index] = toolDefinitionFromContract(tool)
 	}
 	for name := range dispatch {
@@ -224,8 +226,33 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 	if !ok {
 		return ToolCallResult{}, errors.New("surface handler is not configured")
 	}
-	if err := registry.ValidateOperationRequest(dispatch.surface, name, args); err != nil {
+	if dispatch.routeBound {
+		boundArgs, err := withoutSurfaceContract(args)
+		if err != nil {
+			return ToolCallResult{}, err
+		}
+		return dispatch.handle(boundArgs), nil
+	}
+	if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, args); err != nil {
 		return ToolCallResult{}, err
 	}
 	return dispatch.handle(args), nil
+}
+
+// withoutSurfaceContract prevents an app-surface caller from supplying route
+// authority to a handler already bound to an immutable route registration.
+func withoutSurfaceContract(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.RawMessage(`{}`), nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return raw, nil
+	}
+	delete(object, "surface_contract")
+	bound, err := json.Marshal(object)
+	if err != nil {
+		return nil, err
+	}
+	return bound, nil
 }

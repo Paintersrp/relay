@@ -86,6 +86,9 @@ type CutoverGatewayConfiguration struct {
 	Mappings            []CutoverGatewayMapping
 	StandingAuthorities []CutoverGatewayStandingAuthority
 	DependencyOutcomes  []CutoverGatewayDependencyOutcome
+	AppSurfaces         []CutoverGatewayAppSurface
+	RouteMemberships    []CutoverGatewayRouteMembership
+	AppSurfaceMappings  []CutoverGatewayAppSurfaceMapping
 }
 
 type CutoverGatewayRoute struct {
@@ -102,6 +105,29 @@ type CutoverGatewayMapping struct {
 	Sequence             int64
 	MappingID            string
 	RoutePath            string
+	ListenerIdentity     string
+	UpstreamIdentity     string
+	HealthEvidenceSHA256 string
+	TraceEvidenceSHA256  string
+}
+
+type CutoverGatewayAppSurface struct {
+	Sequence       int64
+	Surface        string
+	PublicPath     string
+	ManifestSHA256 string
+}
+
+type CutoverGatewayRouteMembership struct {
+	RoutePath     string
+	PublicSurface string
+}
+
+type CutoverGatewayAppSurfaceMapping struct {
+	Sequence             int64
+	MappingID            string
+	PublicSurface        string
+	PublicPath           string
 	ListenerIdentity     string
 	UpstreamIdentity     string
 	HealthEvidenceSHA256 string
@@ -337,6 +363,33 @@ INSERT INTO cutover_gateway_mappings (
 			return err
 		}
 	}
+	for _, surface := range value.AppSurfaces {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_app_surfaces (
+    activation_row_id, sequence, app_surface, public_path, manifest_sha256
+) VALUES (?, ?, ?, ?, ?)`, activationRowID, surface.Sequence, surface.Surface, surface.PublicPath, surface.ManifestSHA256); err != nil {
+			return err
+		}
+	}
+	for _, membership := range value.RouteMemberships {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_route_memberships (
+    activation_row_id, route_path, app_surface
+) VALUES (?, ?, ?)`, activationRowID, membership.RoutePath, membership.PublicSurface); err != nil {
+			return err
+		}
+	}
+	for _, mapping := range value.AppSurfaceMappings {
+		if _, err := tx.tx.ExecContext(ctx, `
+INSERT INTO cutover_gateway_app_surface_mappings (
+    activation_row_id, sequence, mapping_id, app_surface, public_path,
+    listener_identity, upstream_identity, health_evidence_sha256, trace_evidence_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			activationRowID, mapping.Sequence, mapping.MappingID, mapping.PublicSurface, mapping.PublicPath,
+			mapping.ListenerIdentity, mapping.UpstreamIdentity, mapping.HealthEvidenceSHA256, mapping.TraceEvidenceSHA256); err != nil {
+			return err
+		}
+	}
 	for _, authority := range value.StandingAuthorities {
 		if _, err := tx.tx.ExecContext(ctx, `
 INSERT INTO cutover_gateway_standing_authorities (
@@ -419,6 +472,58 @@ FROM cutover_gateway_mappings WHERE activation_row_id = ? ORDER BY sequence`, ac
 		result.Mappings = append(result.Mappings, value)
 	}
 	if err := mappingRows.Err(); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	appSurfaceRows, err := queryer.QueryContext(ctx, `
+SELECT sequence, app_surface, public_path, manifest_sha256
+FROM cutover_gateway_app_surfaces WHERE activation_row_id = ? ORDER BY sequence`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer appSurfaceRows.Close()
+	for appSurfaceRows.Next() {
+		var value CutoverGatewayAppSurface
+		if err := appSurfaceRows.Scan(&value.Sequence, &value.Surface, &value.PublicPath, &value.ManifestSHA256); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.AppSurfaces = append(result.AppSurfaces, value)
+	}
+	if err := appSurfaceRows.Err(); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	membershipRows, err := queryer.QueryContext(ctx, `
+SELECT route_path, app_surface
+FROM cutover_gateway_route_memberships WHERE activation_row_id = ? ORDER BY route_path`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer membershipRows.Close()
+	for membershipRows.Next() {
+		var value CutoverGatewayRouteMembership
+		if err := membershipRows.Scan(&value.RoutePath, &value.PublicSurface); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.RouteMemberships = append(result.RouteMemberships, value)
+	}
+	if err := membershipRows.Err(); err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	appMappingRows, err := queryer.QueryContext(ctx, `
+SELECT sequence, mapping_id, app_surface, public_path, listener_identity,
+       upstream_identity, health_evidence_sha256, trace_evidence_sha256
+FROM cutover_gateway_app_surface_mappings WHERE activation_row_id = ? ORDER BY sequence`, activationRowID)
+	if err != nil {
+		return CutoverGatewayConfiguration{}, err
+	}
+	defer appMappingRows.Close()
+	for appMappingRows.Next() {
+		var value CutoverGatewayAppSurfaceMapping
+		if err := appMappingRows.Scan(&value.Sequence, &value.MappingID, &value.PublicSurface, &value.PublicPath, &value.ListenerIdentity, &value.UpstreamIdentity, &value.HealthEvidenceSHA256, &value.TraceEvidenceSHA256); err != nil {
+			return CutoverGatewayConfiguration{}, err
+		}
+		result.AppSurfaceMappings = append(result.AppSurfaceMappings, value)
+	}
+	if err := appMappingRows.Err(); err != nil {
 		return CutoverGatewayConfiguration{}, err
 	}
 	standingRows, err := queryer.QueryContext(ctx, `

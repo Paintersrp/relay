@@ -68,16 +68,16 @@ func TestStoreProtectsFilesRotatesAndPrunes(t *testing.T) {
 
 func testRecord(mappingID, digest string) Record {
 	return Record{
-		SchemaVersion:       SchemaVersion,
-		RequestID:           strings.Repeat("a", 32),
-		StartedAt:           "2026-07-22T12:00:00Z",
-		MappingID:           mappingID,
-		RoutePath:           "/mcp/v1/planner/frontier",
-		SurfaceContract:     "planner-ticket-frontier.v1",
-		RouteManifestSHA256: strings.Repeat("b", 64),
-		ResponseSHA256:      digest,
-		CompletionState:     CompletionNotApplicable,
-		OutcomeClass:        OutcomeSuccess,
-		DownstreamWrite:     DownstreamWrite{Complete: true},
+		SchemaVersion:               SchemaVersion,
+		RequestID:                   strings.Repeat("a", 32),
+		StartedAt:                   "2026-07-22T12:00:00Z",
+		MappingID:                   mappingID,
+		PublicSurface:               "planner",
+		PublicSurfaceManifestSHA256: strings.Repeat("b", 64),
+		RoutePath:                   "/mcp/planner",
+		ResponseSHA256:              digest,
+		CompletionState:             CompletionNotApplicable,
+		OutcomeClass:                OutcomeSuccess,
+		DownstreamWrite:             DownstreamWrite{Complete: true},
 	}
 }

@@ -67,28 +67,40 @@ type DownstreamWrite struct {
 	ErrorClass     ErrorClass `json:"error_class"`
 }
 
+// Record keeps transport facts separate from static internal authority identity.
+// The proxy resolves every tool identity from its compiled mapping, not from a
+// client-provided route, role, or metadata field.
 type Record struct {
-	SchemaVersion       string          `json:"schema_version"`
-	RequestID           string          `json:"request_id"`
-	StartedAt           string          `json:"started_at"`
-	DurationMS          int64           `json:"duration_ms"`
-	MappingID           string          `json:"mapping_id"`
-	RoutePath           string          `json:"route_path"`
-	SurfaceContract     string          `json:"surface_contract"`
-	RouteManifestSHA256 string          `json:"route_manifest_sha256"`
-	JSONRPCMethod       string          `json:"jsonrpc_method"`
-	ToolName            string          `json:"tool_name"`
-	OperationID         string          `json:"operation_id"`
-	PacketID            string          `json:"packet_id"`
-	ProjectID           string          `json:"project_id"`
-	SourceIdentity      SourceIdentity  `json:"source_identity"`
-	RequestSizeBytes    int64           `json:"request_size_bytes"`
-	ResponseSizeBytes   int64           `json:"response_size_bytes"`
-	ResponseSHA256      string          `json:"response_sha256"`
-	CompletionState     CompletionState `json:"completion_state"`
-	OutcomeClass        OutcomeClass    `json:"outcome_class"`
-	ErrorClass          ErrorClass      `json:"error_class"`
-	DownstreamWrite     DownstreamWrite `json:"downstream_write"`
+	SchemaVersion               string          `json:"schema_version"`
+	RequestID                   string          `json:"request_id"`
+	StartedAt                   string          `json:"started_at"`
+	DurationMS                  int64           `json:"duration_ms"`
+	MappingID                   string          `json:"mapping_id"`
+	PublicSurface               string          `json:"public_surface"`
+	PublicSurfaceManifestSHA256 string          `json:"public_surface_manifest_sha256"`
+	RoutePath                   string          `json:"route_path"`
+	JSONRPCMethod               string          `json:"jsonrpc_method"`
+	ToolName                    string          `json:"tool_name,omitempty"`
+	PublicAdvertisedToolName    string          `json:"public_advertised_tool_name,omitempty"`
+	InternalToolName            string          `json:"internal_tool_name,omitempty"`
+	InternalRoutePath           string          `json:"internal_route_path,omitempty"`
+	SurfaceContract             string          `json:"surface_contract,omitempty"`
+	RouteManifestSHA256         string          `json:"route_manifest_sha256,omitempty"`
+	StandingAuthorityRepository string          `json:"standing_authority_repository,omitempty"`
+	StandingAuthorityCommitOID  string          `json:"standing_authority_commit_oid,omitempty"`
+	StandingAuthorityPath       string          `json:"standing_authority_path,omitempty"`
+	StandingAuthorityBlobOID    string          `json:"standing_authority_blob_oid,omitempty"`
+	OperationID                 string          `json:"operation_id"`
+	PacketID                    string          `json:"packet_id"`
+	ProjectID                   string          `json:"project_id"`
+	SourceIdentity              SourceIdentity  `json:"source_identity"`
+	RequestSizeBytes            int64           `json:"request_size_bytes"`
+	ResponseSizeBytes           int64           `json:"response_size_bytes"`
+	ResponseSHA256              string          `json:"response_sha256"`
+	CompletionState             CompletionState `json:"completion_state"`
+	OutcomeClass                OutcomeClass    `json:"outcome_class"`
+	ErrorClass                  ErrorClass      `json:"error_class"`
+	DownstreamWrite             DownstreamWrite `json:"downstream_write"`
 }
 
 func MarshalLine(record Record) ([]byte, error) {
@@ -109,10 +121,24 @@ func (record Record) Validate() error {
 	if !validLowerHex(record.RequestID, 32) {
 		return fmt.Errorf("transport trace request ID is invalid")
 	}
-	if strings.TrimSpace(record.StartedAt) == "" || record.DurationMS < 0 ||
-		strings.TrimSpace(record.MappingID) == "" || strings.TrimSpace(record.RoutePath) == "" ||
-		strings.TrimSpace(record.SurfaceContract) == "" || !validLowerHex(record.RouteManifestSHA256, 64) {
-		return fmt.Errorf("transport trace route identity is invalid")
+	if strings.TrimSpace(record.StartedAt) == "" || record.DurationMS < 0 || strings.TrimSpace(record.MappingID) == "" ||
+		strings.TrimSpace(record.PublicSurface) == "" || !validLowerHex(record.PublicSurfaceManifestSHA256, 64) || strings.TrimSpace(record.RoutePath) == "" {
+		return fmt.Errorf("transport trace public surface identity is invalid")
+	}
+	if record.ToolName != record.PublicAdvertisedToolName {
+		return fmt.Errorf("transport trace public tool identity is inconsistent")
+	}
+	internal := []string{record.InternalToolName, record.InternalRoutePath, record.SurfaceContract, record.RouteManifestSHA256, record.StandingAuthorityRepository, record.StandingAuthorityCommitOID, record.StandingAuthorityPath, record.StandingAuthorityBlobOID}
+	if record.PublicAdvertisedToolName == "" {
+		for _, value := range internal {
+			if value != "" {
+				return fmt.Errorf("transport trace unresolved tool has internal identity")
+			}
+		}
+	} else if strings.TrimSpace(record.InternalToolName) == "" || strings.TrimSpace(record.InternalRoutePath) == "" || strings.TrimSpace(record.SurfaceContract) == "" ||
+		!validLowerHex(record.RouteManifestSHA256, 64) || strings.TrimSpace(record.StandingAuthorityRepository) == "" || !validLowerHex(record.StandingAuthorityCommitOID, 40) ||
+		strings.TrimSpace(record.StandingAuthorityPath) == "" || !validLowerHex(record.StandingAuthorityBlobOID, 40) {
+		return fmt.Errorf("transport trace internal route identity is invalid")
 	}
 	if record.RequestSizeBytes < 0 || record.ResponseSizeBytes < 0 || !validLowerHex(record.ResponseSHA256, 64) {
 		return fmt.Errorf("transport trace byte evidence is invalid")
@@ -120,9 +146,7 @@ func (record Record) Validate() error {
 	if !validCompletion(record.CompletionState) || !validOutcome(record.OutcomeClass) || !validError(record.ErrorClass) {
 		return fmt.Errorf("transport trace outcome is invalid")
 	}
-	if record.DownstreamWrite.AttemptedBytes < 0 || record.DownstreamWrite.WrittenBytes < 0 ||
-		record.DownstreamWrite.WrittenBytes > record.DownstreamWrite.AttemptedBytes ||
-		!validError(record.DownstreamWrite.ErrorClass) {
+	if record.DownstreamWrite.AttemptedBytes < 0 || record.DownstreamWrite.WrittenBytes < 0 || record.DownstreamWrite.WrittenBytes > record.DownstreamWrite.AttemptedBytes || !validError(record.DownstreamWrite.ErrorClass) {
 		return fmt.Errorf("transport trace downstream write is invalid")
 	}
 	writeComplete := record.DownstreamWrite.WrittenBytes == record.DownstreamWrite.AttemptedBytes && record.DownstreamWrite.ErrorClass == ErrorNone

@@ -1,41 +1,54 @@
 # Relay MCP
 
-Relay exposes the aggregate profile-selected JSON-RPC registry over stdio and HTTP and seven route-specific HTTP registries on the Relay daemon. Private ingress maps one independently supervised local listener to each fixed versioned route without changing its tool inventory or dispatch owner.
+Relay has one aggregate compatibility surface and three ChatGPT-facing role apps. The role apps compile from the seven immutable internal route manifests without changing their route path, handler ownership, schemas, manifest digest, or standing-authority binding.
 
 ## Transports
 
-### Stdio
+### Stdio and aggregate HTTP
 
-`cmd/mcpserver` opens the workflow store and serves newline-delimited JSON-RPC 2.0 on stdin/stdout. `scripts/local/relay-mcp-stdio.mjs` is the supported local launcher and includes an executable self-test for initialization, ping, paginated `tools/list`, exact ordered inventory, and OpenAI file-parameter metadata.
+`cmd/mcpserver` opens the profile-selected aggregate registry over newline-delimited JSON-RPC 2.0 on stdin/stdout. `scripts/local/relay-mcp-stdio.mjs` is the supported local launcher and includes an executable self-test for initialization, ping, paginated `tools/list`, exact ordered inventory, and OpenAI file-parameter metadata.
 
-### HTTP
+`cmd/relay` also serves aggregate `POST /mcp` on the normal Relay daemon, which defaults to `http://localhost:8080`. The aggregate surface is not a role-app connector URL: it returns HTTP `409` while a cutover activation is active. It remains separate from the three role apps and does not close or redirect them.
 
-`cmd/relay` serves aggregate `POST /mcp` and the seven fixed versioned route paths on the normal Relay daemon, which defaults to `http://localhost:8080`. It also supervises the private route ingress mappings documented below.
+### Role-app HTTP
 
-- Methods other than POST return HTTP 405.
-- When `RELAY_MCP_AUTH_TOKEN` is configured, requests require `Authorization: Bearer <token>`.
-- An empty token leaves the endpoint unauthenticated and emits a warning. That mode is for loopback-only connector proof and must not be exposed.
-- `RELAY_MCP_DISABLE_AUTH=true` explicitly disables enforcement for local development; it is not production exposure guidance.
+Use exactly one of these role-level app URLs for a ChatGPT HTTP connector:
 
-## Private route ingress
+| Public app surface | HTTP endpoint | Compiled internal route members |
+| --- | --- | --- |
+| Wayfinder | `POST /mcp/wayfinder` | 3 |
+| Planner | `POST /mcp/planner` | 2 |
+| Auditor | `POST /mcp/auditor` | 2 |
 
-`cmd/relay` also supervises seven isolated private listeners. Each listener forwards to one fixed versioned MCP route on the main Relay daemon. Request content cannot select an upstream, another route, or aggregate `/mcp`.
+Methods other than POST return HTTP 405. When `RELAY_MCP_AUTH_TOKEN` is configured, each endpoint requires `Authorization: Bearer <token>`. An empty token leaves the endpoint unauthenticated and emits a warning; that mode is only for loopback connector proof. `RELAY_MCP_DISABLE_AUTH=true` explicitly disables enforcement for local development and is not production exposure guidance.
 
-| Mapping | Route | Listener override | Default |
+The seven former `/mcp/v1/...` routes are removed and return HTTP `404`; no legacy route redirects to a role app.
+
+### Generated catalog and inventory
+
+`BuildMCPAppSurfaceManifests` is the single generated and tested inventory table for the public role apps. Each `AppSurfaceManifest.Tools` row maps these identities without hand-maintained aliases:
+
+| Public app surface | Public advertised tool name | Internal tool name | Internal route path | Surface contract |
+| --- | --- | --- | --- | --- |
+| `AppSurfaceManifest.Surface` | `AppToolManifest.AdvertisedName` | `AppToolManifest.InternalToolName` | `AppToolManifest.InternalRoutePath` | `AppToolManifest.SurfaceContract` |
+
+Only `AdvertisedName` is exposed as the MCP tool name in that app's `tools/list`. If an internal tool name collides within one role app, its public name is the deterministic catalog alias `<surface-contract-with-dots-replaced-by-hyphens>__<internal-tool-name>`; otherwise it remains the internal tool name. Public aliases are catalog-only: a request cannot select a route, a role, an internal name, or authority context. Each alias is statically bound to exactly one compiled internal route and its standing authority. The route-contract tests build and verify every generated inventory row, including public name, internal name, route path, surface contract, manifest digest, and authority identity.
+
+## Private role-app ingress
+
+`cmd/relay` supervises three isolated private listeners, each forwarding to one fixed role-app URL on the main Relay daemon. Request content cannot select another upstream, another app, an internal route, or aggregate `/mcp`.
+
+| Mapping | Role-app route | Listener override | Default |
 | --- | --- | --- | --- |
-| `wayfinder-workspace` | `/mcp/v1/wayfinder/workspace` | `RELAY_MCP_INGRESS_WAYFINDER_WORKSPACE_ADDR` | `127.0.0.1:18101` |
-| `wayfinder-discovery` | `/mcp/v1/wayfinder/discovery` | `RELAY_MCP_INGRESS_WAYFINDER_DISCOVERY_ADDR` | `127.0.0.1:18102` |
-| `wayfinder-investigation` | `/mcp/v1/wayfinder/investigation` | `RELAY_MCP_INGRESS_WAYFINDER_INVESTIGATION_ADDR` | `127.0.0.1:18103` |
-| `planner-authoring` | `/mcp/v1/planner/authoring` | `RELAY_MCP_INGRESS_PLANNER_AUTHORING_ADDR` | `127.0.0.1:18104` |
-| `planner-frontier` | `/mcp/v1/planner/frontier` | `RELAY_MCP_INGRESS_PLANNER_FRONTIER_ADDR` | `127.0.0.1:18105` |
-| `auditor-review` | `/mcp/v1/auditor/review` | `RELAY_MCP_INGRESS_AUDITOR_REVIEW_ADDR` | `127.0.0.1:18106` |
-| `auditor-audit` | `/mcp/v1/auditor/audit` | `RELAY_MCP_INGRESS_AUDITOR_AUDIT_ADDR` | `127.0.0.1:18107` |
+| `wayfinder` | `/mcp/wayfinder` | `RELAY_MCP_INGRESS_WAYFINDER_ADDR` | `127.0.0.1:18101` |
+| `planner` | `/mcp/planner` | `RELAY_MCP_INGRESS_PLANNER_ADDR` | `127.0.0.1:18102` |
+| `auditor` | `/mcp/auditor` | `RELAY_MCP_INGRESS_AUDITOR_ADDR` | `127.0.0.1:18103` |
 
 Listener overrides accept only loopback, RFC 1918 private IPv4, or IPv6 unique-local IP literals with nonzero ports. Hostnames, wildcard, unspecified, public, link-local, multicast, and port-zero addresses are rejected.
 
-`RELAY_MCP_INGRESS_UPSTREAM_BASE_URL` optionally replaces the default `http://127.0.0.1:<Relay port>` private upstream base. It must use `http` or `https`, an IP-literal private or loopback host, an explicit nonzero port, and no path, query, fragment, or user information. Relay appends each mapping's fixed route path.
+`RELAY_MCP_INGRESS_UPSTREAM_BASE_URL` optionally replaces the default `http://127.0.0.1:<Relay port>` private upstream base. It must use `http` or `https`, an IP-literal private or loopback host, an explicit nonzero port, and no path, query, fragment, or user information. Relay appends the fixed role-app route for each mapping.
 
-Each listener accepts only `POST` to its exact MCP route and `GET /healthz`. A mapping probes its fixed upstream route independently, reports only bounded health metadata, and restarts independently. One listener, upstream, trace, or client failure cannot redirect to another route, stop another mapping, or stop the main Relay daemon.
+Each listener accepts only `POST` to its exact role-app route and `GET /healthz`. A mapping probes its fixed upstream route independently, reports only bounded health metadata, and restarts independently. One listener, upstream, trace, or client failure cannot redirect to another app, stop another mapping, or stop the main Relay daemon.
 
 ### Local-hop bearer
 
@@ -54,10 +67,9 @@ Retention is the earlier of:
 
 Segments rotate at eight mebibytes. Trace persistence failure leaves the authoritative MCP response unchanged and marks only that mapping unhealthy.
 
+## Aggregate profiles
 
-## Profiles
-
-`RELAY_MCP_PROFILE` accepts exactly `planner`, `auditor`, or `local_operator`. Missing or invalid input fails closed to `planner`.
+`RELAY_MCP_PROFILE` controls only the aggregate stdio and `/mcp` surfaces. It accepts exactly `planner`, `auditor`, or `local_operator`. Missing or invalid input fails closed to `planner`.
 
 | Profile | Ordered tools |
 | --- | --- |
@@ -65,7 +77,7 @@ Segments rotate at eight mebibytes. Trace persistence failure leaves the authori
 | `auditor` | `validate_artifact`, `create_run`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
 | `local_operator` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
 
-A tool outside the active profile is not registered and returns JSON-RPC method-not-found when called. The server registers the selected definitions before dispatch, so every advertised name reaches one canonical handler branch.
+A tool outside the active aggregate profile is not registered and returns JSON-RPC method-not-found when called. The server registers the selected definitions before dispatch, so every advertised name reaches one canonical handler branch.
 
 ## File parameters
 
@@ -172,7 +184,7 @@ The server supports:
 - paginated `tools/list`;
 - `tools/call`.
 
-`tools/list` preserves profile order. Unknown JSON-RPC methods and unregistered tool names return method-not-found. Invalid parameters use strict schemas with `additionalProperties: false` where defined.
+Aggregate `tools/list` preserves profile order. Role-app `tools/list` exposes only its deterministic advertised catalog. Unknown JSON-RPC methods and unregistered tool names return method-not-found. Invalid parameters use strict schemas with `additionalProperties: false` where defined.
 
 Tool results distinguish successful workflow output from blocked business state. Blockers are bounded, omit secret values and absolute local paths, and identify recoverability and the affected field or resource.
 
@@ -207,10 +219,10 @@ npm run test:local-scripts
 npm run release:smoke
 ```
 
-For a separately running authenticated HTTP daemon:
+For a separately running authenticated HTTP daemon, use one role app:
 
 ```bash
-make mcp-http-smoke RELAY_MCP_URL=http://localhost:8080/mcp RELAY_MCP_AUTH_TOKEN=dev-token
+make mcp-http-smoke RELAY_MCP_URL=http://localhost:8080/mcp/planner RELAY_MCP_AUTH_TOKEN=dev-token
 ```
 
 See [smoke.md](smoke.md) for the complete validation matrix and [chatgpt-mcp-local.md](chatgpt-mcp-local.md) for secure local tunnel setup.

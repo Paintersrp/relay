@@ -91,6 +91,29 @@ type MappingIdentity struct {
 	TraceEvidenceSHA256  string `json:"traceEvidenceSha256"`
 }
 
+type AppSurfaceIdentity struct {
+	Sequence       int64  `json:"sequence"`
+	Surface        string `json:"surface"`
+	PublicPath     string `json:"publicPath"`
+	ManifestSHA256 string `json:"manifestSha256"`
+}
+
+type RouteMembershipIdentity struct {
+	RoutePath     string `json:"routePath"`
+	PublicSurface string `json:"publicSurface"`
+}
+
+type AppSurfaceMappingIdentity struct {
+	Sequence             int64  `json:"sequence"`
+	MappingID            string `json:"mappingId"`
+	PublicSurface        string `json:"publicSurface"`
+	PublicPath           string `json:"publicPath"`
+	ListenerIdentity     string `json:"listenerIdentity"`
+	UpstreamIdentity     string `json:"upstreamIdentity"`
+	HealthEvidenceSHA256 string `json:"healthEvidenceSha256"`
+	TraceEvidenceSHA256  string `json:"traceEvidenceSha256"`
+}
+
 type StandingAuthorityIdentity struct {
 	Role          string `json:"role"`
 	Repository    string `json:"repository"`
@@ -115,9 +138,13 @@ type GatewayConfigurationIdentity struct {
 	StandingRepository  string                      `json:"standingRepository"`
 	StandingCommitOID   string                      `json:"standingCommitOid"`
 	Routes              []RouteIdentity             `json:"routes"`
-	Mappings            []MappingIdentity           `json:"mappings"`
+	Mappings            []MappingIdentity           `json:"mappings,omitempty"`
 	StandingAuthorities []StandingAuthorityIdentity `json:"standingAuthorities"`
 	DependencyOutcomes  []DependencyOutcomeIdentity `json:"dependencyOutcomes"`
+	TopologyVersion     string                      `json:"topologyVersion,omitempty"`
+	AppSurfaces         []AppSurfaceIdentity        `json:"appSurfaces,omitempty"`
+	RouteMemberships    []RouteMembershipIdentity   `json:"routeMemberships,omitempty"`
+	AppSurfaceMappings  []AppSurfaceMappingIdentity `json:"appSurfaceMappings,omitempty"`
 }
 
 type PrepareRequest struct {

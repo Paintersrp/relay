@@ -21,10 +21,11 @@ import (
 )
 
 type mcpHandler struct {
-	Path                string
-	SurfaceContract     string
-	RouteManifestSHA256 string
-	Handler             http.Handler
+	Path                        string
+	PublicSurface               string
+	PublicSurfaceManifestSHA256 string
+	ToolRegistrations           []mcp.AppToolRegistration
+	Handler                     http.Handler
 }
 
 func buildMCPHandlers(store *workflowstore.Store, vaults *sourcevault.Manager, projects *workflowprojects.Service, packets *appoperations.Service, wayfinder *appwayfinder.Service, tickets *apptickets.Service, audits *appaudits.WorkflowAuditService, log *slog.Logger) ([]mcpHandler, error) {
@@ -59,33 +60,35 @@ func buildMCPHandlers(store *workflowstore.Store, vaults *sourcevault.Manager, p
 	if err != nil {
 		return nil, err
 	}
-	set, err := routecontracts.BuildMCPRouteManifests()
+	routes, err := routecontracts.BuildMCPRouteManifests()
 	if err != nil {
 		return nil, err
 	}
-	owners, err := mcp.NewRouteDispatchers(set, mcp.RouteDispatchServices{Projects: projects, Packets: packets, Lifecycle: lifecycleHandler, Source: source, Wayfinder: wayfinder, Tickets: tickets, Audits: audits, AuditReadback: audits})
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]mcpHandler, 0, len(set.Manifests))
-	for _, manifest := range set.Manifests {
-		handlers, err := mcp.BuildRouteHandlers(manifest, owners)
+	owners, err := mcp.NewRouteDispatchers(routes, mcp.RouteDispatchServices{Projects: projects, Packets: packets, Lifecycle: lifecycleHandler, Source: source, Wayfinder: wayfinder, Tickets: tickets, Audits: audits, AuditReadback: audits})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]mcpHandler, 0, len(surfaces.Surfaces))
+	for _, surface := range surfaces.Surfaces {
+		registrations, err := mcp.BuildAppSurfaceHandlers(surface, owners)
 		if err != nil {
 			return nil, err
 		}
-		server, err := mcp.NewServerForRoute(log, mcp.NewWorkflowDepsFromEnv(store, log), manifest, handlers)
+		server, err := mcp.NewServerForAppSurface(log, mcp.NewWorkflowDepsFromEnv(store, log), surface, registrations)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, mcpHandler{
-			Path:                manifest.RoutePath,
-			SurfaceContract:     manifest.SurfaceContract,
-			RouteManifestSHA256: manifest.ManifestSHA256,
-			Handler:             mcp.NewHTTPHandler(server, log),
+			Path: surface.PublicPath, PublicSurface: string(surface.Surface), PublicSurfaceManifestSHA256: surface.ManifestSHA256,
+			ToolRegistrations: registrations, Handler: mcp.NewHTTPHandler(server, log),
 		})
 	}
-	if len(out) != 7 {
-		return nil, fmt.Errorf("MCP_ROUTE_SET_INCOMPLETE")
+	if len(out) != 3 {
+		return nil, fmt.Errorf("MCP_APP_SURFACE_SET_INCOMPLETE")
 	}
 	return out, nil
 }

@@ -9,18 +9,18 @@ import (
 	"relay/internal/transport/transporttrace"
 )
 
-func TestLoadConfigBuildsExactSevenPrivateMappings(t *testing.T) {
+func TestLoadConfigBuildsExactThreePrivateAppMappings(t *testing.T) {
 	environment := map[string]string{}
 	config, err := LoadConfig(func(name string) string { return environment[name] }, "http://127.0.0.1:8080", testRouteDescriptors())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(config.Mappings) != 7 || config.Retention.MaxAge != 14*24*time.Hour || config.Retention.MaxBytes != 100<<20 {
+	if len(config.Mappings) != 3 || config.Retention.MaxAge != 14*24*time.Hour || config.Retention.MaxBytes != 100<<20 {
 		t.Fatalf("config=%#v", config)
 	}
 	for index, entry := range mappingCatalog {
 		mapping := config.Mappings[index]
-		if mapping.ID != entry.ID || mapping.RoutePath != entry.RoutePath || mapping.Listener.String() != entry.DefaultAddress || mapping.Upstream.URL().Path != entry.RoutePath {
+		if mapping.ID != entry.ID || mapping.RoutePath != entry.RoutePath || mapping.PublicSurface != string(entry.ID) || mapping.Listener.String() != entry.DefaultAddress || mapping.Upstream.URL().Path != entry.RoutePath || len(mapping.ToolIdentities) != 1 {
 			t.Fatalf("mapping[%d]=%#v", index, mapping)
 		}
 	}
@@ -41,7 +41,7 @@ func TestLoadConfigRejectsUnsafeListenersAndWeakenedRetention(t *testing.T) {
 	}
 	environment = map[string]string{traceMaxBytesEnv: fmt.Sprint(transporttrace.DefaultMaxBytes + 1)}
 	if _, err := LoadConfig(func(name string) string { return environment[name] }, "http://127.0.0.1:8080", testRouteDescriptors()); err == nil {
-		t.Fatal("retention bytes above the ceiling were accepted")
+		t.Fatal("retention bytes above the ceiling was accepted")
 	}
 }
 
@@ -61,11 +61,19 @@ func testRouteDescriptors() []RouteDescriptor {
 	result := make([]RouteDescriptor, len(mappingCatalog))
 	for index, entry := range mappingCatalog {
 		result[index] = RouteDescriptor{
-			MappingID:           entry.ID,
-			RoutePath:           entry.RoutePath,
-			SurfaceContract:     fmt.Sprintf("surface-%d.v1", index+1),
-			RouteManifestSHA256: strings.Repeat(fmt.Sprintf("%x", index+1), 64),
+			MappingID: entry.ID, RoutePath: entry.RoutePath, PublicSurface: string(entry.ID),
+			PublicSurfaceManifestSHA256: strings.Repeat(fmt.Sprintf("%x", index+1), 64),
+			ToolIdentities:              []ToolIdentity{testToolIdentity("tool_"+string(entry.ID), "/mcp/v1/"+string(entry.ID))},
 		}
 	}
 	return result
+}
+
+func testToolIdentity(advertisedName, internalRoute string) ToolIdentity {
+	return ToolIdentity{
+		AdvertisedName: advertisedName, InternalToolName: "search_source", InternalRoutePath: internalRoute,
+		SurfaceContract: "test-surface.v1", RouteManifestSHA256: strings.Repeat("a", 64),
+		StandingAuthorityRepository: "Paintersrp/relay-specs", StandingAuthorityCommitOID: strings.Repeat("b", 40),
+		StandingAuthorityPath: "agents/test.md", StandingAuthorityBlobOID: strings.Repeat("c", 40),
+	}
 }

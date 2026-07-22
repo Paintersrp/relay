@@ -53,7 +53,7 @@ func LoadConfig(getenv func(string) string, defaultUpstreamBase string, descript
 	}
 	descriptorsByPath := make(map[string]RouteDescriptor, len(descriptors))
 	for _, descriptor := range descriptors {
-		if descriptor.RoutePath == "" || descriptor.SurfaceContract == "" || !validLowerHex(descriptor.RouteManifestSHA256, 64) {
+		if !validRouteDescriptor(descriptor) {
 			return Config{}, &ConfigError{Code: "MCP_INGRESS_ROUTE_MISMATCH", MappingID: descriptor.MappingID, Field: "route_descriptor"}
 		}
 		if _, exists := descriptorsByPath[descriptor.RoutePath]; exists {
@@ -73,7 +73,7 @@ func LoadConfig(getenv func(string) string, defaultUpstreamBase string, descript
 	listeners := map[string]MappingID{}
 	for _, entry := range mappingCatalog {
 		descriptor, ok := descriptorsByPath[entry.RoutePath]
-		if !ok || descriptor.MappingID != entry.ID {
+		if !ok || descriptor.MappingID != entry.ID || descriptor.PublicSurface != string(entry.ID) {
 			return Config{}, &ConfigError{Code: "MCP_INGRESS_ROUTE_MISMATCH", MappingID: entry.ID, Field: "route_descriptor"}
 		}
 		addressValue := strings.TrimSpace(getenv(entry.ListenerEnv))
@@ -91,12 +91,10 @@ func LoadConfig(getenv func(string) string, defaultUpstreamBase string, descript
 		upstreamURL := *base
 		upstreamURL.Path = entry.RoutePath
 		mappings = append(mappings, MappingSpec{
-			ID:                  entry.ID,
-			RoutePath:           entry.RoutePath,
-			SurfaceContract:     descriptor.SurfaceContract,
-			RouteManifestSHA256: descriptor.RouteManifestSHA256,
-			Listener:            address,
-			Upstream:            UpstreamTarget{value: upstreamURL},
+			ID: entry.ID, RoutePath: entry.RoutePath, PublicSurface: descriptor.PublicSurface,
+			PublicSurfaceManifestSHA256: descriptor.PublicSurfaceManifestSHA256,
+			ToolIdentities:              append([]ToolIdentity(nil), descriptor.ToolIdentities...), Listener: address,
+			Upstream: UpstreamTarget{value: upstreamURL},
 		})
 	}
 	retention, err := loadRetention(getenv)
@@ -111,12 +109,26 @@ func LoadConfig(getenv func(string) string, defaultUpstreamBase string, descript
 		return Config{}, &ConfigError{Code: "MCP_INGRESS_RETENTION_INVALID", Field: traceDirectoryEnv}
 	}
 	traceDirectory = filepath.Clean(traceDirectory)
-	return Config{
-		Mappings:       mappings,
-		Bearer:         NewBearerInjector(getenv(upstreamTokenEnv)),
-		TraceDirectory: traceDirectory,
-		Retention:      retention,
-	}, nil
+	return Config{Mappings: mappings, Bearer: NewBearerInjector(getenv(upstreamTokenEnv)), TraceDirectory: traceDirectory, Retention: retention}, nil
+}
+
+func validRouteDescriptor(descriptor RouteDescriptor) bool {
+	if descriptor.RoutePath == "" || descriptor.PublicSurface == "" || !validLowerHex(descriptor.PublicSurfaceManifestSHA256, 64) || len(descriptor.ToolIdentities) == 0 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(descriptor.ToolIdentities))
+	for _, identity := range descriptor.ToolIdentities {
+		if identity.AdvertisedName == "" || identity.InternalToolName == "" || identity.InternalRoutePath == "" || identity.SurfaceContract == "" ||
+			identity.StandingAuthorityRepository == "" || identity.StandingAuthorityCommitOID == "" || identity.StandingAuthorityPath == "" || identity.StandingAuthorityBlobOID == "" ||
+			!validLowerHex(identity.RouteManifestSHA256, 64) || !validLowerHex(identity.StandingAuthorityCommitOID, 40) || !validLowerHex(identity.StandingAuthorityBlobOID, 40) {
+			return false
+		}
+		if _, duplicate := seen[identity.AdvertisedName]; duplicate {
+			return false
+		}
+		seen[identity.AdvertisedName] = struct{}{}
+	}
+	return true
 }
 
 func ParsePrivateAddress(value string) (PrivateAddress, error) {
@@ -165,10 +177,7 @@ func parseUpstreamBase(value string) (*url.URL, error) {
 }
 
 func loadRetention(getenv func(string) string) (transporttrace.RetentionPolicy, error) {
-	policy := transporttrace.RetentionPolicy{
-		MaxAge:   transporttrace.DefaultMaxAge,
-		MaxBytes: transporttrace.DefaultMaxBytes,
-	}
+	policy := transporttrace.RetentionPolicy{MaxAge: transporttrace.DefaultMaxAge, MaxBytes: transporttrace.DefaultMaxBytes}
 	if value := strings.TrimSpace(getenv(traceMaxAgeEnv)); value != "" {
 		parsed, err := time.ParseDuration(value)
 		if err != nil {

@@ -86,7 +86,7 @@ func TestCatalogHasNoDynamicOrAggregateMapping(t *testing.T) {
 			t.Fatalf("invalid catalog entry: %#v", entry)
 		}
 	}
-	if len(mappingCatalog) != 7 {
+	if len(mappingCatalog) != 3 {
 		t.Fatalf("catalog entries=%d", len(mappingCatalog))
 	}
 	_ = fmt.Sprint(mappingCatalog)

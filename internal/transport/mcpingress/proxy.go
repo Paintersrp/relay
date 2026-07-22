@@ -114,7 +114,7 @@ func (handler *proxyHandler) reject(writer http.ResponseWriter, request *http.Re
 	counted := &countingReader{reader: request.Body}
 	identity, _ := mcp.ObserveTraceRequest(counted)
 	write, digest := writeBoundedError(writer, status)
-	classification := transporttrace.Classify(identity, mcp.TraceResponseOutcome{}, status, write)
+	classification := transporttrace.Classify(handler.classificationIdentity(identity), mcp.TraceResponseOutcome{}, status, write)
 	classification.Error = class
 	handler.appendRecord(started, requestID, identity, counted.Count(), write.AttemptedBytes, digest, classification, write)
 }
@@ -134,7 +134,7 @@ func (handler *proxyHandler) forward(writer http.ResponseWriter, request *http.R
 		observation.Close()
 		identity := observation.Result()
 		write, digest := writeBoundedError(writer, http.StatusBadGateway)
-		handler.appendRecord(started, requestID, identity, observation.Count(), write.AttemptedBytes, digest, transporttrace.Classification{Completion: transporttrace.CompletionUnknown, Outcome: transporttrace.OutcomeApplicationFailure, Error: transporttrace.ErrorInternalTransportFailure, Source: transporttrace.Classify(identity, mcp.TraceResponseOutcome{}, http.StatusBadGateway, write).Source}, write)
+		handler.appendRecord(started, requestID, identity, observation.Count(), write.AttemptedBytes, digest, transporttrace.Classification{Completion: transporttrace.CompletionUnknown, Outcome: transporttrace.OutcomeApplicationFailure, Error: transporttrace.ErrorInternalTransportFailure, Source: transporttrace.Classify(handler.classificationIdentity(identity), mcp.TraceResponseOutcome{}, http.StatusBadGateway, write).Source}, write)
 		return
 	}
 	upstream.ContentLength = request.ContentLength
@@ -152,8 +152,8 @@ func (handler *proxyHandler) forward(writer http.ResponseWriter, request *http.R
 			class = transporttrace.ErrorUpstreamTimeout
 		}
 		write, digest := writeBoundedError(writer, status)
-		classification := transporttrace.Classify(identity, mcp.TraceResponseOutcome{}, status, write)
-		classification.Completion = sourceCompletion(identity.ToolName)
+		classification := transporttrace.Classify(handler.classificationIdentity(identity), mcp.TraceResponseOutcome{}, status, write)
+		classification.Completion = sourceCompletion(handler.internalToolName(identity.ToolName))
 		classification.Error = class
 		if observation.ReadError() != nil {
 			classification.Error = transporttrace.ErrorRequestReadFailed
@@ -163,7 +163,7 @@ func (handler *proxyHandler) forward(writer http.ResponseWriter, request *http.R
 	}
 	defer response.Body.Close()
 	outcome, write, responseBytes, digest, responseErr := copyUpstreamResponse(writer, response)
-	classification := transporttrace.Classify(identity, outcome, response.StatusCode, write)
+	classification := transporttrace.Classify(handler.classificationIdentity(identity), outcome, response.StatusCode, write)
 	if responseErr != transporttrace.ErrorNone && write.Complete {
 		classification.Outcome = transporttrace.OutcomeApplicationFailure
 		classification.Error = responseErr
@@ -172,28 +172,28 @@ func (handler *proxyHandler) forward(writer http.ResponseWriter, request *http.R
 }
 
 func (handler *proxyHandler) appendRecord(started time.Time, requestID string, request mcp.TraceRequestIdentity, requestBytes, responseBytes int64, digest string, classification transporttrace.Classification, write transporttrace.DownstreamWrite) {
+	identity, known := handler.toolIdentity(request.ToolName)
 	record := transporttrace.Record{
-		SchemaVersion:       transporttrace.SchemaVersion,
-		RequestID:           requestID,
-		StartedAt:           started.Format(time.RFC3339Nano),
-		DurationMS:          maxInt64(0, handler.now().UTC().Sub(started).Milliseconds()),
-		MappingID:           string(handler.spec.ID),
-		RoutePath:           handler.spec.RoutePath,
-		SurfaceContract:     handler.spec.SurfaceContract,
-		RouteManifestSHA256: handler.spec.RouteManifestSHA256,
-		JSONRPCMethod:       request.JSONRPCMethod,
-		ToolName:            request.ToolName,
-		OperationID:         request.OperationID,
-		PacketID:            request.PacketID,
-		ProjectID:           request.ProjectID,
-		SourceIdentity:      classification.Source,
-		RequestSizeBytes:    requestBytes,
-		ResponseSizeBytes:   responseBytes,
-		ResponseSHA256:      digest,
-		CompletionState:     classification.Completion,
-		OutcomeClass:        classification.Outcome,
-		ErrorClass:          classification.Error,
-		DownstreamWrite:     write,
+		SchemaVersion: transporttrace.SchemaVersion, RequestID: requestID, StartedAt: started.Format(time.RFC3339Nano),
+		DurationMS: maxInt64(0, handler.now().UTC().Sub(started).Milliseconds()), MappingID: string(handler.spec.ID),
+		PublicSurface: handler.spec.PublicSurface, PublicSurfaceManifestSHA256: handler.spec.PublicSurfaceManifestSHA256,
+		RoutePath: handler.spec.RoutePath, JSONRPCMethod: request.JSONRPCMethod,
+		OperationID: request.OperationID, PacketID: request.PacketID, ProjectID: request.ProjectID,
+		SourceIdentity: classification.Source, RequestSizeBytes: requestBytes, ResponseSizeBytes: responseBytes,
+		ResponseSHA256: digest, CompletionState: classification.Completion, OutcomeClass: classification.Outcome,
+		ErrorClass: classification.Error, DownstreamWrite: write,
+	}
+	if known {
+		record.ToolName = identity.AdvertisedName
+		record.PublicAdvertisedToolName = identity.AdvertisedName
+		record.InternalToolName = identity.InternalToolName
+		record.InternalRoutePath = identity.InternalRoutePath
+		record.SurfaceContract = identity.SurfaceContract
+		record.RouteManifestSHA256 = identity.RouteManifestSHA256
+		record.StandingAuthorityRepository = identity.StandingAuthorityRepository
+		record.StandingAuthorityCommitOID = identity.StandingAuthorityCommitOID
+		record.StandingAuthorityPath = identity.StandingAuthorityPath
+		record.StandingAuthorityBlobOID = identity.StandingAuthorityBlobOID
 	}
 	removed, err := handler.traces.Append(record)
 	if err != nil {
@@ -205,6 +205,28 @@ func (handler *proxyHandler) appendRecord(started time.Time, requestID string, r
 	if removed > 0 {
 		handler.log.Info("MCP trace retention pruned segments", "mapping_id", handler.spec.ID, "route_path", handler.spec.RoutePath, "retention_action_count", removed)
 	}
+}
+
+func (handler *proxyHandler) toolIdentity(advertisedName string) (ToolIdentity, bool) {
+	for _, identity := range handler.spec.ToolIdentities {
+		if identity.AdvertisedName == advertisedName {
+			return identity, true
+		}
+	}
+	return ToolIdentity{}, false
+}
+
+func (handler *proxyHandler) internalToolName(advertisedName string) string {
+	identity, ok := handler.toolIdentity(advertisedName)
+	if !ok {
+		return ""
+	}
+	return identity.InternalToolName
+}
+
+func (handler *proxyHandler) classificationIdentity(request mcp.TraceRequestIdentity) mcp.TraceRequestIdentity {
+	request.ToolName = handler.internalToolName(request.ToolName)
+	return request
 }
 
 func (handler *proxyHandler) logTraceFailure() {

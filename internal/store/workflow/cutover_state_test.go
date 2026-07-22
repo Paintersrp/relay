@@ -1141,3 +1141,128 @@ func createLegacyRun(t *testing.T, ctx context.Context, store *Store, seed cutov
 	}
 	return run
 }
+
+func TestCutoverGatewayAppSurfacesRoundTripAndRejectInvalidMemberships(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	seed := seedCutoverState(t, ctx, store)
+	queries := workflowgenerated.New(store.DB())
+	activation, err := queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, "cutover-gateway-app-surfaces", seed.transitionPlanSHA256, "eligible"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := appSurfaceGatewayConfigurationForTest()
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		return tx.CreateCutoverGatewayConfiguration(ctx, activation.ID, configuration)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := store.LoadCutoverGatewayConfiguration(ctx, activation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.AppSurfaces) != 3 || len(loaded.RouteMemberships) != 7 || len(loaded.AppSurfaceMappings) != 3 {
+		t.Fatalf("app-surface round trip = %#v", loaded)
+	}
+	publicPaths := map[string]string{"wayfinder": "/mcp/wayfinder", "planner": "/mcp/planner", "auditor": "/mcp/auditor"}
+	for _, surface := range loaded.AppSurfaces {
+		if publicPaths[surface.Surface] != surface.PublicPath {
+			t.Fatalf("app surface = %#v", surface)
+		}
+	}
+	memberships := map[string]string{}
+	for _, membership := range loaded.RouteMemberships {
+		memberships[membership.RoutePath] = membership.PublicSurface
+	}
+	for _, route := range loaded.Routes {
+		if memberships[route.RoutePath] != route.Role {
+			t.Fatalf("route membership for %q = %q, want %q", route.RoutePath, memberships[route.RoutePath], route.Role)
+		}
+	}
+	for _, mapping := range loaded.AppSurfaceMappings {
+		if mapping.MappingID != mapping.PublicSurface || publicPaths[mapping.PublicSurface] != mapping.PublicPath {
+			t.Fatalf("app-surface mapping = %#v", mapping)
+		}
+	}
+
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_route_memberships (activation_row_id, route_path, app_surface)
+VALUES (?, '/mcp/v1/wayfinder/missing', 'wayfinder')`, activation.ID); err == nil {
+		t.Fatal("membership accepted a route absent from the configuration")
+	}
+	firstMembership := configuration.RouteMemberships[0]
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_route_memberships (activation_row_id, route_path, app_surface)
+VALUES (?, ?, ?)`, activation.ID, firstMembership.RoutePath, firstMembership.PublicSurface); err == nil {
+		t.Fatal("duplicate route membership was accepted")
+	}
+
+	orphan, err := queries.CreateCutoverActivation(ctx, cutoverActivationParams(seed, "cutover-gateway-app-surfaces-orphan", seed.transitionPlanSHA256, "eligible"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphanConfiguration := CutoverGatewayConfiguration{
+		ConfigurationSHA256: workflowHash('f'),
+		RelayRepository:     configuration.RelayRepository,
+		RelayCommitOID:      configuration.RelayCommitOID,
+		StandingRepository:  configuration.StandingRepository,
+		StandingCommitOID:   configuration.StandingCommitOID,
+		Routes:              []CutoverGatewayRoute{configuration.Routes[0]},
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		return tx.CreateCutoverGatewayConfiguration(ctx, orphan.ID, orphanConfiguration)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`
+INSERT INTO cutover_gateway_route_memberships (activation_row_id, route_path, app_surface)
+VALUES (?, ?, 'wayfinder')`, orphan.ID, configuration.Routes[0].RoutePath); err == nil {
+		t.Fatal("membership accepted an app surface absent from the configuration")
+	}
+}
+
+func appSurfaceGatewayConfigurationForTest() CutoverGatewayConfiguration {
+	routes := []struct {
+		path, role, contract string
+	}{
+		{"/mcp/v1/wayfinder/workspace", "wayfinder", "wayfinder-workspace.v1"},
+		{"/mcp/v1/wayfinder/discovery", "wayfinder", "wayfinder-discovery.v1"},
+		{"/mcp/v1/wayfinder/investigation", "wayfinder", "wayfinder-investigation.v1"},
+		{"/mcp/v1/planner/authoring", "planner", "planner-authoring.v1"},
+		{"/mcp/v1/planner/frontier", "planner", "planner-ticket-frontier.v1"},
+		{"/mcp/v1/auditor/review", "auditor", "auditor-review.v1"},
+		{"/mcp/v1/auditor/audit", "auditor", "auditor-audit.v1"},
+	}
+	configuration := CutoverGatewayConfiguration{
+		ConfigurationSHA256: workflowHash('a'),
+		RelayRepository:     "Paintersrp/relay",
+		RelayCommitOID:      strings.Repeat("a", 40),
+		StandingRepository:  "Paintersrp/relay-specs",
+		StandingCommitOID:   strings.Repeat("b", 40),
+	}
+	for index, route := range routes {
+		configuration.Routes = append(configuration.Routes, CutoverGatewayRoute{
+			Sequence: int64(index + 1), RoutePath: route.path, Role: route.role, SurfaceContractID: route.contract,
+			ManifestSHA256: workflowHash('c'), AuthorityCommitOID: strings.Repeat("a", 40), AuthorityBlobOID: strings.Repeat("b", 40),
+		})
+		configuration.RouteMemberships = append(configuration.RouteMemberships, CutoverGatewayRouteMembership{
+			RoutePath: route.path, PublicSurface: route.role,
+		})
+	}
+	for index, surface := range []struct{ name, path string }{
+		{"wayfinder", "/mcp/wayfinder"},
+		{"planner", "/mcp/planner"},
+		{"auditor", "/mcp/auditor"},
+	} {
+		configuration.AppSurfaces = append(configuration.AppSurfaces, CutoverGatewayAppSurface{
+			Sequence: int64(index + 1), Surface: surface.name, PublicPath: surface.path, ManifestSHA256: workflowHash('d'),
+		})
+		configuration.AppSurfaceMappings = append(configuration.AppSurfaceMappings, CutoverGatewayAppSurfaceMapping{
+			Sequence: int64(index + 1), MappingID: surface.name, PublicSurface: surface.name, PublicPath: surface.path,
+			ListenerIdentity: "127.0.0.1:1810" + string(rune('1'+index)), UpstreamIdentity: "http://127.0.0.1:8080" + surface.path,
+			HealthEvidenceSHA256: workflowHash('e'), TraceEvidenceSHA256: workflowHash('f'),
+		})
+	}
+	return configuration
+}
