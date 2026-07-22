@@ -35,21 +35,28 @@ type AuditReadbackService interface {
 }
 
 func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServices) (RouteDispatchers, error) {
-	handlers := make(map[string]SurfaceHandler, 40)
+	handlers := make(map[string]map[string]SurfaceHandler, len(set.Manifests))
+	toolNames := make(map[string]struct{}, 40)
 	for _, manifest := range set.Manifests {
+		if _, exists := handlers[manifest.RoutePath]; exists {
+			return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate route %s", manifest.RoutePath)
+		}
+		routeHandlers := make(map[string]SurfaceHandler, len(manifest.Tools))
 		for _, tool := range manifest.Tools {
-			if existing, ok := handlers[tool.Name]; ok && existing != nil {
-				continue
+			if _, exists := routeHandlers[tool.Name]; exists {
+				return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate %s/%s", manifest.RoutePath, tool.Name)
 			}
 			handler, err := newRouteToolDispatcher(manifest, tool, services)
 			if err != nil {
 				return RouteDispatchers{}, err
 			}
-			handlers[tool.Name] = handler
+			routeHandlers[tool.Name] = handler
+			toolNames[tool.Name] = struct{}{}
 		}
+		handlers[manifest.RoutePath] = routeHandlers
 	}
-	if len(handlers) != 40 {
-		return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: got %d handlers", len(handlers))
+	if len(toolNames) != 40 {
+		return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: got %d handlers", len(toolNames))
 	}
 	return RouteDispatchers{Handlers: handlers}, nil
 }

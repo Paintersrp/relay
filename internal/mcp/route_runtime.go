@@ -7,15 +7,18 @@ import (
 	"relay/internal/mcp/routecontracts"
 )
 
-type RouteDispatchers struct{ Handlers map[string]SurfaceHandler }
+type RouteDispatchers struct {
+	Handlers map[string]map[string]SurfaceHandler
+}
 
 func BuildRouteHandlers(manifest routecontracts.RouteManifest, owners RouteDispatchers) ([]ToolHandler, error) {
-	if len(owners.Handlers) != 40 {
-		return nil, fmt.Errorf("MCP_DISPATCHER_MISSING: owner cardinality is %d", len(owners.Handlers))
+	routeHandlers, ok := owners.Handlers[manifest.RoutePath]
+	if !ok {
+		return nil, fmt.Errorf("MCP_DISPATCHER_MISSING: %s", manifest.RoutePath)
 	}
 	handlers := make([]ToolHandler, 0, len(manifest.Tools))
 	for _, tool := range manifest.Tools {
-		handler, ok := owners.Handlers[tool.Name]
+		handler, ok := routeHandlers[tool.Name]
 		if !ok || handler == nil {
 			return nil, fmt.Errorf("MCP_DISPATCHER_MISSING: %s/%s", manifest.RoutePath, tool.Name)
 		}
