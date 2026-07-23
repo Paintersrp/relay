@@ -13,6 +13,8 @@ import {
   readFileSync,
   readlinkSync,
   renameSync,
+  rmdirSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "fs";
@@ -1338,61 +1340,144 @@ const aggregateLockOwners = new Map();
 
 const IDENTITY_COMMAND_TIMEOUT_MS = 5000;
 
-function currentProcessStartIdentity(pid = process.pid, platform = process.platform) {
+function normalizeProcessStartIdentity(value) {
+  return String(value ?? "").trim().replace(/\s+/gu, " ") || null;
+}
+
+function currentProcessStartIdentity(pid = process.pid, platform = process.platform, options = {}) {
+  const runExecFileSync = options.execFileSync || execFileSync;
   try {
     if (platform === "linux") return parseLinuxProcStatStartIdentity(readFileSync(`/proc/${Number(pid)}/stat`, "utf8"));
-    if (platform === "darwin") return execFileSync("ps", ["-ww", "-p", String(pid), "-o", "lstart="], { encoding: "utf8", timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" }).trim() || null;
+    if (platform === "darwin") return normalizeProcessStartIdentity(runExecFileSync("ps", ["-ww", "-p", String(pid), "-o", "lstart="], { encoding: "utf8", timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL", env: { ...process.env, LC_ALL: "C" } }));
     if (platform === "win32") {
       const script = "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + Number(pid) + "'; if ($p) { $p.CreationDate }";
-      return execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" }).trim() || null;
+      return normalizeProcessStartIdentity(runExecFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" }));
     }
   } catch { /* inspection failure is deliberately not proof of ownership */ }
   return null;
 }
 
-function acquireAggregateLock(lockPath, options = {}) {
-  const inspectStartIdentity = options.inspectStartIdentity || currentProcessStartIdentity;
-  mkdirSync(dirname(lockPath), { recursive: true });
-  const startIdentity = inspectStartIdentity(process.pid);
-  if (!startIdentity) throw new ValidationError("Aggregate lock unavailable: this process's start identity could not be established, so duplicate-operation protection cannot be guaranteed.");
-  const owner = { pid: process.pid, startIdentity, ownerToken: randomUUID() };
-  const writeOwner = () => {
-    writeFileSync(lockPath, JSON.stringify(owner), { encoding: "utf8", flag: "wx" });
-    aggregateLockOwners.set(lockPath, owner);
-  };
+function aggregateLockMetadataPath(lockPath) {
+  return join(lockPath, "owner.json");
+}
+
+function aggregateLockAmbiguousError(lockPath, reason) {
+  return new ValidationError(`Aggregate lock ${lockPath} ownership metadata could not be verified (${reason}); automatic removal was refused. Confirm no aggregate operation is running, then remove the lock manually only after independent confirmation.`);
+}
+
+function readAggregateLock(lockPath) {
+  let lockStat;
+  try { lockStat = statSync(lockPath); }
+  catch (error) {
+    if (error?.code === "ENOENT") return { kind: "absent" };
+    return { kind: "ambiguous", reason: "the lock path could not be inspected" };
+  }
+  const directory = lockStat.isDirectory();
+  const metadataPath = directory ? aggregateLockMetadataPath(lockPath) : lockPath;
+  let text;
+  try { text = readFileSync(metadataPath, "utf8"); }
+  catch { return { kind: "ambiguous", reason: "the owner record could not be read" }; }
+  let owner;
+  try { owner = JSON.parse(text); }
+  catch { return { kind: "ambiguous", reason: "the owner record is malformed" }; }
+  if (!owner || typeof owner !== "object" || Array.isArray(owner)) return { kind: "ambiguous", reason: "the owner record is not an object" };
+  if (directory && owner.version !== 1) return { kind: "ambiguous", reason: "the owner record version is unsupported" };
+  if (!Number.isInteger(owner.pid) || owner.pid <= 0) return { kind: "ambiguous", reason: "the owner record has no valid PID" };
+  if (typeof owner.startIdentity !== "string" || !normalizeProcessStartIdentity(owner.startIdentity)) return { kind: "ambiguous", reason: "the owner record has no valid start identity" };
+  if (typeof owner.ownerToken !== "string" || !owner.ownerToken) return { kind: "ambiguous", reason: "the owner record has no valid owner token" };
+  return { kind: "recorded", owner, lockStat, directory };
+}
+
+function sameAggregateLockInstance(left, right) {
+  return left?.dev === right?.dev && left?.ino === right?.ino && left?.birthtimeMs === right?.birthtimeMs;
+}
+
+function writeAggregateLockOwner(lockPath, owner) {
+  const metadataPath = aggregateLockMetadataPath(lockPath);
+  const temporary = `${metadataPath}.${randomUUID()}.tmp`;
+  let descriptor = null;
   try {
-    writeOwner();
-  } catch (error) {
-    if (error?.code !== "EEXIST") throw error;
-    let recorded = null;
-    try { recorded = JSON.parse(readFileSync(lockPath, "utf8")); }
-    catch { recorded = null; }
-    let stale = false;
-    if (!recorded || typeof recorded !== "object") stale = true;
-    else if (!isProcessAlive(recorded.pid)) stale = true;
-    else if (!recorded.ownerToken || !recorded.startIdentity) {
-      // A live PID whose identity cannot be established is ambiguous, never stale.
-      throw new ValidationError("Aggregate lock is held by a live process without a verifiable recorded identity; refusing to remove an ambiguous lock.");
-    } else {
-      const observedStart = inspectStartIdentity(recorded.pid);
-      if (!observedStart) throw new ValidationError("Aggregate lock owner is alive but its start identity could not be inspected; refusing to remove an ambiguous lock.");
-      stale = String(recorded.startIdentity) !== String(observedStart);
-    }
-    if (!stale) throw new ValidationError("Aggregate startup is already running; refusing duplicate launch.");
-    unlinkSync(lockPath);
-    writeOwner();
+    descriptor = openSync(temporary, "wx", 0o600);
+    writeFileSync(descriptor, `${JSON.stringify(owner)}\n`, "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = null;
+    renameSync(temporary, metadataPath);
+  } finally {
+    if (descriptor !== null) closeSync(descriptor);
+    try { unlinkSync(temporary); } catch (error) { if (error?.code !== "ENOENT") throw error; }
   }
 }
 
-function releaseAggregateLock(lockPath, ownerToken = aggregateLockOwners.get(lockPath)?.ownerToken) {
-  try {
-    const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
-    if (!ownerToken || recorded.ownerToken !== ownerToken) return;
+function removeAggregateLockInstance(lockPath, lockInfo) {
+  let currentStat;
+  try { currentStat = statSync(lockPath); }
+  catch (error) { if (error?.code === "ENOENT") return false; throw error; }
+  if (!sameAggregateLockInstance(lockInfo.lockStat, currentStat)) throw new ValidationError(`Aggregate lock ${lockPath} changed during stale-owner recovery; refusing to remove a replacement lock.`);
+  if (lockInfo.directory) {
+    const current = readAggregateLock(lockPath);
+    if (current.kind !== "recorded" || !sameAggregateLockInstance(lockInfo.lockStat, current.lockStat) || current.owner.ownerToken !== lockInfo.owner.ownerToken) {
+      throw new ValidationError(`Aggregate lock ${lockPath} changed during stale-owner recovery; refusing to remove a replacement lock.`);
+    }
+    unlinkSync(aggregateLockMetadataPath(lockPath));
+    rmdirSync(lockPath);
+  } else {
     unlinkSync(lockPath);
+  }
+  return true;
+}
+
+function acquireAggregateLock(lockPath, options = {}) {
+  const inspectStartIdentity = options.inspectStartIdentity || currentProcessStartIdentity;
+  mkdirSync(dirname(lockPath), { recursive: true });
+  const startIdentity = normalizeProcessStartIdentity(inspectStartIdentity(process.pid));
+  if (!startIdentity) throw new ValidationError("Aggregate lock unavailable: this process's start identity could not be established, so duplicate-operation protection cannot be guaranteed.");
+  const owner = { version: 1, pid: process.pid, startIdentity, ownerToken: randomUUID() };
+  const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0 ? options.maxRetries : 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      mkdirSync(lockPath);
+      try {
+        writeAggregateLockOwner(lockPath, owner);
+      } catch (error) {
+        try { rmdirSync(lockPath); } catch { /* leave an ambiguous lock for safe operator recovery */ }
+        throw error;
+      }
+      aggregateLockOwners.set(lockPath, { ...owner, lockStat: statSync(lockPath) });
+      return owner;
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const lockInfo = readAggregateLock(lockPath);
+      if (lockInfo.kind === "absent") continue;
+      if (lockInfo.kind === "ambiguous") throw aggregateLockAmbiguousError(lockPath, lockInfo.reason);
+      if (isProcessAlive(lockInfo.owner.pid)) {
+        const observedStart = inspectStartIdentity(lockInfo.owner.pid);
+        if (!observedStart) throw aggregateLockAmbiguousError(lockPath, "the live owner's start identity could not be inspected");
+        if (normalizeProcessStartIdentity(lockInfo.owner.startIdentity) === normalizeProcessStartIdentity(observedStart)) throw new ValidationError(`Aggregate startup is already running; lock ${lockPath} is held by a live owner.`);
+      }
+      if (attempt === maxRetries) throw new ValidationError(`Aggregate lock ${lockPath} remained contested after ${maxRetries + 1} bounded acquisition attempts; refusing unsafe recovery.`);
+      options.beforeStaleRemoval?.({ lockPath, owner: lockInfo.owner });
+      removeAggregateLockInstance(lockPath, lockInfo);
+    }
+  }
+  throw new ValidationError(`Aggregate lock ${lockPath} could not be acquired safely.`);
+}
+
+function releaseAggregateLock(lockPath, ownerToken = aggregateLockOwners.get(lockPath)?.ownerToken) {
+  const owner = aggregateLockOwners.get(lockPath);
+  if (!owner || !ownerToken || owner.ownerToken !== ownerToken) return;
+  let lockStat;
+  try { lockStat = statSync(lockPath); }
+  catch (error) { if (error?.code === "ENOENT") aggregateLockOwners.delete(lockPath); return; }
+  if (!sameAggregateLockInstance(owner.lockStat, lockStat)) return;
+  const lockInfo = readAggregateLock(lockPath);
+  if (lockInfo.kind !== "recorded" || !lockInfo.directory || lockInfo.owner.ownerToken !== ownerToken || !sameAggregateLockInstance(owner.lockStat, lockInfo.lockStat)) return;
+  try {
+    unlinkSync(aggregateLockMetadataPath(lockPath));
+    rmdirSync(lockPath);
+    aggregateLockOwners.delete(lockPath);
   } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  } finally {
-    if (!existsSync(lockPath)) aggregateLockOwners.delete(lockPath);
+    if (error?.code === "ENOENT") aggregateLockOwners.delete(lockPath);
   }
 }
 
@@ -1592,7 +1677,7 @@ function parseMacPsOutput(output, expectedPid = null) {
     const pid = Number(String(output.pid || "").trim());
     if (!Number.isInteger(pid) || (expectedPid !== null && pid !== Number(expectedPid))) return null;
     const value = (item) => String(item || "").trim();
-    const startIdentity = value(output.startIdentity);
+    const startIdentity = normalizeProcessStartIdentity(output.startIdentity);
     const executablePath = value(output.executablePath);
     const commandLine = value(output.commandLine);
     if (!startIdentity || !executablePath || !commandLine) return null;
@@ -1603,7 +1688,7 @@ function parseMacPsOutput(output, expectedPid = null) {
   const line = String(output).trim();
   const match = line.match(/^(\d+)\s+(.{24})\s+(\S+)\s+(.+)$/u);
   if (!match || (expectedPid !== null && Number(match[1]) !== Number(expectedPid))) return null;
-  return { startIdentity: match[2].trim(), executablePath: match[3], commandLine: match[4].trim() };
+  return { startIdentity: normalizeProcessStartIdentity(match[2]), executablePath: match[3], commandLine: match[4].trim() };
 }
 
 function parseWindowsCimJson(output, expectedPid = null) {

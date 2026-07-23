@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import os from "node:os";
@@ -16,6 +17,7 @@ import {
   buildNativeRuntimeConnectArgs,
   getConfig,
   captureProcessIdentity,
+  currentProcessStartIdentity,
   createRedactedSink,
   terminateProcessTree,
   verifyProcessIdentity,
@@ -179,6 +181,20 @@ test("process identity parsers enforce platform-neutral fields", () => {
   const macWithSpaces = parseMacPsOutput({ pid: "123", startIdentity: "Wed Jul 22 12:34:56 2026", executablePath: "/Applications/Relay Worker/bin/relay", commandLine: "/Applications/Relay Worker/bin/relay --config /tmp/Relay Config/config.toml" }, 123);
   assert.equal(macWithSpaces.executablePath, "/Applications/Relay Worker/bin/relay");
   assert.match(macWithSpaces.commandLine, /Relay Config/u);
+});
+
+test("macOS lock start identity uses the C locale and normalized representation", () => {
+  let invocation;
+  const identity = currentProcessStartIdentity(123, "darwin", {
+    execFileSync: (...args) => {
+      invocation = args;
+      return "  Wed   Jul 22 12:34:56 2026\n";
+    },
+  });
+  assert.equal(identity, "Wed Jul 22 12:34:56 2026");
+  assert.equal(invocation[0], "ps");
+  assert.equal(invocation[2].env.LC_ALL, "C");
+  assert.equal(parseMacPsOutput({ pid: "123", startIdentity: identity, executablePath: "/relay", commandLine: "/relay" }, 123).startIdentity, identity);
 });
 
 test("active-platform Relay identity captures and verifies a real child", async () => {
@@ -369,9 +385,9 @@ test("stale aggregate lock is recovered and cancellation-safe release is determi
   const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-"));
   const lock = path.join(temp, "aggregate.lock");
   try {
-    await writeFile(lock, JSON.stringify({ pid: 999999 }), "utf8");
-    acquireAggregateLock(lock);
-    assert.throws(() => acquireAggregateLock(lock), /already running/u);
+    await writeFile(lock, JSON.stringify({ pid: 999999, startIdentity: "dead", ownerToken: "stale" }), "utf8");
+    acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" });
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }), /already running/u);
     releaseAggregateLock(lock);
     releaseAggregateLock(lock);
   } finally { await rm(temp, { recursive: true, force: true }); }
@@ -382,10 +398,111 @@ test("lock release does not remove a replacement owner token", async () => {
   const lock = path.join(temp, "aggregate.lock");
   try {
     acquireAggregateLock(lock);
-    await writeFile(lock, JSON.stringify({ pid: process.pid, ownerToken: "replacement" }), "utf8");
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement" }), "utf8");
     releaseAggregateLock(lock);
-    assert.match(await readFile(lock, "utf8"), /replacement/u);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /replacement/u);
   } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("aggregate lock publication is fail-closed for incomplete or unreadable metadata", async () => {
+  const cases = [
+    ["empty", ""],
+    ["partial JSON", "{\"version\":1,\"pid\":"],
+    ["malformed JSON", "not-json"],
+  ];
+  for (const [label, contents] of cases) {
+    const temp = await mkdtemp(path.join(os.tmpdir(), `relay-lock-${label.replace(/ /gu, "-")}-`));
+    const lock = path.join(temp, "aggregate.lock");
+    try {
+      await mkdir(lock);
+      await writeFile(path.join(lock, "owner.json"), contents, "utf8");
+      assert.throws(
+        () => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }),
+        /ownership metadata could not be verified.*automatic removal was refused/u,
+      );
+      assert.equal((await readFile(path.join(lock, "owner.json"), "utf8")), contents);
+    } finally { await rm(temp, { recursive: true, force: true }); }
+  }
+
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-unreadable-"));
+  const lock = path.join(temp, "aggregate.lock");
+  try {
+    await mkdir(lock);
+    await mkdir(path.join(lock, "owner.json"));
+    assert.throws(
+      () => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }),
+      /ownership metadata could not be verified.*automatic removal was refused/u,
+    );
+    await assert.rejects(readFile(lock));
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("atomic aggregate lock contention permits one owner and later reacquisition", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-contention-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const options = { inspectStartIdentity: () => "same-process-start" };
+  try {
+    let acquired = 0;
+    acquireAggregateLock(lock, options);
+    acquired += 1;
+    assert.throws(() => acquireAggregateLock(lock, options), /already running|contested/u);
+    assert.equal(acquired, 1);
+    releaseAggregateLock(lock);
+    acquireAggregateLock(lock, options);
+    acquired += 1;
+    assert.equal(acquired, 2);
+    releaseAggregateLock(lock);
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("aggregate stale recovery verifies identity and cannot remove a third contender", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-stale-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const options = { inspectStartIdentity: (pid) => (pid === 424242 ? "new-start" : "self-start") };
+  try {
+    await writeFile(lock, JSON.stringify({ pid: 424242, startIdentity: "old-start", ownerToken: "reused-pid" }), "utf8");
+    acquireAggregateLock(lock, options);
+    releaseAggregateLock(lock);
+
+    await writeFile(lock, JSON.stringify({ pid: 424242, startIdentity: "old-start", ownerToken: "stale-again" }), "utf8");
+    assert.throws(() => acquireAggregateLock(lock, { ...options, beforeStaleRemoval: () => {
+      rmSync(lock, { recursive: true, force: true });
+      mkdirSync(lock);
+      writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: 525252, startIdentity: "third-start", ownerToken: "third-owner" }));
+    } }), /changed during stale-owner recovery/u);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /third-owner/u);
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("aggregate lock preserves live and ambiguous owners and protects changed instances", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-integrity-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  await once(child, "spawn");
+  try {
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: child.pid, startIdentity: "live-start", ownerToken: "live-owner" }), "utf8");
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? "live-start" : "self-start") }), /already running/u);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /live-owner/u);
+
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: child.pid, ownerToken: "missing-start" }), "utf8");
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }), /ownership metadata could not be verified/u);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /missing-start/u);
+
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: child.pid, startIdentity: "live-start", ownerToken: "unavailable-start" }), "utf8");
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? null : "self-start") }), /ownership metadata could not be verified/u);
+
+    acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? "different-start" : "self-start") });
+    const owner = JSON.parse(await readFile(path.join(lock, "owner.json"), "utf8"));
+    rmSync(lock, { recursive: true, force: true });
+    mkdirSync(lock);
+    writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-owner" }));
+    releaseAggregateLock(lock, owner.ownerToken);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /replacement-owner/u);
+  } finally {
+    await terminateProcessTree(child.pid, { wait: true });
+    await rm(temp, { recursive: true, force: true });
+  }
 });
 
 test("termination result reports an injected failure without hiding the live PID", async () => {
@@ -563,12 +680,12 @@ test("aggregate lock fails closed when process identity cannot be established", 
     assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => null }), /duplicate-operation protection/u);
     await assert.rejects(readFile(lock, "utf8"));
     await writeFile(lock, JSON.stringify({ pid: child.pid, ownerToken: "held" }), "utf8");
-    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }), /without a verifiable recorded identity/u);
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }), /ownership metadata could not be verified/u);
     assert.match(await readFile(lock, "utf8"), /held/u);
     await writeFile(lock, JSON.stringify({ pid: child.pid, ownerToken: "held", startIdentity: "owner-start" }), "utf8");
     assert.throws(
       () => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? null : "self-start") }),
-      /could not be inspected/u,
+      /ownership metadata could not be verified/u,
     );
     assert.match(await readFile(lock, "utf8"), /owner-start/u);
     acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? "different-start" : "self-start") });
