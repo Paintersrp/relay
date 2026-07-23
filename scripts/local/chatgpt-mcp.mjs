@@ -387,6 +387,12 @@ function requireReadableAggregateState(config, operation) {
   if (result.kind === "malformed" || result.kind === "unsupported version" || result.kind === "read failure") {
     throw new ValidationError(`Cannot begin ${operation} with ${result.kind} aggregate state: ${result.reason}`);
   }
+  if (result.kind === "valid" && result.migrated) {
+    // The caller already holds the aggregate lock, so persisting the migrated
+    // version 3 state here is race-free.
+    writeAggregateState(config, { desiredRoleBindings: result.state.desiredRoleBindings, residualBindings: result.state.residualBindings, relay: result.state.relay });
+    console.log(`${operation}: migrated version 2 aggregate state to version 3.`);
+  }
   return result.kind === "valid" ? result.state : null;
 }
 
@@ -484,13 +490,14 @@ async function runStopAll(config) {
     }
     const state = stateResult.kind === "valid" ? stateResult.state : null;
     const persistedRoles = state ? rolesFromPersistedState(config, state) : config.roles;
-    const roles = state?.residualBindings?.length ? state.residualBindings : persistedRoles;
     if (stateResult.kind === "valid" && !persistedRoles) {
       console.error("stop:all refused to act on structurally invalid persisted role bindings.");
       return 1;
     }
-    const journal = new Map(roles.map((role) => [role.key, { role, connectMayHaveMutated: true, replacementVerified: true }]));
-    for (const role of state?.residualBindings || []) journal.set(role.key, { role, connectMayHaveMutated: true, replacementVerified: true, residual: true });
+    const residualRoles = state ? materializePersistedRoles(config, state.residualBindings) : [];
+    const roles = residualRoles.length ? residualRoles : persistedRoles;
+    const journal = new Map(roles.map((role) => [journalKey(role), { role, connectMayHaveMutated: true, replacementVerified: true }]));
+    for (const role of residualRoles) journal.set(journalKey(role), { role, connectMayHaveMutated: true, replacementVerified: true, residual: true });
     const cleanupResult = await cleanupAggregate(config, {
       journal,
       relay: state?.relay?.owned ? state.relay : null,
@@ -589,9 +596,15 @@ function onceAsync(operation) {
   return () => promise || (promise = Promise.resolve().then(operation));
 }
 
+function journalKey(role) {
+  // The retired alias and its replacement share a role key but are distinct
+  // runtimes; the journal must never let one identity shadow the other.
+  return `${role.key}\u0000${role.alias}`;
+}
+
 function journalFor(journal, role) {
-  if (!journal.has(role.key)) journal.set(role.key, { role, preExisting: false, stopAttempted: false, stopConfirmed: false, connectAttempted: false, connectMayHaveMutated: false, replacementVerified: false });
-  return journal.get(role.key);
+  if (!journal.has(journalKey(role))) journal.set(journalKey(role), { role, preExisting: false, stopAttempted: false, stopConfirmed: false, connectAttempted: false, connectMayHaveMutated: false, replacementVerified: false });
+  return journal.get(journalKey(role));
 }
 
 async function reconcileRetiredAliases(adapter, config, priorState, journal, cancellation) {
@@ -1049,32 +1062,42 @@ function parseCapturedJsonError(output) {
 function createRedactedSink(secret, write) {
   let pending = "";
   let output = "";
-  const flush = (text) => {
-    if (!text) return;
-    const safe = redactSecrets(text, secret);
+  const emit = (safe) => {
+    if (!safe) return;
     output += safe;
     write(safe);
   };
+  const drain = (text) => {
+    if (!secret) return { safe: text, rest: "" };
+    // Redact every complete occurrence first so that a self-overlapping secret
+    // (for example "aba" or "aaaa") is recognized before any suffix of it is
+    // retained as a potential prefix of a later occurrence.
+    let safe = "";
+    let index = text.indexOf(secret);
+    while (index !== -1) {
+      safe += `${text.slice(0, index)}[REDACTED]`;
+      text = text.slice(index + secret.length);
+      index = text.indexOf(secret);
+    }
+    let keep = 0;
+    for (let length = Math.min(secret.length - 1, text.length); length > 0; length -= 1) {
+      if (text.endsWith(secret.slice(0, length))) { keep = length; break; }
+    }
+    safe += text.slice(0, text.length - keep);
+    return { safe, rest: text.slice(text.length - keep) };
+  };
   return {
     push(chunk) {
-      const text = pending + String(chunk);
-      if (!secret) { pending = ""; flush(text); return; }
-      // Retain exactly the longest suffix that might be completed by a later
-      // chunk. This prevents both leakage and the unnecessary fixed tail delay.
-      let keep = 0;
-      const limit = Math.min(secret.length - 1, text.length);
-      for (let length = limit; length > 0; length -= 1) {
-        if (text.endsWith(secret.slice(0, length))) { keep = length; break; }
-      }
-      flush(text.slice(0, text.length - keep));
-      pending = text.slice(text.length - keep);
+      const { safe, rest } = drain(pending + String(chunk));
+      pending = rest;
+      emit(safe);
     },
     finish() {
-      flush(pending);
+      emit(redactSecrets(pending, secret));
       pending = "";
       return output;
     },
-    get output() { return output + pending; },
+    get output() { return output + redactSecrets(pending, secret); },
   };
 }
 
@@ -1313,41 +1336,51 @@ function delay(milliseconds, signal = null) {
 
 const aggregateLockOwners = new Map();
 
+const IDENTITY_COMMAND_TIMEOUT_MS = 5000;
+
 function currentProcessStartIdentity(pid = process.pid, platform = process.platform) {
   try {
     if (platform === "linux") return parseLinuxProcStatStartIdentity(readFileSync(`/proc/${Number(pid)}/stat`, "utf8"));
-    if (platform === "darwin") return execFileSync("ps", ["-ww", "-p", String(pid), "-o", "lstart="], { encoding: "utf8" }).trim() || null;
+    if (platform === "darwin") return execFileSync("ps", ["-ww", "-p", String(pid), "-o", "lstart="], { encoding: "utf8", timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" }).trim() || null;
     if (platform === "win32") {
       const script = "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + Number(pid) + "'; if ($p) { $p.CreationDate }";
-      return execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" }).trim() || null;
+      return execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" }).trim() || null;
     }
   } catch { /* inspection failure is deliberately not proof of ownership */ }
   return null;
 }
 
-function acquireAggregateLock(lockPath) {
+function acquireAggregateLock(lockPath, options = {}) {
+  const inspectStartIdentity = options.inspectStartIdentity || currentProcessStartIdentity;
   mkdirSync(dirname(lockPath), { recursive: true });
-  const owner = { pid: process.pid, startIdentity: currentProcessStartIdentity(), ownerToken: randomUUID() };
-  try {
+  const startIdentity = inspectStartIdentity(process.pid);
+  if (!startIdentity) throw new ValidationError("Aggregate lock unavailable: this process's start identity could not be established, so duplicate-operation protection cannot be guaranteed.");
+  const owner = { pid: process.pid, startIdentity, ownerToken: randomUUID() };
+  const writeOwner = () => {
     writeFileSync(lockPath, JSON.stringify(owner), { encoding: "utf8", flag: "wx" });
     aggregateLockOwners.set(lockPath, owner);
+  };
+  try {
+    writeOwner();
   } catch (error) {
-    if (error?.code === "EEXIST") {
-      let stale = false;
-      try {
-        const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
-        const observedStart = currentProcessStartIdentity(recorded.pid);
-        stale = !isProcessAlive(recorded.pid) || !recorded.ownerToken || !recorded.startIdentity || !observedStart || String(recorded.startIdentity) !== String(observedStart);
-      } catch { stale = true; }
-      if (stale) {
-        unlinkSync(lockPath);
-        writeFileSync(lockPath, JSON.stringify(owner), { encoding: "utf8", flag: "wx" });
-        aggregateLockOwners.set(lockPath, owner);
-        return;
-      }
-      throw new ValidationError("Aggregate startup is already running; refusing duplicate launch.");
+    if (error?.code !== "EEXIST") throw error;
+    let recorded = null;
+    try { recorded = JSON.parse(readFileSync(lockPath, "utf8")); }
+    catch { recorded = null; }
+    let stale = false;
+    if (!recorded || typeof recorded !== "object") stale = true;
+    else if (!isProcessAlive(recorded.pid)) stale = true;
+    else if (!recorded.ownerToken || !recorded.startIdentity) {
+      // A live PID whose identity cannot be established is ambiguous, never stale.
+      throw new ValidationError("Aggregate lock is held by a live process without a verifiable recorded identity; refusing to remove an ambiguous lock.");
+    } else {
+      const observedStart = inspectStartIdentity(recorded.pid);
+      if (!observedStart) throw new ValidationError("Aggregate lock owner is alive but its start identity could not be inspected; refusing to remove an ambiguous lock.");
+      stale = String(recorded.startIdentity) !== String(observedStart);
     }
-    throw error;
+    if (!stale) throw new ValidationError("Aggregate startup is already running; refusing duplicate launch.");
+    unlinkSync(lockPath);
+    writeOwner();
   }
 }
 
@@ -1374,38 +1407,73 @@ function readAggregateState(config) {
   try { state = JSON.parse(text); }
   catch (error) { return { kind: "malformed", state: null, reason: error instanceof Error ? error.message : "invalid JSON" }; }
   if (!state || typeof state !== "object" || Array.isArray(state)) return { kind: "malformed", state: null, reason: "aggregate state is not an object" };
-  if (state.version === 2) return { kind: "unsupported version", state: null, reason: "version 2 state requires an explicit init:all migration before lifecycle operations" };
-  if (state.version !== 3) return { kind: "unsupported version", state: null, reason: `expected version 3, found ${String(state.version)}` };
   if (JSON.stringify(state).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return { kind: "malformed", state: null, reason: "aggregate state contains secret-like data" };
+  if (state.version === 2) {
+    const migrated = migrateAggregateStateVersion2(state);
+    if (!migrated) return { kind: "malformed", state: null, reason: "version 2 aggregate state is structurally invalid and cannot be migrated" };
+    const migratedValidation = validatePersistedState(migrated);
+    if (!migratedValidation.ok) return { kind: "malformed", state: null, reason: `version 2 aggregate state cannot be migrated: ${migratedValidation.reason}` };
+    return { kind: "valid", state: migrated, migrated: true, reason: "version 2 aggregate state migrated to version 3" };
+  }
+  if (state.version !== 3) return { kind: "unsupported version", state: null, reason: `expected version 3, found ${String(state.version)}` };
   const validation = validatePersistedState(state);
   return validation.ok ? { kind: "valid", state, reason: "aggregate state is valid" } : { kind: "malformed", state: null, reason: validation.reason };
 }
 
-function validatePersistedState(state) {
-  const bindings = state.desiredRoleBindings;
-  if (!Array.isArray(bindings) || bindings.length < 1 || bindings.length > 3) return { ok: false, reason: "desiredRoleBindings must contain one to three roles" };
+function migrateAggregateStateVersion2(state) {
+  if (!Array.isArray(state.desiredRoleBindings) || !(state.relay && typeof state.relay === "object")) return null;
+  // Version 2 tracked runtimesChangedByOperation only for successful writes, so
+  // a readable version 2 state never carries residual cleanup work.
+  return {
+    version: 3,
+    updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : new Date().toISOString(),
+    desiredRoleBindings: state.desiredRoleBindings,
+    residualBindings: [],
+    relay: state.relay,
+  };
+}
+
+const MAX_PERSISTED_BINDING_FIELD_LENGTH = 1024;
+
+function validateBindingList(bindings, label) {
+  if (!Array.isArray(bindings) || bindings.length > 3) return `${label} must contain at most three roles`;
   const expected = new Set(["wayfinder", "planner", "auditor"]);
   const keys = new Set();
   const aliases = new Set();
+  const bounded = (value) => typeof value === "string" && value.length > 0 && value.length <= MAX_PERSISTED_BINDING_FIELD_LENGTH;
   for (const binding of bindings) {
-    if (!binding || typeof binding !== "object" || !expected.has(binding.key) || keys.has(binding.key)) return { ok: false, reason: "desiredRoleBindings has invalid or duplicate role keys" };
-    if (typeof binding.alias !== "string" || !binding.alias || aliases.has(binding.alias) || typeof binding.profile !== "string" || !binding.profile || typeof binding.tunnelId !== "string" || !binding.tunnelId || typeof binding.endpoint !== "string" || !isHttpUrl(binding.endpoint)) return { ok: false, reason: "desiredRoleBindings contains invalid bindings" };
-    if (JSON.stringify(binding).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return { ok: false, reason: "desiredRoleBindings contains secret-like data" };
+    if (!binding || typeof binding !== "object" || Array.isArray(binding) || !expected.has(binding.key) || keys.has(binding.key)) return `${label} has invalid or duplicate role keys`;
+    if (!bounded(binding.alias) || aliases.has(binding.alias) || !bounded(binding.profile) || !bounded(binding.tunnelId) || !bounded(binding.endpoint) || !isHttpUrl(binding.endpoint)) return `${label} contains invalid bindings`;
+    if (JSON.stringify(binding).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return `${label} contains secret-like data`;
     keys.add(binding.key); aliases.add(binding.alias);
   }
-  if (!Array.isArray(state.residualBindings) || !state.residualBindings.every((binding) => binding && typeof binding === "object" && typeof binding.alias === "string")) return { ok: false, reason: "residualBindings is invalid" };
+  return null;
+}
+
+function validatePersistedState(state) {
+  const desiredReason = validateBindingList(state.desiredRoleBindings, "desiredRoleBindings");
+  if (desiredReason) return { ok: false, reason: desiredReason };
+  const residualReason = validateBindingList(state.residualBindings, "residualBindings");
+  if (residualReason) return { ok: false, reason: residualReason };
   if (!(state.relay && typeof state.relay === "object") || typeof state.relay.owned !== "boolean") return { ok: false, reason: "relay ownership metadata is invalid" };
   if (state.relay.owned && (!state.relay.identity || typeof state.relay.identity !== "object")) return { ok: false, reason: "owned Relay state lacks identity metadata" };
+  // A Relay-only residual state is valid: every runtime stopped, but the owned
+  // Relay shutdown still needs a retry.
+  if (!state.desiredRoleBindings.length && !state.residualBindings.length && state.relay.owned !== true) return { ok: false, reason: "desiredRoleBindings must contain one to three roles unless owned Relay residual state remains" };
   return { ok: true };
+}
+
+function materializePersistedRoles(config, bindings) {
+  const byKey = new Map(config.roles.map((role) => [role.key, role]));
+  return bindings.map((binding) => {
+    const definition = byKey.get(binding.key);
+    return { ...definition, tunnelId: binding.tunnelId, alias: binding.alias, profile: binding.profile, endpoint: binding.endpoint };
+  });
 }
 
 function rolesFromPersistedState(config, state) {
   if (validatePersistedState(state).ok === false) return null;
-  const byKey = new Map(config.roles.map((role) => [role.key, role]));
-  return state.desiredRoleBindings.map((binding) => {
-    const definition = byKey.get(binding.key);
-    return { ...definition, tunnelId: binding.tunnelId, alias: binding.alias, profile: binding.profile, endpoint: binding.endpoint };
-  });
+  return materializePersistedRoles(config, state.desiredRoleBindings);
 }
 
 function writeAggregateState(config, state) {
@@ -1584,7 +1652,7 @@ function boundText(value) {
 
 function captureSimpleCommand(command, args, environment = null) {
   return new Promise((resolvePromise) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"], env: environment ? { ...process.env, ...environment } : process.env });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"], env: environment ? { ...process.env, ...environment } : process.env, timeout: IDENTITY_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" });
     const chunks = [];
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => chunks.push(chunk));

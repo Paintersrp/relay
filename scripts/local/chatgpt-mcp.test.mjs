@@ -468,6 +468,135 @@ test("persisted identity sanitizer recursively redacts without corrupting fields
   assert.deepEqual(value, { commandLine: "relay --key [REDACTED]", expectedArguments: ["[REDACTED]", { nested: "x[REDACTED]y" }], pid: 42 });
 });
 
+test("failed later role after alias migration cleans up the replacement alias, not the retired one", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    await runScript("init:all", env);
+    const logPath = path.join(temp, "migration-cleanup.log");
+    await assert.rejects(
+      runScript("init:all", { ...env, RELAY_MCP_PLANNER_ALIAS: "relay-planner-v2", FAKE_TUNNEL_NOT_READY_ALIAS: "relay-auditor", FAKE_TUNNEL_LOG: logPath }),
+      /did not become ready/u,
+    );
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    const connect = calls.findIndex((args) => args.includes("connect") && args.includes("relay-planner-v2"));
+    const cleanupStop = calls.findIndex((args, index) => index > connect && args.includes("stop") && args.includes("relay-planner-v2"));
+    assert.ok(connect >= 0 && cleanupStop > connect);
+    assert.equal(calls.filter((args) => args.includes("stop") && args.includes("relay-planner")).length, 1);
+    const native = JSON.parse(await readFile(path.join(temp, "native.json"), "utf8"));
+    assert.equal(native.runtimes["relay-planner-v2"].process_running, false);
+  });
+});
+
+test("failed owned Relay shutdown leaves readable residual state and stop:all retries it", async () => {
+  await temporaryEnvironment({}, async (env) => {
+    await runScript("init:all", env);
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    await once(child, "spawn");
+    try {
+      const state = JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+      state.relay = { owned: true, identity: { pid: child.pid, startTime: "wrong", expectedExecutable: "not-this-process.exe", expectedArguments: [], commandFingerprint: "wrong" } };
+      await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify(state)}\n`, "utf8");
+      await assert.rejects(runScript("stop:all", env), (error) => {
+        assert.match(String(error.stderr), /cleanup failed:.*Relay/u);
+        return true;
+      });
+      const residual = JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+      assert.equal(residual.version, 3);
+      assert.deepEqual(residual.desiredRoleBindings, []);
+      assert.deepEqual(residual.residualBindings, []);
+      assert.equal(residual.relay.owned, true);
+    } finally {
+      await terminateProcessTree(child.pid, { wait: true });
+    }
+    await runScript("stop:all", env);
+    await assert.rejects(readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+  });
+});
+
+test("stop:all fails closed on malformed or tampered residual bindings", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    await runScript("init:all", env);
+    const state = JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+    const logPath = path.join(temp, "residual-validation.log");
+    const invalidResiduals = [
+      [{ alias: "arbitrary-alias" }],
+      [{ key: "intruder", tunnelId: ids[0], alias: "arbitrary-alias", profile: "profile", endpoint: "http://127.0.0.1:8080/mcp/planner" }],
+      [{ key: "planner", tunnelId: ids[1], alias: "alias", profile: "profile", endpoint: "not-a-url" }],
+      [
+        { key: "planner", tunnelId: ids[1], alias: "same-alias", profile: "profile-a", endpoint: "http://127.0.0.1:8080/mcp/planner" },
+        { key: "auditor", tunnelId: ids[2], alias: "same-alias", profile: "profile-b", endpoint: "http://127.0.0.1:8080/mcp/auditor" },
+      ],
+      [{ key: "planner", tunnelId: ids[1], alias: "alias", profile: "sk_leaked_credential_0001", endpoint: "http://127.0.0.1:8080/mcp/planner" }],
+      [{ key: "planner", tunnelId: ids[1], alias: "a".repeat(1025), profile: "profile", endpoint: "http://127.0.0.1:8080/mcp/planner" }],
+    ];
+    for (const residualBindings of invalidResiduals) {
+      await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify({ ...state, residualBindings })}\n`, "utf8");
+      await assert.rejects(runScript("stop:all", { ...env, FAKE_TUNNEL_LOG: logPath }), (error) => {
+        assert.match(String(error.stderr), /malformed aggregate state/u);
+        return true;
+      });
+    }
+    await assert.rejects(readFile(logPath, "utf8"));
+  });
+});
+
+test("version 2 aggregate state migrates to version 3 and remains recoverable by stop:all", async () => {
+  await temporaryEnvironment({}, async (env) => {
+    await runScript("init:all", env);
+    const v3 = JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+    const v2 = { version: 2, updatedAt: v3.updatedAt, desiredRoleBindings: v3.desiredRoleBindings, runtimesChangedByOperation: [], relay: { owned: false } };
+    await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify(v2)}\n`, "utf8");
+    const migrated = await runScript("init:all", env);
+    assert.match(migrated.stdout, /migrated version 2 aggregate state to version 3/u);
+    assert.equal(JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8")).version, 3);
+    await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify(v2)}\n`, "utf8");
+    await runScript("stop:all", env);
+    await assert.rejects(readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+  });
+});
+
+test("aggregate lock fails closed when process identity cannot be established", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-identity-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  await once(child, "spawn");
+  try {
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => null }), /duplicate-operation protection/u);
+    await assert.rejects(readFile(lock, "utf8"));
+    await writeFile(lock, JSON.stringify({ pid: child.pid, ownerToken: "held" }), "utf8");
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }), /without a verifiable recorded identity/u);
+    assert.match(await readFile(lock, "utf8"), /held/u);
+    await writeFile(lock, JSON.stringify({ pid: child.pid, ownerToken: "held", startIdentity: "owner-start" }), "utf8");
+    assert.throws(
+      () => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? null : "self-start") }),
+      /could not be inspected/u,
+    );
+    assert.match(await readFile(lock, "utf8"), /owner-start/u);
+    acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? "different-start" : "self-start") });
+    releaseAggregateLock(lock);
+  } finally {
+    await terminateProcessTree(child.pid, { wait: true });
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("streaming redaction handles self-overlapping secrets across all chunk boundaries", () => {
+  for (const secret of ["aba", "abab", "aaaa"]) {
+    const text = `x${secret}${secret}y${secret.slice(0, secret.length - 1)}`;
+    for (let split = 0; split <= text.length; split += 1) {
+      const sink = createRedactedSink(secret, () => {});
+      sink.push(text.slice(0, split));
+      sink.push(text.slice(split));
+      assert.equal(sink.finish(), redactSecrets(text, secret));
+    }
+    const single = createRedactedSink(secret, () => {});
+    single.push(secret);
+    assert.equal(single.finish(), "[REDACTED]");
+    const charwise = createRedactedSink(secret, () => {});
+    for (const character of text) charwise.push(character);
+    assert.equal(charwise.finish(), redactSecrets(text, secret));
+  }
+});
+
 test("alias migration stops the persisted alias before connecting its replacement", async () => {
   await temporaryEnvironment({}, async (env, temp) => {
     await runScript("init:all", env);
