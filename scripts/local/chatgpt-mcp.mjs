@@ -353,6 +353,8 @@ async function runInitAll(config) {
   });
   const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
   const results = [];
+  let operationError = null;
+  let exitCode = 0;
   try {
     priorState = requireReadableAggregateState(config, "init:all");
     const adapter = createNativeRuntimeAdapter(config);
@@ -365,23 +367,28 @@ async function runInitAll(config) {
     }
     printAggregateResults("init", results);
     writeAggregateState(config, { relay: priorState?.relay || { owned: false }, residualBindings: [] });
-    return 0;
+    exitCode = 0;
   } catch (error) {
     cleanupResult = await cleanup();
     if (cancellation.cancelled) {
       console.error(`init:all cancelled by ${cancellation.signalName}`);
-      return cancellation.exitCode;
-    }
-    if (error instanceof RuntimeCheckError) {
+      operationError = new ValidationError(`init:all cancelled by ${cancellation.signalName}`);
+      exitCode = cancellation.exitCode;
+    } else if (error instanceof RuntimeCheckError) {
       results.push({ role: error.role, ok: false, reason: error.message });
       printAggregateResults("init", results);
-      throw withCleanupFailures(new ValidationError(error.message), cleanupResult);
+      operationError = withCleanupFailures(new ValidationError(error.message), cleanupResult);
+    } else {
+      operationError = withCleanupFailures(error, cleanupResult);
     }
-    throw withCleanupFailures(error, cleanupResult);
   } finally {
     removeSignals();
-    releaseAggregateLock(lockPath);
+    const releaseResult = releaseAggregateLock(lockPath);
+    operationError = withLockReleaseFailure(operationError, releaseResult);
+    if (cancellation.cancelled && releaseResult.ok) operationError = null;
   }
+  if (operationError) throw operationError;
+  return exitCode;
 }
 
 function requireReadableAggregateState(config, operation) {
@@ -416,6 +423,8 @@ async function runStartAll(config) {
     return cleanupResult;
   });
   const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
+  let operationError = null;
+  let exitCode = 0;
 
   try {
     priorState = requireReadableAggregateState(config, "start:all");
@@ -467,49 +476,65 @@ async function runStartAll(config) {
     }
     writeAggregateState(config, { relay: relay || { owned: false }, residualBindings: [] });
     console.log("Relay: all three role endpoints healthy; aggregate startup complete.");
-    return 0;
+    exitCode = 0;
   } catch (error) {
     cleanupResult = await cleanup();
     if (cancellation.cancelled) {
       console.error(`start:all cancelled by ${cancellation.signalName}`);
-      return cancellation.exitCode;
+      operationError = new ValidationError(`start:all cancelled by ${cancellation.signalName}`);
+      exitCode = cancellation.exitCode;
+    } else {
+      operationError = withCleanupFailures(error, cleanupResult);
     }
-    throw withCleanupFailures(error, cleanupResult);
   } finally {
     removeSignals();
-    releaseAggregateLock(lockPath);
+    const releaseResult = releaseAggregateLock(lockPath);
+    operationError = withLockReleaseFailure(operationError, releaseResult);
+    if (cancellation.cancelled && releaseResult.ok) operationError = null;
   }
+  if (operationError) throw operationError;
+  return exitCode;
 }
 
 async function runStopAll(config) {
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
+  let operationError = null;
+  let exitCode = 0;
   try {
     const stateResult = readAggregateState(config);
     if (stateResult.kind === "malformed" || stateResult.kind === "unsupported version" || stateResult.kind === "read failure") {
       console.error(`stop:all refused to act on ${stateResult.kind} aggregate state: ${stateResult.reason}`);
-      return 1;
+      exitCode = 1;
+    } else {
+      const state = stateResult.kind === "valid" ? stateResult.state : null;
+      const persistedRoles = state ? rolesFromPersistedState(config, state) : config.roles;
+      if (stateResult.kind === "valid" && !persistedRoles) {
+        console.error("stop:all refused to act on structurally invalid persisted role bindings.");
+        exitCode = 1;
+      } else {
+        const residualRoles = state ? materializePersistedRoles(config, state.residualBindings) : [];
+        const roles = residualRoles.length ? residualRoles : persistedRoles;
+        const journal = new Map(roles.map((role) => [journalKey(role), { role, connectMayHaveMutated: true, replacementVerified: true }]));
+        for (const role of residualRoles) journal.set(journalKey(role), { role, connectMayHaveMutated: true, replacementVerified: true, residual: true });
+        const cleanupResult = await cleanupAggregate(config, {
+          journal,
+          relay: state?.relay?.owned ? state.relay : null,
+          removeState: true,
+        });
+        reportCleanupFailures(cleanupResult);
+        exitCode = cleanupResult.ok ? 0 : 1;
+        if (!cleanupResult.ok) operationError = new ValidationError(`cleanup failed: ${cleanupFailureMessages(cleanupResult).join("; ")}`);
+      }
     }
-    const state = stateResult.kind === "valid" ? stateResult.state : null;
-    const persistedRoles = state ? rolesFromPersistedState(config, state) : config.roles;
-    if (stateResult.kind === "valid" && !persistedRoles) {
-      console.error("stop:all refused to act on structurally invalid persisted role bindings.");
-      return 1;
-    }
-    const residualRoles = state ? materializePersistedRoles(config, state.residualBindings) : [];
-    const roles = residualRoles.length ? residualRoles : persistedRoles;
-    const journal = new Map(roles.map((role) => [journalKey(role), { role, connectMayHaveMutated: true, replacementVerified: true }]));
-    for (const role of residualRoles) journal.set(journalKey(role), { role, connectMayHaveMutated: true, replacementVerified: true, residual: true });
-    const cleanupResult = await cleanupAggregate(config, {
-      journal,
-      relay: state?.relay?.owned ? state.relay : null,
-      removeState: true,
-    });
-    reportCleanupFailures(cleanupResult);
-    return cleanupResult.ok ? 0 : 1;
+  } catch (error) {
+    operationError = error;
+    exitCode = 1;
   } finally {
-    releaseAggregateLock(lockPath);
+    operationError = withLockReleaseFailure(operationError, releaseAggregateLock(lockPath));
   }
+  if (operationError) throw operationError;
+  return exitCode;
 }
 
 async function runStatusAll(config) {
@@ -844,6 +869,12 @@ function withCleanupFailures(error, result) {
   const failures = cleanupFailureMessages(result);
   if (!failures.length) return error;
   return new ValidationError(`${error instanceof Error ? error.message : String(error)} Cleanup failed: ${failures.join("; ")}`);
+}
+
+function withLockReleaseFailure(error, result) {
+  if (result.ok) return error;
+  const detail = `Aggregate lock release failed: ${result.reason}${result.residuePath ? ` (${result.residuePath})` : ""}`;
+  return new ValidationError(error ? `${error instanceof Error ? error.message : String(error)} ${detail}` : detail);
 }
 
 function buildNativeRuntimeConnectArgs(config, role) {
@@ -1338,6 +1369,8 @@ function delay(milliseconds, signal = null) {
 
 const aggregateLockOwners = new Map();
 
+const defaultAggregateLockFs = { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, renameSync, readFileSync, unlinkSync, rmdirSync, statSync };
+
 const IDENTITY_COMMAND_TIMEOUT_MS = 5000;
 
 function normalizeProcessStartIdentity(value) {
@@ -1361,13 +1394,17 @@ function aggregateLockMetadataPath(lockPath) {
   return join(lockPath, "owner.json");
 }
 
+function aggregateRecoveryGatePath(lockPath) {
+  return `${lockPath}-recovery`;
+}
+
 function aggregateLockAmbiguousError(lockPath, reason) {
   return new ValidationError(`Aggregate lock ${lockPath} ownership metadata could not be verified (${reason}); automatic removal was refused. Confirm no aggregate operation is running, then remove the lock manually only after independent confirmation.`);
 }
 
-function readAggregateLock(lockPath) {
+function readAggregateLock(lockPath, fs = defaultAggregateLockFs) {
   let lockStat;
-  try { lockStat = statSync(lockPath); }
+  try { lockStat = fs.statSync(lockPath); }
   catch (error) {
     if (error?.code === "ENOENT") return { kind: "absent" };
     return { kind: "ambiguous", reason: "the lock path could not be inspected" };
@@ -1375,7 +1412,7 @@ function readAggregateLock(lockPath) {
   const directory = lockStat.isDirectory();
   const metadataPath = directory ? aggregateLockMetadataPath(lockPath) : lockPath;
   let text;
-  try { text = readFileSync(metadataPath, "utf8"); }
+  try { text = fs.readFileSync(metadataPath, "utf8"); }
   catch { return { kind: "ambiguous", reason: "the owner record could not be read" }; }
   let owner;
   try { owner = JSON.parse(text); }
@@ -1392,39 +1429,96 @@ function sameAggregateLockInstance(left, right) {
   return left?.dev === right?.dev && left?.ino === right?.ino && left?.birthtimeMs === right?.birthtimeMs;
 }
 
-function writeAggregateLockOwner(lockPath, owner) {
+function writeAggregateLockOwner(lockPath, owner, fs = defaultAggregateLockFs) {
   const metadataPath = aggregateLockMetadataPath(lockPath);
   const temporary = `${metadataPath}.${randomUUID()}.tmp`;
   let descriptor = null;
   try {
-    descriptor = openSync(temporary, "wx", 0o600);
-    writeFileSync(descriptor, `${JSON.stringify(owner)}\n`, "utf8");
-    fsyncSync(descriptor);
-    closeSync(descriptor);
+    descriptor = fs.openSync(temporary, "wx", 0o600);
+    fs.writeFileSync(descriptor, `${JSON.stringify(owner)}\n`, "utf8");
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
     descriptor = null;
-    renameSync(temporary, metadataPath);
+    fs.renameSync(temporary, metadataPath);
   } finally {
-    if (descriptor !== null) closeSync(descriptor);
-    try { unlinkSync(temporary); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    if (descriptor !== null) fs.closeSync(descriptor);
+    try { fs.unlinkSync(temporary); } catch (error) { if (error?.code !== "ENOENT") throw error; }
   }
 }
 
-function removeAggregateLockInstance(lockPath, lockInfo) {
+function removeAggregateLockInstance(lockPath, lockInfo, fs = defaultAggregateLockFs) {
   let currentStat;
-  try { currentStat = statSync(lockPath); }
+  try { currentStat = fs.statSync(lockPath); }
   catch (error) { if (error?.code === "ENOENT") return false; throw error; }
   if (!sameAggregateLockInstance(lockInfo.lockStat, currentStat)) throw new ValidationError(`Aggregate lock ${lockPath} changed during stale-owner recovery; refusing to remove a replacement lock.`);
   if (lockInfo.directory) {
-    const current = readAggregateLock(lockPath);
+    const current = readAggregateLock(lockPath, fs);
     if (current.kind !== "recorded" || !sameAggregateLockInstance(lockInfo.lockStat, current.lockStat) || current.owner.ownerToken !== lockInfo.owner.ownerToken) {
       throw new ValidationError(`Aggregate lock ${lockPath} changed during stale-owner recovery; refusing to remove a replacement lock.`);
     }
-    unlinkSync(aggregateLockMetadataPath(lockPath));
-    rmdirSync(lockPath);
+    fs.unlinkSync(aggregateLockMetadataPath(lockPath));
+    fs.rmdirSync(lockPath);
   } else {
-    unlinkSync(lockPath);
+    fs.unlinkSync(lockPath);
   }
   return true;
+}
+
+function releaseDirectory(lockPath, owner, fs = defaultAggregateLockFs, label = "aggregate lock") {
+  const absent = { ok: true, released: true, ownerRecordRemoved: false, directoryRemoved: true, lockPreserved: false, reason: `${label} was already absent` };
+  let lockStat;
+  try { lockStat = fs.statSync(lockPath); }
+  catch (error) { if (error?.code === "ENOENT") return absent; return { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} could not be inspected: ${error.message}` }; }
+  if (!sameAggregateLockInstance(owner.lockStat, lockStat)) return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} instance changed; replacement preserved` };
+  const current = readAggregateLock(lockPath, fs);
+  if (current.kind !== "recorded" || !current.directory || current.owner.ownerToken !== owner.ownerToken || !sameAggregateLockInstance(owner.lockStat, current.lockStat)) {
+    return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} owner token or instance no longer matches; replacement preserved` };
+  }
+  const privatePath = `${lockPath}.release-${owner.ownerToken}`;
+  try {
+    fs.renameSync(lockPath, privatePath);
+  } catch (error) {
+    return { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} public-path rename failed: ${error.message}` };
+  }
+  const privateInfo = readAggregateLock(privatePath, fs);
+  if (privateInfo.kind !== "recorded" || privateInfo.owner.ownerToken !== owner.ownerToken) {
+    return { ok: false, released: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, residuePath: privatePath, reason: `${label} private release residue did not retain the expected owner token` };
+  }
+  try {
+    fs.unlinkSync(aggregateLockMetadataPath(privatePath));
+  } catch (error) {
+    return { ok: false, released: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, residuePath: privatePath, reason: `${label} owner-record removal failed at private release path: ${error.message}` };
+  }
+  try {
+    fs.rmdirSync(privatePath);
+    return { ok: true, released: true, ownerRecordRemoved: true, directoryRemoved: true, lockPreserved: false, reason: `${label} released` };
+  } catch (error) {
+    return { ok: false, released: true, ownerRecordRemoved: true, directoryRemoved: false, lockPreserved: false, residuePath: privatePath, reason: `${label} private cleanup-directory removal failed: ${error.message}` };
+  }
+}
+
+function acquireRecoveryGate(lockPath, owner, fs = defaultAggregateLockFs) {
+  const gatePath = aggregateRecoveryGatePath(lockPath);
+  try {
+    fs.mkdirSync(gatePath);
+    try {
+      writeAggregateLockOwner(gatePath, owner, fs);
+    } catch (error) {
+      try { fs.rmdirSync(gatePath); } catch { /* preserve an ambiguous gate for safe operator recovery */ }
+      throw error;
+    }
+    return { gatePath, owner, lockStat: fs.statSync(gatePath) };
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    const gate = readAggregateLock(gatePath, fs);
+    if (gate.kind === "ambiguous") throw aggregateLockAmbiguousError(gatePath, `recovery gate metadata is ambiguous: ${gate.reason}`);
+    if (gate.kind === "absent") throw new ValidationError(`Aggregate recovery gate ${gatePath} changed while it was being inspected; refusing unsafe acquisition.`);
+    throw new ValidationError(`Aggregate recovery gate ${gatePath} is active; refusing concurrent acquisition.`);
+  }
+}
+
+function releaseRecoveryGate(gate, fs = defaultAggregateLockFs) {
+  return releaseDirectory(gate.gatePath, { ...gate.owner, lockStat: gate.lockStat }, fs, "aggregate recovery gate");
 }
 
 function acquireAggregateLock(lockPath, options = {}) {
@@ -1433,52 +1527,65 @@ function acquireAggregateLock(lockPath, options = {}) {
   const startIdentity = normalizeProcessStartIdentity(inspectStartIdentity(process.pid));
   if (!startIdentity) throw new ValidationError("Aggregate lock unavailable: this process's start identity could not be established, so duplicate-operation protection cannot be guaranteed.");
   const owner = { version: 1, pid: process.pid, startIdentity, ownerToken: randomUUID() };
+  const fs = { ...defaultAggregateLockFs, ...(options.fs || {}) };
+  const gate = acquireRecoveryGate(lockPath, owner, fs);
+  let acquired = null;
+  let acquisitionError = null;
   const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0 ? options.maxRetries : 3;
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    try {
-      mkdirSync(lockPath);
+  try {
+    options.onRecoveryAuthorityAcquired?.({ gatePath: gate.gatePath, lockPath });
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
-        writeAggregateLockOwner(lockPath, owner);
+        fs.mkdirSync(lockPath);
+        try {
+          writeAggregateLockOwner(lockPath, owner, fs);
+        } catch (error) {
+          try { fs.rmdirSync(lockPath); } catch { /* leave an ambiguous lock for safe operator recovery */ }
+          throw error;
+        }
+        const record = { ...owner, lockStat: fs.statSync(lockPath) };
+        aggregateLockOwners.set(lockPath, record);
+        acquired = record;
+        break;
       } catch (error) {
-        try { rmdirSync(lockPath); } catch { /* leave an ambiguous lock for safe operator recovery */ }
-        throw error;
+        if (error?.code !== "EEXIST") throw error;
+        const lockInfo = readAggregateLock(lockPath, fs);
+        if (lockInfo.kind === "absent") continue;
+        if (lockInfo.kind === "ambiguous") throw aggregateLockAmbiguousError(lockPath, lockInfo.reason);
+        if (isProcessAlive(lockInfo.owner.pid)) {
+          const observedStart = inspectStartIdentity(lockInfo.owner.pid);
+          if (!observedStart) throw aggregateLockAmbiguousError(lockPath, "the live owner's start identity could not be inspected");
+          if (normalizeProcessStartIdentity(lockInfo.owner.startIdentity) === normalizeProcessStartIdentity(observedStart)) throw new ValidationError(`Aggregate startup is already running; lock ${lockPath} is held by a live owner.`);
+        }
+        if (attempt === maxRetries) throw new ValidationError(`Aggregate lock ${lockPath} remained contested after ${maxRetries + 1} bounded acquisition attempts; refusing unsafe recovery.`);
+        options.beforeStaleRemoval?.({ lockPath, owner: lockInfo.owner });
+        removeAggregateLockInstance(lockPath, lockInfo, fs);
       }
-      aggregateLockOwners.set(lockPath, { ...owner, lockStat: statSync(lockPath) });
-      return owner;
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
-      const lockInfo = readAggregateLock(lockPath);
-      if (lockInfo.kind === "absent") continue;
-      if (lockInfo.kind === "ambiguous") throw aggregateLockAmbiguousError(lockPath, lockInfo.reason);
-      if (isProcessAlive(lockInfo.owner.pid)) {
-        const observedStart = inspectStartIdentity(lockInfo.owner.pid);
-        if (!observedStart) throw aggregateLockAmbiguousError(lockPath, "the live owner's start identity could not be inspected");
-        if (normalizeProcessStartIdentity(lockInfo.owner.startIdentity) === normalizeProcessStartIdentity(observedStart)) throw new ValidationError(`Aggregate startup is already running; lock ${lockPath} is held by a live owner.`);
-      }
-      if (attempt === maxRetries) throw new ValidationError(`Aggregate lock ${lockPath} remained contested after ${maxRetries + 1} bounded acquisition attempts; refusing unsafe recovery.`);
-      options.beforeStaleRemoval?.({ lockPath, owner: lockInfo.owner });
-      removeAggregateLockInstance(lockPath, lockInfo);
     }
+  } catch (error) {
+    acquisitionError = error;
   }
-  throw new ValidationError(`Aggregate lock ${lockPath} could not be acquired safely.`);
+  const gateRelease = releaseRecoveryGate(gate, fs);
+  if (!gateRelease.ok) {
+    const primaryRelease = acquired ? releaseAggregateLock(lockPath, acquired.ownerToken, { fs }) : { ok: true, reason: "primary lock was not acquired" };
+    const details = `Aggregate recovery gate release failed: ${gateRelease.reason}${gateRelease.residuePath ? ` (${gateRelease.residuePath})` : ""}`;
+    const primaryDetails = !primaryRelease.ok ? ` Primary lock release also failed: ${primaryRelease.reason}` : "";
+    throw new ValidationError(`${acquisitionError?.message || "Aggregate lock acquisition failed."} ${details}.${primaryDetails}`);
+  }
+  if (acquisitionError) throw acquisitionError;
+  if (!acquired) throw new ValidationError(`Aggregate lock ${lockPath} could not be acquired safely.`);
+  return acquired;
 }
 
-function releaseAggregateLock(lockPath, ownerToken = aggregateLockOwners.get(lockPath)?.ownerToken) {
+function releaseAggregateLock(lockPath, ownerToken = aggregateLockOwners.get(lockPath)?.ownerToken, options = {}) {
   const owner = aggregateLockOwners.get(lockPath);
-  if (!owner || !ownerToken || owner.ownerToken !== ownerToken) return;
-  let lockStat;
-  try { lockStat = statSync(lockPath); }
-  catch (error) { if (error?.code === "ENOENT") aggregateLockOwners.delete(lockPath); return; }
-  if (!sameAggregateLockInstance(owner.lockStat, lockStat)) return;
-  const lockInfo = readAggregateLock(lockPath);
-  if (lockInfo.kind !== "recorded" || !lockInfo.directory || lockInfo.owner.ownerToken !== ownerToken || !sameAggregateLockInstance(owner.lockStat, lockInfo.lockStat)) return;
-  try {
-    unlinkSync(aggregateLockMetadataPath(lockPath));
-    rmdirSync(lockPath);
+  if (!owner || !ownerToken || owner.ownerToken !== ownerToken) return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: "not the current in-memory lock owner" };
+  const fs = { ...defaultAggregateLockFs, ...(options.fs || {}) };
+  const result = releaseDirectory(lockPath, owner, fs);
+  if (result.released && result.directoryRemoved) {
     aggregateLockOwners.delete(lockPath);
-  } catch (error) {
-    if (error?.code === "ENOENT") aggregateLockOwners.delete(lockPath);
   }
+  return result;
 }
 
 function readAggregateState(config) {

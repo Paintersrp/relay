@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -399,7 +399,8 @@ test("lock release does not remove a replacement owner token", async () => {
   try {
     acquireAggregateLock(lock);
     await writeFile(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement" }), "utf8");
-    releaseAggregateLock(lock);
+    const result = releaseAggregateLock(lock);
+    assert.equal(result.released, false);
     assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /replacement/u);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
@@ -497,12 +498,84 @@ test("aggregate lock preserves live and ambiguous owners and protects changed in
     rmSync(lock, { recursive: true, force: true });
     mkdirSync(lock);
     writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-owner" }));
-    releaseAggregateLock(lock, owner.ownerToken);
+    const result = releaseAggregateLock(lock, owner.ownerToken);
+    assert.equal(result.released, false);
     assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /replacement-owner/u);
   } finally {
     await terminateProcessTree(child.pid, { wait: true });
     await rm(temp, { recursive: true, force: true });
   }
+});
+
+test("stale recovery is serialized by the recovery gate and preserves replacement locks", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-recovery-gate-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const options = { inspectStartIdentity: () => "self-start" };
+  try {
+    await writeFile(lock, JSON.stringify({ pid: 999999, startIdentity: "dead", ownerToken: "stale" }), "utf8");
+    let thirdContenderError;
+    acquireAggregateLock(lock, {
+      ...options,
+      beforeStaleRemoval: () => {
+        try { acquireAggregateLock(lock, options); } catch (error) { thirdContenderError = error; }
+      },
+    });
+    assert.match(String(thirdContenderError), /recovery gate.*active|already running/u);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /self-start/u);
+    await assert.rejects(readFile(`${lock}-recovery`));
+
+    const original = JSON.parse(await readFile(path.join(lock, "owner.json"), "utf8"));
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ ...original, pid: 999999, startIdentity: "dead", ownerToken: "stale-again" }), "utf8");
+    assert.throws(() => acquireAggregateLock(lock, {
+      ...options,
+      beforeStaleRemoval: () => {
+        rmSync(lock, { recursive: true, force: true });
+        mkdirSync(lock);
+        writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-owner" }));
+      },
+    }), /changed during stale-owner recovery/u);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /replacement-owner/u);
+    await assert.rejects(readFile(`${lock}-recovery`));
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("ambiguous recovery-gate metadata fails closed and release returns structured failures", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-release-failure-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const options = { inspectStartIdentity: () => "self-start" };
+  try {
+    await mkdir(`${lock}-recovery`);
+    await writeFile(path.join(`${lock}-recovery`, "owner.json"), "{partial", "utf8");
+    assert.throws(() => acquireAggregateLock(lock, options), /ownership metadata could not be verified/u);
+    assert.match(await readFile(path.join(`${lock}-recovery`, "owner.json"), "utf8"), /partial/u);
+    await rm(`${lock}-recovery`, { recursive: true, force: true });
+
+    acquireAggregateLock(lock, options);
+    const unlinkFailure = releaseAggregateLock(lock, undefined, { fs: { unlinkSync: () => { throw new Error("injected owner unlink failure"); } } });
+    assert.deepEqual({ ok: unlinkFailure.ok, released: unlinkFailure.released, ownerRecordRemoved: unlinkFailure.ownerRecordRemoved, directoryRemoved: unlinkFailure.directoryRemoved, lockPreserved: unlinkFailure.lockPreserved }, { ok: false, released: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false });
+    assert.match(unlinkFailure.residuePath, /\.release-/u);
+    assert.match(await readFile(path.join(unlinkFailure.residuePath, "owner.json"), "utf8"), /ownerToken/u);
+    await assert.rejects(readFile(lock));
+    acquireAggregateLock(lock, options);
+    releaseAggregateLock(lock);
+
+    acquireAggregateLock(lock, options);
+    const renameFailure = releaseAggregateLock(lock, undefined, { fs: { renameSync: () => { throw new Error("injected public rename failure"); } } });
+    assert.equal(renameFailure.ok, false);
+    assert.equal(renameFailure.lockPreserved, true);
+    assert.match(await readFile(path.join(lock, "owner.json"), "utf8"), /ownerToken/u);
+    releaseAggregateLock(lock);
+
+    acquireAggregateLock(lock, options);
+    const removeFailure = releaseAggregateLock(lock, undefined, { fs: { rmdirSync: (target) => { if (String(target).includes(".release-")) throw new Error("injected private directory removal failure"); return rmdirSync(target); } } });
+    assert.equal(removeFailure.ok, false);
+    assert.equal(removeFailure.released, true);
+    assert.equal(removeFailure.ownerRecordRemoved, true);
+    assert.equal(removeFailure.directoryRemoved, false);
+    await assert.rejects(readFile(lock));
+    await rm(removeFailure.residuePath, { recursive: true, force: true });
+    releaseAggregateLock(lock);
+  } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
 test("termination result reports an injected failure without hiding the live PID", async () => {
