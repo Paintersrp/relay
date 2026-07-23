@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { mkdirSync, readFileSync as readFileSyncNative, renameSync as renameSyncNative, rmSync, rmdirSync, statSync as statSyncNative, unlinkSync as unlinkSyncNative, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
@@ -23,6 +23,7 @@ import {
   verifyProcessIdentity,
   loadEnvFile,
   normalizeRuntimeStatus,
+  parsePrivateIngressAddress,
   parseLinuxProcStatStartIdentity,
   parseMacPsOutput,
   parseWindowsCimJson,
@@ -65,8 +66,36 @@ async function temporaryEnvironment(extra, run) {
     RELAY_MCP_POLL_INTERVAL_MS: "5",
     ...extra,
   };
+  const ingressServers = [];
+  for (const [key, pathName] of [["WAYFINDER", "/mcp/wayfinder"], ["PLANNER", "/mcp/planner"], ["AUDITOR", "/mcp/auditor"]]) {
+    const server = createServer((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        if (env.FAKE_INGRESS_FAIL_ROLE === key) {
+          response.writeHead(503, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "simulated ingress failure" }));
+          return;
+        }
+        const target = new URL(`${env.RELAY_MCP_BASE_URL || "http://127.0.0.1:8080"}${pathName}`);
+        const upstream = httpRequest(target, { method: request.method, headers: { "content-type": request.headers["content-type"] || "application/json" } }, (upstreamResponse) => {
+          const chunks = [];
+          upstreamResponse.on("data", (chunk) => chunks.push(chunk));
+          upstreamResponse.on("end", () => { response.writeHead(upstreamResponse.statusCode || 502, { "content-type": upstreamResponse.headers["content-type"] || "application/json" }); response.end(Buffer.concat(chunks)); });
+        });
+        upstream.on("error", () => { response.writeHead(503, { "content-type": "application/json" }); response.end(JSON.stringify({ error: "upstream unavailable" })); });
+        upstream.end(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: {} }));
+      });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    env[`RELAY_MCP_INGRESS_${key}_ADDR`] = `127.0.0.1:${server.address().port}`;
+    ingressServers.push(server);
+  }
   try { return await run(env, temp); }
-  finally { await rm(temp, { recursive: true, force: true }); }
+  finally {
+    await Promise.all(ingressServers.map((server) => new Promise((resolvePromise) => server.close(resolvePromise))));
+    await rm(temp, { recursive: true, force: true });
+  }
 }
 
 async function runScript(command, env) {
@@ -97,10 +126,104 @@ test("aggregate config requires three distinct tunnel_ plus 32 lowercase hexadec
   assert.equal(validateAggregateConfig(duplicate).filter((error) => /duplicate tunnel ID/u.test(error)).length, 2);
 });
 
+test("aggregate role endpoints keep protected Relay URLs separate from exact private ingress targets", () => {
+  const names = ["RELAY_MCP_BASE_URL", "RELAY_MCP_INGRESS_WAYFINDER_ADDR", "RELAY_MCP_INGRESS_PLANNER_ADDR", "RELAY_MCP_INGRESS_AUDITOR_ADDR"];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    process.env.RELAY_MCP_BASE_URL = "http://127.0.0.1:8080";
+    delete process.env.RELAY_MCP_INGRESS_WAYFINDER_ADDR;
+    delete process.env.RELAY_MCP_INGRESS_PLANNER_ADDR;
+    delete process.env.RELAY_MCP_INGRESS_AUDITOR_ADDR;
+    const defaults = getConfig();
+    assert.deepEqual(defaults.roles.map((role) => role.protectedEndpoint), ["http://127.0.0.1:8080/mcp/wayfinder", "http://127.0.0.1:8080/mcp/planner", "http://127.0.0.1:8080/mcp/auditor"]);
+    assert.deepEqual(defaults.roles.map((role) => role.tunnelEndpoint), ["http://127.0.0.1:18101/mcp/wayfinder", "http://127.0.0.1:18102/mcp/planner", "http://127.0.0.1:18103/mcp/auditor"]);
+    process.env.RELAY_MCP_INGRESS_WAYFINDER_ADDR = "127.0.0.1:19101";
+    process.env.RELAY_MCP_INGRESS_PLANNER_ADDR = "[::1]:19102";
+    process.env.RELAY_MCP_INGRESS_AUDITOR_ADDR = "192.168.1.4:19103";
+    const overridden = getConfig();
+    assert.deepEqual(overridden.roles.map((role) => role.tunnelEndpoint), ["http://127.0.0.1:19101/mcp/wayfinder", "http://[::1]:19102/mcp/planner", "http://192.168.1.4:19103/mcp/auditor"]);
+    assert.equal(overridden.relayBaseUrl, "http://127.0.0.1:8080");
+  } finally {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
+});
+
+test("private ingress addresses fail closed for unsafe forms and duplicate listeners", () => {
+  for (const value of ["", " :18101", "127.0.0.1", "127.0.0.1:0", "127.0.0.1:65536", "0.0.0.0:18101", "8.8.8.8:18101", "example.com:18101", "127.0.0.1:18101/path", "user:pass@127.0.0.1:18101", "2001:db8::1:18101", "[fe80::1]:18101"]) {
+    assert.throws(() => parsePrivateIngressAddress(value), /private|IP literal|port|bracketed/u, value);
+  }
+  const names = ["RELAY_MCP_INGRESS_WAYFINDER_ADDR", "RELAY_MCP_INGRESS_PLANNER_ADDR"];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    process.env.RELAY_MCP_INGRESS_WAYFINDER_ADDR = "127.0.0.1:19101";
+    process.env.RELAY_MCP_INGRESS_PLANNER_ADDR = "127.0.0.1:19101";
+    assert.throws(() => getConfig(), /duplicate ingress listener address/u);
+  } finally {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
+});
+
 test("aggregate native connect uses JSON and never configures a fixed health address", () => {
-  const args = buildNativeRuntimeConnectArgs({}, { alias: "relay-planner", profile: "relay-planner", tunnelId: ids[1], endpoint: "http://127.0.0.1:8080/mcp/planner" });
+  const args = buildNativeRuntimeConnectArgs({}, { alias: "relay-planner", profile: "relay-planner", tunnelId: ids[1], tunnelEndpoint: "http://127.0.0.1:18102/mcp/planner" });
   assert.ok(args.includes("--json"));
   assert.equal(args.some((arg) => arg.includes("health")), false);
+});
+
+test("all native role connections use their ingress targets and persist only those targets", async () => {
+  await temporaryEnvironment({ RELAY_MCP_AUTH_TOKEN: "relay-bearer-secret", RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN: "ingress-bearer-secret" }, async (env, temp) => {
+    const logPath = path.join(temp, "connect.log");
+    await runScript("init:all", { ...env, FAKE_TUNNEL_LOG: logPath });
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    const connectCalls = calls.filter((args) => args.includes("connect"));
+    assert.equal(connectCalls.length, 3);
+    for (const [alias, address, pathName] of [["relay-wayfinder", env.RELAY_MCP_INGRESS_WAYFINDER_ADDR, "/mcp/wayfinder"], ["relay-planner", env.RELAY_MCP_INGRESS_PLANNER_ADDR, "/mcp/planner"], ["relay-auditor", env.RELAY_MCP_INGRESS_AUDITOR_ADDR, "/mcp/auditor"]]) {
+      const call = connectCalls.find((args) => args.includes(alias));
+      assert.ok(call);
+      assert.equal(call[call.indexOf("--mcp-server-url") + 1], `http://${address}${pathName}`);
+      assert.doesNotMatch(call.join(" "), /relay-bearer-secret|ingress-bearer-secret/u);
+    }
+    const state = JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+    assert.deepEqual(state.desiredRoleBindings.map((binding) => binding.tunnelEndpoint), [
+      `http://${env.RELAY_MCP_INGRESS_WAYFINDER_ADDR}/mcp/wayfinder`,
+      `http://${env.RELAY_MCP_INGRESS_PLANNER_ADDR}/mcp/planner`,
+      `http://${env.RELAY_MCP_INGRESS_AUDITOR_ADDR}/mcp/auditor`,
+    ]);
+    assert.doesNotMatch(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"), /relay-bearer-secret|ingress-bearer-secret/u);
+  });
+});
+
+test("incomplete connect JSON is followed by authoritative status and stopped diagnostics are bounded", async () => {
+  await temporaryEnvironment({ FAKE_TUNNEL_CONNECT_INCOMPLETE_ALIAS: "relay-planner" }, async (env, temp) => {
+    const logPath = path.join(temp, "incomplete.log");
+    await runScript("init:all", { ...env, FAKE_TUNNEL_LOG: logPath });
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    const connectIndex = calls.findIndex((args) => args.includes("connect") && args.includes("relay-planner"));
+    const statusIndex = calls.findIndex((args, index) => index > connectIndex && args.includes("status") && args.includes("relay-planner"));
+    assert.ok(connectIndex >= 0 && statusIndex > connectIndex);
+  });
+  await temporaryEnvironment({ FAKE_TUNNEL_CONNECT_ISSUE_ALIAS: "relay-planner", RELAY_MCP_AUTH_TOKEN: "relay-bearer-secret" }, async (env) => {
+    await assert.rejects(runScript("init:all", env), (error) => {
+      assert.match(String(error.stderr), /Planner runtime was created but stopped before readiness:/u);
+      assert.match(String(error.stderr), /MCP initialize failed with Unauthorized/u);
+      assert.doesNotMatch(String(error.stderr), /relay-bearer-secret|runtime_log|request|response/u);
+      return true;
+    });
+  });
+});
+
+test("doctor fails closed when one private ingress listener is unhealthy", async () => {
+  await temporaryEnvironment({ FAKE_INGRESS_FAIL_ROLE: "PLANNER" }, async (env) => {
+    await assert.rejects(runScript("doctor:all", env), (error) => {
+      assert.match(`${error.stdout}\n${error.stderr}`, /Planner.*private ingress ping/u);
+      return true;
+    });
+  });
 });
 
 test("native fake state generates and consumes three distinct health URLs", async () => {
@@ -150,8 +273,8 @@ test("alias-only failed connect state recovers on the next operation", async () 
 });
 
 test("native binding is exact and stale aggregate state cannot prove it", () => {
-  const role = { alias: "relay-planner", profile: "relay-planner", tunnelId: ids[1], endpoint: "http://127.0.0.1:8080/mcp/planner" };
-  const payload = { alias: role.alias, profile_name: role.profile, tunnel_id: role.tunnelId, process: { target_kind: "server_url", target_value: role.endpoint }, process_running: true, health_url: "http://127.0.0.1:23001/readyz" };
+  const role = { alias: "relay-planner", profile: "relay-planner", tunnelId: ids[1], tunnelEndpoint: "http://127.0.0.1:18102/mcp/planner" };
+  const payload = { alias: role.alias, profile_name: role.profile, tunnel_id: role.tunnelId, process: { target_kind: "server_url", target_value: role.tunnelEndpoint }, process_running: true, health_url: "http://127.0.0.1:23001/readyz" };
   assert.equal(bindingMatches(JSON.stringify(payload), role), true);
   assert.equal(bindingMatches(JSON.stringify({ ...payload, process: { ...payload.process, target_value: "http://wrong/mcp" } }), role), false);
   assert.equal(bindingMatches(JSON.stringify({ roles: [role] }), role), false);
@@ -161,10 +284,10 @@ test("native binding is exact and stale aggregate state cannot prove it", () => 
 test("production 0.0.9 status fixture is normalized from nested process target", async () => {
   const fixture = JSON.parse(await readFile(path.join(directory, "test-fixtures", "tunnel-client-0.0.9-status.json"), "utf8"));
   const runtime = normalizeRuntimeStatus(fixture);
-  assert.equal(runtime.endpoint, fixture.process.target_value);
+  assert.equal(runtime.tunnelEndpoint, fixture.process.target_value);
   assert.equal(runtime.profile, fixture.profile_name);
   assert.equal(runtime.processRunning, fixture.process_running);
-  assert.equal(normalizeRuntimeStatus({ ...fixture, process: { ...fixture.process, target_value: "https://wrong.example/mcp" } }).endpoint, "https://wrong.example/mcp");
+  assert.equal(normalizeRuntimeStatus({ ...fixture, process: { ...fixture.process, target_value: "https://wrong.example/mcp" } }).tunnelEndpoint, "https://wrong.example/mcp");
   assert.equal(normalizeRuntimeStatus({ ...fixture, process: { ...fixture.process, target_kind: "command" } }), null);
   assert.equal(normalizeRuntimeStatus({ ...fixture, process: { target_kind: "server_url" } }), null);
   assert.equal(normalizeRuntimeStatus({ ...fixture, mcp_server_url: fixture.process.target_value, process: undefined }), null);
@@ -229,6 +352,23 @@ test("same alias with endpoint drift is stopped and reconnected; correct runtime
   });
 });
 
+test("an existing direct protected-port Wayfinder runtime is drifted and reconnected through its ingress listener", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    await runScript("init:all", env);
+    const nativePath = path.join(temp, "native.json");
+    const native = JSON.parse(await readFile(nativePath, "utf8"));
+    native.runtimes["relay-wayfinder"].process.target_value = "http://127.0.0.1:8080/mcp/wayfinder";
+    await writeFile(nativePath, `${JSON.stringify(native)}\n`, "utf8");
+    const logPath = path.join(temp, "wayfinder-drift.log");
+    await runScript("init:all", { ...env, FAKE_TUNNEL_LOG: logPath });
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    const stop = calls.findIndex((args) => args.includes("stop") && args.includes("relay-wayfinder"));
+    const connect = calls.findIndex((args) => args.includes("connect") && args.includes("relay-wayfinder"));
+    assert.ok(stop >= 0 && connect > stop);
+    assert.equal(calls[connect][calls[connect].indexOf("--mcp-server-url") + 1], `http://${env.RELAY_MCP_INGRESS_WAYFINDER_ADDR}/mcp/wayfinder`);
+  });
+});
+
 test("changed profile forces replacement", async () => {
   await temporaryEnvironment({}, async (env, temp) => {
     await runScript("init:all", env);
@@ -290,7 +430,8 @@ test("stop cleanup shuts down owned Relay after malformed runtime stop output", 
     await once(portProbe, "listening");
     const port = portProbe.address().port;
     await new Promise((resolvePromise) => portProbe.close(resolvePromise));
-    const startEnv = { ...env, RELAY_TEST_PORT: String(port), RELAY_MCP_BASE_URL: `http://127.0.0.1:${port}`, RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` };
+    env.RELAY_MCP_BASE_URL = `http://127.0.0.1:${port}`;
+    const startEnv = { ...env, RELAY_TEST_PORT: String(port), RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` };
     await runScript("start:all", startEnv);
     const repeated = await runScript("start:all", startEnv);
     assert.match(repeated.stdout, /launcher-owned daemon/u);
@@ -324,6 +465,7 @@ test("start reuses an external Relay and stop preserves it", async () => {
       assert.match(doctored.stdout, /doctor: Auditor succeeded/u);
       const status = await runScript("status:all", env);
       assert.match(status.stdout, /Auditor.*native\/ready/u);
+      for (const address of [env.RELAY_MCP_INGRESS_WAYFINDER_ADDR, env.RELAY_MCP_INGRESS_PLANNER_ADDR, env.RELAY_MCP_INGRESS_AUDITOR_ADDR]) assert.match(status.stdout, new RegExp(address.replaceAll(".", "\\."), "u"));
       assert.doesNotMatch(status.stdout, /"healthz"|"process_running"|"target_kind"/u);
       const stopped = await runScript("stop:all", env);
       assert.match(stopped.stdout, /external daemon preserved/u);

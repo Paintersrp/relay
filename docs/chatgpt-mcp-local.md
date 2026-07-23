@@ -45,6 +45,9 @@ Optional aggregate overrides:
 # TUNNEL_CLIENT_PATH=C:\Tools\relay-mcp-tunnel\tunnel-client.exe
 # RELAY_MCP_RELAY_COMMAND=go run ./cmd/relay
 # RELAY_MCP_BASE_URL=http://127.0.0.1:8080
+# RELAY_MCP_INGRESS_WAYFINDER_ADDR=127.0.0.1:18101
+# RELAY_MCP_INGRESS_PLANNER_ADDR=127.0.0.1:18102
+# RELAY_MCP_INGRESS_AUDITOR_ADDR=127.0.0.1:18103
 # RELAY_MCP_PROFILE_DIR=C:\Tools\relay-mcp-tunnel\profiles
 # RELAY_MCP_WAYFINDER_ALIAS=relay-wayfinder
 # RELAY_MCP_PLANNER_ALIAS=relay-planner
@@ -59,13 +62,13 @@ Optional aggregate overrides:
 
 The aggregate defaults are:
 
-| Role | Local endpoint | Native alias | Native profile | Health URL |
-| --- | --- | --- | --- | --- |
-| Wayfinder | `http://127.0.0.1:8080/mcp/wayfinder` | `relay-wayfinder` | `relay-wayfinder` | native generated URL |
-| Planner | `http://127.0.0.1:8080/mcp/planner` | `relay-planner` | `relay-planner` | native generated URL |
-| Auditor | `http://127.0.0.1:8080/mcp/auditor` | `relay-auditor` | `relay-auditor` | native generated URL |
+| Role | Protected Relay endpoint | Private ingress / native tunnel target | Native alias | Native profile | Health URL |
+| --- | --- | --- | --- | --- | --- |
+| Wayfinder | `http://127.0.0.1:8080/mcp/wayfinder` | `http://127.0.0.1:18101/mcp/wayfinder` | `relay-wayfinder` | `relay-wayfinder` | native generated URL |
+| Planner | `http://127.0.0.1:8080/mcp/planner` | `http://127.0.0.1:18102/mcp/planner` | `relay-planner` | `relay-planner` | native generated URL |
+| Auditor | `http://127.0.0.1:8080/mcp/auditor` | `http://127.0.0.1:18103/mcp/auditor` | `relay-auditor` | `relay-auditor` | native generated URL |
 
-No aggregate `/mcp` URL or retired `/mcp/v1/...` URL is used for the three app registrations. The role paths are fixed and derived from one role definition in the local Node tooling.
+No aggregate `/mcp` URL or retired `/mcp/v1/...` URL is used for the three app registrations. Tunnel-client connects only to the role-specific private ingress listeners on ports 18101, 18102, and 18103. The ingress listeners inject the bearer required by the protected Relay port-8080 routes; tunnel-client is never given either bearer value and never connects directly to protected `/mcp/*` endpoints. The role paths are fixed and derived from one role definition in the local Node tooling.
 
 ## Native runtime supervision
 

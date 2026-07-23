@@ -20,6 +20,7 @@ import {
 } from "fs";
 import { request as httpRequest } from "http";
 import { request as httpsRequest } from "https";
+import { isIP } from "net";
 import { dirname, delimiter, isAbsolute, join, resolve } from "path";
 import process from "process";
 import { fileURLToPath } from "url";
@@ -62,6 +63,8 @@ const ROLE_DEFINITIONS = [
     key: "wayfinder",
     label: "Wayfinder",
     path: "/mcp/wayfinder",
+    ingressEnv: "RELAY_MCP_INGRESS_WAYFINDER_ADDR",
+    defaultIngressAddress: "127.0.0.1:18101",
     idEnv: "RELAY_MCP_WAYFINDER_TUNNEL_ID",
     aliasEnv: "RELAY_MCP_WAYFINDER_ALIAS",
     profileEnv: "RELAY_MCP_WAYFINDER_PROFILE",
@@ -72,6 +75,8 @@ const ROLE_DEFINITIONS = [
     key: "planner",
     label: "Planner",
     path: "/mcp/planner",
+    ingressEnv: "RELAY_MCP_INGRESS_PLANNER_ADDR",
+    defaultIngressAddress: "127.0.0.1:18102",
     idEnv: "RELAY_MCP_PLANNER_TUNNEL_ID",
     aliasEnv: "RELAY_MCP_PLANNER_ALIAS",
     profileEnv: "RELAY_MCP_PLANNER_PROFILE",
@@ -82,6 +87,8 @@ const ROLE_DEFINITIONS = [
     key: "auditor",
     label: "Auditor",
     path: "/mcp/auditor",
+    ingressEnv: "RELAY_MCP_INGRESS_AUDITOR_ADDR",
+    defaultIngressAddress: "127.0.0.1:18103",
     idEnv: "RELAY_MCP_AUDITOR_TUNNEL_ID",
     aliasEnv: "RELAY_MCP_AUDITOR_ALIAS",
     profileEnv: "RELAY_MCP_AUDITOR_PROFILE",
@@ -197,13 +204,25 @@ function getConfig() {
   const relayBaseUrl = stripTrailingSlash(
     process.env.RELAY_MCP_BASE_URL || DEFAULT_RELAY_BASE_URL,
   );
+  const ingressAddresses = new Map();
   const roles = ROLE_DEFINITIONS.map((definition) => ({
     ...definition,
     tunnelId: process.env[definition.idEnv] || "",
     alias: process.env[definition.aliasEnv] || definition.alias,
     profile: process.env[definition.profileEnv] || definition.profile,
-    endpoint: `${relayBaseUrl}${definition.path}`,
+    protectedEndpoint: `${relayBaseUrl}${definition.path}`,
+    ingressAddress: parsePrivateIngressAddress(
+      process.env[definition.ingressEnv] ?? definition.defaultIngressAddress,
+      definition,
+    ),
+    tunnelEndpoint: null,
   }));
+  for (const role of roles) {
+    const prior = ingressAddresses.get(role.ingressAddress);
+    if (prior) throw new ValidationError(`${role.label}: duplicate ingress listener address with ${prior}`);
+    ingressAddresses.set(role.ingressAddress, role.label);
+    role.tunnelEndpoint = `http://${formatIngressHostPort(role.ingressAddress)}${role.path}`;
+  }
 
   return {
     envPath: ENV_PATH,
@@ -290,14 +309,16 @@ function printHelp(config) {
   console.log("  npm run chatgpt-mcp:stop:all");
   console.log("  npm run chatgpt-mcp:status:all");
   console.log("");
-  console.log(`Relay command: ${redactSecrets(config.relayCommand, config.controlPlaneApiKey)}`);
-  console.log(`Relay base URL: ${config.relayBaseUrl}`);
+  console.log(`Relay command: ${redactSecrets(config.relayCommand, sensitiveValues(config.controlPlaneApiKey))}`);
+  console.log(`Protected Relay base URL: ${config.relayBaseUrl} (port 8080 by default)`);
+  for (const role of config.roles) console.log(`${role.label} private ingress: ${role.ingressAddress}; tunnel target: ${role.tunnelEndpoint}`);
+  console.log("Private ingress listeners inject the protected Relay bearer; tunnel-client never connects directly to protected /mcp/* endpoints.");
   console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
   console.log(`Aggregate state file: ${config.stateFile}`);
   console.log("The three ChatGPT app registrations must select three distinct tunnel IDs.");
   console.log("Native runtimes generate their own ephemeral loopback health URLs; no aggregate health ports are configured.");
   console.log("Process environment overrides .env.local, which overrides .env, which overrides defaults.");
-  console.log("Override names: RELAY_MCP_RELAY_COMMAND, RELAY_MCP_BASE_URL, RELAY_MCP_*_PROFILE, RELAY_MCP_*_ALIAS, RELAY_MCP_STARTUP_TIMEOUT_MS, RELAY_MCP_PROFILE_DIR, and TUNNEL_CLIENT_PATH.");
+  console.log("Override names: RELAY_MCP_RELAY_COMMAND, RELAY_MCP_BASE_URL, RELAY_MCP_INGRESS_*_ADDR, RELAY_MCP_*_PROFILE, RELAY_MCP_*_ALIAS, RELAY_MCP_STARTUP_TIMEOUT_MS, RELAY_MCP_PROFILE_DIR, and TUNNEL_CLIENT_PATH.");
 }
 
 function validateAggregateConfig(config) {
@@ -305,8 +326,12 @@ function validateAggregateConfig(config) {
   const ids = new Map();
   const profiles = new Map();
   const aliases = new Map();
+  const ingressAddresses = new Map();
 
   for (const role of config.roles) {
+    if (!role.ingressAddress || !role.tunnelEndpoint) errors.push(`${role.label}: ingress listener address is invalid`);
+    else if (ingressAddresses.has(role.ingressAddress)) errors.push(`${role.label}: duplicate ingress listener address with ${ingressAddresses.get(role.ingressAddress)}`);
+    else ingressAddresses.set(role.ingressAddress, role.label);
     if (!isConfiguredTunnelId(role.tunnelId)) {
       errors.push(`${role.label}: ${role.idEnv} is missing or still a placeholder`);
     } else if (ids.has(role.tunnelId)) {
@@ -429,13 +454,13 @@ async function runStartAll(config) {
   try {
     priorState = requireReadableAggregateState(config, "start:all");
     cancellation.check();
-    const currentRelay = await checkAllRelayEndpoints(config, cancellation.signal);
+    const currentRelay = await checkAllIngressEndpoints(config, cancellation.signal);
     if (currentRelay.every((result) => result.ok)) {
       if (priorState?.relay?.owned && priorState.relay.identity && (await verifyProcessIdentity(priorState.relay.identity)).ok) {
         relay = { owned: true, identity: priorState.relay.identity, preserved: true };
         console.log("Relay: reusing healthy launcher-owned daemon.");
       } else {
-        console.log("Relay: reusing healthy external daemon.");
+        console.log("Relay: reusing healthy external daemon and private ingress listeners.");
       }
     } else if (currentRelay.some((result) => result.ok)) {
       throw new ValidationError("Relay is partially healthy; refusing to start or attach a partial tunnel set.");
@@ -470,12 +495,12 @@ async function runStartAll(config) {
       console.log(`${role.label}: ${prepared.reused ? "reused" : "connected"} ${role.alias} at ${role.path}`);
     }
     cancellation.check();
-    const finalRelay = await checkAllRelayEndpoints(config, cancellation.signal);
+    const finalRelay = await checkAllIngressEndpoints(config, cancellation.signal);
     if (finalRelay.some((result) => !result.ok)) {
-      throw new ValidationError(`Relay readiness failed: ${finalRelay.filter((result) => !result.ok).map((result) => result.role.label).join(", ")}`);
+      throw new ValidationError(`Private ingress readiness failed: ${finalRelay.filter((result) => !result.ok).map((result) => result.role.label).join(", ")}`);
     }
     writeAggregateState(config, { relay: relay || { owned: false }, residualBindings: [] });
-    console.log("Relay: all three role endpoints healthy; aggregate startup complete.");
+    console.log("Relay: all three private ingress role endpoints healthy; aggregate startup complete.");
     exitCode = 0;
   } catch (error) {
     cleanupResult = await cleanup();
@@ -545,14 +570,14 @@ async function runStatusAll(config) {
   const stateResult = readAggregateState(config);
   const state = stateResult.kind === "valid" ? stateResult.state : null;
   console.log("component  endpoint                                      tunnel       alias/profile                 runtime/readiness");
-  const relayResults = await checkAllRelayEndpoints(config);
-  console.log(`Relay      ${config.relayBaseUrl.padEnd(45)} ${"-".padEnd(12)} ${"-".padEnd(28)} ${relayResults.every((result) => result.ok) ? "healthy" : "unhealthy"}`);
+  const relayResults = await checkAllIngressEndpoints(config);
+  console.log(`Relay      ${config.relayBaseUrl.padEnd(45)} ${"-".padEnd(12)} ${"-".padEnd(28)} ${relayResults.every((result) => result.ok) ? "healthy via private ingress" : "unhealthy or ingress unavailable"}`);
   for (const role of config.roles) {
     const relayResult = relayResults.find((result) => result.role.key === role.key);
     const runtime = adapter ? await inspectRuntime(adapter, role) : { statusOk: false, readyOk: false, bindingOk: false, reason: availabilityError };
     const stateMark = state?.relay?.owned ? "managed" : "native";
     const detail = runtime.statusOk && runtime.readyOk && runtime.bindingOk ? `${stateMark}/ready` : runtime.reason;
-    console.log(`${role.label.padEnd(10)} ${role.endpoint.padEnd(45)} ${abbreviateTunnelId(role.tunnelId).padEnd(12)} ${`${role.alias}/${role.profile}`.padEnd(28)} ${relayResult.ok ? detail : `endpoint: ${relayResult.reason}`}`);
+    console.log(`${role.label.padEnd(10)} ${role.tunnelEndpoint.padEnd(45)} ${abbreviateTunnelId(role.tunnelId).padEnd(12)} ${`${role.alias}/${role.profile}`.padEnd(28)} ${relayResult.ok ? detail : `endpoint: ${relayResult.reason}`}`);
   }
   return 0;
 }
@@ -563,12 +588,12 @@ async function runDoctorAll(config) {
   let availabilityError = null;
   try { adapter = createNativeRuntimeAdapter(config); }
   catch (error) { availabilityError = error instanceof Error ? error.message : String(error); }
-  const relayResults = await checkAllRelayEndpoints(config);
+  const relayResults = await checkAllIngressEndpoints(config);
   const rows = [];
   for (const role of config.roles) {
     const issues = configErrors.filter((item) => item.startsWith(`${role.label}:`)).map((item) => item.slice(role.label.length + 2));
     const relayResult = relayResults.find((result) => result.role.key === role.key);
-    if (!relayResult.ok) issues.push(`endpoint ping: ${relayResult.reason}`);
+    if (!relayResult.ok) issues.push(`private ingress ping: ${relayResult.reason}`);
     const runtime = adapter ? await inspectRuntime(adapter, role) : { statusOk: false, readyOk: false, bindingOk: false, reason: availabilityError || "tunnel-client unavailable" };
     if (!runtime.statusOk) issues.push(`runtime status: ${runtime.reason}`);
     if (!runtime.readyOk) issues.push(`runtime readiness: ${runtime.reason}`);
@@ -604,6 +629,47 @@ function createAggregateCancellation() {
       if (this.cancelled) throw new ValidationError(`aggregate operation cancelled by ${this.signalName}`);
     },
   };
+}
+
+function parsePrivateIngressAddress(raw, definition = null) {
+  const value = String(raw ?? "");
+  const label = definition ? `${definition.label} ${definition.ingressEnv}` : "ingress address";
+  if (value.trim() !== value || value === "") throw new ValidationError(`${label} must contain a private IP literal and port`);
+  let host;
+  let portText;
+  const bracketed = value.match(/^\[([^\]]+)\]:(\d+)$/u);
+  if (bracketed) {
+    host = bracketed[1];
+    portText = bracketed[2];
+  } else {
+    const unbracketed = value.match(/^([^:[\]]+):(\d+)$/u);
+    if (!unbracketed) throw new ValidationError(`${label} must contain a correctly bracketed IP literal and port`);
+    host = unbracketed[1];
+    portText = unbracketed[2];
+  }
+  if (host.includes("%") || isIP(host) === 0 || isUnspecifiedOrNonPrivateAddress(host)) {
+    throw new ValidationError(`${label} must be a private or loopback IP literal`);
+  }
+  const port = Number(portText);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new ValidationError(`${label} port is invalid`);
+  return isIP(host) === 6 ? `[${host.toLowerCase()}]:${port}` : `${host}:${port}`;
+}
+
+function isUnspecifiedOrNonPrivateAddress(host) {
+  const version = isIP(host);
+  if (version === 4) {
+    const octets = host.split(".").map(Number);
+    const loopback = octets[0] === 127;
+    const privateAddress = octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168);
+    return octets.every((octet) => octet === 0) || !privateAddress && !loopback;
+  }
+  const normalized = host.toLowerCase();
+  if (normalized === "::" || normalized === "0:0:0:0:0:0:0:0" || normalized === "::1") return normalized === "::" || normalized.startsWith("0:");
+  return !(normalized.startsWith("fc") || normalized.startsWith("fd") || normalized === "::1");
+}
+
+function formatIngressHostPort(address) {
+  return address;
 }
 
 function installAggregateSignalCleanup(cancellation, cleanup) {
@@ -722,7 +788,7 @@ async function inspectRuntime(adapter, role, signal) {
 }
 
 function runtimeMatchesRole(runtime, role) {
-  return runtime.alias === role.alias && runtime.tunnelId === role.tunnelId && runtime.profile === role.profile && runtime.endpoint === role.endpoint;
+  return runtime.alias === role.alias && runtime.tunnelId === role.tunnelId && runtime.profile === role.profile && runtime.tunnelEndpoint === role.tunnelEndpoint;
 }
 
 function bindingMatches(output, role) {
@@ -736,9 +802,9 @@ function bindingMatches(output, role) {
 async function waitForRelay(config, cancellation) {
   return waitUntil(config.startupTimeoutMs, config.pollIntervalMs, async () => {
     cancellation.check();
-    const results = await checkAllRelayEndpoints(config, cancellation.signal);
+    const results = await checkAllIngressEndpoints(config, cancellation.signal);
     return results.every((result) => result.ok);
-  }, "Relay role endpoints", cancellation);
+  }, "private ingress role endpoints", cancellation);
 }
 
 async function waitForRuntimeReadiness(config, roles, adapter, cancellation) {
@@ -769,7 +835,7 @@ async function startRelay(config) {
   const command = parseCommandLine(config.relayCommand);
   if (!command.length) throw new ValidationError("RELAY_MCP_RELAY_COMMAND cannot be empty.");
   const [file, ...args] = command;
-  console.log(`Relay: starting ${redactSecrets(`${file} ${args.join(" ")}`, config.controlPlaneApiKey)}`);
+  console.log(`Relay: starting ${redactSecrets(`${file} ${args.join(" ")}`, sensitiveValues(config.controlPlaneApiKey))}`);
   const child = spawn(file, args, {
     cwd: REPO_ROOT,
     detached: true,
@@ -888,7 +954,7 @@ function buildNativeRuntimeConnectArgs(config, role) {
     "--tunnel-id",
     role.tunnelId,
     "--mcp-server-url",
-    role.endpoint,
+    role.tunnelEndpoint,
     "--runtime-api-key",
     "env:CONTROL_PLANE_API_KEY",
   ];
@@ -907,11 +973,27 @@ function createNativeRuntimeAdapter(config) {
     async connectRuntime(role, signal) {
       const result = await invoke(buildNativeRuntimeConnectArgs(config, role), role, signal);
       const parsed = parse(result, `connect ${role.alias}`);
+      // Connect output is advisory. The status command is authoritative because
+      // tunnel-client may create an alias/profile and then stop its process
+      // while still returning incomplete or nonzero connect output.
+      const status = await this.getRuntimeStatus(role, signal);
+      if (status.ok) {
+        if (!status.runtime.processRunning) {
+          return { ok: false, kind: "stopped", reason: runtimeFailureDiagnostic(role, status.runtime, parsed.ok ? parsed.value : null, result), raw: parsed.raw || result, diagnostics: parsed.ok ? parsed.value : null, status };
+        }
+        if (!runtimeMatchesRole(status.runtime, role)) {
+          return { ok: false, kind: "binding", reason: "native status binding does not exactly match tunnel ID, profile, or MCP endpoint", raw: parsed.raw || result, diagnostics: parsed.ok ? parsed.value : null, status };
+        }
+        if (result.code !== 0) {
+          return { ok: false, kind: "command", reason: runtimeFailureDiagnostic(role, status.runtime, parsed.ok ? parsed.value : null, result), raw: parsed.raw || result, diagnostics: parsed.ok ? parsed.value : null, status };
+        }
+        return { ok: true, kind: "status", value: status.runtime.raw, raw: parsed.raw || result, runtime: status.runtime, diagnostics: parsed.ok ? parsed.value : null };
+      }
+      if (result.code !== 0) {
+        return { ok: false, kind: "command", reason: runtimeFailureDiagnostic(role, status.runtime || null, parsed.ok ? parsed.value : null, result), raw: parsed.raw || result, diagnostics: parsed.ok ? parsed.value : null, status };
+      }
       if (!parsed.ok) return parsed;
-      const runtime = normalizeRuntimeStatus(parsed.value);
-      if (result.code !== 0) return { ok: false, kind: "command", reason: `${summarizeFailure(result)}; structured connect payload was returned`, raw: parsed.raw, diagnostics: parsed.value };
-      if (!runtime && parsed.value?.ok !== true && parsed.value?.connected !== true) return { ok: false, kind: "malformed", reason: `connect ${role.alias} returned no structured runtime confirmation`, raw: parsed.raw, diagnostics: parsed.value };
-      return { ...parsed, runtime, diagnostics: parsed.value };
+      return { ok: false, kind: status.kind || "malformed", reason: status.reason || `status ${role.alias} did not return an authoritative runtime record`, raw: parsed.raw, diagnostics: parsed.value };
     },
     async getRuntimeStatus(role, signal) {
       const result = await invoke(["runtimes", "status", role.alias, "--json"], role, signal);
@@ -995,13 +1077,60 @@ function normalizeRuntimeStatus(payload) {
     alias,
     profile,
     tunnelId,
-    endpoint: processState ? endpoint : null,
+    tunnelEndpoint: processState ? endpoint : null,
     processRunning,
     pid: processState?.pid ?? null,
     healthUrl: typeof healthUrl === "string" ? healthUrl : null,
     healthUrlFile: typeof healthUrlFile === "string" ? healthUrlFile : null,
     raw: payload,
   };
+}
+
+function runtimeFailureDiagnostic(role, runtime, connectPayload, commandResult) {
+  const source = runtime?.raw || connectPayload || {};
+  const reason = firstStructuredRuntimeIssue(source) || (commandResult ? safeCommandFailure(commandResult) : "native runtime stopped without a structured reason");
+  if (runtime && !runtime.processRunning) return `${role.label} runtime was created but stopped before readiness:\n${sanitizeDiagnostic(reason)}`;
+  return sanitizeDiagnostic(reason);
+}
+
+function firstStructuredRuntimeIssue(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const direct = [payload.error, payload.last_error, payload.error_message, payload.effective_health?.error, payload.effective_health?.error_message, payload.health?.error];
+  for (const value of direct) {
+    const text = structuredIssueText(value);
+    if (text) return text;
+  }
+  for (const issue of Array.isArray(payload.local?.issues) ? payload.local.issues : []) {
+    const text = structuredIssueText(issue);
+    if (text) return text;
+  }
+  const runtimeLog = Array.isArray(payload.runtime_log) ? payload.runtime_log : [];
+  for (let index = runtimeLog.length - 1; index >= 0; index -= 1) {
+    const text = structuredIssueText(runtimeLog[index]);
+    if (text) return text;
+  }
+  return null;
+}
+
+function structuredIssueText(value) {
+  if (typeof value === "string") return value.trim() || null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  for (const key of ["error", "message", "reason", "detail"]) {
+    if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+  }
+  return null;
+}
+
+function sanitizeDiagnostic(value) {
+  return redactSecrets(String(value).replace(/\s+/gu, " ").trim(), process.env.CONTROL_PLANE_API_KEY, process.env.RELAY_MCP_AUTH_TOKEN, process.env.RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN)
+    .replace(/tunnel_[0-9a-f]{32}/gu, (id) => abbreviateTunnelId(id))
+    .slice(0, 240) || "native runtime stopped without a structured reason";
+}
+
+function safeCommandFailure(result) {
+  const stderr = String(result?.stderr || "").split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const useful = stderr.find((line) => /error|fail|unauthoriz|initialize|stopped|denied/iu.test(line));
+  return useful || `native command exited with code ${result?.code ?? 1}`;
 }
 
 function isHttpUrl(value) {
@@ -1019,11 +1148,11 @@ function normalizeRuntimeHealth(payload) {
   return { healthy: payload.healthz.ok, ready: payload.readyz.ok, result: payload.result, raw: payload };
 }
 
-function checkAllRelayEndpoints(config, signal = null) {
+function checkAllIngressEndpoints(config, signal = null) {
   return Promise.all(config.roles.map(async (role) => {
     if (signal?.aborted) throw new ValidationError("aggregate operation cancelled");
     try {
-      await assertRelayReachable(role.endpoint, signal);
+      await assertRelayReachable(role.tunnelEndpoint, signal);
       return { role, ok: true, reason: "healthy" };
     } catch (error) {
       return { role, ok: false, reason: error instanceof Error ? error.message : String(error) };
@@ -1042,7 +1171,9 @@ function runNativeCommand(command, args, config, role, signal = null) {
     ...process.env,
     CONTROL_PLANE_API_KEY: config.controlPlaneApiKey,
   };
-  return runCommandCapture(command, [...config.tunnelClientArgs, ...args], env, config.controlPlaneApiKey, signal);
+  delete env.RELAY_MCP_AUTH_TOKEN;
+  delete env.RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN;
+  return runCommandCapture(command, [...config.tunnelClientArgs, ...args], env, sensitiveValues(config.controlPlaneApiKey), signal);
 }
 
 function runCommandCapture(command, args, env, secret, signal = null) {
@@ -1093,6 +1224,7 @@ function parseCapturedJsonError(output) {
 }
 
 function createRedactedSink(secret, write) {
+  const secrets = (Array.isArray(secret) ? secret : [secret]).filter((value) => typeof value === "string" && value.length > 0);
   let pending = "";
   let output = "";
   const emit = (safe) => {
@@ -1101,20 +1233,20 @@ function createRedactedSink(secret, write) {
     write(safe);
   };
   const drain = (text) => {
-    if (!secret) return { safe: text, rest: "" };
+    if (!secrets.length) return { safe: text, rest: "" };
     // Redact every complete occurrence first so that a self-overlapping secret
     // (for example "aba" or "aaaa") is recognized before any suffix of it is
     // retained as a potential prefix of a later occurrence.
     let safe = "";
-    let index = text.indexOf(secret);
-    while (index !== -1) {
-      safe += `${text.slice(0, index)}[REDACTED]`;
-      text = text.slice(index + secret.length);
-      index = text.indexOf(secret);
+    let match = findSecret(text, secrets);
+    while (match) {
+      safe += `${text.slice(0, match.index)}[REDACTED]`;
+      text = text.slice(match.index + match.secret.length);
+      match = findSecret(text, secrets);
     }
     let keep = 0;
-    for (let length = Math.min(secret.length - 1, text.length); length > 0; length -= 1) {
-      if (text.endsWith(secret.slice(0, length))) { keep = length; break; }
+    for (let length = Math.min(Math.max(...secrets.map((value) => value.length)) - 1, text.length); length > 0; length -= 1) {
+      if (secrets.some((value) => value.length > length && text.endsWith(value.slice(0, length)))) { keep = length; break; }
     }
     safe += text.slice(0, text.length - keep);
     return { safe, rest: text.slice(text.length - keep) };
@@ -1134,8 +1266,20 @@ function createRedactedSink(secret, write) {
   };
 }
 
+function findSecret(text, secrets) {
+  let match = null;
+  for (const secret of secrets) {
+    const index = text.indexOf(secret);
+    if (index !== -1 && (!match || index < match.index || index === match.index && secret.length > match.secret.length)) match = { index, secret };
+  }
+  return match;
+}
+
 function runTunnelClient(command, args, controlPlaneApiKey) {
-  return runCommandCapture(command, args, { ...process.env, CONTROL_PLANE_API_KEY: controlPlaneApiKey }, controlPlaneApiKey).then((result) => {
+  const env = { ...process.env, CONTROL_PLANE_API_KEY: controlPlaneApiKey };
+  delete env.RELAY_MCP_AUTH_TOKEN;
+  delete env.RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN;
+  return runCommandCapture(command, args, env, sensitiveValues(controlPlaneApiKey)).then((result) => {
     if (result.signal) throw new ValidationError(`tunnel-client exited due to signal ${result.signal}.`);
     return result.code;
   });
@@ -1285,8 +1429,8 @@ function postJsonRpcPing(relayMcpUrl, signal = null) {
 function runRelayMcpSelfTest(config) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [config.relayMcpStdioLauncherPath, "--self-test"], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
-    const stdoutSink = createRedactedSink(config.controlPlaneApiKey, () => {});
-    const stderrSink = createRedactedSink(config.controlPlaneApiKey, (text) => process.stderr.write(text));
+    const stdoutSink = createRedactedSink(sensitiveValues(config.controlPlaneApiKey), () => {});
+    const stderrSink = createRedactedSink(sensitiveValues(config.controlPlaneApiKey), (text) => process.stderr.write(text));
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => stdoutSink.push(chunk));
@@ -1316,9 +1460,13 @@ function normalizeCommandPathForTunnel(value) {
   return process.platform === "win32" ? value.replace(/\\/g, "/") : value;
 }
 
-function redactSecrets(text, controlPlaneApiKey) {
-  if (!controlPlaneApiKey) return text;
-  return text.split(controlPlaneApiKey).join("[REDACTED]");
+function sensitiveValues(controlPlaneApiKey = null) {
+  return [controlPlaneApiKey, process.env.RELAY_MCP_AUTH_TOKEN, process.env.RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN].filter((value) => typeof value === "string" && value.length > 0);
+}
+
+function redactSecrets(text, ...secrets) {
+  const values = secrets.flatMap((secret) => Array.isArray(secret) ? secret : [secret]).filter((secret) => typeof secret === "string" && secret.length > 0);
+  return values.reduce((result, secret) => result.split(secret).join("[REDACTED]"), String(text));
 }
 
 function parseCommandLine(value) {
@@ -1655,7 +1803,8 @@ function validateBindingList(bindings, label) {
   const bounded = (value) => typeof value === "string" && value.length > 0 && value.length <= MAX_PERSISTED_BINDING_FIELD_LENGTH;
   for (const binding of bindings) {
     if (!binding || typeof binding !== "object" || Array.isArray(binding) || !expected.has(binding.key) || keys.has(binding.key)) return `${label} has invalid or duplicate role keys`;
-    if (!bounded(binding.alias) || aliases.has(binding.alias) || !bounded(binding.profile) || !bounded(binding.tunnelId) || !bounded(binding.endpoint) || !isHttpUrl(binding.endpoint)) return `${label} contains invalid bindings`;
+    const tunnelEndpoint = binding.tunnelEndpoint ?? binding.endpoint;
+    if (!bounded(binding.alias) || aliases.has(binding.alias) || !bounded(binding.profile) || !bounded(binding.tunnelId) || !bounded(tunnelEndpoint) || !isHttpUrl(tunnelEndpoint)) return `${label} contains invalid bindings`;
     if (JSON.stringify(binding).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return `${label} contains secret-like data`;
     keys.add(binding.key); aliases.add(binding.alias);
   }
@@ -1679,7 +1828,7 @@ function materializePersistedRoles(config, bindings) {
   const byKey = new Map(config.roles.map((role) => [role.key, role]));
   return bindings.map((binding) => {
     const definition = byKey.get(binding.key);
-    return { ...definition, tunnelId: binding.tunnelId, alias: binding.alias, profile: binding.profile, endpoint: binding.endpoint };
+    return { ...definition, tunnelId: binding.tunnelId, alias: binding.alias, profile: binding.profile, tunnelEndpoint: binding.tunnelEndpoint ?? binding.endpoint };
   });
 }
 
@@ -1693,8 +1842,8 @@ function writeAggregateState(config, state) {
   const payload = {
     version: 3,
     updatedAt: new Date().toISOString(),
-    desiredRoleBindings: (state.desiredRoleBindings || config.roles).map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
-    residualBindings: (state.residualBindings || []).map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
+    desiredRoleBindings: (state.desiredRoleBindings || config.roles).map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, tunnelEndpoint: role.tunnelEndpoint })),
+    residualBindings: (state.residualBindings || []).map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, tunnelEndpoint: role.tunnelEndpoint })),
     relay: state.relay?.owned ? { owned: true, identity: redactIdentity(state.relay.identity, config.controlPlaneApiKey) } : { owned: false },
   };
   const temporary = `${config.stateFile}.${process.pid}.${randomUUID()}.tmp`;
@@ -1720,7 +1869,7 @@ function redactIdentity(identity, secret) {
 
 function sanitizePersistedValue(value, secret, depth = 0) {
   if (depth > 12) return "[TRUNCATED]";
-  if (typeof value === "string") return redactSecrets(value, secret).slice(0, 1024);
+  if (typeof value === "string") return redactSecrets(value, secret, sensitiveValues()).slice(0, 1024);
   if (Array.isArray(value)) return value.slice(0, 128).map((item) => sanitizePersistedValue(item, secret, depth + 1));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).slice(0, 128).map(([key, item]) => [key, sanitizePersistedValue(item, secret, depth + 1)]));
   return value;
@@ -1957,6 +2106,7 @@ export {
   normalizeRelayMcpProfile,
   normalizeRuntimeHealth,
   normalizeRuntimeStatus,
+  parsePrivateIngressAddress,
   parseLinuxProcStatStartIdentity,
   parseMacPsOutput,
   parseNativeJsonResult,

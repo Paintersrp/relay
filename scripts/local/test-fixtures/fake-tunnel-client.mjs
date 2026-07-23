@@ -90,13 +90,14 @@ async function main() {
       tunnel_id: value("--tunnel-id"),
       health_url: healthUrl,
       health_url_file: process.env.FAKE_TUNNEL_HEALTH_URL_FILE ? `${statePath}.${alias}.health-url` : null,
-      process_running: process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias ? false : true,
-      process: process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias ? null : {
+      process_running: process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias || process.env.FAKE_TUNNEL_CONNECT_ISSUE_ALIAS === alias ? false : true,
+      process: process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias || process.env.FAKE_TUNNEL_CONNECT_ISSUE_ALIAS === alias ? null : {
         target_kind: "server_url",
         target_value: value("--mcp-server-url"),
         pid: process.pid,
       },
       healthCalls: 0,
+      ...(process.env.FAKE_TUNNEL_CONNECT_ISSUE_ALIAS === alias ? { local: { issues: [{ message: "MCP initialize failed with Unauthorized" }] } } : {}),
     };
     if (runtime.health_url_file) writeFileSync(runtime.health_url_file, `${healthUrl}\n`, "utf8");
     state.runtimes[alias] = runtime;
@@ -104,10 +105,14 @@ async function main() {
     if (Number(process.env.FAKE_TUNNEL_CONNECT_DELAY_MS) > 0) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, Number(process.env.FAKE_TUNNEL_CONNECT_DELAY_MS)));
     }
-    if (process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias) {
+    if (process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias || process.env.FAKE_TUNNEL_CONNECT_ISSUE_ALIAS === alias) {
       console.error(`connect failed for ${alias}`);
       process.exitCode = 7;
-      emit({ ...runtime, connected: false, error: "simulated launch failure" });
+      emit({ ...runtime, connected: false, error: process.env.FAKE_TUNNEL_CONNECT_ISSUE_ALIAS === alias ? "MCP initialize failed with Unauthorized" : "simulated launch failure" });
+      return;
+    }
+    if (process.env.FAKE_TUNNEL_CONNECT_INCOMPLETE_ALIAS === alias) {
+      emit({ connected: true, alias });
       return;
     }
     emit(runtime);
