@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, rmdirSync, watch, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -539,6 +539,37 @@ test("stale recovery is serialized by the recovery gate and preserves replacemen
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
+test("recovery gates classify dead, reused, live, and identity-unavailable owners", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-recovery-gate-identity-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const gate = `${lock}-recovery`;
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  await once(child, "spawn");
+  const writeGate = async (owner) => {
+    await mkdir(gate);
+    await writeFile(path.join(gate, "owner.json"), JSON.stringify({ version: 1, ...owner }), "utf8");
+  };
+  try {
+    await writeGate({ pid: 999999, startIdentity: "dead-start", ownerToken: "dead-owner" });
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" }), /recovery gate.*verifiably stale.*manual/u);
+    await rm(gate, { recursive: true, force: true });
+
+    await writeGate({ pid: child.pid, startIdentity: "old-start", ownerToken: "reused-owner" });
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? "new-start" : "self-start") }), /recovery gate.*verifiably stale.*different start identity.*manual/u);
+    await rm(gate, { recursive: true, force: true });
+
+    await writeGate({ pid: child.pid, startIdentity: "live-start", ownerToken: "live-owner" });
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? "live-start" : "self-start") }), /recovery gate.*active/u);
+    await rm(gate, { recursive: true, force: true });
+
+    await writeGate({ pid: child.pid, startIdentity: "unknown-start", ownerToken: "unknown-owner" });
+    assert.throws(() => acquireAggregateLock(lock, { inspectStartIdentity: (pid) => (pid === child.pid ? null : "self-start") }), /recovery gate owner's start identity could not be inspected/u);
+  } finally {
+    await terminateProcessTree(child.pid, { wait: true });
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("ambiguous recovery-gate metadata fails closed and release returns structured failures", async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-release-failure-"));
   const lock = path.join(temp, "aggregate.lock");
@@ -576,6 +607,58 @@ test("ambiguous recovery-gate metadata fails closed and release returns structur
     await rm(removeFailure.residuePath, { recursive: true, force: true });
     releaseAggregateLock(lock);
   } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("lifecycle command fails when its owned public lock disappears before release", async () => {
+  await temporaryEnvironment({ FAKE_TUNNEL_CONNECT_DELAY_MS: "100" }, async (env, temp) => {
+    const lock = `${env.RELAY_MCP_STATE_FILE}.lock`;
+    const ownerRecord = path.join(lock, "owner.json");
+    let lockWatcher = null;
+    let parentWatcher = null;
+    const deletion = new Promise((resolve, reject) => {
+      const closeWatchers = () => {
+        parentWatcher?.close();
+        lockWatcher?.close();
+      };
+      const removeOwnedLock = () => {
+        if (!existsSync(lock)) return;
+        try {
+          rmSync(lock, { recursive: true, force: true });
+          closeWatchers();
+          resolve();
+        } catch (error) {
+          closeWatchers();
+          reject(error);
+        }
+      };
+      const watchOwnerRecord = () => {
+        if (existsSync(ownerRecord)) {
+          removeOwnedLock();
+          return;
+        }
+        try {
+          lockWatcher = watch(lock, (_eventType, filename) => {
+            if (String(filename) === "owner.json") removeOwnedLock();
+          });
+        } catch (error) {
+          closeWatchers();
+          reject(error);
+        }
+      };
+      parentWatcher = watch(temp, (_eventType, filename) => {
+        if (String(filename) === path.basename(lock)) watchOwnerRecord();
+      });
+    });
+    try {
+      const command = runScript("init:all", env);
+      await deletion;
+      await assert.rejects(command, /Aggregate lock release failed: .*ownership was lost before release/u);
+    } finally {
+      parentWatcher?.close();
+      lockWatcher?.close();
+      await rm(lock, { recursive: true, force: true });
+    }
+  });
 });
 
 test("termination result reports an injected failure without hiding the live PID", async () => {

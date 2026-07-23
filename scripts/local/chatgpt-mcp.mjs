@@ -1402,6 +1402,10 @@ function aggregateLockAmbiguousError(lockPath, reason) {
   return new ValidationError(`Aggregate lock ${lockPath} ownership metadata could not be verified (${reason}); automatic removal was refused. Confirm no aggregate operation is running, then remove the lock manually only after independent confirmation.`);
 }
 
+function aggregateRecoveryGateStaleError(gatePath, reason) {
+  return new ValidationError(`Aggregate recovery gate ${gatePath} is verifiably stale (${reason}); automatic removal was refused. Confirm no aggregate operation is running, then remove the recovery gate manually only after independent confirmation.`);
+}
+
 function readAggregateLock(lockPath, fs = defaultAggregateLockFs) {
   let lockStat;
   try { lockStat = fs.statSync(lockPath); }
@@ -1465,7 +1469,7 @@ function removeAggregateLockInstance(lockPath, lockInfo, fs = defaultAggregateLo
 }
 
 function releaseDirectory(lockPath, owner, fs = defaultAggregateLockFs, label = "aggregate lock") {
-  const absent = { ok: true, released: true, ownerRecordRemoved: false, directoryRemoved: true, lockPreserved: false, reason: `${label} was already absent` };
+  const absent = { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, reason: `${label} public path was unexpectedly absent; ownership was lost before release` };
   let lockStat;
   try { lockStat = fs.statSync(lockPath); }
   catch (error) { if (error?.code === "ENOENT") return absent; return { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} could not be inspected: ${error.message}` }; }
@@ -1497,7 +1501,7 @@ function releaseDirectory(lockPath, owner, fs = defaultAggregateLockFs, label = 
   }
 }
 
-function acquireRecoveryGate(lockPath, owner, fs = defaultAggregateLockFs) {
+function acquireRecoveryGate(lockPath, owner, fs = defaultAggregateLockFs, inspectStartIdentity = currentProcessStartIdentity) {
   const gatePath = aggregateRecoveryGatePath(lockPath);
   try {
     fs.mkdirSync(gatePath);
@@ -1513,6 +1517,10 @@ function acquireRecoveryGate(lockPath, owner, fs = defaultAggregateLockFs) {
     const gate = readAggregateLock(gatePath, fs);
     if (gate.kind === "ambiguous") throw aggregateLockAmbiguousError(gatePath, `recovery gate metadata is ambiguous: ${gate.reason}`);
     if (gate.kind === "absent") throw new ValidationError(`Aggregate recovery gate ${gatePath} changed while it was being inspected; refusing unsafe acquisition.`);
+    if (!isProcessAlive(gate.owner.pid)) throw aggregateRecoveryGateStaleError(gatePath, "the recorded owner PID is no longer alive");
+    const observedStart = normalizeProcessStartIdentity(inspectStartIdentity(gate.owner.pid));
+    if (!observedStart) throw aggregateLockAmbiguousError(gatePath, "recovery gate owner's start identity could not be inspected");
+    if (normalizeProcessStartIdentity(gate.owner.startIdentity) !== observedStart) throw aggregateRecoveryGateStaleError(gatePath, "the recorded owner PID has a definitively different start identity");
     throw new ValidationError(`Aggregate recovery gate ${gatePath} is active; refusing concurrent acquisition.`);
   }
 }
@@ -1528,7 +1536,7 @@ function acquireAggregateLock(lockPath, options = {}) {
   if (!startIdentity) throw new ValidationError("Aggregate lock unavailable: this process's start identity could not be established, so duplicate-operation protection cannot be guaranteed.");
   const owner = { version: 1, pid: process.pid, startIdentity, ownerToken: randomUUID() };
   const fs = { ...defaultAggregateLockFs, ...(options.fs || {}) };
-  const gate = acquireRecoveryGate(lockPath, owner, fs);
+  const gate = acquireRecoveryGate(lockPath, owner, fs, inspectStartIdentity);
   let acquired = null;
   let acquisitionError = null;
   const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0 ? options.maxRetries : 3;
