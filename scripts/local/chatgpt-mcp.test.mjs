@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdirSync, readFileSync as readFileSyncNative, rmSync, rmdirSync, statSync as statSyncNative, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync as readFileSyncNative, renameSync as renameSyncNative, rmSync, rmdirSync, statSync as statSyncNative, unlinkSync as unlinkSyncNative, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -433,6 +433,78 @@ test("primary lock instance replacement is an ownership-loss failure and keeps t
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
+test("primary directory replacement during rename preserves unexpected private residue", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-rename-instance-"));
+  const lock = path.join(temp, "aggregate.lock");
+  let residuePath;
+  let cleanupAttempts = 0;
+  try {
+    acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" });
+    const replacement = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-owner" })}\n`;
+    const result = releaseAggregateLock(lock, undefined, {
+      fs: {
+        renameSync: (source, target) => {
+          if (source === lock) {
+            residuePath = target;
+            rmSync(lock, { recursive: true, force: true });
+            mkdirSync(lock);
+            writeFileSync(path.join(lock, "owner.json"), replacement);
+          }
+          return renameSyncNative(source, target);
+        },
+        unlinkSync: (target) => {
+          if (residuePath && String(target).startsWith(residuePath)) { cleanupAttempts += 1; throw new Error("unexpected residue cleanup"); }
+          return unlinkSyncNative(target);
+        },
+        rmdirSync: (target) => {
+          if (residuePath && String(target).startsWith(residuePath)) { cleanupAttempts += 1; throw new Error("unexpected residue cleanup"); }
+          return rmdirSync(target);
+        },
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.ownershipLost, true);
+    assert.equal(result.publicReleased, false);
+    assert.equal(result.released, false);
+    assert.equal(result.residuePath, residuePath);
+    assert.equal(result.lockPreserved, true);
+    assert.match(result.reason, /unexpected renamed object was preserved/u);
+    assert.equal(await readFile(path.join(residuePath, "owner.json"), "utf8"), replacement);
+    assert.equal(cleanupAttempts, 0);
+    const repeated = releaseAggregateLock(lock);
+    assert.equal(repeated.ownershipLost, true);
+    assert.notEqual(repeated.reason, "not the current in-memory owner");
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("primary owner-token replacement during rename preserves unexpected private residue", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-rename-token-"));
+  const lock = path.join(temp, "aggregate.lock");
+  let residuePath;
+  try {
+    acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" });
+    const replacement = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-owner" })}\n`;
+    const result = releaseAggregateLock(lock, undefined, {
+      fs: {
+        renameSync: (source, target) => {
+          if (source === lock) {
+            residuePath = target;
+            writeFileSync(path.join(lock, "owner.json"), replacement);
+          }
+          return renameSyncNative(source, target);
+        },
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.ownershipLost, true);
+    assert.equal(result.publicReleased, false);
+    assert.equal(result.released, false);
+    assert.equal(result.residuePath, residuePath);
+    assert.equal(await readFile(path.join(residuePath, "owner.json"), "utf8"), replacement);
+    assert.equal(releaseAggregateLock(lock).ownershipLost, true);
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
 test("non-owner release is a filesystem-preserving no-op", async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-non-owner-"));
   const lock = path.join(temp, "aggregate.lock");
@@ -606,6 +678,68 @@ test("recovery-gate ownership loss fails acquisition, cleans the primary lock, a
       assert.match(await readFile(path.join(gate, "owner.json"), "utf8"), /replacement-gate/u);
     } finally { await rm(temp, { recursive: true, force: true }); }
   }
+});
+
+test("recovery-gate replacement during rename fails acquisition and preserves unexpected private residue", async () => {
+  for (const replacement of ["instance", "owner token"]) {
+    const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-gate-rename-race-"));
+    const lock = path.join(temp, "aggregate.lock");
+    const gate = `${lock}-recovery`;
+    let residuePath;
+    try {
+      const replacementRecord = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-gate" })}\n`;
+      assert.throws(() => acquireAggregateLock(lock, {
+        inspectStartIdentity: () => "self-start",
+        fs: {
+          renameSync: (source, target) => {
+            if (source === gate) {
+              residuePath = target;
+              if (replacement === "instance") {
+                rmSync(gate, { recursive: true, force: true });
+                mkdirSync(gate);
+              }
+              writeFileSync(path.join(gate, "owner.json"), replacementRecord);
+            }
+            return renameSyncNative(source, target);
+          },
+        },
+      }), /Aggregate recovery gate release failed: .*unexpected renamed object was preserved at the private path/u);
+      assert.equal(residuePath !== undefined, true);
+      assert.equal(await readFile(path.join(residuePath, "owner.json"), "utf8"), replacementRecord);
+      await assert.rejects(readFile(gate));
+      await assert.rejects(readFile(lock));
+    } finally { await rm(temp, { recursive: true, force: true }); }
+  }
+});
+
+test("recovery-gate rename ownership loss appends primary cleanup failure", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-gate-rename-cleanup-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const gate = `${lock}-recovery`;
+  let residuePath;
+  try {
+    const replacementRecord = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-gate" })}\n`;
+    assert.throws(() => acquireAggregateLock(lock, {
+      inspectStartIdentity: () => "self-start",
+      fs: {
+        renameSync: (source, target) => {
+          if (source === gate) {
+            residuePath = target;
+            rmSync(gate, { recursive: true, force: true });
+            mkdirSync(gate);
+            writeFileSync(path.join(gate, "owner.json"), replacementRecord);
+          }
+          return renameSyncNative(source, target);
+        },
+        rmdirSync: (target) => {
+          if (String(target).includes(".release-")) throw new Error("injected primary cleanup failure");
+          return rmdirSync(target);
+        },
+      },
+    }), /Aggregate recovery gate release failed: .*unexpected renamed object was preserved at the private path.*Primary lock release also failed: .*injected primary cleanup failure/u);
+    assert.equal(await readFile(path.join(residuePath, "owner.json"), "utf8"), replacementRecord);
+    await assert.rejects(readFile(lock));
+  } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
 test("recovery-gate ownership loss reports primary cleanup failure without touching the replacement gate", async () => {

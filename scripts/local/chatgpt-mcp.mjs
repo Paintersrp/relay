@@ -1469,7 +1469,7 @@ function removeAggregateLockInstance(lockPath, lockInfo, fs = defaultAggregateLo
 }
 
 function releaseDirectory(lockPath, owner, { fs = defaultAggregateLockFs, label = "aggregate lock", ownershipExpected = false, afterPublicRename } = {}) {
-  const ownershipLoss = (reason, lockPreserved = true) => ({ ok: false, released: false, publicReleased: false, ownershipLost: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved, reason });
+  const ownershipLoss = (reason, lockPreserved = true, residuePath) => ({ ok: false, released: false, publicReleased: false, ownershipLost: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved, ...(residuePath ? { residuePath } : {}), reason });
   const absent = ownershipExpected
     ? ownershipLoss(`${label} public path was unexpectedly absent; ownership was lost before release`)
     : { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} public path is absent; replacement preserved` };
@@ -1498,7 +1498,7 @@ function releaseDirectory(lockPath, owner, { fs = defaultAggregateLockFs, label 
   }
   const privateInfo = readAggregateLock(privatePath, fs);
   if (privateInfo.kind !== "recorded" || !privateInfo.directory || privateInfo.owner.ownerToken !== owner.ownerToken || !sameAggregateLockInstance(owner.lockStat, privateInfo.lockStat)) {
-    return { ok: false, released: true, publicReleased: true, ownershipLost: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, residuePath: privatePath, reason: `${label} private release residue did not retain the expected owner token and instance` };
+    return ownershipLoss(`${label} changed between final verification and rename; unexpected renamed object was preserved at the private path`, true, privatePath);
   }
   try {
     fs.unlinkSync(aggregateLockMetadataPath(privatePath));
