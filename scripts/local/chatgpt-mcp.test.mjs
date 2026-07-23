@@ -16,6 +16,7 @@ import {
   buildNativeRuntimeConnectArgs,
   getConfig,
   captureProcessIdentity,
+  createRedactedSink,
   terminateProcessTree,
   verifyProcessIdentity,
   loadEnvFile,
@@ -24,6 +25,7 @@ import {
   parseMacPsOutput,
   parseWindowsCimJson,
   redactSecrets,
+  sanitizePersistedValue,
   releaseAggregateLock,
   validateAggregateConfig,
 } from "./chatgpt-mcp.mjs";
@@ -106,7 +108,7 @@ test("native fake state generates and consumes three distinct health URLs", asyn
     const state = JSON.parse(await readFile(path.join(temp, "native.json"), "utf8"));
     const runtimes = Object.values(state.runtimes);
     assert.equal(new Set(runtimes.map((runtime) => runtime.health_url)).size, 3);
-    assert.equal(JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8")).version, 2);
+    assert.equal(JSON.parse(await readFile(env.RELAY_MCP_STATE_FILE, "utf8")).version, 3);
   });
 });
 
@@ -397,7 +399,7 @@ test("termination result reports an injected failure without hiding the live PID
 
 test("malformed aggregate ownership state fails closed and is preserved", async () => {
   await temporaryEnvironment({}, async (env, temp) => {
-    await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify({ version: 2, relay: { owned: true, identity: { pid: process.pid, startTime: "wrong", expectedExecutable: "not-this-process.exe", expectedArguments: [], commandFingerprint: "wrong" } } })}\n`, "utf8");
+    await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify({ version: 3, residualBindings: [], relay: { owned: true, identity: { pid: process.pid, startTime: "wrong", expectedExecutable: "not-this-process.exe", expectedArguments: [], commandFingerprint: "wrong" } } })}\n`, "utf8");
     await assert.rejects(runScript("stop:all", env), /malformed aggregate state/u);
     assert.match(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"), /desiredRoleBindings|relay/u);
   });
@@ -446,6 +448,36 @@ test("SIGINT during Relay readiness prevents runtime connections and stops owned
 
 test("secret redaction covers repeated split-output secrets", () => {
   assert.equal(redactSecrets("secret-value secret-value", "secret-value"), "[REDACTED] [REDACTED]");
+});
+
+test("streaming redaction preserves only viable prefixes across arbitrary chunks", () => {
+  const secret = "secret-value";
+  for (let split = 0; split <= secret.length; split += 1) {
+    const sink = createRedactedSink(secret, () => {});
+    sink.push(`before ${secret.slice(0, split)}`);
+    sink.push(`${secret.slice(split)} after`);
+    assert.equal(sink.finish(), "before [REDACTED] after");
+  }
+  const sink = createRedactedSink(secret, () => {});
+  for (const chunk of ["secret-", "valuesecret", "-value", " secre"]) sink.push(chunk);
+  assert.equal(sink.finish(), "[REDACTED][REDACTED] secre");
+});
+
+test("persisted identity sanitizer recursively redacts without corrupting fields", () => {
+  const value = sanitizePersistedValue({ commandLine: "relay --key secret-value", expectedArguments: ["secret-value", { nested: "xsecret-valuey" }], pid: 42 }, "secret-value");
+  assert.deepEqual(value, { commandLine: "relay --key [REDACTED]", expectedArguments: ["[REDACTED]", { nested: "x[REDACTED]y" }], pid: 42 });
+});
+
+test("alias migration stops the persisted alias before connecting its replacement", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    await runScript("init:all", env);
+    const logPath = path.join(temp, "migration.log");
+    await runScript("init:all", { ...env, RELAY_MCP_PLANNER_ALIAS: "relay-planner-v2", FAKE_TUNNEL_LOG: logPath });
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    const stop = calls.findIndex((args) => args.includes("stop") && args.includes("relay-planner"));
+    const connect = calls.findIndex((args) => args.includes("connect") && args.includes("relay-planner-v2"));
+    assert.ok(stop >= 0 && connect > stop);
+  });
 });
 
 test("package help keeps aggregate and single-profile commands stable", async () => {

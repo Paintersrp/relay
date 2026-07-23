@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { createHash, randomUUID } from "crypto";
 import {
   accessSync,
@@ -338,33 +338,31 @@ async function runInitAll(config) {
     throw new ValidationError(errors.join("; "));
   }
   requireConfiguredApiKey(config, "init:all");
-  const priorResult = readAggregateState(config);
-  if (priorResult.kind === "malformed" || priorResult.kind === "unsupported version" || priorResult.kind === "read failure") {
-    throw new ValidationError(`Cannot begin init:all with ${priorResult.kind} aggregate state: ${priorResult.reason}`);
-  }
-  const priorState = priorResult.kind === "valid" ? priorResult.state : null;
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
   const cancellation = createAggregateCancellation();
-  const changedRoles = [];
+  let priorState = null;
+  const journal = new Map();
   let cleanupResult = null;
   const cleanup = onceAsync(async () => {
-    cleanupResult = await cleanupAggregate(config, { roles: changedRoles, relay: null });
+    cleanupResult = await cleanupAggregate(config, { journal, relay: null });
     reportCleanupFailures(cleanupResult);
     return cleanupResult;
   });
   const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
   const results = [];
   try {
+    priorState = requireReadableAggregateState(config, "init:all");
     const adapter = createNativeRuntimeAdapter(config);
+    await reconcileRetiredAliases(adapter, config, priorState, journal, cancellation);
     for (const role of config.roles) {
       cancellation.check();
-      const prepared = await prepareRuntime(adapter, config, role, changedRoles, cancellation);
+      const prepared = await prepareRuntime(adapter, config, role, journal, cancellation);
       if (!prepared.ready) await waitForRuntimeReadiness(config, [role], adapter, cancellation);
       results.push({ role, ok: true, reason: prepared.reused ? "already configured and ready" : "connected and verified" });
     }
     printAggregateResults("init", results);
-    writeAggregateState(config, { changedRoles, relay: priorState?.relay || { owned: false } });
+    writeAggregateState(config, { relay: priorState?.relay || { owned: false }, residualBindings: [] });
     return 0;
   } catch (error) {
     cleanupResult = await cleanup();
@@ -384,30 +382,35 @@ async function runInitAll(config) {
   }
 }
 
+function requireReadableAggregateState(config, operation) {
+  const result = readAggregateState(config);
+  if (result.kind === "malformed" || result.kind === "unsupported version" || result.kind === "read failure") {
+    throw new ValidationError(`Cannot begin ${operation} with ${result.kind} aggregate state: ${result.reason}`);
+  }
+  return result.kind === "valid" ? result.state : null;
+}
+
 async function runStartAll(config) {
   const errors = validateAggregateConfig(config);
   if (errors.length) throw new ValidationError(errors.join("; "));
   requireConfiguredApiKey(config, "start:all");
-  const priorResult = readAggregateState(config);
-  if (priorResult.kind === "malformed" || priorResult.kind === "unsupported version" || priorResult.kind === "read failure") {
-    throw new ValidationError(`Cannot begin start:all with ${priorResult.kind} aggregate state: ${priorResult.reason}`);
-  }
-  const priorState = priorResult.kind === "valid" ? priorResult.state : null;
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
   const cancellation = createAggregateCancellation();
-  const changedRoles = [];
+  let priorState = null;
+  const journal = new Map();
   let relay = null;
   let adapter = null;
   let cleanupResult = null;
   const cleanup = onceAsync(async () => {
-    cleanupResult = await cleanupAggregate(config, { roles: changedRoles, relay });
+    cleanupResult = await cleanupAggregate(config, { journal, relay });
     reportCleanupFailures(cleanupResult);
     return cleanupResult;
   });
   const removeSignals = installAggregateSignalCleanup(cancellation, cleanup);
 
   try {
+    priorState = requireReadableAggregateState(config, "start:all");
     cancellation.check();
     const currentRelay = await checkAllRelayEndpoints(config, cancellation.signal);
     if (currentRelay.every((result) => result.ok)) {
@@ -420,6 +423,15 @@ async function runStartAll(config) {
     } else if (currentRelay.some((result) => result.ok)) {
       throw new ValidationError("Relay is partially healthy; refusing to start or attach a partial tunnel set.");
     } else {
+      if (priorState?.relay?.owned && priorState.relay.identity) {
+        const ownership = await verifyProcessIdentity(priorState.relay.identity);
+        if (ownership.ok) {
+          const stopped = await stopOwnedRelay(priorState.relay.identity);
+          if (!stopped.ok) throw new ValidationError(`Relay is verified alive but unhealthy; controlled restart failed: ${stopped.reason}`);
+        } else if (!ownership.stopped) {
+          throw new ValidationError(`Relay is unhealthy and prior owned process cannot be safely inspected: ${ownership.reason}`);
+        }
+      }
       relay = await startRelay(config);
       relay.identity = await captureProcessIdentity(relay.child.pid, relay.expectedIdentity);
       if (!relay.identity) {
@@ -433,9 +445,10 @@ async function runStartAll(config) {
     }
 
     adapter = createNativeRuntimeAdapter(config);
+    await reconcileRetiredAliases(adapter, config, priorState, journal, cancellation);
     for (const role of config.roles) {
       cancellation.check();
-      const prepared = await prepareRuntime(adapter, config, role, changedRoles, cancellation);
+      const prepared = await prepareRuntime(adapter, config, role, journal, cancellation);
       if (!prepared.ready) await waitForRuntimeReadiness(config, [role], adapter, cancellation);
       console.log(`${role.label}: ${prepared.reused ? "reused" : "connected"} ${role.alias} at ${role.path}`);
     }
@@ -444,7 +457,7 @@ async function runStartAll(config) {
     if (finalRelay.some((result) => !result.ok)) {
       throw new ValidationError(`Relay readiness failed: ${finalRelay.filter((result) => !result.ok).map((result) => result.role.label).join(", ")}`);
     }
-    writeAggregateState(config, { changedRoles, relay: relay || { owned: false } });
+    writeAggregateState(config, { relay: relay || { owned: false }, residualBindings: [] });
     console.log("Relay: all three role endpoints healthy; aggregate startup complete.");
     return 0;
   } catch (error) {
@@ -470,13 +483,16 @@ async function runStopAll(config) {
       return 1;
     }
     const state = stateResult.kind === "valid" ? stateResult.state : null;
-    const roles = state ? rolesFromPersistedState(config, state) : config.roles;
-    if (stateResult.kind === "valid" && !roles) {
+    const persistedRoles = state ? rolesFromPersistedState(config, state) : config.roles;
+    const roles = state?.residualBindings?.length ? state.residualBindings : persistedRoles;
+    if (stateResult.kind === "valid" && !persistedRoles) {
       console.error("stop:all refused to act on structurally invalid persisted role bindings.");
       return 1;
     }
+    const journal = new Map(roles.map((role) => [role.key, { role, connectMayHaveMutated: true, replacementVerified: true }]));
+    for (const role of state?.residualBindings || []) journal.set(role.key, { role, connectMayHaveMutated: true, replacementVerified: true, residual: true });
     const cleanupResult = await cleanupAggregate(config, {
-      roles,
+      journal,
       relay: state?.relay?.owned ? state.relay : null,
       removeState: true,
     });
@@ -573,27 +589,54 @@ function onceAsync(operation) {
   return () => promise || (promise = Promise.resolve().then(operation));
 }
 
-async function prepareRuntime(adapter, config, role, changedRoles, cancellation) {
+function journalFor(journal, role) {
+  if (!journal.has(role.key)) journal.set(role.key, { role, preExisting: false, stopAttempted: false, stopConfirmed: false, connectAttempted: false, connectMayHaveMutated: false, replacementVerified: false });
+  return journal.get(role.key);
+}
+
+async function reconcileRetiredAliases(adapter, config, priorState, journal, cancellation) {
+  if (!priorState) return;
+  const prior = rolesFromPersistedState(config, priorState) || [];
+  const desired = new Map(config.roles.map((role) => [role.key, role]));
+  for (const oldRole of prior) {
+    const replacement = desired.get(oldRole.key);
+    if (!replacement || oldRole.alias === replacement.alias) continue;
+    // The old binding is owned only because the persisted role key says so; never
+    // infer ownership from an alias that merely happens to be in the environment.
+    const entry = journalFor(journal, oldRole);
+    entry.preExisting = true;
+    entry.retired = true;
+    entry.stopAttempted = true;
+    cancellation.check();
+    const stopped = await adapter.stopRuntime(oldRole, cancellation.signal);
+    if (!stopped.ok) throw new RuntimeCheckError(oldRole, `retired alias ${oldRole.alias} stop failed: ${stopped.reason}`);
+    entry.stopConfirmed = true;
+  }
+}
+
+async function prepareRuntime(adapter, config, role, journal, cancellation) {
   const current = await inspectRuntime(adapter, role, cancellation.signal);
   if (current.complete) return { ready: true, reused: true };
   if (current.state === "malformed native state" || current.state === "native command failure") {
     throw new RuntimeCheckError(role, current.reason);
   }
+  const entry = journalFor(journal, role);
   if (current.found) {
+    entry.preExisting = true;
     cancellation.check();
-    addRoleOnce(changedRoles, role);
+    entry.stopAttempted = true;
     const stopped = await adapter.stopRuntime(role, cancellation.signal);
     if (!stopped.ok) throw new RuntimeCheckError(role, `stop before reconnect failed: ${stopped.reason}`);
+    entry.stopConfirmed = true;
   }
   cancellation.check();
-  addRoleOnce(changedRoles, role);
+  entry.connectAttempted = true;
+  // Native connect can create or mutate its alias before returning an error.
+  entry.connectMayHaveMutated = true;
   const connected = await adapter.connectRuntime(role, cancellation.signal);
   if (!connected.ok) throw new RuntimeCheckError(role, connected.reason);
+  entry.replacementVerified = true;
   return { ready: false, reused: false };
-}
-
-function addRoleOnce(roles, role) {
-  if (!roles.some((item) => item.key === role.key)) roles.push(role);
 }
 
 async function inspectRuntime(adapter, role, signal) {
@@ -686,7 +729,7 @@ async function startRelay(config) {
   const command = parseCommandLine(config.relayCommand);
   if (!command.length) throw new ValidationError("RELAY_MCP_RELAY_COMMAND cannot be empty.");
   const [file, ...args] = command;
-  console.log(`Relay: starting ${file} ${args.join(" ")}`);
+  console.log(`Relay: starting ${redactSecrets(`${file} ${args.join(" ")}`, config.controlPlaneApiKey)}`);
   const child = spawn(file, args, {
     cwd: REPO_ROOT,
     detached: true,
@@ -725,8 +768,11 @@ async function stopRoles(config, roles, adapter = null) {
   return results;
 }
 
-async function cleanupAggregate(config, { roles, relay, removeState = false }) {
-  const runtimeResults = await stopRoles(config, roles);
+async function cleanupAggregate(config, { journal = new Map(), relay, removeState = false }) {
+  // A failed stop of a pre-existing runtime does not make it cleanup-owned. A
+  // confirmed replacement or a connect attempt that may have created state does.
+  const ownedEntries = Array.from(journal.values()).filter((entry) => entry.connectMayHaveMutated && (!entry.preExisting || entry.stopConfirmed || entry.replacementVerified));
+  const runtimeResults = await stopRoles(config, ownedEntries.map((entry) => entry.role));
   let relayResult = { ok: true, reason: "external Relay preserved" };
   if (relay?.owned && !relay.preserved) {
     if (relay.terminatedOnStartup) {
@@ -745,7 +791,20 @@ async function cleanupAggregate(config, { roles, relay, removeState = false }) {
   } else {
     console.log("Relay: external daemon preserved.");
   }
-  const stateResult = removeState ? removeAggregateState(config) : { ok: true, kind: "preserved", reason: "prior aggregate state preserved" };
+  let stateResult = { ok: true, kind: "preserved", reason: "prior aggregate state preserved" };
+  if (removeState) {
+    const unresolved = runtimeResults.filter((result) => !result.ok).map((result) => result.role);
+    const keepRelay = relay?.owned && !relayResult.ok ? relay : { owned: false };
+    if (!unresolved.length && relayResult.ok) stateResult = removeAggregateState(config);
+    else {
+      try {
+        writeAggregateState(config, { desiredRoleBindings: unresolved, residualBindings: unresolved, relay: keepRelay });
+        stateResult = { ok: true, kind: "residual", reason: "unconfirmed components retained for stop retry" };
+      } catch (error) {
+        stateResult = { ok: false, kind: "write failure", reason: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  }
   return {
     runtimeResults,
     relayResult,
@@ -990,23 +1049,29 @@ function parseCapturedJsonError(output) {
 function createRedactedSink(secret, write) {
   let pending = "";
   let output = "";
+  const flush = (text) => {
+    if (!text) return;
+    const safe = redactSecrets(text, secret);
+    output += safe;
+    write(safe);
+  };
   return {
     push(chunk) {
       const text = pending + String(chunk);
-      const keep = secret ? Math.max(secret.length - 1, 0) : 0;
-      const visible = keep ? text.slice(0, -keep) : text;
-      pending = keep ? text.slice(-keep) : "";
-      const safe = redactSecrets(visible, secret);
-      output += safe;
-      write(safe);
+      if (!secret) { pending = ""; flush(text); return; }
+      // Retain exactly the longest suffix that might be completed by a later
+      // chunk. This prevents both leakage and the unnecessary fixed tail delay.
+      let keep = 0;
+      const limit = Math.min(secret.length - 1, text.length);
+      for (let length = limit; length > 0; length -= 1) {
+        if (text.endsWith(secret.slice(0, length))) { keep = length; break; }
+      }
+      flush(text.slice(0, text.length - keep));
+      pending = text.slice(text.length - keep);
     },
     finish() {
-      if (pending) {
-        const safe = redactSecrets(pending, secret);
-        output += safe;
-        write(safe);
-        pending = "";
-      }
+      flush(pending);
+      pending = "";
       return output;
     },
     get output() { return output + pending; },
@@ -1248,9 +1313,16 @@ function delay(milliseconds, signal = null) {
 
 const aggregateLockOwners = new Map();
 
-function currentProcessStartIdentity(pid = process.pid) {
-  if (process.platform !== "linux") return null;
-  try { return parseLinuxProcStatStartIdentity(readFileSync(`/proc/${Number(pid)}/stat`, "utf8")); } catch { return null; }
+function currentProcessStartIdentity(pid = process.pid, platform = process.platform) {
+  try {
+    if (platform === "linux") return parseLinuxProcStatStartIdentity(readFileSync(`/proc/${Number(pid)}/stat`, "utf8"));
+    if (platform === "darwin") return execFileSync("ps", ["-ww", "-p", String(pid), "-o", "lstart="], { encoding: "utf8" }).trim() || null;
+    if (platform === "win32") {
+      const script = "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + Number(pid) + "'; if ($p) { $p.CreationDate }";
+      return execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" }).trim() || null;
+    }
+  } catch { /* inspection failure is deliberately not proof of ownership */ }
+  return null;
 }
 
 function acquireAggregateLock(lockPath) {
@@ -1265,7 +1337,7 @@ function acquireAggregateLock(lockPath) {
       try {
         const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
         const observedStart = currentProcessStartIdentity(recorded.pid);
-        stale = !isProcessAlive(recorded.pid) || (recorded.startIdentity && observedStart && String(recorded.startIdentity) !== String(observedStart));
+        stale = !isProcessAlive(recorded.pid) || !recorded.ownerToken || !recorded.startIdentity || !observedStart || String(recorded.startIdentity) !== String(observedStart);
       } catch { stale = true; }
       if (stale) {
         unlinkSync(lockPath);
@@ -1302,7 +1374,8 @@ function readAggregateState(config) {
   try { state = JSON.parse(text); }
   catch (error) { return { kind: "malformed", state: null, reason: error instanceof Error ? error.message : "invalid JSON" }; }
   if (!state || typeof state !== "object" || Array.isArray(state)) return { kind: "malformed", state: null, reason: "aggregate state is not an object" };
-  if (state.version !== 2) return { kind: "unsupported version", state: null, reason: `expected version 2, found ${String(state.version)}` };
+  if (state.version === 2) return { kind: "unsupported version", state: null, reason: "version 2 state requires an explicit init:all migration before lifecycle operations" };
+  if (state.version !== 3) return { kind: "unsupported version", state: null, reason: `expected version 3, found ${String(state.version)}` };
   if (JSON.stringify(state).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return { kind: "malformed", state: null, reason: "aggregate state contains secret-like data" };
   const validation = validatePersistedState(state);
   return validation.ok ? { kind: "valid", state, reason: "aggregate state is valid" } : { kind: "malformed", state: null, reason: validation.reason };
@@ -1310,7 +1383,7 @@ function readAggregateState(config) {
 
 function validatePersistedState(state) {
   const bindings = state.desiredRoleBindings;
-  if (!Array.isArray(bindings) || bindings.length !== 3) return { ok: false, reason: "desiredRoleBindings must contain exactly three roles" };
+  if (!Array.isArray(bindings) || bindings.length < 1 || bindings.length > 3) return { ok: false, reason: "desiredRoleBindings must contain one to three roles" };
   const expected = new Set(["wayfinder", "planner", "auditor"]);
   const keys = new Set();
   const aliases = new Set();
@@ -1320,6 +1393,7 @@ function validatePersistedState(state) {
     if (JSON.stringify(binding).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return { ok: false, reason: "desiredRoleBindings contains secret-like data" };
     keys.add(binding.key); aliases.add(binding.alias);
   }
+  if (!Array.isArray(state.residualBindings) || !state.residualBindings.every((binding) => binding && typeof binding === "object" && typeof binding.alias === "string")) return { ok: false, reason: "residualBindings is invalid" };
   if (!(state.relay && typeof state.relay === "object") || typeof state.relay.owned !== "boolean") return { ok: false, reason: "relay ownership metadata is invalid" };
   if (state.relay.owned && (!state.relay.identity || typeof state.relay.identity !== "object")) return { ok: false, reason: "owned Relay state lacks identity metadata" };
   return { ok: true };
@@ -1337,10 +1411,10 @@ function rolesFromPersistedState(config, state) {
 function writeAggregateState(config, state) {
   mkdirSync(dirname(config.stateFile), { recursive: true });
   const payload = {
-    version: 2,
+    version: 3,
     updatedAt: new Date().toISOString(),
-    desiredRoleBindings: config.roles.map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
-    runtimesChangedByOperation: (state.changedRoles || []).map((role) => role.alias),
+    desiredRoleBindings: (state.desiredRoleBindings || config.roles).map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
+    residualBindings: (state.residualBindings || []).map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
     relay: state.relay?.owned ? { owned: true, identity: redactIdentity(state.relay.identity, config.controlPlaneApiKey) } : { owned: false },
   };
   const temporary = `${config.stateFile}.${process.pid}.${randomUUID()}.tmp`;
@@ -1361,8 +1435,15 @@ function writeAggregateState(config, state) {
 }
 
 function redactIdentity(identity, secret) {
-  if (!identity || typeof identity !== "object") return null;
-  return Object.fromEntries(Object.entries(identity).map(([key, value]) => [key, typeof value === "string" ? redactSecrets(value, secret).slice(0, 1024) : value]));
+  return sanitizePersistedValue(identity, secret);
+}
+
+function sanitizePersistedValue(value, secret, depth = 0) {
+  if (depth > 12) return "[TRUNCATED]";
+  if (typeof value === "string") return redactSecrets(value, secret).slice(0, 1024);
+  if (Array.isArray(value)) return value.slice(0, 128).map((item) => sanitizePersistedValue(item, secret, depth + 1));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).slice(0, 128).map(([key, item]) => [key, sanitizePersistedValue(item, secret, depth + 1)]));
+  return value;
 }
 
 function removeAggregateState(config) {
@@ -1590,6 +1671,8 @@ export {
   getConfig,
   loadEnvFile,
   acquireAggregateLock,
+  createRedactedSink,
+  currentProcessStartIdentity,
   releaseAggregateLock,
   normalizeRelayMcpProfile,
   normalizeRuntimeHealth,
@@ -1599,6 +1682,7 @@ export {
   parseNativeJsonResult,
   parseWindowsCimJson,
   redactSecrets,
+  sanitizePersistedValue,
   runCommandCapture,
   stopOwnedRelay,
   inspectProcessIdentity,
