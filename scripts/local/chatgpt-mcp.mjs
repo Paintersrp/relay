@@ -872,7 +872,7 @@ function withCleanupFailures(error, result) {
 }
 
 function withLockReleaseFailure(error, result) {
-  if (result.ok) return error;
+  if (result.ok && !result.ownershipLost) return error;
   const detail = `Aggregate lock release failed: ${result.reason}${result.residuePath ? ` (${result.residuePath})` : ""}`;
   return new ValidationError(error ? `${error instanceof Error ? error.message : String(error)} ${detail}` : detail);
 }
@@ -1468,15 +1468,22 @@ function removeAggregateLockInstance(lockPath, lockInfo, fs = defaultAggregateLo
   return true;
 }
 
-function releaseDirectory(lockPath, owner, fs = defaultAggregateLockFs, label = "aggregate lock") {
-  const absent = { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, reason: `${label} public path was unexpectedly absent; ownership was lost before release` };
+function releaseDirectory(lockPath, owner, { fs = defaultAggregateLockFs, label = "aggregate lock", ownershipExpected = false } = {}) {
+  const ownershipLoss = (reason, lockPreserved = true) => ({ ok: false, released: false, ownershipLost: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved, reason });
+  const absent = ownershipExpected
+    ? ownershipLoss(`${label} public path was unexpectedly absent; ownership was lost before release`)
+    : { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} public path is absent; replacement preserved` };
   let lockStat;
   try { lockStat = fs.statSync(lockPath); }
-  catch (error) { if (error?.code === "ENOENT") return absent; return { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} could not be inspected: ${error.message}` }; }
-  if (!sameAggregateLockInstance(owner.lockStat, lockStat)) return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} instance changed; replacement preserved` };
+  catch (error) { if (error?.code === "ENOENT") return absent; return ownershipExpected ? ownershipLoss(`${label} could not be inspected: ${error.message}`) : { ok: false, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} could not be inspected: ${error.message}` }; }
+  if (!sameAggregateLockInstance(owner.lockStat, lockStat)) return ownershipExpected
+    ? ownershipLoss(`${label} owned lock instance or owner token changed before release; replacement preserved`)
+    : { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} instance changed; replacement preserved` };
   const current = readAggregateLock(lockPath, fs);
   if (current.kind !== "recorded" || !current.directory || current.owner.ownerToken !== owner.ownerToken || !sameAggregateLockInstance(owner.lockStat, current.lockStat)) {
-    return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} owner token or instance no longer matches; replacement preserved` };
+    return ownershipExpected
+      ? ownershipLoss(`${label} owned lock instance or owner token changed before release; replacement preserved`)
+      : { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: `${label} owner token or instance no longer matches; replacement preserved` };
   }
   const privatePath = `${lockPath}.release-${owner.ownerToken}`;
   try {
@@ -1486,7 +1493,25 @@ function releaseDirectory(lockPath, owner, fs = defaultAggregateLockFs, label = 
   }
   const privateInfo = readAggregateLock(privatePath, fs);
   if (privateInfo.kind !== "recorded" || privateInfo.owner.ownerToken !== owner.ownerToken) {
+    if (ownershipExpected) {
+      try {
+        fs.statSync(lockPath);
+      } catch (error) {
+        if (error?.code === "ENOENT") {
+          try { fs.renameSync(privatePath, lockPath); } catch { /* leave the replacement residue for safe operator recovery */ }
+        }
+      }
+      return ownershipLoss(`${label} owned lock instance or owner token changed before release; replacement preserved`);
+    }
     return { ok: false, released: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, residuePath: privatePath, reason: `${label} private release residue did not retain the expected owner token` };
+  }
+  try {
+    fs.statSync(lockPath);
+    return ownershipExpected
+      ? ownershipLoss(`${label} owned lock instance or owner token changed before release; replacement preserved`)
+      : { ok: false, released: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, residuePath: privatePath, reason: `${label} replacement appeared before private release cleanup` };
+  } catch (error) {
+    if (error?.code !== "ENOENT") return ownershipExpected ? ownershipLoss(`${label} could not verify the public path before release cleanup: ${error.message}`) : { ok: false, released: true, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: false, residuePath: privatePath, reason: `${label} could not verify the public path before release cleanup: ${error.message}` };
   }
   try {
     fs.unlinkSync(aggregateLockMetadataPath(privatePath));
@@ -1526,7 +1551,7 @@ function acquireRecoveryGate(lockPath, owner, fs = defaultAggregateLockFs, inspe
 }
 
 function releaseRecoveryGate(gate, fs = defaultAggregateLockFs) {
-  return releaseDirectory(gate.gatePath, { ...gate.owner, lockStat: gate.lockStat }, fs, "aggregate recovery gate");
+  return releaseDirectory(gate.gatePath, { ...gate.owner, lockStat: gate.lockStat }, { fs, label: "aggregate recovery gate", ownershipExpected: true });
 }
 
 function acquireAggregateLock(lockPath, options = {}) {
@@ -1587,9 +1612,9 @@ function acquireAggregateLock(lockPath, options = {}) {
 
 function releaseAggregateLock(lockPath, ownerToken = aggregateLockOwners.get(lockPath)?.ownerToken, options = {}) {
   const owner = aggregateLockOwners.get(lockPath);
-  if (!owner || !ownerToken || owner.ownerToken !== ownerToken) return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: "not the current in-memory lock owner" };
+  if (!owner || !ownerToken || owner.ownerToken !== ownerToken) return { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: "not the current in-memory owner" };
   const fs = { ...defaultAggregateLockFs, ...(options.fs || {}) };
-  const result = releaseDirectory(lockPath, owner, fs);
+  const result = releaseDirectory(lockPath, owner, { fs, ownershipExpected: true });
   if (result.released && result.directoryRemoved) {
     aggregateLockOwners.delete(lockPath);
   }
