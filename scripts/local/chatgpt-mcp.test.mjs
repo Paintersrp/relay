@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, rmdirSync, watch, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync as readFileSyncNative, rmSync, rmdirSync, statSync as statSyncNative, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -701,115 +701,124 @@ test("ambiguous recovery-gate metadata fails closed and release returns structur
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
-test("lifecycle command fails when its owned public lock disappears before release", async () => {
-  await temporaryEnvironment({ FAKE_TUNNEL_CONNECT_DELAY_MS: "100" }, async (env, temp) => {
-    const lock = `${env.RELAY_MCP_STATE_FILE}.lock`;
-    const ownerRecord = path.join(lock, "owner.json");
-    let lockWatcher = null;
-    let parentWatcher = null;
-    const deletion = new Promise((resolve, reject) => {
-      const closeWatchers = () => {
-        parentWatcher?.close();
-        lockWatcher?.close();
-      };
-      const removeOwnedLock = () => {
-        if (!existsSync(lock)) return;
-        try {
-          rmSync(lock, { recursive: true, force: true });
-          closeWatchers();
-          resolve();
-        } catch (error) {
-          closeWatchers();
-          reject(error);
-        }
-      };
-      const watchOwnerRecord = () => {
-        if (existsSync(ownerRecord)) {
-          removeOwnedLock();
-          return;
-        }
-        try {
-          lockWatcher = watch(lock, (_eventType, filename) => {
-            if (String(filename) === "owner.json") removeOwnedLock();
-          });
-          lockWatcher.unref?.();
-        } catch (error) {
-          closeWatchers();
-          reject(error);
-        }
-      };
-      parentWatcher = watch(temp, (_eventType, filename) => {
-        if (String(filename) === path.basename(lock)) watchOwnerRecord();
-      });
-      parentWatcher.unref?.();
+test("primary lock successor after rename is preserved and original ownership becomes a no-op", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-successor-"));
+  const lock = path.join(temp, "aggregate.lock");
+  try {
+    acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" });
+    const successor = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "successor-start", ownerToken: "successor-owner" })}\n`;
+    const result = releaseAggregateLock(lock, undefined, {
+      afterPublicRename: ({ publicPath }) => {
+        mkdirSync(publicPath);
+        writeFileSync(path.join(publicPath, "owner.json"), successor);
+      },
     });
-    try {
-      const command = runScript("init:all", env);
-      await deletion;
-      await assert.rejects(command, /Aggregate lock release failed: .*ownership was lost before release/u);
-    } finally {
-      parentWatcher?.close();
-      lockWatcher?.close();
-      await rm(lock, { recursive: true, force: true });
-    }
-  });
+    assert.equal(result.publicReleased, true);
+    assert.equal(result.ownershipLost, false);
+    assert.equal(result.directoryRemoved, true);
+    assert.equal(result.residuePath, undefined);
+    assert.equal(await readFile(path.join(lock, "owner.json"), "utf8"), successor);
+    assert.deepEqual(releaseAggregateLock(lock), { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: "not the current in-memory owner" });
+    await rm(lock, { recursive: true, force: true });
+  } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
-test("lifecycle command fails after its owned public lock is replaced before release", async () => {
-  await temporaryEnvironment({ FAKE_TUNNEL_CONNECT_DELAY_MS: "100" }, async (env, temp) => {
-    const lock = `${env.RELAY_MCP_STATE_FILE}.lock`;
-    const ownerRecord = path.join(lock, "owner.json");
-    let lockWatcher = null;
-    let parentWatcher = null;
-    const replacement = new Promise((resolve, reject) => {
-      const closeWatchers = () => {
-        parentWatcher?.close();
-        lockWatcher?.close();
-      };
-      const replaceOwnedLock = () => {
-        if (!existsSync(lock)) return;
-        try {
-          rmSync(lock, { recursive: true, force: true });
-          mkdirSync(lock);
-          writeFileSync(ownerRecord, JSON.stringify({ version: 1, pid: process.pid, startIdentity: "replacement-start", ownerToken: "replacement-owner" }));
-          closeWatchers();
-          resolve();
-        } catch (error) {
-          closeWatchers();
-          reject(error);
-        }
-      };
-      const watchOwnerRecord = () => {
-        if (existsSync(ownerRecord)) {
-          replaceOwnedLock();
-          return;
-        }
-        try {
-          lockWatcher = watch(lock, (_eventType, filename) => {
-            if (String(filename) === "owner.json") replaceOwnedLock();
-          });
-          lockWatcher.unref?.();
-        } catch (error) {
-          closeWatchers();
-          reject(error);
-        }
-      };
-      parentWatcher = watch(temp, (_eventType, filename) => {
-        if (String(filename) === path.basename(lock)) watchOwnerRecord();
-      });
-      parentWatcher.unref?.();
+test("primary private cleanup failure with a successor reports residue without ownership loss", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-successor-residue-"));
+  const lock = path.join(temp, "aggregate.lock");
+  let residuePath;
+  try {
+    acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" });
+    const successor = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "successor-start", ownerToken: "successor-owner" })}\n`;
+    const result = releaseAggregateLock(lock, undefined, {
+      afterPublicRename: ({ publicPath, privatePath }) => {
+        residuePath = privatePath;
+        mkdirSync(publicPath);
+        writeFileSync(path.join(publicPath, "owner.json"), successor);
+      },
+      fs: { rmdirSync: (target) => { if (String(target) === residuePath) throw new Error("injected private residue failure"); return rmdirSync(target); } },
     });
+    assert.equal(result.ok, false);
+    assert.equal(result.publicReleased, true);
+    assert.equal(result.ownershipLost, false);
+    assert.equal(result.residuePath, residuePath);
+    assert.match(result.reason, /private cleanup/u);
+    assert.equal(result.ownerRecordRemoved, true);
+    assert.equal(await readFile(path.join(lock, "owner.json"), "utf8"), successor);
+    assert.deepEqual(releaseAggregateLock(lock), { ok: true, released: false, ownerRecordRemoved: false, directoryRemoved: false, lockPreserved: true, reason: "not the current in-memory owner" });
+    await rm(residuePath, { recursive: true, force: true });
+    await rm(lock, { recursive: true, force: true });
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("recovery-gate successor after rename does not release the newly acquired primary lock", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-gate-successor-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const gate = `${lock}-recovery`;
+  try {
+    const successor = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "successor-start", ownerToken: "successor-gate" })}\n`;
+    const acquired = acquireAggregateLock(lock, {
+      inspectStartIdentity: () => "self-start",
+      afterPublicRename: ({ publicPath, label }) => {
+        if (label !== "aggregate recovery gate") return;
+        mkdirSync(publicPath);
+        writeFileSync(path.join(publicPath, "owner.json"), successor);
+      },
+    });
+    assert.equal(acquired.ownerToken.length > 0, true);
+    assert.equal(await readFile(path.join(gate, "owner.json"), "utf8"), successor);
+    assert.equal((await readFile(path.join(lock, "owner.json"), "utf8")).includes(acquired.ownerToken), true);
+    releaseAggregateLock(lock);
+    assert.equal(await readFile(path.join(gate, "owner.json"), "utf8"), successor);
+    await rm(gate, { recursive: true, force: true });
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("recovery-gate private cleanup failure releases the acquired primary lock and preserves a successor", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-gate-residue-"));
+  const lock = path.join(temp, "aggregate.lock");
+  const gate = `${lock}-recovery`;
+  let residuePath;
+  try {
+    const successor = `${JSON.stringify({ version: 1, pid: process.pid, startIdentity: "successor-start", ownerToken: "successor-gate" })}\n`;
+    assert.throws(() => acquireAggregateLock(lock, {
+      inspectStartIdentity: () => "self-start",
+      afterPublicRename: ({ publicPath, privatePath, label }) => {
+        if (label !== "aggregate recovery gate") return;
+        residuePath = privatePath;
+        mkdirSync(publicPath);
+        writeFileSync(path.join(publicPath, "owner.json"), successor);
+      },
+      fs: { rmdirSync: (target) => { if (String(target) === residuePath) throw new Error("injected private gate residue failure"); return rmdirSync(target); } },
+    }), (error) => {
+      assert.match(String(error), /private cleanup-directory removal failed/u);
+      assert.doesNotMatch(String(error), /ownership was lost/u);
+      return true;
+    });
+    assert.equal(await readFile(path.join(gate, "owner.json"), "utf8"), successor);
+    await assert.rejects(readFile(lock));
+    await rm(residuePath, { recursive: true, force: true });
+    await rm(gate, { recursive: true, force: true });
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("pre-rename disappearance and malformed metadata remain ownership-loss failures", async () => {
+  for (const mode of ["disappeared", "malformed"]) {
+    const temp = await mkdtemp(path.join(os.tmpdir(), `relay-lock-pre-rename-${mode}-`));
+    const lock = path.join(temp, "aggregate.lock");
+    const ownerRecord = path.join(lock, "owner.json");
     try {
-      const command = runScript("init:all", env);
-      await replacement;
-      await assert.rejects(command, /Aggregate lock release failed: .*owned lock instance or owner token changed before release/u);
-      assert.match(await readFile(ownerRecord, "utf8"), /replacement-owner/u);
-    } finally {
-      parentWatcher?.close();
-      lockWatcher?.close();
-      await rm(lock, { recursive: true, force: true });
-    }
-  });
+      acquireAggregateLock(lock, { inspectStartIdentity: () => "self-start" });
+      let triggered = false;
+      const releaseFs = mode === "disappeared"
+        ? { statSync: (target) => { const result = statSyncNative(target); if (!triggered && String(target) === lock) { triggered = true; rmSync(lock, { recursive: true, force: true }); } return result; } }
+        : { readFileSync: (target, encoding) => { if (!triggered && String(target) === ownerRecord) { triggered = true; writeFileSync(target, "{malformed"); } return readFileSyncNative(target, encoding); } };
+      const result = releaseAggregateLock(lock, undefined, { fs: releaseFs });
+      assert.equal(result.ok, false);
+      assert.equal(result.publicReleased, false);
+      assert.equal(result.ownershipLost, true);
+    } finally { await rm(temp, { recursive: true, force: true }); }
+  }
 });
 
 test("termination result reports an injected failure without hiding the live PID", async () => {
