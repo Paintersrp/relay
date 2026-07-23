@@ -5,10 +5,14 @@ import { createHash, randomUUID } from "crypto";
 import {
   accessSync,
   constants,
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from "fs";
@@ -334,6 +338,11 @@ async function runInitAll(config) {
     throw new ValidationError(errors.join("; "));
   }
   requireConfiguredApiKey(config, "init:all");
+  const priorResult = readAggregateState(config);
+  if (priorResult.kind === "malformed" || priorResult.kind === "unsupported version" || priorResult.kind === "read failure") {
+    throw new ValidationError(`Cannot begin init:all with ${priorResult.kind} aggregate state: ${priorResult.reason}`);
+  }
+  const priorState = priorResult.kind === "valid" ? priorResult.state : null;
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
   const cancellation = createAggregateCancellation();
@@ -355,7 +364,7 @@ async function runInitAll(config) {
       results.push({ role, ok: true, reason: prepared.reused ? "already configured and ready" : "connected and verified" });
     }
     printAggregateResults("init", results);
-    writeAggregateState(config, { changedRoles, relay: null });
+    writeAggregateState(config, { changedRoles, relay: priorState?.relay || { owned: false } });
     return 0;
   } catch (error) {
     cleanupResult = await cleanup();
@@ -379,6 +388,11 @@ async function runStartAll(config) {
   const errors = validateAggregateConfig(config);
   if (errors.length) throw new ValidationError(errors.join("; "));
   requireConfiguredApiKey(config, "start:all");
+  const priorResult = readAggregateState(config);
+  if (priorResult.kind === "malformed" || priorResult.kind === "unsupported version" || priorResult.kind === "read failure") {
+    throw new ValidationError(`Cannot begin start:all with ${priorResult.kind} aggregate state: ${priorResult.reason}`);
+  }
+  const priorState = priorResult.kind === "valid" ? priorResult.state : null;
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
   const cancellation = createAggregateCancellation();
@@ -397,15 +411,21 @@ async function runStartAll(config) {
     cancellation.check();
     const currentRelay = await checkAllRelayEndpoints(config, cancellation.signal);
     if (currentRelay.every((result) => result.ok)) {
-      console.log("Relay: reusing healthy external daemon.");
+      if (priorState?.relay?.owned && priorState.relay.identity && (await verifyProcessIdentity(priorState.relay.identity)).ok) {
+        relay = { owned: true, identity: priorState.relay.identity, preserved: true };
+        console.log("Relay: reusing healthy launcher-owned daemon.");
+      } else {
+        console.log("Relay: reusing healthy external daemon.");
+      }
     } else if (currentRelay.some((result) => result.ok)) {
       throw new ValidationError("Relay is partially healthy; refusing to start or attach a partial tunnel set.");
     } else {
       relay = await startRelay(config);
       relay.identity = await captureProcessIdentity(relay.child.pid, relay.expectedIdentity);
       if (!relay.identity) {
-        await terminateProcessTree(relay.child.pid, { wait: true });
-        relay.terminatedOnStartup = true;
+        const termination = await terminateProcessTree(relay.child.pid, { wait: true });
+        relay.terminatedOnStartup = termination.ok;
+        if (!termination.ok) throw new ValidationError(`Relay started, but its process identity could not be captured and PID ${relay.child.pid} survived cleanup: ${termination.reason}`);
         throw new ValidationError("Relay started, but its process identity could not be captured; the new process was terminated.");
       }
       await waitForRelay(config, cancellation);
@@ -424,7 +444,7 @@ async function runStartAll(config) {
     if (finalRelay.some((result) => !result.ok)) {
       throw new ValidationError(`Relay readiness failed: ${finalRelay.filter((result) => !result.ok).map((result) => result.role.label).join(", ")}`);
     }
-    writeAggregateState(config, { changedRoles, relay });
+    writeAggregateState(config, { changedRoles, relay: relay || { owned: false } });
     console.log("Relay: all three role endpoints healthy; aggregate startup complete.");
     return 0;
   } catch (error) {
@@ -444,13 +464,24 @@ async function runStopAll(config) {
   const lockPath = `${config.stateFile}.lock`;
   acquireAggregateLock(lockPath);
   try {
-  const state = readAggregateState(config);
-  const cleanupResult = await cleanupAggregate(config, {
-    roles: config.roles,
-    relay: state?.relay?.owned ? state.relay : state?.relayOwned ? { owned: true, identity: null } : null,
-  });
-  reportCleanupFailures(cleanupResult);
-  return cleanupResult.ok ? 0 : 1;
+    const stateResult = readAggregateState(config);
+    if (stateResult.kind === "malformed" || stateResult.kind === "unsupported version" || stateResult.kind === "read failure") {
+      console.error(`stop:all refused to act on ${stateResult.kind} aggregate state: ${stateResult.reason}`);
+      return 1;
+    }
+    const state = stateResult.kind === "valid" ? stateResult.state : null;
+    const roles = state ? rolesFromPersistedState(config, state) : config.roles;
+    if (stateResult.kind === "valid" && !roles) {
+      console.error("stop:all refused to act on structurally invalid persisted role bindings.");
+      return 1;
+    }
+    const cleanupResult = await cleanupAggregate(config, {
+      roles,
+      relay: state?.relay?.owned ? state.relay : null,
+      removeState: true,
+    });
+    reportCleanupFailures(cleanupResult);
+    return cleanupResult.ok ? 0 : 1;
   } finally {
     releaseAggregateLock(lockPath);
   }
@@ -461,7 +492,8 @@ async function runStatusAll(config) {
   let availabilityError = null;
   try { adapter = createNativeRuntimeAdapter(config); }
   catch (error) { availabilityError = error instanceof Error ? error.message : String(error); }
-  const state = readAggregateState(config);
+  const stateResult = readAggregateState(config);
+  const state = stateResult.kind === "valid" ? stateResult.state : null;
   console.log("component  endpoint                                      tunnel       alias/profile                 runtime/readiness");
   const relayResults = await checkAllRelayEndpoints(config);
   console.log(`Relay      ${config.relayBaseUrl.padEnd(45)} ${"-".padEnd(12)} ${"-".padEnd(28)} ${relayResults.every((result) => result.ok) ? "healthy" : "unhealthy"}`);
@@ -527,7 +559,6 @@ function createAggregateCancellation() {
 function installAggregateSignalCleanup(cancellation, cleanup) {
   const handler = (signal) => {
     cancellation.cancel(signal);
-    void cleanup().catch((error) => console.error(`cleanup after ${signal} failed: ${error.message}`));
   };
   process.once("SIGINT", handler);
   process.once("SIGTERM", handler);
@@ -545,13 +576,14 @@ function onceAsync(operation) {
 async function prepareRuntime(adapter, config, role, changedRoles, cancellation) {
   const current = await inspectRuntime(adapter, role, cancellation.signal);
   if (current.complete) return { ready: true, reused: true };
-  if (current.malformed || current.failed) {
+  if (current.state === "malformed native state" || current.state === "native command failure") {
     throw new RuntimeCheckError(role, current.reason);
   }
   if (current.found) {
     cancellation.check();
-    await adapter.stopRuntime(role, cancellation.signal);
     addRoleOnce(changedRoles, role);
+    const stopped = await adapter.stopRuntime(role, cancellation.signal);
+    if (!stopped.ok) throw new RuntimeCheckError(role, `stop before reconnect failed: ${stopped.reason}`);
   }
   cancellation.check();
   addRoleOnce(changedRoles, role);
@@ -566,7 +598,21 @@ function addRoleOnce(roles, role) {
 
 async function inspectRuntime(adapter, role, signal) {
   const status = await adapter.getRuntimeStatus(role, signal);
-  if (!status.ok) return { statusOk: false, readyOk: false, bindingOk: false, found: !status.missing, malformed: status.kind === "malformed", failed: status.kind === "command" && !status.missing, reason: status.reason };
+  if (!status.ok) {
+    return {
+      statusOk: false,
+      readyOk: false,
+      bindingOk: false,
+      found: !status.missing,
+      state: status.missing ? "missing alias" : status.kind === "malformed" ? "malformed native state" : "native command failure",
+      malformed: status.kind === "malformed",
+      failed: status.kind === "command" && !status.missing,
+      reason: status.reason,
+    };
+  }
+  if (!status.runtime.processRunning) {
+    return { statusOk: true, readyOk: false, bindingOk: runtimeMatchesRole(status.runtime, role), found: true, state: "known alias without process metadata", runtime: status.runtime, reason: "known alias has no active process" };
+  }
   const bindingOk = runtimeMatchesRole(status.runtime, role);
   const health = await adapter.getRuntimeHealth(role, status.runtime, signal);
   const readyOk = health.ok && health.healthy && health.ready;
@@ -579,7 +625,17 @@ async function inspectRuntime(adapter, role, signal) {
         : !health.ready
           ? "native readyz is not ready"
           : "healthy";
-  return { statusOk: status.processRunning, readyOk, bindingOk, complete: status.processRunning && bindingOk && readyOk, found: true, malformed: health.kind === "malformed", runtime: status.runtime, reason };
+  return {
+    statusOk: true,
+    readyOk,
+    bindingOk,
+    complete: status.processRunning && bindingOk && readyOk,
+    found: true,
+    state: !bindingOk ? "binding drift" : !health.ok ? health.state || "native command failure" : !health.healthy ? "unhealthy runtime" : !health.ready ? "not-ready runtime" : "running runtime",
+    malformed: health.kind === "malformed",
+    runtime: status.runtime,
+    reason,
+  };
 }
 
 function runtimeMatchesRole(runtime, role) {
@@ -662,17 +718,17 @@ async function stopRoles(config, roles, adapter = null) {
       try { result = await runtimeAdapter.stopRuntime(role); }
       catch (error) { result = { ok: false, reason: error instanceof Error ? error.message : String(error) }; }
     }
-    const ok = result.ok || /not found|does not exist|not running|already stopped|stopped/u.test(result.reason || "");
-    results.push({ role, ok, reason: ok ? "stopped" : result.reason });
+    const ok = result.ok === true;
+    results.push({ role, ok, reason: ok ? "stopped or already stopped" : result.reason });
     console.log(`${role.label}: ${ok ? "stopped or already stopped" : `stop failed: ${result.reason}`}`);
   }
   return results;
 }
 
-async function cleanupAggregate(config, { roles, relay }) {
+async function cleanupAggregate(config, { roles, relay, removeState = false }) {
   const runtimeResults = await stopRoles(config, roles);
   let relayResult = { ok: true, reason: "external Relay preserved" };
-  if (relay?.owned) {
+  if (relay?.owned && !relay.preserved) {
     if (relay.terminatedOnStartup) {
       relayResult = { ok: true, reason: "new Relay process terminated after identity capture failure" };
     } else if (!relay.identity) {
@@ -689,7 +745,7 @@ async function cleanupAggregate(config, { roles, relay }) {
   } else {
     console.log("Relay: external daemon preserved.");
   }
-  const stateResult = removeAggregateState(config);
+  const stateResult = removeState ? removeAggregateState(config) : { ok: true, kind: "preserved", reason: "prior aggregate state preserved" };
   return {
     runtimeResults,
     relayResult,
@@ -745,19 +801,25 @@ function createNativeRuntimeAdapter(config) {
     command,
     async connectRuntime(role, signal) {
       const result = await invoke(buildNativeRuntimeConnectArgs(config, role), role, signal);
-      return parse(result, `connect ${role.alias}`);
+      const parsed = parse(result, `connect ${role.alias}`);
+      if (!parsed.ok) return parsed;
+      const runtime = normalizeRuntimeStatus(parsed.value);
+      if (result.code !== 0) return { ok: false, kind: "command", reason: `${summarizeFailure(result)}; structured connect payload was returned`, raw: parsed.raw, diagnostics: parsed.value };
+      if (!runtime && parsed.value?.ok !== true && parsed.value?.connected !== true) return { ok: false, kind: "malformed", reason: `connect ${role.alias} returned no structured runtime confirmation`, raw: parsed.raw, diagnostics: parsed.value };
+      return { ...parsed, runtime, diagnostics: parsed.value };
     },
     async getRuntimeStatus(role, signal) {
       const result = await invoke(["runtimes", "status", role.alias, "--json"], role, signal);
-      if (result.code !== 0) {
-        const reason = summarizeFailure(result);
-        return { ok: false, kind: "command", missing: /not known|not found|does not exist/u.test(reason), reason };
-      }
       const parsed = parse(result, `status ${role.alias}`);
-      if (!parsed.ok) return parsed;
-      const runtime = normalizeRuntimeStatus(parsed.value);
-      if (!runtime) return { ok: false, kind: "malformed", missing: false, reason: `status ${role.alias} omitted required structured runtime fields` };
-      return { ok: true, runtime, processRunning: runtime.processRunning };
+      if (parsed.ok) {
+        const runtime = normalizeRuntimeStatus(parsed.value);
+        if (!runtime) return { ok: false, kind: "malformed", missing: false, reason: `status ${role.alias} omitted required structured runtime fields` };
+        if (result.code !== 0) return { ok: false, kind: "command", missing: false, runtime, reason: `${summarizeFailure(result)}; structured status was returned with nonzero exit` };
+        return { ok: true, runtime, processRunning: runtime.processRunning };
+      }
+      const reason = summarizeFailure(result);
+      if (isExactUnknownAliasError(result.stderr, role.alias)) return { ok: false, kind: "missing", missing: true, reason: `alias ${role.alias} is absent` };
+      return { ...parsed, kind: result.signal ? "command" : parsed.kind, missing: false, reason: parsed.reason || reason };
     },
     async getRuntimeHealth(role, runtime, signal) {
       let args;
@@ -765,17 +827,24 @@ function createNativeRuntimeAdapter(config) {
       else if (runtime.healthUrl) args = ["health", "--url", runtime.healthUrl, "--json"];
       else return { ok: false, kind: "malformed", reason: `status ${role.alias} omitted health_url and health_url_file` };
       const result = await invoke(args, role, signal);
-      if (result.code !== 0) return { ok: false, kind: "command", reason: summarizeFailure(result) };
       const parsed = parse(result, `health ${role.alias}`);
       if (!parsed.ok) return parsed;
       const health = normalizeRuntimeHealth(parsed.value);
-      return health ? { ok: true, ...health } : { ok: false, kind: "malformed", reason: `health ${role.alias} omitted structured healthz/readyz fields` };
+      if (!health) return { ok: false, kind: "malformed", state: "malformed native state", reason: `health ${role.alias} omitted structured healthz/readyz fields` };
+      if (result.code === 0 || result.code === 2) return { ok: true, kind: "probe", state: health.healthy ? (health.ready ? "running runtime" : "not-ready runtime") : "unhealthy runtime", ...health };
+      return { ok: false, kind: "command", state: "native command failure", reason: `${summarizeFailure(result)}; structured health was returned with unexpected exit ${result.code}` };
     },
     async stopRuntime(role, signal) {
       const result = await invoke(["runtimes", "stop", role.alias, "--json"], role, signal);
       const parsed = parse(result, `stop ${role.alias}`);
-      if (parsed.ok) return { ok: true, reason: "stopped", raw: parsed.raw };
-      return { ok: false, reason: parsed.reason, raw: parsed.raw };
+      if (parsed.ok) {
+        if (parsed.value?.stopped === true) return { ok: true, reason: "stopped", raw: parsed.raw };
+        if (parsed.value?.already_stopped === true) return { ok: true, reason: "already stopped", raw: parsed.raw };
+        const stopError = typeof parsed.value?.stop_error === "string" ? parsed.value.stop_error : "";
+        return { ok: false, reason: stopError || `stop ${role.alias} returned no confirmed stopped state`, raw: parsed.raw };
+      }
+      if (isExactUnknownAliasError(result.stderr, role.alias)) return { ok: true, reason: "alias absent", raw: result };
+      return { ok: false, reason: parsed.reason || summarizeFailure(result), raw: parsed.raw || result };
     },
     async listRuntimes(signal) {
       const result = await invoke(["runtimes", "list", "--json"], null, signal);
@@ -786,14 +855,19 @@ function createNativeRuntimeAdapter(config) {
 
 function parseNativeJsonResult(result, operation) {
   if (result.signal) return { ok: false, kind: "command", reason: `${operation} exited due to signal ${result.signal}`, raw: result };
-  if (result.code !== 0) return { ok: false, kind: "command", reason: summarizeFailure(result), raw: result };
   const output = result.stdout.trim();
-  if (!output) return { ok: false, kind: "malformed", reason: `${operation} returned empty JSON output`, raw: result };
-  try {
-    return { ok: true, value: JSON.parse(output), raw: result };
-  } catch {
-    return { ok: false, kind: "malformed", reason: `${operation} returned malformed JSON`, raw: result };
+  if (output) {
+    try { return { ok: true, value: JSON.parse(output), raw: result }; }
+    catch { return { ok: false, kind: "malformed", reason: `${operation} returned malformed JSON`, raw: result }; }
   }
+  if (result.code !== 0) return { ok: false, kind: "command", reason: summarizeFailure(result), raw: result };
+  return { ok: false, kind: "malformed", reason: `${operation} returned empty JSON output`, raw: result };
+}
+
+const UNKNOWN_ALIAS_ERROR = (alias) => `alias ${alias} is not known; run create or connect first`;
+
+function isExactUnknownAliasError(stderr, alias) {
+  return String(stderr || "").trim() === UNKNOWN_ALIAS_ERROR(alias);
 }
 
 function normalizeRuntimeStatus(payload) {
@@ -803,21 +877,22 @@ function normalizeRuntimeStatus(payload) {
   const profile = payload.profile_name;
   const tunnelId = payload.tunnel_id;
   const endpoint = processState?.target_value;
-  const healthUrl = payload.health_url;
-  const healthUrlFile = payload.health_url_file;
+  const healthUrl = payload.health_url ?? null;
+  const healthUrlFile = payload.health_url_file ?? null;
   const processRunning = payload.process_running;
   if (typeof alias !== "string" || typeof tunnelId !== "string" || typeof profile !== "string") return null;
-  if (processState === null || typeof processState !== "object" || Array.isArray(processState)) return null;
-  if (processState.target_kind !== "server_url" || !isHttpUrl(endpoint)) return null;
-  if (typeof healthUrl !== "string" && typeof healthUrlFile !== "string") return null;
+  if (processState !== null && (typeof processState !== "object" || Array.isArray(processState))) return null;
+  if (processState !== null && (processState.target_kind !== "server_url" || !isHttpUrl(endpoint))) return null;
+  if (healthUrl !== null && typeof healthUrl !== "string") return null;
+  if (healthUrlFile !== null && typeof healthUrlFile !== "string") return null;
   if (typeof processRunning !== "boolean") return null;
   return {
     alias,
     profile,
     tunnelId,
-    endpoint,
+    endpoint: processState ? endpoint : null,
     processRunning,
-    pid: processState.pid ?? null,
+    pid: processState?.pid ?? null,
     healthUrl: typeof healthUrl === "string" ? healthUrl : null,
     healthUrlFile: typeof healthUrlFile === "string" ? healthUrlFile : null,
     raw: payload,
@@ -834,9 +909,9 @@ function isHttpUrl(value) {
 }
 
 function normalizeRuntimeHealth(payload) {
-  if (!payload || typeof payload !== "object" || !payload.healthz || !payload.readyz) return null;
+  if (!payload || typeof payload !== "object" || !payload.healthz || !payload.readyz || (payload.result !== "ok" && payload.result !== "fail")) return null;
   if (typeof payload.healthz.ok !== "boolean" || typeof payload.readyz.ok !== "boolean") return null;
-  return { healthy: payload.healthz.ok, ready: payload.readyz.ok, raw: payload };
+  return { healthy: payload.healthz.ok, ready: payload.readyz.ok, result: payload.result, raw: payload };
 }
 
 function checkAllRelayEndpoints(config, signal = null) {
@@ -867,14 +942,20 @@ function runNativeCommand(command, args, config, role, signal = null) {
 
 function runCommandCapture(command, args, env, secret, signal = null) {
   return new Promise((resolvePromise, rejectPromise) => {
+    if (signal?.aborted) {
+      rejectPromise(new ValidationError("aggregate operation cancelled before command start"));
+      return;
+    }
     const child = spawn(command, args, { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"], env });
     let settled = false;
     const abort = () => {
-      if (!settled) child.kill();
+      if (!settled) {
+        try { child.kill(); } catch { /* the close event remains authoritative */ }
+      }
     };
     signal?.addEventListener("abort", abort, { once: true });
-    const stdoutSink = createRedactedSink(secret, (text) => process.stdout.write(text));
-    const stderrSink = createRedactedSink(secret, (text) => process.stderr.write(text));
+    const stdoutSink = createRedactedSink(secret, () => {});
+    const stderrSink = createRedactedSink(secret, () => {});
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => stdoutSink.push(chunk));
@@ -887,9 +968,23 @@ function runCommandCapture(command, args, env, secret, signal = null) {
     child.on("close", (code, childSignal) => {
       settled = true;
       signal?.removeEventListener("abort", abort);
-      resolvePromise({ code: code ?? 1, signal: childSignal, stdout: stdoutSink.finish(), stderr: stderrSink.finish() });
+      const stdout = stdoutSink.finish();
+      const stderr = stderrSink.finish();
+      resolvePromise({ code: code ?? 1, signal: childSignal, stdout, stderr, json: parseCapturedJson(stdout), jsonError: parseCapturedJsonError(stdout) });
     });
   });
+}
+
+function parseCapturedJson(output) {
+  const text = String(output || "").trim();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+function parseCapturedJsonError(output) {
+  const text = String(output || "").trim();
+  if (!text) return null;
+  try { JSON.parse(text); return null; } catch (error) { return error instanceof Error ? error.message : String(error); }
 }
 
 function createRedactedSink(secret, write) {
@@ -914,6 +1009,7 @@ function createRedactedSink(secret, write) {
       }
       return output;
     },
+    get output() { return output + pending; },
   };
 }
 
@@ -1121,8 +1217,11 @@ function stripTrailingSlash(value) {
 }
 
 function summarizeFailure(result) {
-  const message = `${result.stderr} ${result.stdout}`.replace(/\s+/gu, " ").trim();
-  return message ? message.slice(0, 240) : `exit ${result.code}`;
+  const stderr = String(result.stderr || "").replace(/\s+/gu, " ").trim();
+  if (stderr) return stderr.slice(0, 240);
+  if (result.json !== null && result.json !== undefined) return `exit ${result.code} with structured JSON diagnostics`;
+  if (String(result.stdout || "").trim()) return `exit ${result.code} with non-JSON native output`;
+  return `exit ${result.code}`;
 }
 
 function abbreviateTunnelId(value) {
@@ -1147,50 +1246,132 @@ function delay(milliseconds, signal = null) {
   });
 }
 
+const aggregateLockOwners = new Map();
+
+function currentProcessStartIdentity(pid = process.pid) {
+  if (process.platform !== "linux") return null;
+  try { return parseLinuxProcStatStartIdentity(readFileSync(`/proc/${Number(pid)}/stat`, "utf8")); } catch { return null; }
+}
+
 function acquireAggregateLock(lockPath) {
   mkdirSync(dirname(lockPath), { recursive: true });
+  const owner = { pid: process.pid, startIdentity: currentProcessStartIdentity(), ownerToken: randomUUID() };
   try {
-    writeFileSync(lockPath, JSON.stringify({ pid: process.pid }), { encoding: "utf8", flag: "wx" });
+    writeFileSync(lockPath, JSON.stringify(owner), { encoding: "utf8", flag: "wx" });
+    aggregateLockOwners.set(lockPath, owner);
   } catch (error) {
     if (error?.code === "EEXIST") {
       let stale = false;
-      try { stale = !isProcessAlive(JSON.parse(readFileSync(lockPath, "utf8")).pid); } catch { stale = true; }
-      if (stale) { unlinkSync(lockPath); writeFileSync(lockPath, JSON.stringify({ pid: process.pid }), { encoding: "utf8", flag: "wx" }); return; }
+      try {
+        const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
+        const observedStart = currentProcessStartIdentity(recorded.pid);
+        stale = !isProcessAlive(recorded.pid) || (recorded.startIdentity && observedStart && String(recorded.startIdentity) !== String(observedStart));
+      } catch { stale = true; }
+      if (stale) {
+        unlinkSync(lockPath);
+        writeFileSync(lockPath, JSON.stringify(owner), { encoding: "utf8", flag: "wx" });
+        aggregateLockOwners.set(lockPath, owner);
+        return;
+      }
       throw new ValidationError("Aggregate startup is already running; refusing duplicate launch.");
     }
     throw error;
   }
 }
 
-function releaseAggregateLock(lockPath) {
-  try { unlinkSync(lockPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+function releaseAggregateLock(lockPath, ownerToken = aggregateLockOwners.get(lockPath)?.ownerToken) {
+  try {
+    const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
+    if (!ownerToken || recorded.ownerToken !== ownerToken) return;
+    unlinkSync(lockPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  } finally {
+    if (!existsSync(lockPath)) aggregateLockOwners.delete(lockPath);
+  }
 }
 
 function readAggregateState(config) {
-  try {
-    const state = JSON.parse(readFileSync(config.stateFile, "utf8"));
-    return state && typeof state === "object" ? state : null;
-  } catch { return null; }
+  let text;
+  try { text = readFileSync(config.stateFile, "utf8"); }
+  catch (error) {
+    if (error?.code === "ENOENT") return { kind: "absent", state: null, reason: "aggregate state is absent" };
+    return { kind: "read failure", state: null, reason: error instanceof Error ? error.message : String(error) };
+  }
+  let state;
+  try { state = JSON.parse(text); }
+  catch (error) { return { kind: "malformed", state: null, reason: error instanceof Error ? error.message : "invalid JSON" }; }
+  if (!state || typeof state !== "object" || Array.isArray(state)) return { kind: "malformed", state: null, reason: "aggregate state is not an object" };
+  if (state.version !== 2) return { kind: "unsupported version", state: null, reason: `expected version 2, found ${String(state.version)}` };
+  if (JSON.stringify(state).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return { kind: "malformed", state: null, reason: "aggregate state contains secret-like data" };
+  const validation = validatePersistedState(state);
+  return validation.ok ? { kind: "valid", state, reason: "aggregate state is valid" } : { kind: "malformed", state: null, reason: validation.reason };
+}
+
+function validatePersistedState(state) {
+  const bindings = state.desiredRoleBindings;
+  if (!Array.isArray(bindings) || bindings.length !== 3) return { ok: false, reason: "desiredRoleBindings must contain exactly three roles" };
+  const expected = new Set(["wayfinder", "planner", "auditor"]);
+  const keys = new Set();
+  const aliases = new Set();
+  for (const binding of bindings) {
+    if (!binding || typeof binding !== "object" || !expected.has(binding.key) || keys.has(binding.key)) return { ok: false, reason: "desiredRoleBindings has invalid or duplicate role keys" };
+    if (typeof binding.alias !== "string" || !binding.alias || aliases.has(binding.alias) || typeof binding.profile !== "string" || !binding.profile || typeof binding.tunnelId !== "string" || !binding.tunnelId || typeof binding.endpoint !== "string" || !isHttpUrl(binding.endpoint)) return { ok: false, reason: "desiredRoleBindings contains invalid bindings" };
+    if (JSON.stringify(binding).match(/CONTROL_PLANE_API_KEY|sk[-_][A-Za-z0-9_-]{8,}/u)) return { ok: false, reason: "desiredRoleBindings contains secret-like data" };
+    keys.add(binding.key); aliases.add(binding.alias);
+  }
+  if (!(state.relay && typeof state.relay === "object") || typeof state.relay.owned !== "boolean") return { ok: false, reason: "relay ownership metadata is invalid" };
+  if (state.relay.owned && (!state.relay.identity || typeof state.relay.identity !== "object")) return { ok: false, reason: "owned Relay state lacks identity metadata" };
+  return { ok: true };
+}
+
+function rolesFromPersistedState(config, state) {
+  if (validatePersistedState(state).ok === false) return null;
+  const byKey = new Map(config.roles.map((role) => [role.key, role]));
+  return state.desiredRoleBindings.map((binding) => {
+    const definition = byKey.get(binding.key);
+    return { ...definition, tunnelId: binding.tunnelId, alias: binding.alias, profile: binding.profile, endpoint: binding.endpoint };
+  });
 }
 
 function writeAggregateState(config, state) {
   mkdirSync(dirname(config.stateFile), { recursive: true });
-  writeFileSync(config.stateFile, JSON.stringify({
+  const payload = {
     version: 2,
     updatedAt: new Date().toISOString(),
     desiredRoleBindings: config.roles.map((role) => ({ key: role.key, tunnelId: role.tunnelId, alias: role.alias, profile: role.profile, endpoint: role.endpoint })),
     runtimesChangedByOperation: (state.changedRoles || []).map((role) => role.alias),
-    relay: state.relay?.owned ? { owned: true, identity: state.relay.identity } : { owned: false },
-  }, null, 2) + "\n", "utf8");
+    relay: state.relay?.owned ? { owned: true, identity: redactIdentity(state.relay.identity, config.controlPlaneApiKey) } : { owned: false },
+  };
+  const temporary = `${config.stateFile}.${process.pid}.${randomUUID()}.tmp`;
+  let descriptor = null;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    writeFileSync(descriptor, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = null;
+    renameSync(temporary, config.stateFile);
+  } catch (error) {
+    if (descriptor !== null) { try { closeSync(descriptor); } catch { /* best effort */ } }
+    throw new ValidationError(`aggregate state write failure: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    try { if (existsSync(temporary)) unlinkSync(temporary); } catch (error) { if (error?.code !== "ENOENT") console.error(`aggregate state temporary cleanup failed: ${error.message}`); }
+  }
+}
+
+function redactIdentity(identity, secret) {
+  if (!identity || typeof identity !== "object") return null;
+  return Object.fromEntries(Object.entries(identity).map(([key, value]) => [key, typeof value === "string" ? redactSecrets(value, secret).slice(0, 1024) : value]));
 }
 
 function removeAggregateState(config) {
   try {
     unlinkSync(config.stateFile);
-    return { ok: true, reason: "aggregate state removed" };
+    return { ok: true, kind: "absent", reason: "aggregate state removed" };
   } catch (error) {
-    if (error?.code === "ENOENT") return { ok: true, reason: "aggregate state already absent" };
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    if (error?.code === "ENOENT") return { ok: true, kind: "absent", reason: "aggregate state already absent" };
+    return { ok: false, kind: "remove failure", reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -1237,8 +1418,13 @@ async function inspectProcessIdentity(pid) {
     } catch { return null; }
   }
   if (process.platform === "darwin") {
-    const output = await captureSimpleCommand("ps", ["-ww", "-p", String(pid), "-o", "pid=,lstart=,comm=,args="], { LC_ALL: "C" });
-    return parseMacPsOutput(output, pid);
+    const [pidOutput, startOutput, executableOutput, argsOutput] = await Promise.all([
+      captureSimpleCommand("ps", ["-ww", "-p", String(pid), "-o", "pid="], { LC_ALL: "C" }),
+      captureSimpleCommand("ps", ["-ww", "-p", String(pid), "-o", "lstart="], { LC_ALL: "C" }),
+      captureSimpleCommand("ps", ["-ww", "-p", String(pid), "-o", "comm="], { LC_ALL: "C" }),
+      captureSimpleCommand("ps", ["-ww", "-p", String(pid), "-o", "args="], { LC_ALL: "C" }),
+    ]);
+    return parseMacPsOutput({ pid: pidOutput, startIdentity: startOutput, executablePath: executableOutput, commandLine: argsOutput }, pid);
   }
   const script = "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + Number(pid) + "'; if ($p) { $p | Select-Object ProcessId,CreationDate,ExecutablePath,CommandLine | ConvertTo-Json -Compress }";
   const output = await captureSimpleCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
@@ -1253,6 +1439,18 @@ function parseLinuxProcStatStartIdentity(stat) {
 }
 
 function parseMacPsOutput(output, expectedPid = null) {
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    const pid = Number(String(output.pid || "").trim());
+    if (!Number.isInteger(pid) || (expectedPid !== null && pid !== Number(expectedPid))) return null;
+    const value = (item) => String(item || "").trim();
+    const startIdentity = value(output.startIdentity);
+    const executablePath = value(output.executablePath);
+    const commandLine = value(output.commandLine);
+    if (!startIdentity || !executablePath || !commandLine) return null;
+    return { startIdentity, executablePath, commandLine };
+  }
+  // Compatibility for callers using the old fixture shape; production capture uses
+  // the separate queries above so spaces in comm and args are unambiguous.
   const line = String(output).trim();
   const match = line.match(/^(\d+)\s+(.{24})\s+(\S+)\s+(.+)$/u);
   if (!match || (expectedPid !== null && Number(match[1]) !== Number(expectedPid))) return null;
@@ -1314,31 +1512,47 @@ function captureSimpleCommand(command, args, environment = null) {
   });
 }
 
-async function stopOwnedRelay(identity) {
+async function stopOwnedRelay(identity, options = {}) {
   const ownership = await verifyProcessIdentity(identity);
   if (!ownership.ok) {
+    if (ownership.stopped) return { ok: true, pid: identity.pid, stopped: true, reason: "recorded Relay process already exited" };
     console.error(`Relay ownership could not be confirmed; preserving live process: ${ownership.reason}`);
     return ownership;
   }
-  if (!ownership.stopped) await terminateProcessTree(identity.pid, { wait: true });
-  return { ok: true };
+  if (!ownership.stopped) {
+    const termination = await terminateProcessTree(identity.pid, { wait: true, terminationAdapter: options.terminationAdapter });
+    if (!termination.ok) return { ...termination, ok: false, reason: `Relay process termination could not be confirmed: ${termination.reason}` };
+  }
+  return { ok: true, pid: identity.pid, stopped: true, reason: "Relay process stopped" };
 }
 
-async function terminateProcessTree(pid, { wait = false } = {}) {
-  if (!pid || !isProcessAlive(pid)) return;
+async function terminateProcessTree(pid, { wait = false, terminationAdapter = null } = {}) {
+  const result = { ok: false, pid: Number(pid), signalAttempted: null, escalated: false, exited: false, reason: "" };
+  if (!pid || !isProcessAlive(pid)) return { ...result, ok: true, exited: true, reason: "process already exited" };
+  if (terminationAdapter) {
+    const injected = await terminationAdapter(Number(pid), { wait });
+    return { ...result, ...injected, pid: Number(pid), ok: injected?.ok === true, exited: injected?.exited === true, reason: injected?.reason || "injected termination result" };
+  }
   const shutdown = buildProcessShutdownPlan(pid, process.platform);
+  result.signalAttempted = process.platform === "win32" ? "taskkill" : "SIGTERM";
   if (shutdown.command) {
-    await runSimpleCommand(shutdown.command, shutdown.args);
+    const commandResult = await runSimpleCommand(shutdown.command, shutdown.args);
+    if (!commandResult.ok) { result.reason = commandResult.reason || "taskkill failed"; return result; }
   } else {
-    try { process.kill(-Number(pid), "SIGTERM"); } catch { try { process.kill(Number(pid), "SIGTERM"); } catch { /* already stopped */ } }
+    try { process.kill(-Number(pid), "SIGTERM"); }
+    catch { try { process.kill(Number(pid), "SIGTERM"); } catch { /* process may have exited */ } }
   }
-  if (wait) {
-    const exited = await waitForProcessExit(pid);
-    if (!exited && process.platform !== "win32") {
-      try { process.kill(-Number(pid), "SIGKILL"); } catch { try { process.kill(Number(pid), "SIGKILL"); } catch { /* already stopped */ } }
-      await waitForProcessExit(pid, 1000);
-    }
+  if (!wait) return { ...result, ok: true, reason: "termination signal sent" };
+  result.exited = await waitForProcessExit(pid);
+  if (!result.exited && process.platform !== "win32") {
+    result.escalated = true;
+    result.signalAttempted = "SIGKILL";
+    try { process.kill(-Number(pid), "SIGKILL"); } catch { try { process.kill(Number(pid), "SIGKILL"); } catch { /* already stopped */ } }
+    result.exited = await waitForProcessExit(pid, 1000);
   }
+  result.ok = result.exited;
+  result.reason = result.exited ? "process exited" : "process remains alive after termination attempts";
+  return result;
 }
 
 async function waitForProcessExit(pid, timeoutMs = 5000) {
@@ -1355,8 +1569,8 @@ function buildProcessShutdownPlan(pid, platform = process.platform) {
 function runSimpleCommand(command, args) {
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, { stdio: "ignore" });
-    child.on("error", () => resolvePromise());
-    child.on("close", () => resolvePromise());
+    child.on("error", (error) => resolvePromise({ ok: false, reason: error.message }));
+    child.on("close", (code, signal) => resolvePromise({ ok: (code ?? 1) === 0 && !signal, code, signal, reason: (code ?? 1) === 0 ? "ok" : `exit ${code ?? 1}` }));
   });
 }
 
@@ -1378,11 +1592,15 @@ export {
   acquireAggregateLock,
   releaseAggregateLock,
   normalizeRelayMcpProfile,
+  normalizeRuntimeHealth,
   normalizeRuntimeStatus,
   parseLinuxProcStatStartIdentity,
   parseMacPsOutput,
+  parseNativeJsonResult,
   parseWindowsCimJson,
   redactSecrets,
+  runCommandCapture,
+  stopOwnedRelay,
   inspectProcessIdentity,
   terminateProcessTree,
   verifyProcessIdentity,

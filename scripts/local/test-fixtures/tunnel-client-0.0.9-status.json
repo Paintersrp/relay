@@ -2,11 +2,12 @@
   "alias": "relay-planner",
   "tunnel_id": "tunnel_22222222222222222222222222222222",
   "profile_name": "relay-planner",
-  "health_url": "http://127.0.0.1:20002/readyz",
+  "health_url": "http://127.0.0.1:20002/healthz",
   "health_url_file": null,
   "process_running": true,
   "process": {
     "target_kind": "server_url",
-    "target_value": "http://127.0.0.1:8080/mcp/planner"
+    "target_value": "http://127.0.0.1:8080/mcp/planner",
+    "pid": 4242
   }
 }

@@ -52,6 +52,10 @@ function stopFailure(alias) {
   return process.env.FAKE_TUNNEL_FAIL_STOP_ALIAS === alias || process.env.FAKE_TUNNEL_MALFORMED_STOP_ALIAS === alias;
 }
 
+function exactUnknownAlias(alias) {
+  return `alias ${alias} is not known; run create or connect first`;
+}
+
 function runtimeHealth(runtime) {
   const notReady = process.env.FAKE_TUNNEL_NOT_READY_ALIAS === runtime.alias;
   const failHealth = process.env.FAKE_TUNNEL_UNHEALTHY_ALIAS === runtime.alias;
@@ -78,17 +82,16 @@ async function main() {
   if (failIfRequested(alias)) return;
 
   if (command === "runtimes connect") {
-    if (Number(process.env.FAKE_TUNNEL_CONNECT_DELAY_MS) > 0) await new Promise((resolvePromise) => setTimeout(resolvePromise, Number(process.env.FAKE_TUNNEL_CONNECT_DELAY_MS)));
     const healthPort = 20_000 + Object.keys(state.runtimes).length + 1;
-    const healthUrl = `http://127.0.0.1:${healthPort}/readyz`;
+    const healthUrl = `http://127.0.0.1:${healthPort}/healthz`;
     const runtime = {
       alias,
       profile_name: value("--profile"),
       tunnel_id: value("--tunnel-id"),
       health_url: healthUrl,
       health_url_file: process.env.FAKE_TUNNEL_HEALTH_URL_FILE ? `${statePath}.${alias}.health-url` : null,
-      process_running: true,
-      process: {
+      process_running: process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias ? false : true,
+      process: process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias ? null : {
         target_kind: "server_url",
         target_value: value("--mcp-server-url"),
         pid: process.pid,
@@ -98,6 +101,15 @@ async function main() {
     if (runtime.health_url_file) writeFileSync(runtime.health_url_file, `${healthUrl}\n`, "utf8");
     state.runtimes[alias] = runtime;
     saveState(state);
+    if (Number(process.env.FAKE_TUNNEL_CONNECT_DELAY_MS) > 0) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, Number(process.env.FAKE_TUNNEL_CONNECT_DELAY_MS)));
+    }
+    if (process.env.FAKE_TUNNEL_CONNECT_FAIL_ALIAS === alias) {
+      console.error(`connect failed for ${alias}`);
+      process.exitCode = 7;
+      emit({ ...runtime, connected: false, error: "simulated launch failure" });
+      return;
+    }
     emit(runtime);
     return;
   }
@@ -105,7 +117,7 @@ async function main() {
   if (command === "runtimes status") {
     const runtime = state.runtimes[args[2]];
     if (!runtime) {
-      console.error(`alias ${args[2]} is not known; run create or connect first`);
+      console.error(exactUnknownAlias(args[2]));
       process.exitCode = 1;
       return;
     }
@@ -124,7 +136,13 @@ async function main() {
   if (command === "runtimes stop") {
     const runtime = state.runtimes[args[2]];
     if (!runtime) {
-      console.error(`alias ${args[2]} is not known; already stopped`);
+      console.error(exactUnknownAlias(args[2]));
+      process.exitCode = 1;
+      return;
+    }
+    if (process.env.FAKE_TUNNEL_STOP_PAYLOAD_ERROR_ALIAS === args[2]) {
+      emit({ stopped: false, stop_error: `stop failed for ${args[2]}` });
+      process.exitCode = 9;
       return;
     }
     if (stopFailure(args[2])) {

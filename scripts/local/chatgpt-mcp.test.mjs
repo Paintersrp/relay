@@ -117,6 +117,34 @@ test("malformed native JSON fails clearly and does not write successful aggregat
   });
 });
 
+test("nonzero health JSON is classified as a valid unhealthy probe", async () => {
+  await temporaryEnvironment({ FAKE_TUNNEL_UNHEALTHY_ALIAS: "relay-planner" }, async (env) => {
+    await assert.rejects(runScript("init:all", env), /native healthz is unhealthy|did not become ready/u);
+  });
+});
+
+test("stop PayloadError with stopped false is a failure, while unknown aliases are idempotent", async () => {
+  await temporaryEnvironment({}, async (env) => {
+    const before = await runScript("stop:all", env);
+    assert.equal(before.code, undefined);
+    await runScript("init:all", env);
+    await assert.rejects(runScript("stop:all", { ...env, FAKE_TUNNEL_STOP_PAYLOAD_ERROR_ALIAS: "relay-planner" }), /cleanup failed:.*relay-planner/u);
+    const repeated = await runScript("stop:all", env);
+    assert.match(repeated.stdout, /already stopped|stopped or already stopped/u);
+  });
+});
+
+test("alias-only failed connect state recovers on the next operation", async () => {
+  await temporaryEnvironment({ FAKE_TUNNEL_CONNECT_FAIL_ALIAS: "relay-planner" }, async (env, temp) => {
+    await assert.rejects(runScript("init:all", env), /connect failed|structured connect/u);
+    const failed = JSON.parse(await readFile(path.join(temp, "native.json"), "utf8"));
+    assert.equal(failed.runtimes["relay-planner"].process, null);
+    await runScript("init:all", { ...env, FAKE_TUNNEL_CONNECT_FAIL_ALIAS: "" });
+    const recovered = JSON.parse(await readFile(path.join(temp, "native.json"), "utf8"));
+    assert.equal(recovered.runtimes["relay-planner"].process_running, true);
+  });
+});
+
 test("native binding is exact and stale aggregate state cannot prove it", () => {
   const role = { alias: "relay-planner", profile: "relay-planner", tunnelId: ids[1], endpoint: "http://127.0.0.1:8080/mcp/planner" };
   const payload = { alias: role.alias, profile_name: role.profile, tunnel_id: role.tunnelId, process: { target_kind: "server_url", target_value: role.endpoint }, process_running: true, health_url: "http://127.0.0.1:23001/readyz" };
@@ -146,6 +174,9 @@ test("process identity parsers enforce platform-neutral fields", () => {
   const windows = parseWindowsCimJson(JSON.stringify({ ProcessId: 123, CreationDate: "20260722123456.000000-240", ExecutablePath: "C:\\\\relay.exe", CommandLine: "relay.exe --serve" }), 123);
   assert.equal(windows.startIdentity, "20260722123456.000000-240");
   assert.equal(windows.executablePath, "C:\\\\relay.exe");
+  const macWithSpaces = parseMacPsOutput({ pid: "123", startIdentity: "Wed Jul 22 12:34:56 2026", executablePath: "/Applications/Relay Worker/bin/relay", commandLine: "/Applications/Relay Worker/bin/relay --config /tmp/Relay Config/config.toml" }, 123);
+  assert.equal(macWithSpaces.executablePath, "/Applications/Relay Worker/bin/relay");
+  assert.match(macWithSpaces.commandLine, /Relay Config/u);
 });
 
 test("active-platform Relay identity captures and verifies a real child", async () => {
@@ -195,6 +226,22 @@ test("changed profile forces replacement", async () => {
   });
 });
 
+test("endpoint and profile drift stop failure is transactional and never reconnects", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    await runScript("init:all", env);
+    const nativePath = path.join(temp, "native.json");
+    const native = JSON.parse(await readFile(nativePath, "utf8"));
+    native.runtimes["relay-planner"].process.target_value = "http://wrong/mcp";
+    native.runtimes["relay-planner"].profile_name = "wrong-profile";
+    await writeFile(nativePath, `${JSON.stringify(native)}\n`, "utf8");
+    const logPath = path.join(temp, "drift-failure.log");
+    await assert.rejects(runScript("init:all", { ...env, FAKE_TUNNEL_FAIL_STOP_ALIAS: "relay-planner", FAKE_TUNNEL_LOG: logPath }), /stop before reconnect failed|cleanup failed/u);
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    assert.ok(calls.some((args) => args.includes("stop") && args.includes("relay-planner")));
+    assert.equal(calls.some((args) => args.includes("connect") && args.includes("relay-planner")), false);
+  });
+});
+
 test("not-ready role fails initialization and cleans all changed roles", async () => {
   await temporaryEnvironment({ FAKE_TUNNEL_NOT_READY_ALIAS: "relay-planner" }, async (env, temp) => {
     await assert.rejects(runScript("init:all", env), /did not become ready/u);
@@ -227,6 +274,10 @@ test("stop cleanup shuts down owned Relay after malformed runtime stop output", 
     await new Promise((resolvePromise) => portProbe.close(resolvePromise));
     const startEnv = { ...env, RELAY_TEST_PORT: String(port), RELAY_MCP_BASE_URL: `http://127.0.0.1:${port}`, RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` };
     await runScript("start:all", startEnv);
+    const repeated = await runScript("start:all", startEnv);
+    assert.match(repeated.stdout, /launcher-owned daemon/u);
+    await runScript("init:all", startEnv);
+    assert.equal(JSON.parse(await readFile(startEnv.RELAY_MCP_STATE_FILE, "utf8")).relay.owned, true);
     await assert.rejects(runScript("stop:all", { ...startEnv, FAKE_TUNNEL_MALFORMED_STOP_ALIAS: "relay-planner" }), (error) => {
       assert.match(String(error.stderr), /cleanup failed:.*runtime relay-planner/u);
       assert.match(String(error.stdout), /Relay: stopped verified launcher-owned daemon/u);
@@ -255,10 +306,43 @@ test("start reuses an external Relay and stop preserves it", async () => {
       assert.match(doctored.stdout, /doctor: Auditor succeeded/u);
       const status = await runScript("status:all", env);
       assert.match(status.stdout, /Auditor.*native\/ready/u);
+      assert.doesNotMatch(status.stdout, /"healthz"|"process_running"|"target_kind"/u);
       const stopped = await runScript("stop:all", env);
       assert.match(stopped.stdout, /external daemon preserved/u);
     });
   } finally { await new Promise((resolvePromise) => server.close(resolvePromise)); }
+});
+
+test("failed init preserves the prior aggregate state exactly", async () => {
+  await temporaryEnvironment({}, async (env) => {
+    const server = createServer((request, response) => {
+      request.resume();
+      request.on("end", () => { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} })); });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    try {
+      const startedEnv = { ...env, RELAY_MCP_BASE_URL: `http://127.0.0.1:${address.port}` };
+      await runScript("init:all", startedEnv);
+      const statePath = startedEnv.RELAY_MCP_STATE_FILE;
+      const before = await readFile(statePath, "utf8");
+      await assert.rejects(runScript("init:all", { ...startedEnv, FAKE_TUNNEL_UNHEALTHY_ALIAS: "relay-planner" }), /unhealthy|did not become ready/u);
+      assert.equal(await readFile(statePath, "utf8"), before);
+    } finally { await new Promise((resolvePromise) => server.close(resolvePromise)); }
+  });
+});
+
+test("stop:all uses persisted aliases after environment aliases change", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    await runScript("init:all", env);
+    const logPath = path.join(temp, "persisted-stop.log");
+    const changed = { ...env, RELAY_MCP_WAYFINDER_ALIAS: "unrelated-wayfinder", RELAY_MCP_PLANNER_ALIAS: "unrelated-planner", RELAY_MCP_AUDITOR_ALIAS: "unrelated-auditor", FAKE_TUNNEL_LOG: logPath };
+    await runScript("stop:all", changed);
+    const calls = (await readFile(logPath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    for (const alias of ["relay-wayfinder", "relay-planner", "relay-auditor"]) assert.ok(calls.some((args) => args.includes("stop") && args.includes(alias)));
+    assert.equal(calls.some((args) => args.includes("stop") && args.includes("unrelated-planner")), false);
+  });
 });
 
 test("environment precedence remains process over .env.local over .env", async () => {
@@ -291,14 +375,31 @@ test("stale aggregate lock is recovered and cancellation-safe release is determi
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
 
-test("stale Relay identity is preserved safely and state is removed", async () => {
+test("lock release does not remove a replacement owner token", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "relay-lock-owner-"));
+  const lock = path.join(temp, "aggregate.lock");
+  try {
+    acquireAggregateLock(lock);
+    await writeFile(lock, JSON.stringify({ pid: process.pid, ownerToken: "replacement" }), "utf8");
+    releaseAggregateLock(lock);
+    assert.match(await readFile(lock, "utf8"), /replacement/u);
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test("termination result reports an injected failure without hiding the live PID", async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  await once(child, "spawn");
+  try {
+    const result = await terminateProcessTree(child.pid, { wait: true, terminationAdapter: async () => ({ ok: false, exited: false, reason: "injected failure" }) });
+    assert.deepEqual(result, { ok: false, pid: child.pid, signalAttempted: null, escalated: false, exited: false, reason: "injected failure" });
+  } finally { await terminateProcessTree(child.pid, { wait: true }); }
+});
+
+test("malformed aggregate ownership state fails closed and is preserved", async () => {
   await temporaryEnvironment({}, async (env, temp) => {
     await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify({ version: 2, relay: { owned: true, identity: { pid: process.pid, startTime: "wrong", expectedExecutable: "not-this-process.exe", expectedArguments: [], commandFingerprint: "wrong" } } })}\n`, "utf8");
-    await assert.rejects(runScript("stop:all", env), (error) => {
-      assert.match(String(error.stderr), /preserved PID|ownership/u);
-      return true;
-    });
-    await assert.rejects(readFile(env.RELAY_MCP_STATE_FILE, "utf8"));
+    await assert.rejects(runScript("stop:all", env), /malformed aggregate state/u);
+    assert.match(await readFile(env.RELAY_MCP_STATE_FILE, "utf8"), /desiredRoleBindings|relay/u);
   });
 });
 
