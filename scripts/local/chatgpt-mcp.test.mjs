@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { mkdirSync, readFileSync as readFileSyncNative, renameSync as renameSyncNative, rmSync, rmdirSync, statSync as statSyncNative, unlinkSync as unlinkSyncNative, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,6 +17,7 @@ import {
   buildNativeRuntimeConnectArgs,
   getConfig,
   captureProcessIdentity,
+  classifyRelayListener,
   currentProcessStartIdentity,
   createRedactedSink,
   terminateProcessTree,
@@ -71,7 +72,11 @@ async function temporaryEnvironment(extra, run) {
     const server = createServer((request, response) => {
       request.resume();
       request.on("end", () => {
-        if (env.FAKE_INGRESS_FAIL_ROLE === key) {
+        let failUntilMissing = false;
+        if (env.FAKE_INGRESS_FAIL_UNTIL_FILE) {
+          try { readFileSyncNative(env.FAKE_INGRESS_FAIL_UNTIL_FILE); } catch { failUntilMissing = true; }
+        }
+        if (env.FAKE_INGRESS_FAIL_ROLE === key || env.FAKE_INGRESS_FAIL_ALL === "1" && (!env.FAKE_INGRESS_FAIL_UNTIL_FILE || failUntilMissing)) {
           response.writeHead(503, { "content-type": "application/json" });
           response.end(JSON.stringify({ error: "simulated ingress failure" }));
           return;
@@ -167,6 +172,32 @@ test("private ingress addresses fail closed for unsafe forms and duplicate liste
       else process.env[name] = previous[name];
     }
   }
+});
+
+test("Relay listener classification is strict and cancellation-aware", async () => {
+  const probe = (event, value = {}) => {
+    const socket = new EventEmitter();
+    socket.setTimeout = () => {};
+    socket.destroy = () => {};
+    queueMicrotask(() => socket.emit(event, value));
+    return socket;
+  };
+  const absent = await classifyRelayListener("http://127.0.0.1:8080", null, { connect: () => probe("error", { code: "ECONNREFUSED" }) });
+  assert.deepEqual(absent, { state: "absent", reason: "configured Relay listener connection was refused" });
+  for (const socketEvent of ["timeout", "error"]) {
+    const result = await classifyRelayListener("http://127.0.0.1:8080", null, { connect: () => probe(socketEvent, socketEvent === "error" ? { code: "EIO" } : undefined) });
+    assert.equal(result.state, "indeterminate");
+  }
+  for (const url of ["not a URL", "ftp://127.0.0.1:8080", "http://user:pass@127.0.0.1:8080", "http://relay.invalid:8080", "http://10.0.0.1:8080"]) {
+    assert.equal((await classifyRelayListener(url, null, { connect: () => { throw new Error("must not connect"); } })).state, "indeterminate", url);
+  }
+  const controller = new AbortController();
+  controller.abort();
+  assert.equal((await classifyRelayListener("http://127.0.0.1:8080", controller.signal, { connect: () => { throw new Error("must not connect"); } })).state, "indeterminate");
+  let options;
+  const present = await classifyRelayListener("http://[::1]:8080", null, { connect: (value) => { options = value; return probe("connect"); } });
+  assert.equal(present.state, "present");
+  assert.deepEqual(options, { host: "::1", port: 8080 });
 });
 
 test("aggregate native connect uses JSON and never configures a fixed health address", () => {
@@ -471,6 +502,138 @@ test("start reuses an external Relay and stop preserves it", async () => {
       assert.match(stopped.stdout, /external daemon preserved/u);
     });
   } finally { await new Promise((resolvePromise) => server.close(resolvePromise)); }
+});
+
+test("start:all preserves an occupied external Relay when every private ingress is unavailable", async () => {
+  const external = createServer();
+  external.listen(0, "127.0.0.1");
+  await once(external, "listening");
+  const address = external.address();
+  try {
+    await temporaryEnvironment({ FAKE_INGRESS_FAIL_ALL: "1", RELAY_MCP_BASE_URL: `http://127.0.0.1:${address.port}` }, async (env, temp) => {
+      const launchMarker = path.join(temp, "unexpected-relay-launch");
+      const relayScript = path.join(temp, "unexpected-relay.mjs");
+      await writeFile(relayScript, "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.RELAY_LAUNCH_MARKER, 'launched'); setInterval(() => {}, 5000);\n", "utf8");
+      await assert.rejects(runScript("start:all", { ...env, RELAY_LAUNCH_MARKER: launchMarker, RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` }), (error) => {
+        assert.match(`${error.stdout}\n${error.stderr}`, /occupied or active.*private ingress listeners are unavailable.*no replacement Relay was started/u);
+        return true;
+      });
+      assert.equal(external.listening, true);
+      await assert.rejects(readFile(launchMarker, "utf8"));
+    });
+  } finally { await new Promise((resolvePromise) => external.close(resolvePromise)); }
+});
+
+test("start:all launches exactly once only after Relay absence is confirmed", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    const portProbe = createServer();
+    portProbe.listen(0, "127.0.0.1");
+    await once(portProbe, "listening");
+    const port = portProbe.address().port;
+    await new Promise((resolvePromise) => portProbe.close(resolvePromise));
+    const readyFile = path.join(temp, "relay-ready");
+    const launchLog = path.join(temp, "relay-launches");
+    const relayScript = path.join(temp, "relay-child.mjs");
+    env.RELAY_MCP_BASE_URL = `http://127.0.0.1:${port}`;
+    env.FAKE_INGRESS_FAIL_ALL = "1";
+    env.FAKE_INGRESS_FAIL_UNTIL_FILE = readyFile;
+    await writeFile(relayScript, "import { appendFileSync, writeFileSync } from 'node:fs'; import http from 'node:http'; appendFileSync(process.env.RELAY_LAUNCH_LOG, 'launch\\n'); const server = http.createServer((request, response) => { request.resume(); request.on('end', () => { response.writeHead(200, {'content-type': 'application/json'}); response.end(JSON.stringify({jsonrpc: '2.0', id: 1, result: {}})); }); }); server.listen(Number(process.env.RELAY_TEST_PORT), '127.0.0.1', () => { writeFileSync(process.env.RELAY_READY_FILE, 'ready'); });\n", "utf8");
+    const startEnv = {
+      ...env,
+      RELAY_MCP_BASE_URL: `http://127.0.0.1:${port}`,
+      RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}`,
+      RELAY_TEST_PORT: String(port),
+      RELAY_LAUNCH_LOG: launchLog,
+      RELAY_READY_FILE: readyFile,
+      RELAY_MCP_STARTUP_TIMEOUT_MS: "5000",
+    };
+    await runScript("start:all", startEnv);
+    assert.equal((await readFile(launchLog, "utf8")).trim().split(/\r?\n/u).length, 1);
+    assert.equal(JSON.parse(await readFile(startEnv.RELAY_MCP_STATE_FILE, "utf8")).relay.owned, true);
+    await runScript("stop:all", startEnv);
+  });
+});
+
+test("start:all uses verified ownership for controlled Relay restart", async () => {
+  await temporaryEnvironment({}, async (env, temp) => {
+    const portProbe = createServer();
+    portProbe.listen(0, "127.0.0.1");
+    await once(portProbe, "listening");
+    const port = portProbe.address().port;
+    await new Promise((resolvePromise) => portProbe.close(resolvePromise));
+    const readyFile = path.join(temp, "relay-ready");
+    const launchLog = path.join(temp, "relay-launches");
+    const relayScript = path.join(temp, "relay-child.mjs");
+    env.RELAY_MCP_BASE_URL = `http://127.0.0.1:${port}`;
+    env.FAKE_INGRESS_FAIL_ALL = "1";
+    env.FAKE_INGRESS_FAIL_UNTIL_FILE = readyFile;
+    await writeFile(relayScript, "import { appendFileSync, writeFileSync } from 'node:fs'; import http from 'node:http'; appendFileSync(process.env.RELAY_LAUNCH_LOG, 'launch\\n'); const server = http.createServer((request, response) => { request.resume(); request.on('end', () => { response.writeHead(200, {'content-type': 'application/json'}); response.end(JSON.stringify({jsonrpc: '2.0', id: 1, result: {}})); }); }); server.listen(Number(process.env.RELAY_TEST_PORT), '127.0.0.1', () => writeFileSync(process.env.RELAY_READY_FILE, 'ready'));\n", "utf8");
+    const startEnv = {
+      ...env,
+      RELAY_MCP_BASE_URL: env.RELAY_MCP_BASE_URL,
+      RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}`,
+      RELAY_TEST_PORT: String(port),
+      RELAY_LAUNCH_LOG: launchLog,
+      RELAY_READY_FILE: readyFile,
+      RELAY_MCP_STARTUP_TIMEOUT_MS: "5000",
+    };
+    await runScript("start:all", startEnv);
+    await rm(readyFile, { force: true });
+    const restarted = await runScript("start:all", startEnv);
+    assert.match(restarted.stdout, /starting/u);
+    assert.equal((await readFile(launchLog, "utf8")).trim().split(/\r?\n/u).length, 2);
+    await runScript("stop:all", startEnv);
+  });
+});
+
+test("start:all does not treat stale claimed Relay ownership as restart authority", async () => {
+  const external = createServer();
+  external.listen(0, "127.0.0.1");
+  await once(external, "listening");
+  const address = external.address();
+  try {
+    await temporaryEnvironment({ FAKE_INGRESS_FAIL_ALL: "1", RELAY_MCP_BASE_URL: `http://127.0.0.1:${address.port}` }, async (env, temp) => {
+      const launchMarker = path.join(temp, "unexpected-relay-launch");
+      const relayScript = path.join(temp, "unexpected-relay.mjs");
+      await writeFile(relayScript, "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.RELAY_LAUNCH_MARKER, 'launched'); setInterval(() => {}, 5000);\n", "utf8");
+      await writeFile(env.RELAY_MCP_STATE_FILE, `${JSON.stringify({ version: 3, desiredRoleBindings: [], residualBindings: [], relay: { owned: true, identity: { pid: process.pid, startIdentity: 'wrong', executablePath: 'wrong', commandFingerprint: 'wrong', expectedArguments: ['wrong'] } } })}\n`, "utf8");
+      await assert.rejects(runScript("start:all", { ...env, RELAY_LAUNCH_MARKER: launchMarker, RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` }), (error) => {
+        assert.match(`${error.stdout}\n${error.stderr}`, /occupied or active.*ownership is external or cannot be verified.*no replacement Relay was started/u);
+        return true;
+      });
+      await assert.rejects(readFile(launchMarker, "utf8"));
+      assert.equal(external.listening, true);
+    });
+  } finally { await new Promise((resolvePromise) => external.close(resolvePromise)); }
+});
+
+test("start:all keeps partial private-ingress readiness fail closed", async () => {
+  const external = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} })); });
+  });
+  external.listen(0, "127.0.0.1");
+  await once(external, "listening");
+  const address = external.address();
+  try {
+    await temporaryEnvironment({ FAKE_INGRESS_FAIL_ROLE: "PLANNER", RELAY_MCP_BASE_URL: `http://127.0.0.1:${address.port}` }, async (env, temp) => {
+      const launchMarker = path.join(temp, "unexpected-relay-launch");
+      const relayScript = path.join(temp, "unexpected-relay.mjs");
+      await writeFile(relayScript, "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.RELAY_LAUNCH_MARKER, 'launched'); setInterval(() => {}, 5000);\n", "utf8");
+      await assert.rejects(runScript("start:all", { ...env, RELAY_LAUNCH_MARKER: launchMarker, RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` }), /partially healthy/u);
+      await assert.rejects(readFile(launchMarker, "utf8"));
+    });
+  } finally { await new Promise((resolvePromise) => external.close(resolvePromise)); }
+});
+
+test("start:all fails closed when Relay presence is indeterminate", async () => {
+  await temporaryEnvironment({ FAKE_INGRESS_FAIL_ALL: "1", RELAY_MCP_BASE_URL: "http://relay.invalid:8080" }, async (env, temp) => {
+    const launchMarker = path.join(temp, "unexpected-relay-launch");
+    const relayScript = path.join(temp, "unexpected-relay.mjs");
+    await writeFile(relayScript, "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.RELAY_LAUNCH_MARKER, 'launched'); setInterval(() => {}, 5000);\n", "utf8");
+    await assert.rejects(runScript("start:all", { ...env, RELAY_LAUNCH_MARKER: launchMarker, RELAY_MCP_RELAY_COMMAND: `${process.execPath} ${relayScript}` }), /presence could not be safely determined.*private ingress listeners are unavailable.*no replacement Relay was started/u);
+    await assert.rejects(readFile(launchMarker, "utf8"));
+  });
 });
 
 test("failed init preserves the prior aggregate state exactly", async () => {

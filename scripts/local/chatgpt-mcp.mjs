@@ -20,7 +20,7 @@ import {
 } from "fs";
 import { request as httpRequest } from "http";
 import { request as httpsRequest } from "https";
-import { isIP } from "net";
+import { createConnection, isIP } from "net";
 import { dirname, delimiter, isAbsolute, join, resolve } from "path";
 import process from "process";
 import { fileURLToPath } from "url";
@@ -39,6 +39,7 @@ const DEFAULT_TUNNEL_MCP_TRANSPORT = "stdio";
 const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = "127.0.0.1:18200";
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
+const RELAY_LISTENER_PROBE_TIMEOUT_MS = 1_000;
 const DEFAULT_STATE_FILE = join(
   REPO_ROOT,
   "data",
@@ -470,9 +471,13 @@ async function runStartAll(config) {
         if (ownership.ok) {
           const stopped = await stopOwnedRelay(priorState.relay.identity);
           if (!stopped.ok) throw new ValidationError(`Relay is verified alive but unhealthy; controlled restart failed: ${stopped.reason}`);
-        } else if (!ownership.stopped) {
-          throw new ValidationError(`Relay is unhealthy and prior owned process cannot be safely inspected: ${ownership.reason}`);
+        } else {
+          const presence = await classifyRelayListener(config.relayBaseUrl, cancellation.signal);
+          if (presence.state !== "absent") throw relayPresenceFailure(presence);
         }
+      } else {
+        const presence = await classifyRelayListener(config.relayBaseUrl, cancellation.signal);
+        if (presence.state !== "absent") throw relayPresenceFailure(presence);
       }
       relay = await startRelay(config);
       relay.identity = await captureProcessIdentity(relay.child.pid, relay.expectedIdentity);
@@ -653,6 +658,71 @@ function parsePrivateIngressAddress(raw, definition = null) {
   const port = Number(portText);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new ValidationError(`${label} port is invalid`);
   return isIP(host) === 6 ? `[${host.toLowerCase()}]:${port}` : `${host}:${port}`;
+}
+
+function classifyRelayListener(relayBaseUrl, signal = null, options = {}) {
+  const timeoutMs = Number.isInteger(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : RELAY_LISTENER_PROBE_TIMEOUT_MS;
+  const connect = options.connect || createConnection;
+  let targetUrl;
+  try { targetUrl = new URL(relayBaseUrl); }
+  catch { return Promise.resolve({ state: "indeterminate", reason: "RELAY_MCP_BASE_URL is malformed; Relay listener presence could not be safely determined" }); }
+  if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
+    return Promise.resolve({ state: "indeterminate", reason: "RELAY_MCP_BASE_URL uses an unsupported protocol; Relay listener presence could not be safely determined" });
+  }
+  if (targetUrl.username || targetUrl.password) {
+    return Promise.resolve({ state: "indeterminate", reason: "RELAY_MCP_BASE_URL contains credentials; Relay listener presence could not be safely determined" });
+  }
+  const host = targetUrl.hostname.replace(/^\[|\]$/gu, "");
+  if (isIP(host) === 0) {
+    return Promise.resolve({ state: "indeterminate", reason: "Relay listener host is not a literal IP address; listener presence is ambiguous" });
+  }
+  if (!isLoopbackAddress(host)) {
+    return Promise.resolve({ state: "indeterminate", reason: "Relay listener address is not local; listener presence is ambiguous" });
+  }
+  const port = targetUrl.port ? Number(targetUrl.port) : targetUrl.protocol === "https:" ? 443 : 80;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return Promise.resolve({ state: "indeterminate", reason: "RELAY_MCP_BASE_URL has an invalid port; Relay listener presence could not be safely determined" });
+  }
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    let timer = null;
+    let socket;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      socket?.destroy();
+      resolvePromise(result);
+    };
+    const abort = () => finish({ state: "indeterminate", reason: "Relay listener probe was cancelled; presence could not be safely determined" });
+    if (signal?.aborted) { abort(); return; }
+    try {
+      socket = connect({ host, port });
+      socket.setTimeout?.(timeoutMs);
+      socket.once("connect", () => finish({ state: "present", reason: "configured Relay listener accepted a TCP connection" }));
+      socket.once("timeout", () => finish({ state: "indeterminate", reason: "Relay listener probe timed out; presence could not be safely determined" }));
+      socket.once("error", (error) => finish(error?.code === "ECONNREFUSED"
+        ? { state: "absent", reason: "configured Relay listener connection was refused" }
+        : { state: "indeterminate", reason: "Relay listener probe returned an ambiguous socket error; presence could not be safely determined" }));
+      timer = setTimeout(() => finish({ state: "indeterminate", reason: "Relay listener probe timed out; presence could not be safely determined" }), timeoutMs);
+      signal?.addEventListener("abort", abort, { once: true });
+    } catch {
+      finish({ state: "indeterminate", reason: "Relay listener probe failed; presence could not be safely determined" });
+    }
+  });
+}
+
+function isLoopbackAddress(host) {
+  if (isIP(host) === 4) return host.split(".")[0] === "127";
+  return host.toLowerCase() === "::1";
+}
+
+function relayPresenceFailure(presence) {
+  if (presence.state === "present") {
+    return new ValidationError("Relay listener appears occupied or active; all private ingress listeners are unavailable; Relay ownership is external or cannot be verified; no replacement Relay was started.");
+  }
+  return new ValidationError(`Relay listener presence could not be safely determined; all private ingress listeners are unavailable; no replacement Relay was started. ${presence.reason}`);
 }
 
 function isUnspecifiedOrNonPrivateAddress(host) {
@@ -2097,6 +2167,7 @@ export {
   buildNativeRuntimeConnectArgs,
   buildProcessShutdownPlan,
   captureProcessIdentity,
+  classifyRelayListener,
   getConfig,
   loadEnvFile,
   acquireAggregateLock,
