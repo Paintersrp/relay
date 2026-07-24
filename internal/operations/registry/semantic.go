@@ -58,12 +58,23 @@ func validateOperationRequest(surface SurfaceContractID, tool string, raw []byte
 	}
 
 	switch tool {
-	case "create_operation_packet", "refresh_operation_packet":
+	case "create_operation_packet":
 		if !hasOperation {
 			return nil, OperationDefinition{}, false, requestError("request_authority_invalid", "$.operation_id")
 		}
 		if err := normalizePacketRequest(tool, operation, request); err != nil {
 			return nil, OperationDefinition{}, false, requestError("request_semantic_invalid", "$")
+		}
+	case "refresh_operation_packet":
+		// Refresh is compare-and-set against the exact packet identity. The
+		// prior packet supplies the operation and project identity, so an
+		// operation_id is accepted when present but is not required.
+		if hasOperation {
+			if err := normalizePacketRequest(tool, operation, request); err != nil {
+				return nil, OperationDefinition{}, false, requestError("request_semantic_invalid", "$")
+			}
+		} else {
+			request["inputs"] = request["inputs"]
 		}
 	case "validate_artifact", "submit_plan", "create_run":
 		if err := validateTopLevelClearance(request); err != nil {
@@ -970,6 +981,11 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 		return nil, nil, errors.New("public contract surfaces are missing")
 	}
 	surfaceNode, ok := objectValue(surfaces, string(surface))
+	if !ok && isSharedPacketTool(tool) {
+		// Wayfinder packet schemas are specialized by the current route
+		// catalog; use the aggregate packet definition as the semantic source.
+		surfaceNode, ok = objectValue(surfaces, "planner-authoring.v1")
+	}
 	if !ok {
 		return nil, nil, fmt.Errorf("surface %q is not registered", surface)
 	}
@@ -978,6 +994,9 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 		return nil, nil, fmt.Errorf("surface %q tools are missing", surface)
 	}
 	toolNode, ok := objectValue(tools, tool)
+	if !ok && tool == "get_active_operation_packet" {
+		toolNode, ok = objectValue(tools, "get_operation_packet")
+	}
 	if !ok {
 		return nil, nil, fmt.Errorf("tool %q is not registered on surface %q", tool, surface)
 	}
@@ -985,7 +1004,143 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 	if !ok {
 		return nil, nil, fmt.Errorf("tool %q input_root is missing", tool)
 	}
+	if isSharedPacketTool(tool) {
+		return sharedPacketInputSchema(surface, tool, schema), semanticCatalog.defs, nil
+	}
 	return schema, semanticCatalog.defs, nil
+}
+
+func isSharedPacketTool(tool string) bool {
+	switch tool {
+	case "get_active_operation_packet", "create_operation_packet", "refresh_operation_packet", "close_operation_packet", "read_operation_input", "list_operation_repositories":
+		return true
+	default:
+		return false
+	}
+}
+
+func sharedPacketInputSchema(surface SurfaceContractID, tool string, source *orderedValue) *orderedValue {
+	value := cloneOrderedValue(source)
+	properties, _ := objectValue(value, "properties")
+	setSchemaMember(properties, "surface_contract", &orderedValue{kind: 'o', object: []orderedMember{{Name: "type", Value: &orderedValue{kind: 's', text: "string"}}, {Name: "const", Value: &orderedValue{kind: 's', text: string(surface)}}}})
+	switch tool {
+	case "get_active_operation_packet":
+		deleteSchemaMember(properties, "expected_packet_id")
+		setSchemaMember(properties, "project_id", refSchema("OpaqueID"))
+		setSchemaMember(properties, "operation_id", operationIDSchemaForSurface(surface))
+		replaceRequired(value, []string{"surface_contract", "project_id", "operation_id"})
+	case "create_operation_packet":
+		setSchemaMember(properties, "operation_id", operationIDSchemaForSurface(surface))
+	case "refresh_operation_packet":
+	case "close_operation_packet":
+	case "read_operation_input":
+		renameSchemaMember(properties, "expected_packet_id", "packet_id", refSchema("OpaqueID"))
+		replaceRequired(value, []string{"surface_contract", "packet_id", "input_name", "limit_bytes"})
+	case "list_operation_repositories":
+		renameSchemaMember(properties, "expected_packet_id", "packet_id", refSchema("OpaqueID"))
+		replaceRequired(value, []string{"surface_contract", "packet_id"})
+	}
+	return value
+}
+
+func cloneOrderedValue(value *orderedValue) *orderedValue {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	copy.object = make([]orderedMember, len(value.object))
+	for index, member := range value.object {
+		copy.object[index] = orderedMember{Name: member.Name, Value: cloneOrderedValue(member.Value)}
+	}
+	copy.array = make([]*orderedValue, len(value.array))
+	for index, child := range value.array {
+		copy.array[index] = cloneOrderedValue(child)
+	}
+	return &copy
+}
+
+func setSchemaMember(value *orderedValue, name string, schema *orderedValue) {
+	for index, member := range value.object {
+		if member.Name == name {
+			value.object[index].Value = schema
+			return
+		}
+	}
+	value.object = append(value.object, orderedMember{Name: name, Value: schema})
+}
+
+func deleteSchemaMember(value *orderedValue, name string) {
+	for index, member := range value.object {
+		if member.Name == name {
+			value.object = append(value.object[:index], value.object[index+1:]...)
+			return
+		}
+	}
+}
+
+func renameSchemaMember(value *orderedValue, oldName, newName string, schema *orderedValue) {
+	for index, member := range value.object {
+		if member.Name == oldName {
+			value.object[index] = orderedMember{Name: newName, Value: schema}
+			return
+		}
+	}
+	setSchemaMember(value, newName, schema)
+}
+
+func replaceRequired(value *orderedValue, names []string) {
+	required := &orderedValue{kind: 'a', array: make([]*orderedValue, len(names))}
+	for index, name := range names {
+		required.array[index] = &orderedValue{kind: 's', text: name}
+	}
+	setSchemaMember(value, "required", required)
+}
+
+func refSchema(name string) *orderedValue {
+	return &orderedValue{kind: 'o', object: []orderedMember{{Name: "$ref", Value: &orderedValue{kind: 's', text: "#/$defs/" + name}}}}
+}
+
+func surfaceContractSchema() *orderedValue {
+	return stringEnumSchema([]string{
+		"wayfinder-workspace.v1", "wayfinder-discovery.v1", "wayfinder-investigation.v1",
+		"planner-authoring.v1", "planner-plan.v1", "planner-execution.v1",
+		"auditor-review.v1", "auditor-audit.v1", "auditor-remediation.v1",
+	})
+}
+
+func operationIDSchemaForSurface(surface SurfaceContractID) *orderedValue {
+	values := []string{}
+	seen := map[string]struct{}{}
+	appendOperation := func(operation OperationID) {
+		if _, exists := seen[string(operation)]; exists {
+			return
+		}
+		seen[string(operation)] = struct{}{}
+		values = append(values, string(operation))
+	}
+	if operations, err := All(); err == nil {
+		for _, operation := range operations {
+			if operation.SurfaceContract == surface {
+				appendOperation(operation.OperationID)
+			}
+		}
+	}
+	if operations, err := ListPublishedOperations(); err == nil {
+		for _, operation := range operations {
+			if operation.SurfaceContract == surface {
+				appendOperation(operation.OperationID)
+			}
+		}
+	}
+	return stringEnumSchema(values)
+}
+
+func stringEnumSchema(values []string) *orderedValue {
+	array := &orderedValue{kind: 'a', array: make([]*orderedValue, len(values))}
+	for index, value := range values {
+		array.array[index] = &orderedValue{kind: 's', text: value}
+	}
+	return &orderedValue{kind: 'o', object: []orderedMember{{Name: "type", Value: &orderedValue{kind: 's', text: "string"}}, {Name: "enum", Value: array}}}
 }
 
 func parseOrderedJSON(raw []byte) (*orderedValue, error) {

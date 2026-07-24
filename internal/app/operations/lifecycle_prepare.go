@@ -290,6 +290,12 @@ func (s *LifecycleService) prepareRepositories(ctx context.Context, project work
 }
 
 func (s *LifecycleService) prepareGovernance(ctx context.Context, packetID string, operation registry.OperationDefinition, request lifecycleRequest, repositories repositoryPreparation) (packet.GovernanceBinding, packet.ManifestDomainBinding, []PublicationVaultInput, workflowrepos.ResolvedRevision, error) {
+	if operation.Role == "wayfinder" && operation.ManifestDomain == "" {
+		// Wayfinder bootstrap packets are authorized by the selected Project's
+		// registered repositories. They have no planner/auditor manifest domain
+		// and therefore do not fabricate a second governance identity.
+		return packet.GovernanceBinding{}, packet.ManifestDomainBinding{}, nil, workflowrepos.ResolvedRevision{}, nil
+	}
 	manifestPath := governanceManifestPath(operation.Role)
 	clean := governanceRequiresCleanProject(operation, repositories)
 	revision, err := s.repositories.ResolveRevision(ctx, workflowrepos.RevisionRequest{
@@ -338,6 +344,9 @@ func (s *LifecycleService) revalidateRepositoryAuthority(ctx context.Context, op
 			_ = key
 			return &sourcevault.Error{Code: sourcevault.CodeStaleConfiguredAuthority}
 		}
+	}
+	if operation.Role == "wayfinder" && operation.ManifestDomain == "" {
+		return nil
 	}
 	explicit := ""
 	if governance.RevisionSource == workflowrepos.RevisionSourceExplicitCommit {

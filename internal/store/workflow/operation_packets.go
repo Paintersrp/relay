@@ -22,6 +22,33 @@ const operationPacketDependencyColumns = `
 func (s *Store) GetOperationPacketByPacketID(ctx context.Context, packetID string) (OperationPacket, error) {
 	return getOperationPacketByPacketID(ctx, s.db, packetID)
 }
+func (s *Store) GetActiveOperationPacket(ctx context.Context, projectID, operationID, surfaceContractID string) (OperationPacket, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+operationPacketColumns+` FROM operation_packets WHERE project_id = ? AND operation_id = ? AND surface_contract_id = ? AND lifecycle_state = 'active' AND readiness_state = 'ready' ORDER BY id DESC LIMIT 2`, projectID, operationID, surfaceContractID)
+	if err != nil {
+		return OperationPacket{}, err
+	}
+	defer rows.Close()
+	var result OperationPacket
+	count := 0
+	for rows.Next() {
+		value, err := scanOperationPacket(rows)
+		if err != nil {
+			return OperationPacket{}, err
+		}
+		result = value
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return OperationPacket{}, err
+	}
+	if count == 0 {
+		return OperationPacket{}, sql.ErrNoRows
+	}
+	if count > 1 {
+		return OperationPacket{}, fmt.Errorf("multiple active operation packets")
+	}
+	return result, nil
+}
 func (s *Store) GetOperationPacketByRowID(ctx context.Context, rowID int64) (OperationPacket, error) {
 	return getOperationPacketByRowID(ctx, s.db, rowID)
 }

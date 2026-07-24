@@ -120,11 +120,17 @@ func validateAndCanonicalize(input Document) (Document, registry.OperationDefini
 	if err != nil {
 		return Document{}, registry.OperationDefinition{}, err
 	}
-	if err := validateGovernance(input.RelaySpecs); err != nil {
-		return Document{}, registry.OperationDefinition{}, err
-	}
-	if err := validateManifestDomain(input.ManifestDomain); err != nil {
-		return Document{}, registry.OperationDefinition{}, err
+	if operation.Role == "wayfinder" && operation.ManifestDomain == "" {
+		if input.RelaySpecs.RepositoryKey != "" || input.RelaySpecs.RepositoryTarget != "" || input.RelaySpecs.CommitOID != "" || input.ManifestDomain.ManifestBlobOID != "" || input.ManifestDomain.Domain != "" || len(input.ManifestDomain.Members) != 0 {
+			return Document{}, registry.OperationDefinition{}, invalid("wayfinder_governance")
+		}
+	} else {
+		if err := validateGovernance(input.RelaySpecs); err != nil {
+			return Document{}, registry.OperationDefinition{}, err
+		}
+		if err := validateManifestDomain(input.ManifestDomain); err != nil {
+			return Document{}, registry.OperationDefinition{}, err
+		}
 	}
 	result.ManifestDomain.Members = append([]ManifestMember(nil), input.ManifestDomain.Members...)
 	sort.Slice(result.ManifestDomain.Members, func(i, j int) bool {

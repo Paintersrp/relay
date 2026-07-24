@@ -240,7 +240,7 @@
       },
       "file_params": [],
       "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp.HandleListProjects -> internal/app/projects/workflow.Service"
@@ -256,8 +256,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
@@ -273,10 +273,10 @@
         "openWorldHint": false
       },
       "file_params": [
-        "files"
+        "input_files"
       ],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
@@ -292,8 +292,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
@@ -309,8 +309,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
@@ -326,8 +326,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
@@ -343,8 +343,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "input_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:input:v1",
       "output_schema_id_pattern": "urn:relay:mcp:{surface_contract}:{tool_name}:output:v1",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
@@ -939,5 +939,5 @@
   },
   "source_tool_contract_version": "relay.sourcegateway.mcp.v1",
   "operation_family_tool_contract_sha256": "b10a04711f9696f5b9b4c3c941a2dc84c3c17ec83757542ab22f2a2009ada755",
-  "all_tool_metadata_contract_sha256": "321c2abd1c0362a2cb932ebeffbcb125c836fc424eccc1eac0a4d018fda67053"
+  "all_tool_metadata_contract_sha256": "eb1ad41e06be9370599a691c554d7a295bd90e307ae0e62808d44adb7c41727b"
 }

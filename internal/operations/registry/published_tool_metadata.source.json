@@ -23,12 +23,6 @@
   },
   "legacy_exact_copy_tools": [
     "list_projects",
-    "get_active_operation_packet",
-    "create_operation_packet",
-    "refresh_operation_packet",
-    "close_operation_packet",
-    "read_operation_input",
-    "list_operation_repositories",
     "list_source_tree",
     "search_source",
     "read_source_text",
@@ -42,6 +36,12 @@
     "record_audit_decision"
   ],
   "published_explicit_tools": [
+    "get_active_operation_packet",
+    "create_operation_packet",
+    "refresh_operation_packet",
+    "close_operation_packet",
+    "read_operation_input",
+    "list_operation_repositories",
     "create_workspace",
     "admit_workspace_input",
     "add_workspace_destination",
@@ -94,8 +94,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
     },
     {
@@ -110,10 +110,10 @@
         "openWorldHint": false
       },
       "file_params": [
-        "files"
+        "input_files"
       ],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
     },
     {
@@ -128,8 +128,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
     },
     {
@@ -144,8 +144,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
     },
     {
@@ -160,8 +160,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
     },
     {
@@ -176,8 +176,8 @@
         "openWorldHint": false
       },
       "file_params": [],
-      "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "metadata_source": "published_explicit",
+      "schema_owner": "internal/operations/registry/cmd/publishedcontractgen/main.go",
       "dispatcher_owner": "internal/mcp packet adapter -> internal/app/operations.Service"
     },
     {

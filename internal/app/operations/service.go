@@ -234,6 +234,27 @@ func (s *Service) Get(ctx context.Context, packetID string) (PacketView, error) 
 	return PacketView{Summary: summary(value, replacement), DocumentMediaType: artifact.MediaType, DocumentSizeBytes: artifact.SizeBytes, DocumentBytes: append([]byte(nil), data...)}, nil
 }
 
+// GetActive resolves the active packet from the canonical project, operation,
+// and route/surface identity. A packet ID is intentionally not part of this
+// lookup because callers use this operation to bootstrap a packet context.
+func (s *Service) GetActive(ctx context.Context, projectID string, operationID registry.OperationID, surface registry.SurfaceContractID) (PacketView, error) {
+	if strings.TrimSpace(projectID) != projectID || projectID == "" || operationID == "" || surface == "" {
+		return PacketView{}, &Error{Code: CodePacketRouteMismatch}
+	}
+	operation, ok := registry.Lookup(operationID)
+	if !ok || operation.SurfaceContract != surface {
+		return PacketView{}, &Error{Code: CodePacketRouteMismatch}
+	}
+	value, err := s.store.GetActiveOperationPacket(ctx, projectID, string(operationID), string(surface))
+	if errors.Is(err, sql.ErrNoRows) {
+		return PacketView{}, &Error{Code: CodePacketNotFound}
+	}
+	if err != nil {
+		return PacketView{}, internalFailure()
+	}
+	return s.Get(ctx, value.PacketID)
+}
+
 func (s *Service) AuthorizeMutation(ctx context.Context, request MutationRequest) (MutationAuthorization, error) {
 	value, err := s.loadPacket(ctx, strings.TrimSpace(request.PacketID))
 	if err != nil {

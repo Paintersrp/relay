@@ -3,6 +3,7 @@ package registry
 import (
 	"errors"
 	"regexp"
+	"strings"
 )
 
 const SensitiveDataClearancePolicyVersion = "relay.canonical-artifact-sensitive-data.v1"
@@ -80,6 +81,16 @@ func IsStateChangingTool(tool string) bool {
 func IsStateChangingToolForSurface(surface SurfaceContractID, tool string) bool {
 	if !IsStateChangingTool(tool) {
 		return false
+	}
+	// Wayfinder packet lifecycle tools are published through route manifests
+	// alongside the legacy planner/auditor catalog. Keep their mutation
+	// authority bound to the mounted surface without requiring a second
+	// operation registry.
+	if strings.HasPrefix(string(surface), "wayfinder-") {
+		switch MutationTool(tool) {
+		case MutationToolCreateOperationPacket, MutationToolRefreshOperationPacket, MutationToolCloseOperationPacket:
+			return true
+		}
 	}
 	load()
 	if loadErr != nil {

@@ -66,7 +66,7 @@ func newRouteToolDispatcher(manifest routecontracts.RouteManifest, tool routecon
 	case "operation_family":
 		return newFamilyContextHandler(manifest, tool, services.Packets), nil
 	case "packet":
-		return newPacketLifecycleHandler(tool.Name, services), nil
+		return newPacketLifecycleHandler(manifest, tool.Name, services), nil
 	case "source":
 		return newSourceGatewayHandler(manifest, tool.Name, services.Source), nil
 	case "wayfinder_action":
@@ -111,7 +111,7 @@ func newFamilyContextHandler(manifest routecontracts.RouteManifest, tool routeco
 	}
 }
 
-func newPacketLifecycleHandler(name string, services RouteDispatchServices) SurfaceHandler {
+func newPacketLifecycleHandler(manifest routecontracts.RouteManifest, name string, services RouteDispatchServices) SurfaceHandler {
 	switch name {
 	case "list_projects":
 		return func(raw json.RawMessage) ToolCallResult {
@@ -131,12 +131,17 @@ func newPacketLifecycleHandler(name string, services RouteDispatchServices) Surf
 	case "get_active_operation_packet":
 		return func(raw json.RawMessage) ToolCallResult {
 			var in struct {
-				PacketID string `json:"packet_id"`
+				SurfaceContract registry.SurfaceContractID `json:"surface_contract"`
+				ProjectID       string                     `json:"project_id"`
+				OperationID     registry.OperationID       `json:"operation_id"`
 			}
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, err := services.Packets.Get(context.Background(), in.PacketID)
+			if err := requirePacketRoute(manifest, in.SurfaceContract, in.OperationID); err != nil {
+				return toolErr(err.Error())
+			}
+			value, err := services.Packets.GetActive(context.Background(), in.ProjectID, in.OperationID, in.SurfaceContract)
 			if err != nil {
 				return toolErr(err.Error())
 			}
@@ -145,14 +150,26 @@ func newPacketLifecycleHandler(name string, services RouteDispatchServices) Surf
 	case "create_operation_packet":
 		return func(raw json.RawMessage) ToolCallResult {
 			var in struct {
-				MutationID string                                 `json:"mutation_id"`
-				Identity   semanticidentity.CreateOperationPacket `json:"identity"`
-				Files      []fileacquisition.FileParameter        `json:"files"`
+				SurfaceContract    registry.SurfaceContractID                  `json:"surface_contract"`
+				MutationID         string                                      `json:"mutation_id"`
+				OperationID        registry.OperationID                        `json:"operation_id"`
+				ProjectID          string                                      `json:"project_id"`
+				Inputs             []semanticidentity.InputBinding             `json:"inputs"`
+				WorkflowReferences []semanticidentity.WorkflowReferenceRequest `json:"workflow_references"`
+				Attestations       []semanticidentity.AttestationRequest       `json:"attestations"`
+				PrimaryRevisions   []semanticidentity.PrimaryRevisionRequest   `json:"primary_revisions"`
+				ComparisonAnchors  []semanticidentity.ComparisonAnchorRequest  `json:"comparison_anchors"`
+				RelaySpecsRevision string                                      `json:"relay_specs_revision"`
+				Files              []fileacquisition.FileParameter             `json:"input_files"`
 			}
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, err := services.Lifecycle.Create(context.Background(), CreateOperationPacketRequest{MutationID: in.MutationID, Identity: in.Identity, Files: in.Files})
+			if err := requirePacketRoute(manifest, in.SurfaceContract, in.OperationID); err != nil {
+				return toolErr(err.Error())
+			}
+			identity := semanticidentity.CreateOperationPacket{SurfaceContract: in.SurfaceContract, OperationID: in.OperationID, ProjectID: in.ProjectID, InputFileCount: len(in.Files), DeclaredFiles: declaredFilesFromInputs(in.Inputs), Inputs: in.Inputs, WorkflowReferences: in.WorkflowReferences, Attestations: in.Attestations, PrimaryRevisions: in.PrimaryRevisions, ComparisonAnchors: in.ComparisonAnchors, RelaySpecsRevision: in.RelaySpecsRevision}
+			value, err := services.Lifecycle.Create(context.Background(), CreateOperationPacketRequest{MutationID: in.MutationID, Identity: identity, Files: in.Files})
 			if err != nil {
 				return toolErr(err.Error())
 			}
@@ -161,15 +178,25 @@ func newPacketLifecycleHandler(name string, services RouteDispatchServices) Surf
 	case "refresh_operation_packet":
 		return func(raw json.RawMessage) ToolCallResult {
 			var in struct {
-				MutationID    string                                  `json:"mutation_id"`
-				PriorPacketID string                                  `json:"prior_packet_id"`
-				Identity      semanticidentity.RefreshOperationPacket `json:"identity"`
-				Files         []fileacquisition.FileParameter         `json:"files"`
+				SurfaceContract    registry.SurfaceContractID                  `json:"surface_contract"`
+				MutationID         string                                      `json:"mutation_id"`
+				ExpectedPacketID   string                                      `json:"expected_packet_id"`
+				Inputs             []semanticidentity.InputBinding             `json:"inputs"`
+				WorkflowReferences []semanticidentity.WorkflowReferenceRequest `json:"workflow_references"`
+				Attestations       []semanticidentity.AttestationRequest       `json:"attestations"`
+				PrimaryRevisions   []semanticidentity.PrimaryRevisionRequest   `json:"primary_revisions"`
+				ComparisonAnchors  []semanticidentity.ComparisonAnchorRequest  `json:"comparison_anchors"`
+				RelaySpecsRevision string                                      `json:"relay_specs_revision"`
+				Files              []fileacquisition.FileParameter             `json:"input_files"`
 			}
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, err := services.Lifecycle.Refresh(context.Background(), RefreshOperationPacketRequest{MutationID: in.MutationID, PriorPacketID: in.PriorPacketID, Identity: in.Identity, Files: in.Files})
+			if err := requirePacketRoute(manifest, in.SurfaceContract, ""); err != nil {
+				return toolErr(err.Error())
+			}
+			identity := semanticidentity.RefreshOperationPacket{SurfaceContract: in.SurfaceContract, ExpectedPacketID: in.ExpectedPacketID, InputFileCount: len(in.Files), DeclaredFiles: declaredFilesFromInputs(in.Inputs), Inputs: in.Inputs, WorkflowReferences: in.WorkflowReferences, Attestations: in.Attestations, PrimaryRevisions: in.PrimaryRevisions, ComparisonAnchors: in.ComparisonAnchors, RelaySpecsRevision: in.RelaySpecsRevision}
+			value, err := services.Lifecycle.Refresh(context.Background(), RefreshOperationPacketRequest{MutationID: in.MutationID, PriorPacketID: in.ExpectedPacketID, Identity: identity, Files: in.Files})
 			if err != nil {
 				return toolErr(err.Error())
 			}
@@ -178,45 +205,96 @@ func newPacketLifecycleHandler(name string, services RouteDispatchServices) Surf
 	case "close_operation_packet":
 		return func(raw json.RawMessage) ToolCallResult {
 			var in struct {
-				MutationID string                                `json:"mutation_id"`
-				Identity   semanticidentity.CloseOperationPacket `json:"identity"`
+				SurfaceContract  registry.SurfaceContractID `json:"surface_contract"`
+				MutationID       string                     `json:"mutation_id"`
+				ExpectedPacketID string                     `json:"expected_packet_id"`
 			}
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, err := services.Lifecycle.Close(context.Background(), CloseOperationPacketRequest{MutationID: in.MutationID, Identity: in.Identity})
+			if err := requirePacketRoute(manifest, in.SurfaceContract, ""); err != nil {
+				return toolErr(err.Error())
+			}
+			identity := semanticidentity.CloseOperationPacket{SurfaceContract: in.SurfaceContract, ExpectedPacketID: in.ExpectedPacketID}
+			value, err := services.Lifecycle.Close(context.Background(), CloseOperationPacketRequest{MutationID: in.MutationID, Identity: identity})
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(value)
 		}
 	case "read_operation_input":
-		return newPacketSectionProjectionHandler(services.Packets, "inputs")
+		return newPacketSectionProjectionHandler(manifest, services.Packets, "inputs")
 	case "list_operation_repositories":
-		return newPacketSectionProjectionHandler(services.Packets, "repositories")
+		return newPacketSectionProjectionHandler(manifest, services.Packets, "repositories")
 	default:
 		return func(json.RawMessage) ToolCallResult { return toolErr("MCP_DISPATCHER_MISSING: " + name) }
 	}
 }
 
-func newPacketSectionProjectionHandler(packets *appoperations.Service, section string) SurfaceHandler {
+func newPacketSectionProjectionHandler(manifest routecontracts.RouteManifest, packets *appoperations.Service, section string) SurfaceHandler {
 	return func(raw json.RawMessage) ToolCallResult {
 		var in struct {
-			PacketID string `json:"packet_id"`
+			SurfaceContract registry.SurfaceContractID `json:"surface_contract"`
+			PacketID        string                     `json:"packet_id"`
+			InputName       string                     `json:"input_name"`
+			LimitBytes      int64                      `json:"limit_bytes"`
+			Limit           int                        `json:"limit"`
+			Cursor          string                     `json:"cursor"`
 		}
 		if err := brokerDecodeStrict(raw, &in); err != nil {
+			return toolErr(err.Error())
+		}
+		if err := requirePacketRoute(manifest, in.SurfaceContract, ""); err != nil {
 			return toolErr(err.Error())
 		}
 		view, err := packets.Get(context.Background(), in.PacketID)
 		if err != nil {
 			return toolErr(err.Error())
 		}
+		if view.Summary.SurfaceContract != in.SurfaceContract {
+			return toolErr("operation packet route does not match")
+		}
 		var doc map[string]any
 		if err := json.Unmarshal(view.DocumentBytes, &doc); err != nil {
 			return toolErr(err.Error())
 		}
-		return workflowOK(map[string]any{"packet": view.Summary, section: lookupDocumentArrayField(doc[section])})
+		values := lookupDocumentArrayField(doc[section])
+		if section == "inputs" && in.InputName != "" {
+			for _, value := range values {
+				if item, ok := value.(map[string]any); ok && item["input_name"] == in.InputName {
+					return workflowOK(map[string]any{"packet": view.Summary, "input": item})
+				}
+			}
+			return toolErr("operation input was not found")
+		}
+		return workflowOK(map[string]any{"packet": view.Summary, section: values})
 	}
+}
+
+func requirePacketRoute(manifest routecontracts.RouteManifest, surface registry.SurfaceContractID, operation registry.OperationID) error {
+	if surface != registry.SurfaceContractID(manifest.SurfaceContract) {
+		return fmt.Errorf("operation packet route does not match")
+	}
+	if operation == "" {
+		return nil
+	}
+	for _, member := range manifest.Operations {
+		if member.OperationID == string(operation) {
+			return nil
+		}
+	}
+	return fmt.Errorf("operation_id is not a route member")
+}
+
+func declaredFilesFromInputs(inputs []semanticidentity.InputBinding) []semanticidentity.DeclaredFile {
+	declared := make([]semanticidentity.DeclaredFile, 0)
+	for _, input := range inputs {
+		if input.Source.FileIndex == nil {
+			continue
+		}
+		declared = append(declared, semanticidentity.DeclaredFile{FileIndex: *input.Source.FileIndex, ExpectedSHA256: input.ExpectedSHA256})
+	}
+	return declared
 }
 
 type packetSourceContext struct {

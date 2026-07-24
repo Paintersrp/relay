@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"relay/internal/mcp/surfacecontracts"
 )
 
 const (
@@ -196,7 +194,8 @@ func main() {
 		fatalf("metadata source digest differs")
 	}
 
-	aggregateToolSchemas := loadAggregateToolSchemas()
+	aggregateToolSchemas := loadAggregateToolSchemas(dir)
+	packetToolSchemas := buildPacketToolSchemas(aggregateToolSchemas, routes.Routes)
 	familyToolSchemas := buildFamilyToolSchemas(family)
 	publishedExplicitToolSchemas := buildPublishedExplicitToolSchemas()
 	metadataByName := map[string]metadataTool{}
@@ -239,15 +238,17 @@ func main() {
 			fatalf("route metadata %q differs", name)
 		}
 		var tool generatedTool
-		switch meta.MetadataSource {
-		case "legacy_exact_copy":
-			tool, ok = aggregateToolSchemas[name]
-		case "published_explicit":
-			tool, ok = familyToolSchemas[name]
+		if meta.MetadataSource == "published_explicit" {
+			tool, ok = packetToolSchemas[name]
+			if !ok {
+				tool, ok = familyToolSchemas[name]
+			}
 			if !ok {
 				tool, ok = publishedExplicitToolSchemas[name]
 			}
-		default:
+		} else if meta.MetadataSource == "legacy_exact_copy" {
+			tool, ok = aggregateToolSchemas[name]
+		} else {
 			ok = false
 		}
 		if !ok {
@@ -270,22 +271,151 @@ func main() {
 	writePins(filepath.Join(dir, pinsOutput), mustRead(filepath.Join(dir, operationsOutput)), mustRead(filepath.Join(dir, publicOutput)), bindingsRaw)
 }
 
-func loadAggregateToolSchemas() map[string]generatedTool {
-	manifests, err := surfacecontracts.All()
+func buildPacketToolSchemas(aggregate map[string]generatedTool, routes []routeDefinition) map[string]generatedTool {
+	operationIDs := make([]string, 0)
+	seenOperations := map[string]struct{}{}
+	for _, route := range routes {
+		for _, operation := range route.Operations {
+			if _, exists := seenOperations[operation]; exists {
+				continue
+			}
+			seenOperations[operation] = struct{}{}
+			operationIDs = append(operationIDs, operation)
+		}
+	}
+	surfaces := []string{"wayfinder-workspace.v1", "wayfinder-discovery.v1", "wayfinder-investigation.v1", "planner-authoring.v1", "planner-plan.v1", "planner-execution.v1", "auditor-review.v1", "auditor-audit.v1", "auditor-remediation.v1"}
+	titles := map[string]string{
+		"get_active_operation_packet": "Get active operation packet",
+		"create_operation_packet":     "Create operation packet",
+		"refresh_operation_packet":    "Refresh operation packet",
+		"close_operation_packet":      "Close operation packet",
+		"read_operation_input":        "Read operation input",
+		"list_operation_repositories": "List operation repositories",
+	}
+	result := make(map[string]generatedTool, len(titles))
+	for name, title := range titles {
+		sourceName := name
+		if name == "get_active_operation_packet" {
+			sourceName = "get_operation_packet"
+		}
+		tool, ok := aggregate[sourceName]
+		if !ok {
+			continue
+		}
+		tool.Name = name
+		tool.Title = title
+		tool.InputSchema = rewritePacketSchema(name, tool.InputSchema, surfaces, operationIDs, true)
+		tool.OutputSchema = rewritePacketSchema(name, tool.OutputSchema, surfaces, operationIDs, false)
+		result[name] = tool
+	}
+	return result
+}
+
+func rewritePacketSchema(tool string, raw json.RawMessage, surfaces, operationIDs []string, input bool) json.RawMessage {
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		fatalf("packet schema %q: %v", tool, err)
+	}
+	root["$id"] = "urn:relay:mcp:shared-operation-packet.v1:" + tool + map[bool]string{true: ":input:v1", false: ":output:v1"}[input]
+	patchPacketSchemaNode(root, surfaces)
+	if input {
+		properties, _ := root["properties"].(map[string]any)
+		if tool == "get_active_operation_packet" {
+			delete(properties, "expected_packet_id")
+			properties["project_id"] = map[string]any{"$ref": "#/$defs/OpaqueID"}
+			properties["operation_id"] = map[string]any{"type": "string", "enum": operationIDs}
+			root["required"] = []any{"surface_contract", "project_id", "operation_id"}
+		} else if tool == "create_operation_packet" {
+			properties["operation_id"] = map[string]any{"type": "string", "enum": operationIDs}
+		} else if tool == "read_operation_input" || tool == "list_operation_repositories" {
+			if expected, exists := properties["expected_packet_id"]; exists {
+				properties["packet_id"] = expected
+				delete(properties, "expected_packet_id")
+			}
+			required, _ := root["required"].([]any)
+			for index, value := range required {
+				if value == "expected_packet_id" {
+					required[index] = "packet_id"
+				}
+			}
+			root["required"] = required
+		}
+	}
+	encoded, err := json.Marshal(root)
 	if err != nil {
+		fatalf("encode packet schema %q: %v", tool, err)
+	}
+	return encoded
+}
+
+func patchPacketSchemaNode(value map[string]any, surfaces []string) {
+	if properties, ok := value["properties"].(map[string]any); ok {
+		if surface, ok := properties["surface_contract"].(map[string]any); ok {
+			delete(surface, "const")
+			surface["type"] = "string"
+			surface["enum"] = surfaces
+		}
+		for _, child := range properties {
+			if childMap, ok := child.(map[string]any); ok {
+				patchPacketSchemaNode(childMap, surfaces)
+			}
+		}
+	}
+	if defs, ok := value["$defs"].(map[string]any); ok {
+		if role, ok := defs["Role"].(map[string]any); ok {
+			role["enum"] = []any{"wayfinder", "planner", "auditor"}
+		}
+		if surface, ok := defs["SurfaceContractID"].(map[string]any); ok {
+			surface["enum"] = surfaces
+		}
+	}
+	if oneOf, ok := value["oneOf"].([]any); ok {
+		for _, child := range oneOf {
+			if childMap, ok := child.(map[string]any); ok {
+				patchPacketSchemaNode(childMap, surfaces)
+			}
+		}
+	}
+}
+
+func loadAggregateToolSchemas(dir string) map[string]generatedTool {
+	var document struct {
+		Surfaces map[string]struct {
+			Tools map[string]json.RawMessage `json:"tools"`
+		} `json:"surfaces"`
+	}
+	if err := json.Unmarshal(mustRead(filepath.Join(dir, "public_contract.json")), &document); err != nil {
 		fatalf("aggregate schema source: %v", err)
 	}
 	toolsByName := map[string]generatedTool{}
-	for _, manifest := range manifests {
-		for _, tool := range manifest.Tools {
+	for _, surface := range document.Surfaces {
+		for name, raw := range surface.Tools {
+			var tool struct {
+				Name           string          `json:"name"`
+				Title          string          `json:"title"`
+				Description    string          `json:"description"`
+				SemanticToolID string          `json:"semantic_tool_id"`
+				Invoking       string          `json:"invoking"`
+				Invoked        string          `json:"invoked"`
+				Annotations    annotations     `json:"annotations"`
+				FileParams     []string        `json:"file_params"`
+				InputSchema    json.RawMessage `json:"input_root"`
+				OutputSchema   json.RawMessage `json:"output_root"`
+			}
+			if err := json.Unmarshal(raw, &tool); err != nil {
+				fatalf("aggregate schema %q: %v", name, err)
+			}
+			if tool.Name == "" {
+				tool.Name = name
+			}
 			if _, exists := toolsByName[tool.Name]; exists {
 				continue
 			}
 			toolsByName[tool.Name] = generatedTool{
 				Name: tool.Name, Title: tool.Title, Description: tool.Description,
 				SemanticToolID: tool.SemanticToolID, Invoking: tool.Invoking, Invoked: tool.Invoked,
-				Annotations: annotations{tool.Annotations.ReadOnlyHint, tool.Annotations.DestructiveHint, tool.Annotations.IdempotentHint, tool.Annotations.OpenWorldHint},
-				FileParams:  append([]string(nil), tool.FileParams...), InputSchema: append(json.RawMessage(nil), tool.InputSchema...), OutputSchema: append(json.RawMessage(nil), tool.OutputSchema...),
+				Annotations: tool.Annotations, FileParams: append([]string(nil), tool.FileParams...),
+				InputSchema: append(json.RawMessage(nil), tool.InputSchema...), OutputSchema: append(json.RawMessage(nil), tool.OutputSchema...),
 			}
 		}
 	}
