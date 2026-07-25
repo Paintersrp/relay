@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 )
@@ -529,8 +530,12 @@ func writeJSON(path string, value any) {
 	}
 }
 func writePins(path string, operations, public, bindings []byte) {
-	content := fmt.Sprintf("package registry\n\nconst (\n publishedOperationsSizeBytes = %d\n publishedOperationsSHA256 = %q\n publishedPublicContractSizeBytes = %d\n publishedPublicContractSHA256 = %q\n publishedRuntimeBindingsSizeBytes = %d\n publishedRuntimeBindingsSHA256 = %q\n)\n", len(operations), digest(operations), len(public), digest(public), len(bindings), digest(bindings))
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	content := fmt.Sprintf("package registry\n\nconst (\n\tpublishedOperationsSizeBytes      = %d\n\tpublishedOperationsSHA256         = %q\n\tpublishedPublicContractSizeBytes  = %d\n\tpublishedPublicContractSHA256     = %q\n\tpublishedRuntimeBindingsSizeBytes = %d\n\tpublishedRuntimeBindingsSHA256    = %q\n)\n", len(operations), digest(operations), len(public), digest(public), len(bindings), digest(bindings))
+	formatted, err := format.Source([]byte(content))
+	if err != nil {
+		fatalf("format pins: %v", err)
+	}
+	if err := os.WriteFile(path, formatted, 0o644); err != nil {
 		fatalf("write pins: %v", err)
 	}
 }

@@ -481,8 +481,19 @@ func run() error {
 		return fmt.Errorf("generated audit packet schema validation: valid=%v err=%v", valid, validationErr)
 	}
 	provenance := speccompiler.SourceProvenance()
-	if provenance.Commit != artifactschema.AuthorityCommit || len(provenance.Schemas) != 2 {
+	expectedSchemas := []speccompiler.SchemaProvenance{
+		{ArtifactKind: speccompiler.ArtifactPlan, Version: "1.0", Path: "schemas/plan.schema.json"},
+		{ArtifactKind: speccompiler.ArtifactExecutionSpec, Version: "2.0", Path: "schemas/execution-spec.schema.json"},
+		{ArtifactKind: speccompiler.ArtifactDeliveryTicket, Version: "1.0", Path: "schemas/delivery-ticket.schema.json"},
+		{ArtifactKind: speccompiler.ArtifactTransitionPlan, Version: "1.0", Path: "schemas/transition-plan.schema.json"},
+	}
+	if provenance.Repository != artifactschema.AuthorityRepository || provenance.Commit != artifactschema.AuthorityCommit || provenance.CompilerContract != "contracts/compiler.md" || len(provenance.Schemas) != len(expectedSchemas) {
 		return fmt.Errorf("compiler provenance = %+v", provenance)
+	}
+	for index, expected := range expectedSchemas {
+		if provenance.Schemas[index] != expected {
+			return fmt.Errorf("compiler provenance schema %d = %+v, want %+v", index, provenance.Schemas[index], expected)
+		}
 	}
 	execution, _ := packet["execution"].(map[string]any)
 	executorEvidence, _ := execution["executor"].(map[string]any)

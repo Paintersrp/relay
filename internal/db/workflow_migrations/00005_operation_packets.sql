@@ -17,7 +17,7 @@ CREATE TABLE operation_packets (
     packet_id TEXT NOT NULL UNIQUE,
     packet_sha256 TEXT NOT NULL CHECK (length(packet_sha256) = 64 AND packet_sha256 NOT GLOB '*[^0-9a-f]*'),
     schema_version TEXT NOT NULL DEFAULT 'relay.operation-packet.v1' CHECK (schema_version = 'relay.operation-packet.v1'),
-    role TEXT NOT NULL CHECK (role IN ('wayfinder', 'planner', 'auditor')),
+    role TEXT NOT NULL CHECK (role IN ('planner', 'auditor')),
     operation_id TEXT NOT NULL CHECK (operation_id <> '' AND trim(operation_id) = operation_id),
     surface_contract_id TEXT NOT NULL CHECK (surface_contract_id <> '' AND trim(surface_contract_id) = surface_contract_id),
     project_id TEXT NOT NULL CHECK (project_id <> '' AND trim(project_id) = project_id),

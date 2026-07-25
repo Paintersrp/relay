@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,20 +14,30 @@ import (
 	"testing"
 
 	appoperations "relay/internal/app/operations"
+	workflowartifacts "relay/internal/artifacts/workflow"
+	relaydb "relay/internal/db"
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/mcp/routecontracts"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
+
+	"github.com/pressly/goose/v3"
+	_ "modernc.org/sqlite"
 )
 
 func TestWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T) {
+	runWayfinderDiscoveryColdStartPacketDispatcherFlow(t, false)
+}
+
+func TestWayfinderDiscoveryColdStartPacketDispatcherFlowAfterUpgrade(t *testing.T) {
+	runWayfinderDiscoveryColdStartPacketDispatcherFlow(t, true)
+}
+
+func runWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T, upgraded bool) {
 	ctx := context.Background()
 	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := coldStartStore(t, root, upgraded)
 	defer store.Close()
 	repositoryPath := coldStartGitRepository(t, filepath.Join(root, "project-repository"))
 	repositories, err := workflowrepos.NewRegistry(store)
@@ -172,6 +183,48 @@ func TestWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T) {
 	if foreignSurface.Error == nil {
 		t.Fatal("foreign surface was accepted")
 	}
+}
+
+func coldStartStore(t *testing.T, root string, upgraded bool) *workflowstore.Store {
+	t.Helper()
+	artifactRoot := filepath.Join(root, "artifacts")
+	if !upgraded {
+		store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), artifactRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
+	}
+
+	db, err := sql.Open("sqlite", filepath.Join(root, "workflow.db")+"?_journal_mode=WAL&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	goose.SetBaseFS(relaydb.WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 25); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := relaydb.AutoMigrateWorkflow(db); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	artifacts, err := workflowartifacts.New(artifactRoot)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	store, err := workflowstore.New(db, artifacts)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	return store
 }
 
 func coldStartGitRepository(t *testing.T, path string) string {

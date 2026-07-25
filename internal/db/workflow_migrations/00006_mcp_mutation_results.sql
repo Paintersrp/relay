@@ -3,9 +3,6 @@ CREATE TABLE mcp_mutation_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     surface_contract_id TEXT NOT NULL CHECK (
         surface_contract_id IN (
-            'wayfinder-workspace.v1',
-            'wayfinder-discovery.v1',
-            'wayfinder-investigation.v1',
             'planner-authoring.v1',
             'planner-plan.v1',
             'planner-execution.v1',
@@ -50,9 +47,6 @@ CREATE TABLE mcp_mutation_results (
     CHECK (
         (tool_name IN ('create_operation_packet', 'refresh_operation_packet', 'close_operation_packet')
             AND surface_contract_id IN (
-                'wayfinder-workspace.v1',
-                'wayfinder-discovery.v1',
-                'wayfinder-investigation.v1',
                 'planner-authoring.v1',
                 'planner-plan.v1',
                 'planner-execution.v1',
