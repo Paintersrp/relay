@@ -232,7 +232,7 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 		return CreateRunResult{}, fmt.Errorf("%w: invalid package Run identity", ErrInvalidRunInput)
 	}
 	runID := s.ids.RunID()
-	result := CreateRunResult{}
+	result := CreateRunResult{Artifacts: make([]workflowstore.Artifact, 0)}
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
 		if errors.Is(err, sql.ErrNoRows) {

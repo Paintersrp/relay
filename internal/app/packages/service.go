@@ -527,11 +527,12 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 		return packageBasis{}, err
 	}
 	designSHA := compoundSHA256("ticket-design-brief-v2", strconv.FormatInt(selectionMember.Sequence, 10), ticket.TicketID, strconv.FormatInt(revision.RevisionNumber, 10), validated.brief.input.DisplayName, validated.brief.sha256)
-	operationsSHA, operationsCoverage, operationsMarker := "", "", "operations absent"
+	operationsSHA, operationsCoverage := "", ""
 	if validated.operations != nil {
-		operationsSHA, operationsCoverage, operationsMarker = validated.operations.sha256, validated.operations.document.Coverage, "operations present"
+		operationsSHA, operationsCoverage = validated.operations.sha256, validated.operations.document.Coverage
 	}
-	packageParts := []string{"selected-package-v2", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, designSHA, validated.brief.input.DisplayName, validated.brief.sha256, operationsMarker, operationsSHA, operationsCoverage}
+	packageParts := []string{"selected-package-v3", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, designSHA, validated.brief.input.DisplayName, validated.brief.sha256}
+	packageParts = append(packageParts, selectedPackageOperationsDigestParts(validated.operations)...)
 	packageSHA := compoundSHA256(packageParts...)
 	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, designBriefSHA256: designSHA, operationsSHA256: operationsSHA, operationsCoverage: operationsCoverage, packageSHA256: packageSHA}
 	if packageRow != nil && (packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != revision.RepoTarget || packageRow.Branch != revision.Branch || packageRow.BaseCommit != revision.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || packageRow.DesignBriefSha256 != designSHA || nullStringValue(packageRow.DeterministicOperationsSha256) != nullableValue(operationsSHA) || nullStringValue(packageRow.DeterministicOperationsCoverage) != nullableValue(operationsCoverage)) {
@@ -679,6 +680,13 @@ func compoundSHA256(parts ...string) string {
 		_, _ = hash.Write([]byte("\x00"))
 	}
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func selectedPackageOperationsDigestParts(operations *validatedOperations) []string {
+	if operations == nil {
+		return []string{"operations absent"}
+	}
+	return []string{"operations present", operations.input.DisplayName, operations.sha256, operations.document.Coverage}
 }
 
 func sourceBasisSHA256(closure workflowstore.SourceVaultClosure) string {
