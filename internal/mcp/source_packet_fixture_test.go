@@ -13,12 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	appoperations "relay/internal/app/operations"
+	"relay/internal/app/mcpcomposition"
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/mcp/routecontracts"
 	workflowrepos "relay/internal/repos/workflow"
-	"relay/internal/sourcegateway"
-	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -102,33 +100,13 @@ func openSourcePacketFixture(t *testing.T) sourcePacketFixture {
 	}
 
 	vaultRoot := filepath.Join(root, "source-vault")
-	vaults, err := sourcevault.Open(ctx, vaultRoot, store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publications, err := appoperations.NewAuthorityPublicationService(store, vaults)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packets, err := appoperations.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lifecycle, err := appoperations.NewDefaultLifecycleService(store, repositories, vaults, publications, fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
+	policy, err := mcpcomposition.Open(ctx, vaultRoot, store, []byte(strings.Repeat("s", 32)), fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
 		return fileacquisition.FetchedFile{}, errors.New("source snapshot fixture has no file inputs")
-	}), packets)
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	lifecycleHandler, err := NewOperationPacketLifecycleHandler(lifecycle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	codec, err := sourcegateway.NewHMACCursorCodec([]byte(strings.Repeat("s", 32)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, err := sourcegateway.NewService(packets, vaults, store, codec)
+	lifecycleHandler, err := NewOperationPacketLifecycleHandler(policy.Lifecycle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +114,7 @@ func openSourcePacketFixture(t *testing.T) sourcePacketFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Packets: packets, Lifecycle: lifecycleHandler, Source: source})
+	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Packets: policy.Packets, Lifecycle: lifecycleHandler, Source: policy.Source})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +298,7 @@ func sourceRejection(t *testing.T, response Response) (bool, string) {
 
 func sourcePathArgument(path string) map[string]any {
 	digest := sha256.New()
-	digest.Write([]byte(sourcegateway.PathIdentityVersion))
+	digest.Write([]byte(mcpcomposition.SourcePathIdentityVersion))
 	digest.Write([]byte{0})
 	digest.Write([]byte(path))
 	return map[string]any{

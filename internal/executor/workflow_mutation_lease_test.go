@@ -359,7 +359,11 @@ func newPackageLinkedMutationLeaseFixture(t *testing.T, ctx context.Context) (*w
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := packages.Approve(ctx, workflowpackages.ApproveInput{PackageID: prepared.Package.PackageID})
+	approved, err := packages.Approve(ctx, workflowpackages.ApproveInput{
+		PackageID:                    prepared.Package.PackageID,
+		ExpectedPackageSha256:        prepared.Package.PackageSha256,
+		OperatorConfirmationEvidence: "Confirmed exact immutable package basis for mutation lease serialization fixture.",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

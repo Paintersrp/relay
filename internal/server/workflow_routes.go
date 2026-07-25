@@ -33,19 +33,18 @@ import (
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
 	"relay/internal/mcp"
-	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) http.Handler {
-	handler, _ := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, sourceVaults...)
+func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string) http.Handler {
+	handler, _ := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, nil)
 	return handler
 }
 
-func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) (http.Handler, []MCPRouteDescriptor) {
+func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor) {
 	if workflowStore == nil {
 		panic("workflow store is required")
 	}
@@ -136,17 +135,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err := mcp.ValidateCompiledSurfaceCatalog(); err != nil {
 		panic(err)
 	}
-	var mcpHandlers []mcpHandler
-	if len(sourceVaults) > 1 || (len(sourceVaults) == 1 && sourceVaults[0] == nil) {
-		panic("source vault manager is invalid")
-	}
-	if len(sourceVaults) == 1 {
-		mcpHandlers, err = buildMCPHandlers(workflowStore, sourceVaults[0], projectService, packetService, wayfinderService, ticketService, auditService, log)
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	mcpRoutes, err := mcpRouteDescriptors(mcpHandlers)
 	if err != nil {
 		panic(err)

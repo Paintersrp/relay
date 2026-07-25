@@ -13,13 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	appoperations "relay/internal/app/operations"
+	"relay/internal/app/mcpcomposition"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	relaydb "relay/internal/db"
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/mcp/routecontracts"
 	workflowrepos "relay/internal/repos/workflow"
-	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/pressly/goose/v3"
@@ -61,25 +60,13 @@ func runWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T, upgraded b
 	}); err != nil {
 		t.Fatal(err)
 	}
-	vaults, err := sourcevault.Open(ctx, filepath.Join(root, "source-vault"), store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publications, err := appoperations.NewAuthorityPublicationService(store, vaults)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packets, err := appoperations.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lifecycle, err := appoperations.NewDefaultLifecycleService(store, repositories, vaults, publications, fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
+	policy, err := mcpcomposition.Open(ctx, filepath.Join(root, "source-vault"), store, []byte("wayfinder-cold-start-cursor-key-000"), fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
 		return fileacquisition.FetchedFile{}, errors.New("cold-start test has no file inputs")
-	}), packets)
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	lifecycleHandler, err := NewOperationPacketLifecycleHandler(lifecycle)
+	lifecycleHandler, err := NewOperationPacketLifecycleHandler(policy.Lifecycle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +74,7 @@ func runWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T, upgraded b
 	if err != nil {
 		t.Fatal(err)
 	}
-	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Packets: packets, Lifecycle: lifecycleHandler})
+	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Packets: policy.Packets, Lifecycle: lifecycleHandler})
 	if err != nil {
 		t.Fatal(err)
 	}

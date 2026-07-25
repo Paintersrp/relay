@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"relay/internal/app/mcpcomposition"
 	"relay/internal/mcp/routecontracts"
 	"relay/internal/operations/registry"
-	"relay/internal/sourcegateway"
 )
 
 // sourceInvalidRequest is the bounded gateway reason returned once a request has
@@ -124,30 +124,30 @@ func TestSourceToolPublishedBoundsMatchGatewayLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := coldStartRoute(t, routes, sourceSnapshotSurface)
-	inlineBase64 := float64(4 * ((sourcegateway.MaxInlinePathBytes + 2) / 3))
+	inlineBase64 := float64(4 * ((mcpcomposition.MaxInlinePathBytes + 2) / 3))
 
 	for _, test := range []struct {
 		tool   string
 		bounds map[string]float64
 	}{
 		{tool: "list_source_tree", bounds: map[string]float64{
-			"limit.maximum":                 float64(sourcegateway.MaxTreePageEntries),
+			"limit.maximum":                 float64(mcpcomposition.MaxTreePageEntries),
 			"limit.minimum":                 1,
-			"cursor.maxLength":              float64(sourcegateway.MaxCursorTokenBytes),
+			"cursor.maxLength":              float64(mcpcomposition.MaxCursorTokenBytes),
 			"directory.inline_base64_bytes": inlineBase64,
 		}},
 		{tool: "search_source", bounds: map[string]float64{
-			"limit.maximum":                float64(sourcegateway.MaxSearchPageMatches),
+			"limit.maximum":                float64(mcpcomposition.MaxSearchPageMatches),
 			"limit.minimum":                1,
-			"text_literal.maxLength":       float64(sourcegateway.MaxSearchLiteralBytes),
-			"examined_bytes.minimum":       float64(sourcegateway.MinTextPageBytes),
-			"cursor.maxLength":             float64(sourcegateway.MaxCursorTokenBytes),
+			"text_literal.maxLength":       float64(mcpcomposition.MaxSearchLiteralBytes),
+			"examined_bytes.minimum":       float64(mcpcomposition.MinTextPageBytes),
+			"cursor.maxLength":             float64(mcpcomposition.MaxCursorTokenBytes),
 			"prefixes.inline_base64_bytes": inlineBase64,
 		}},
 		{tool: "read_source_text", bounds: map[string]float64{
-			"limit.minimum":            float64(sourcegateway.MinTextPageBytes),
-			"limit.maximum":            float64(sourcegateway.MaxTextPageBytes),
-			"cursor.maxLength":         float64(sourcegateway.MaxCursorTokenBytes),
+			"limit.minimum":            float64(mcpcomposition.MinTextPageBytes),
+			"limit.maximum":            float64(mcpcomposition.MaxTextPageBytes),
+			"cursor.maxLength":         float64(mcpcomposition.MaxCursorTokenBytes),
 			"path.inline_base64_bytes": inlineBase64,
 		}},
 	} {

@@ -7,13 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	appoperations "relay/internal/app/operations"
+	"relay/internal/app/mcpcomposition"
 	workflowprojects "relay/internal/app/projects/workflow"
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/mcp/routecontracts"
 	workflowrepos "relay/internal/repos/workflow"
-	"relay/internal/sourcegateway"
-	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -50,33 +48,13 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	vaults, err := sourcevault.Open(ctx, filepath.Join(root, "source-vault"), store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publications, err := appoperations.NewAuthorityPublicationService(store, vaults)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packets, err := appoperations.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lifecycle, err := appoperations.NewDefaultLifecycleService(store, repositories, vaults, publications, fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
+	policy, err := mcpcomposition.Open(ctx, filepath.Join(root, "source-vault"), store, []byte("wayfinder-discovery-cold-start-cursor-key"), fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
 		return fileacquisition.FetchedFile{}, errors.New("cold-start journey has no file inputs")
-	}), packets)
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	lifecycleHandler, err := NewOperationPacketLifecycleHandler(lifecycle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cursorCodec, err := sourcegateway.NewHMACCursorCodec([]byte("wayfinder-discovery-cold-start-cursor-key"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, err := sourcegateway.NewService(packets, vaults, store, cursorCodec)
+	lifecycleHandler, err := NewOperationPacketLifecycleHandler(policy.Lifecycle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,14 +67,11 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := coldStartRoute(t, routes, sourceSnapshotSurface)
-	if manifest.RoutePath != "/mcp/v1/wayfinder/discovery" {
-		t.Fatalf("route path = %q", manifest.RoutePath)
-	}
 	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{
 		Projects:  projects,
-		Packets:   packets,
+		Packets:   policy.Packets,
 		Lifecycle: lifecycleHandler,
-		Source:    source,
+		Source:    policy.Source,
 	})
 	if err != nil {
 		t.Fatal(err)

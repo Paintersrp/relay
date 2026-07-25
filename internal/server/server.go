@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync"
 
-	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/transport/mcpingress"
 )
@@ -18,8 +17,11 @@ type Server struct {
 	ingress   *mcpingress.Supervisor
 }
 
-func NewWorkflow(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...*sourcevault.Manager) *Server {
-	handler, routes := buildWorkflowRuntime(store, log, ownerInstanceID, sourceVaults...)
+func NewWorkflow(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, mcpHandlers []MCPHandler) *Server {
+	if len(mcpHandlers) != 3 {
+		panic("complete MCP handlers are required")
+	}
+	handler, routes := buildWorkflowRuntime(store, log, ownerInstanceID, mcpHandlers)
 	return &Server{log: log, mux: handler, mcpRoutes: routes}
 }
 

@@ -3,10 +3,22 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
+	"relay/internal/mcp"
 	"relay/internal/transport/mcpingress"
 )
+
+// MCPHandler is an already-composed published MCP application. The server
+// owns only HTTP mounting and ingress metadata validation.
+type MCPHandler struct {
+	Path                        string
+	PublicSurface               string
+	PublicSurfaceManifestSHA256 string
+	ToolRegistrations           []mcp.AppToolRegistration
+	Handler                     http.Handler
+}
 
 type MCPRouteDescriptor struct {
 	MappingID                   mcpingress.MappingID
@@ -27,7 +39,7 @@ type MCPIngressSummary struct {
 	UpstreamBearerConfigured bool
 }
 
-func mcpRouteDescriptors(handlers []mcpHandler) ([]MCPRouteDescriptor, error) {
+func mcpRouteDescriptors(handlers []MCPHandler) ([]MCPRouteDescriptor, error) {
 	if len(handlers) == 0 {
 		return nil, nil
 	}
@@ -35,7 +47,7 @@ func mcpRouteDescriptors(handlers []mcpHandler) ([]MCPRouteDescriptor, error) {
 	if len(handlers) != len(catalog) {
 		return nil, fmt.Errorf("MCP_INGRESS_MAPPING_SET_INVALID: handlers=%d", len(handlers))
 	}
-	byPath := make(map[string]mcpHandler, len(handlers))
+	byPath := make(map[string]MCPHandler, len(handlers))
 	for _, handler := range handlers {
 		if _, duplicate := byPath[handler.Path]; duplicate {
 			return nil, fmt.Errorf("MCP_INGRESS_MAPPING_SET_INVALID: duplicate route %s", handler.Path)

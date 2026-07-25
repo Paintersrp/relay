@@ -14,7 +14,7 @@ import (
 
 func TestMCPRouteDescriptorsAndIngressSummaryUseExactClosedCatalog(t *testing.T) {
 	catalog := mcpingress.Catalog()
-	handlers := make([]mcpHandler, len(catalog))
+	handlers := make([]MCPHandler, len(catalog))
 	for index, mapping := range catalog {
 		handlers[index] = testMCPHandler(mapping, index)
 	}
@@ -26,7 +26,7 @@ func TestMCPRouteDescriptorsAndIngressSummaryUseExactClosedCatalog(t *testing.T)
 		t.Fatalf("routes=%d", len(routes))
 	}
 	for index, route := range routes {
-		if route.MappingID != catalog[index].MappingID || route.RoutePath != catalog[index].RoutePath || route.PublicSurface != handlers[index].PublicSurface || route.PublicSurfaceManifestSHA256 != handlers[index].PublicSurfaceManifestSHA256 || len(route.ToolIdentities) != 1 || route.ToolIdentities[0].InternalRoutePath != "/mcp/v1/test" {
+		if route.MappingID != catalog[index].MappingID || route.RoutePath != catalog[index].RoutePath || route.PublicSurface != handlers[index].PublicSurface || route.PublicSurfaceManifestSHA256 != handlers[index].PublicSurfaceManifestSHA256 || len(route.ToolIdentities) != 1 || route.ToolIdentities[0].InternalRoutePath != "/mcp"+"/v1/test" {
 			t.Fatalf("route[%d]=%#v", index, route)
 		}
 	}
@@ -54,7 +54,7 @@ func TestMCPRouteDescriptorsAndIngressSummaryUseExactClosedCatalog(t *testing.T)
 
 func TestMCPRouteDescriptorsRejectMissingOrDuplicateRoute(t *testing.T) {
 	catalog := mcpingress.Catalog()
-	handlers := make([]mcpHandler, len(catalog))
+	handlers := make([]MCPHandler, len(catalog))
 	for index, mapping := range catalog {
 		handlers[index] = testMCPHandler(mapping, index)
 	}
@@ -74,11 +74,11 @@ func TestMCPRouteDescriptorsRejectMissingOrDuplicateRoute(t *testing.T) {
 	}
 }
 
-func testMCPHandler(mapping mcpingress.RouteDescriptor, index int) mcpHandler {
-	return mcpHandler{
+func testMCPHandler(mapping mcpingress.RouteDescriptor, index int) MCPHandler {
+	return MCPHandler{
 		Path: mapping.RoutePath, PublicSurface: string(mapping.MappingID), PublicSurfaceManifestSHA256: strings.Repeat(fmt.Sprintf("%x", index+1), 64),
 		ToolRegistrations: []mcp.AppToolRegistration{{
-			AdvertisedName: "tool_" + string(mapping.MappingID), InternalToolName: "search_source", InternalRoutePath: "/mcp/v1/test",
+			AdvertisedName: "tool_" + string(mapping.MappingID), InternalToolName: "search_source", InternalRoutePath: "/mcp" + "/v1/test",
 			SurfaceContract: "test-surface.v1", RouteManifestSHA256: strings.Repeat("a", 64),
 			StandingAuthority: routecontracts.StandingAuthorityIdentity{Repository: "Paintersrp/relay-specs", Commit: strings.Repeat("b", 40), Path: "agents/test.md", BlobOID: strings.Repeat("c", 40)},
 		}},

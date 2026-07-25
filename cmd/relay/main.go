@@ -12,9 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"relay/internal/app/mcpcomposition"
 	"relay/internal/app/operations"
+	mcpbootstrap "relay/internal/bootstrap/mcp"
 	"relay/internal/config"
 	"relay/internal/executor"
+	"relay/internal/mcp"
 	"relay/internal/server"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
@@ -61,8 +64,20 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 	if err := authorityPublications.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile operation packet authority publications: %w", err)
 	}
+	cursorKey, err := mcpbootstrap.SourceCursorKeyFromEnv()
+	if err != nil {
+		return err
+	}
+	policy, err := mcpcomposition.New(workflowStore, sourceVaults, authorityPublications, cursorKey, mcp.NewHTTPSFileParameterFetcher())
+	if err != nil {
+		return fmt.Errorf("compose retained source policy: %w", err)
+	}
+	mcpHandlers, err := mcpbootstrap.BuildHandlers(workflowStore, policy, log)
+	if err != nil {
+		return fmt.Errorf("compose published MCP handlers: %w", err)
+	}
 	ownerInstanceID := executor.NewOwnerInstanceID()
-	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID, sourceVaults)
+	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID, mcpHandlers)
 	port := environmentOrDefault("PORT", "8080")
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {

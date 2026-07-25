@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"relay/internal/operations/registry"
+	sourcecontract "relay/contracts/source"
 )
 
 const (
@@ -257,7 +257,7 @@ func main() {
 		if !ok {
 			fatalf("schema %q missing", name)
 		}
-		if input, output, owned := registry.SourceToolContractSchemas(name); owned {
+		if input, output, owned := sourcecontract.Schemas(name); owned {
 			if len(input) == 0 || len(output) == 0 {
 				fatalf("source tool schema %q is empty", name)
 			}
