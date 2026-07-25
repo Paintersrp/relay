@@ -195,7 +195,7 @@ func main() {
 	}
 
 	aggregateToolSchemas := loadAggregateToolSchemas(dir)
-	packetToolSchemas := buildPacketToolSchemas(aggregateToolSchemas, routes.Routes)
+	packetToolSchemas := buildPacketToolSchemas(routes.Routes)
 	familyToolSchemas := buildFamilyToolSchemas(family)
 	publishedExplicitToolSchemas := buildPublishedExplicitToolSchemas()
 	metadataByName := map[string]metadataTool{}
@@ -271,7 +271,7 @@ func main() {
 	writePins(filepath.Join(dir, pinsOutput), mustRead(filepath.Join(dir, operationsOutput)), mustRead(filepath.Join(dir, publicOutput)), bindingsRaw)
 }
 
-func buildPacketToolSchemas(aggregate map[string]generatedTool, routes []routeDefinition) map[string]generatedTool {
+func buildPacketToolSchemas(routes []routeDefinition) map[string]generatedTool {
 	operationIDs := make([]string, 0)
 	seenOperations := map[string]struct{}{}
 	for _, route := range routes {
@@ -283,7 +283,6 @@ func buildPacketToolSchemas(aggregate map[string]generatedTool, routes []routeDe
 			operationIDs = append(operationIDs, operation)
 		}
 	}
-	surfaces := []string{"wayfinder-workspace.v1", "wayfinder-discovery.v1", "wayfinder-investigation.v1", "planner-authoring.v1", "planner-plan.v1", "planner-execution.v1", "auditor-review.v1", "auditor-audit.v1", "auditor-remediation.v1"}
 	titles := map[string]string{
 		"get_active_operation_packet": "Get active operation packet",
 		"create_operation_packet":     "Create operation packet",
@@ -292,90 +291,117 @@ func buildPacketToolSchemas(aggregate map[string]generatedTool, routes []routeDe
 		"read_operation_input":        "Read operation input",
 		"list_operation_repositories": "List operation repositories",
 	}
+	descriptions := map[string]string{
+		"get_active_operation_packet": "Return the active immutable operation packet selected by Project, operation, and surface.",
+		"create_operation_packet":     "Create one complete immutable independent operation packet for an operation allowed by this surface, acquiring any bounded direct uploaded inputs atomically. Relay publishes only a fully ready packet and recovers the same result on retry.",
+		"refresh_operation_packet":    "Create one complete immutable replacement for the supplied active packet, acquire any bounded direct uploaded inputs atomically, supersede only that packet, and recover the same replacement on retry.",
+		"close_operation_packet":      "Close only the supplied active packet without deleting retained packet evidence or changing any unrelated packet; retries recover the same close result.",
+		"read_operation_input":        "Read bounded exact bytes and identity metadata for one input bound to the supplied active or retained operation packet.",
+		"list_operation_repositories": "List packet-bound repositories, configured-branch resolutions, primary revisions, trees, and authorized named anchors with deterministic continuation.",
+	}
+	invoking := map[string]string{
+		"get_active_operation_packet": "Reading active operation packet", "create_operation_packet": "Creating operation packet", "refresh_operation_packet": "Refreshing operation packet", "close_operation_packet": "Closing operation packet", "read_operation_input": "Reading operation input", "list_operation_repositories": "Listing operation repositories",
+	}
+	invoked := map[string]string{
+		"get_active_operation_packet": "Active operation packet read", "create_operation_packet": "Operation packet created", "refresh_operation_packet": "Operation packet refreshed", "close_operation_packet": "Operation packet closed", "read_operation_input": "Operation input read", "list_operation_repositories": "Operation repositories listed",
+	}
+	semanticIDs := map[string]string{
+		"get_active_operation_packet": "relay.operation-packet.active.v1", "create_operation_packet": "relay.operation-packet.create.v1", "refresh_operation_packet": "relay.operation-packet.refresh.v1", "close_operation_packet": "relay.operation-packet.close.v1", "read_operation_input": "relay.operation-packet.input.v1", "list_operation_repositories": "relay.operation-packet.repositories.v1",
+	}
 	result := make(map[string]generatedTool, len(titles))
 	for name, title := range titles {
-		sourceName := name
-		if name == "get_active_operation_packet" {
-			sourceName = "get_operation_packet"
-		}
-		tool, ok := aggregate[sourceName]
-		if !ok {
-			continue
-		}
-		tool.Name = name
-		tool.Title = title
-		tool.InputSchema = rewritePacketSchema(name, tool.InputSchema, surfaces, operationIDs, true)
-		tool.OutputSchema = rewritePacketSchema(name, tool.OutputSchema, surfaces, operationIDs, false)
-		result[name] = tool
+		input, output := explicitPacketSchemas(name, operationIDs)
+		result[name] = generatedTool{Name: name, Title: title, Description: descriptions[name], SemanticToolID: semanticIDs[name], Invoking: invoking[name], Invoked: invoked[name], InputSchema: input, OutputSchema: output}
 	}
 	return result
 }
 
-func rewritePacketSchema(tool string, raw json.RawMessage, surfaces, operationIDs []string, input bool) json.RawMessage {
-	var root map[string]any
-	if err := json.Unmarshal(raw, &root); err != nil {
-		fatalf("packet schema %q: %v", tool, err)
+func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage, json.RawMessage) {
+	ref := func(name string) map[string]any { return map[string]any{"$ref": "#/$defs/" + name} }
+	array := func(item string, max int) map[string]any {
+		return map[string]any{"type": "array", "minItems": 0, "maxItems": max, "items": ref(item)}
 	}
-	root["$id"] = "urn:relay:mcp:shared-operation-packet.v1:" + tool + map[bool]string{true: ":input:v1", false: ":output:v1"}[input]
-	patchPacketSchemaNode(root, surfaces)
-	if input {
-		properties, _ := root["properties"].(map[string]any)
-		if tool == "get_active_operation_packet" {
-			delete(properties, "expected_packet_id")
-			properties["project_id"] = map[string]any{"$ref": "#/$defs/OpaqueID"}
-			properties["operation_id"] = map[string]any{"type": "string", "enum": operationIDs}
-			root["required"] = []any{"surface_contract", "project_id", "operation_id"}
-		} else if tool == "create_operation_packet" {
-			properties["operation_id"] = map[string]any{"type": "string", "enum": operationIDs}
-		} else if tool == "read_operation_input" || tool == "list_operation_repositories" {
-			if expected, exists := properties["expected_packet_id"]; exists {
-				properties["packet_id"] = expected
-				delete(properties, "expected_packet_id")
-			}
-			required, _ := root["required"].([]any)
-			for index, value := range required {
-				if value == "expected_packet_id" {
-					required[index] = "packet_id"
-				}
-			}
-			root["required"] = required
-		}
+	stringProperty := func() map[string]any { return map[string]any{"type": "string"} }
+	inputProperties := map[string]any{"surface_contract": stringProperty()}
+	var required []string
+	switch tool {
+	case "get_active_operation_packet":
+		inputProperties["project_id"] = ref("OpaqueID")
+		inputProperties["operation_id"] = map[string]any{"type": "string", "enum": operationIDs}
+		required = []string{"surface_contract", "project_id", "operation_id"}
+	case "create_operation_packet":
+		inputProperties["mutation_id"] = ref("MutationID")
+		inputProperties["operation_id"] = map[string]any{"type": "string", "enum": operationIDs}
+		inputProperties["project_id"] = ref("OpaqueID")
+		inputProperties["input_files"] = array("OpenAIFileParameter", 64)
+		inputProperties["inputs"] = array("InputBinding", 64)
+		inputProperties["workflow_references"] = array("WorkflowReferenceRequest", 32)
+		inputProperties["attestations"] = array("AttestationRequest", 128)
+		inputProperties["primary_revisions"] = array("PrimaryRevisionRequest", 64)
+		inputProperties["comparison_anchors"] = array("ComparisonAnchorRequest", 128)
+		inputProperties["relay_specs_revision"] = ref("GitObjectID")
+		required = []string{"surface_contract", "mutation_id", "operation_id", "project_id", "inputs", "workflow_references", "attestations"}
+	case "refresh_operation_packet":
+		inputProperties["mutation_id"] = ref("MutationID")
+		inputProperties["expected_packet_id"] = ref("OpaqueID")
+		inputProperties["input_files"] = array("OpenAIFileParameter", 64)
+		inputProperties["inputs"] = array("InputBinding", 64)
+		inputProperties["workflow_references"] = array("WorkflowReferenceRequest", 32)
+		inputProperties["attestations"] = array("AttestationRequest", 128)
+		inputProperties["primary_revisions"] = array("PrimaryRevisionRequest", 64)
+		inputProperties["comparison_anchors"] = array("ComparisonAnchorRequest", 128)
+		inputProperties["relay_specs_revision"] = ref("GitObjectID")
+		required = []string{"surface_contract", "mutation_id", "expected_packet_id", "inputs", "workflow_references", "attestations"}
+	case "close_operation_packet":
+		inputProperties["mutation_id"] = ref("MutationID")
+		inputProperties["expected_packet_id"] = ref("OpaqueID")
+		required = []string{"surface_contract", "mutation_id", "expected_packet_id"}
+	case "read_operation_input":
+		inputProperties["packet_id"] = ref("OpaqueID")
+		inputProperties["input_name"] = ref("SlotName")
+		inputProperties["limit_bytes"] = ref("ByteLimit")
+		inputProperties["cursor"] = ref("Cursor")
+		required = []string{"surface_contract", "packet_id", "input_name", "limit_bytes"}
+	case "list_operation_repositories":
+		inputProperties["packet_id"] = ref("OpaqueID")
+		inputProperties["limit"] = ref("RepositoryListLimit")
+		inputProperties["cursor"] = ref("Cursor")
+		required = []string{"surface_contract", "packet_id"}
 	}
-	encoded, err := json.Marshal(root)
-	if err != nil {
-		fatalf("encode packet schema %q: %v", tool, err)
+	input := objectSchema(required, inputProperties)
+	var output map[string]any
+	switch tool {
+	case "get_active_operation_packet":
+		output = objectSchema([]string{"summary", "document_media_type", "document_size_bytes", "document_bytes_base64"}, map[string]any{"summary": ref("OperationPacketSummary"), "document_media_type": map[string]any{"type": "string", "const": "application/vnd.relay.operation-packet+json;version=1"}, "document_size_bytes": ref("NonNegativeInteger"), "document_bytes_base64": ref("CanonicalBase64")})
+	case "create_operation_packet":
+		output = objectSchema([]string{"packet", "mutation"}, map[string]any{"packet": ref("OperationPacketView"), "mutation": mutationSchema()})
+	case "refresh_operation_packet":
+		output = objectSchema([]string{"prior_packet", "packet", "mutation"}, map[string]any{"prior_packet": ref("OperationPacketSummary"), "packet": ref("OperationPacketView"), "mutation": mutationSchema()})
+	case "close_operation_packet":
+		output = objectSchema([]string{"packet", "mutation"}, map[string]any{"packet": ref("OperationPacketSummary"), "mutation": mutationSchema()})
+	case "read_operation_input":
+		output = objectSchema([]string{"packet", "input"}, map[string]any{"packet": ref("OperationPacketSummary"), "input": map[string]any{}})
+	case "list_operation_repositories":
+		output = objectSchema([]string{"packet", "repositories"}, map[string]any{"packet": ref("OperationPacketSummary"), "repositories": map[string]any{"type": "array", "minItems": 0, "maxItems": 64, "items": ref("OperationRepositoryView")}})
 	}
-	return encoded
+	output = map[string]any{"oneOf": []any{output}}
+	return marshalSchema(input), marshalSchema(output)
 }
 
-func patchPacketSchemaNode(value map[string]any, surfaces []string) {
-	if properties, ok := value["properties"].(map[string]any); ok {
-		if surface, ok := properties["surface_contract"].(map[string]any); ok {
-			delete(surface, "const")
-			surface["type"] = "string"
-			surface["enum"] = surfaces
-		}
-		for _, child := range properties {
-			if childMap, ok := child.(map[string]any); ok {
-				patchPacketSchemaNode(childMap, surfaces)
-			}
-		}
+func objectSchema(required []string, properties map[string]any) map[string]any {
+	return map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
+}
+
+func mutationSchema() map[string]any {
+	return objectSchema([]string{"result_kind", "result_sha256", "committed_at", "replay"}, map[string]any{"result_kind": map[string]any{"type": "string", "minLength": 1, "maxLength": 255}, "result_sha256": map[string]any{"$ref": "#/$defs/SHA256"}, "committed_at": map[string]any{"$ref": "#/$defs/RFC3339"}, "replay": map[string]any{"type": "boolean"}})
+}
+
+func marshalSchema(value any) json.RawMessage {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		fatalf("encode explicit packet schema: %v", err)
 	}
-	if defs, ok := value["$defs"].(map[string]any); ok {
-		if role, ok := defs["Role"].(map[string]any); ok {
-			role["enum"] = []any{"wayfinder", "planner", "auditor"}
-		}
-		if surface, ok := defs["SurfaceContractID"].(map[string]any); ok {
-			surface["enum"] = surfaces
-		}
-	}
-	if oneOf, ok := value["oneOf"].([]any); ok {
-		for _, child := range oneOf {
-			if childMap, ok := child.(map[string]any); ok {
-				patchPacketSchemaNode(childMap, surfaces)
-			}
-		}
-	}
+	return raw
 }
 
 func loadAggregateToolSchemas(dir string) map[string]generatedTool {

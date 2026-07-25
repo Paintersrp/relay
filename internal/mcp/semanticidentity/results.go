@@ -348,7 +348,7 @@ func validatePacketView(value OperationPacketViewIdentity) error {
 }
 
 func validatePacketSummary(value PacketSummaryIdentity) error {
-	if !validOpaque(value.PacketID) || !validSHA256(value.PacketSHA256) || value.SchemaVersion != "relay.operation-packet.v1" || (value.Role != "planner" && value.Role != "auditor") || value.OperationID == "" || value.SurfaceContractID == "" || !validOpaque(value.ProjectID) || value.ReadinessState != "ready" {
+	if !validOpaque(value.PacketID) || !validSHA256(value.PacketSHA256) || value.SchemaVersion != "relay.operation-packet.v1" || (value.Role != "wayfinder" && value.Role != "planner" && value.Role != "auditor") || value.OperationID == "" || value.SurfaceContractID == "" || !validOpaque(value.ProjectID) || value.ReadinessState != "ready" {
 		return ErrInvalidResultIdentity
 	}
 	switch value.LifecycleState {
@@ -371,7 +371,7 @@ func validatePacketSummary(value PacketSummaryIdentity) error {
 }
 
 func validateReplacementPacket(value ReplacementPacketIdentity) error {
-	if !validOpaque(value.PacketID) || !validSHA256(value.PacketSHA256) || (value.Role != "planner" && value.Role != "auditor") || value.OperationID == "" || value.SurfaceContractID == "" {
+	if !validOpaque(value.PacketID) || !validSHA256(value.PacketSHA256) || (value.Role != "wayfinder" && value.Role != "planner" && value.Role != "auditor") || value.OperationID == "" || value.SurfaceContractID == "" {
 		return ErrInvalidResultIdentity
 	}
 	return nil

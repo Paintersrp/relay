@@ -238,6 +238,19 @@ func SemanticProjectionVersion(tool string) (string, bool) {
 		return "", false
 	}
 	value, ok := loaded.SemanticProjectionVersions[tool]
+	if ok {
+		return value, true
+	}
+	// Wayfinder bootstrap operations use their published packet lifecycle
+	// projection while remaining outside the legacy planner/auditor registry.
+	switch MutationTool(tool) {
+	case MutationToolCreateOperationPacket:
+		return "relay.semantic.wayfinder-mutation.v1", true
+	case MutationToolRefreshOperationPacket:
+		return "relay.semantic.wayfinder-mutation.v1", true
+	case MutationToolCloseOperationPacket:
+		return "relay.semantic.wayfinder-mutation.v1", true
+	}
 	return value, ok
 }
 

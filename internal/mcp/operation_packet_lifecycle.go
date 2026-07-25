@@ -14,12 +14,27 @@ type OperationPacketLifecycleHandler struct {
 	service *appoperations.LifecycleService
 }
 
-type OperationPacketLifecycleEnvelope struct {
-	ResultKind         semanticidentity.ResultKind `json:"result_kind"`
-	ResultIdentityJSON []byte                      `json:"result_identity_json"`
-	ResultSHA256       string                      `json:"result_sha256"`
-	CommittedAt        string                      `json:"committed_at"`
-	Replay             bool                        `json:"replay"`
+type OperationPacketMutation struct {
+	ResultKind   semanticidentity.ResultKind `json:"result_kind"`
+	ResultSHA256 string                      `json:"result_sha256"`
+	CommittedAt  string                      `json:"committed_at"`
+	Replay       bool                        `json:"replay"`
+}
+
+type CreateOperationPacketResult struct {
+	Packet   OperationPacketView     `json:"packet"`
+	Mutation OperationPacketMutation `json:"mutation"`
+}
+
+type RefreshOperationPacketResult struct {
+	PriorPacket OperationPacketSummary  `json:"prior_packet"`
+	Packet      OperationPacketView     `json:"packet"`
+	Mutation    OperationPacketMutation `json:"mutation"`
+}
+
+type CloseOperationPacketResult struct {
+	Packet   OperationPacketSummary  `json:"packet"`
+	Mutation OperationPacketMutation `json:"mutation"`
 }
 
 type CreateOperationPacketRequest struct {
@@ -47,30 +62,30 @@ func NewOperationPacketLifecycleHandler(service *appoperations.LifecycleService)
 	return &OperationPacketLifecycleHandler{service: service}, nil
 }
 
-func (h *OperationPacketLifecycleHandler) Create(ctx context.Context, request CreateOperationPacketRequest) (OperationPacketLifecycleEnvelope, error) {
+func (h *OperationPacketLifecycleHandler) Create(ctx context.Context, request CreateOperationPacketRequest) (CreateOperationPacketResult, error) {
 	result, err := h.service.Create(ctx, appoperations.CreateLifecycleInput{MutationID: request.MutationID, Identity: request.Identity, Files: request.Files})
 	if err != nil {
-		return OperationPacketLifecycleEnvelope{}, err
+		return CreateOperationPacketResult{}, err
 	}
-	return lifecycleEnvelope(result.Mutation, result.Replay), nil
+	return CreateOperationPacketResult{Packet: OperationPacketViewFromApplication(result.Packet), Mutation: lifecycleMutation(result.Mutation, result.Replay)}, nil
 }
 
-func (h *OperationPacketLifecycleHandler) Refresh(ctx context.Context, request RefreshOperationPacketRequest) (OperationPacketLifecycleEnvelope, error) {
+func (h *OperationPacketLifecycleHandler) Refresh(ctx context.Context, request RefreshOperationPacketRequest) (RefreshOperationPacketResult, error) {
 	result, err := h.service.Refresh(ctx, appoperations.RefreshLifecycleInput{MutationID: request.MutationID, PriorPacketID: request.PriorPacketID, Identity: request.Identity, Files: request.Files})
 	if err != nil {
-		return OperationPacketLifecycleEnvelope{}, err
+		return RefreshOperationPacketResult{}, err
 	}
-	return lifecycleEnvelope(result.Mutation, result.Replay), nil
+	return RefreshOperationPacketResult{PriorPacket: OperationPacketSummaryFromApplication(result.Prior), Packet: OperationPacketViewFromApplication(result.Packet), Mutation: lifecycleMutation(result.Mutation, result.Replay)}, nil
 }
 
-func (h *OperationPacketLifecycleHandler) Close(ctx context.Context, request CloseOperationPacketRequest) (OperationPacketLifecycleEnvelope, error) {
+func (h *OperationPacketLifecycleHandler) Close(ctx context.Context, request CloseOperationPacketRequest) (CloseOperationPacketResult, error) {
 	result, err := h.service.Close(ctx, appoperations.CloseLifecycleInput{MutationID: request.MutationID, Identity: request.Identity})
 	if err != nil {
-		return OperationPacketLifecycleEnvelope{}, err
+		return CloseOperationPacketResult{}, err
 	}
-	return lifecycleEnvelope(result.Mutation, result.Replay), nil
+	return CloseOperationPacketResult{Packet: OperationPacketSummaryFromApplication(result.Packet), Mutation: lifecycleMutation(result.Mutation, result.Replay)}, nil
 }
 
-func lifecycleEnvelope(result idempotency.StoredResult, replay bool) OperationPacketLifecycleEnvelope {
-	return OperationPacketLifecycleEnvelope{ResultKind: result.ResultKind, ResultIdentityJSON: append([]byte(nil), result.ResultIdentityJSON...), ResultSHA256: result.ResultSHA256, CommittedAt: result.CommittedAt, Replay: replay}
+func lifecycleMutation(result idempotency.StoredResult, replay bool) OperationPacketMutation {
+	return OperationPacketMutation{ResultKind: result.ResultKind, ResultSHA256: result.ResultSHA256, CommittedAt: result.CommittedAt, Replay: replay}
 }

@@ -145,7 +145,7 @@ func newPacketLifecycleHandler(manifest routecontracts.RouteManifest, name strin
 			if err != nil {
 				return toolErr(err.Error())
 			}
-			return workflowOK(value)
+			return workflowOK(OperationPacketViewFromApplication(value))
 		}
 	case "create_operation_packet":
 		return func(raw json.RawMessage) ToolCallResult {
@@ -262,12 +262,12 @@ func newPacketSectionProjectionHandler(manifest routecontracts.RouteManifest, pa
 		if section == "inputs" && in.InputName != "" {
 			for _, value := range values {
 				if item, ok := value.(map[string]any); ok && item["input_name"] == in.InputName {
-					return workflowOK(map[string]any{"packet": view.Summary, "input": item})
+					return workflowOK(map[string]any{"packet": OperationPacketSummaryFromApplication(view.Summary), "input": item})
 				}
 			}
 			return toolErr("operation input was not found")
 		}
-		return workflowOK(map[string]any{"packet": view.Summary, section: values})
+		return workflowOK(map[string]any{"packet": OperationPacketSummaryFromApplication(view.Summary), section: values})
 	}
 }
 
