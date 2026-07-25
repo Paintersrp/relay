@@ -82,9 +82,8 @@ wayfinder-discovery-v1__list_projects.project_id
 → wayfinder-discovery-v1__create_operation_packet.project_id
 
 wayfinder-discovery-v1__create_operation_packet.packet_id
-→ wayfinder-discovery-v1__get_active_operation_packet
-→ wayfinder-discovery-v1__list_operation_repositories
-→ the three discovery source calls
+→ compare with the returned active packet from wayfinder-discovery-v1__get_active_operation_packet
+→ supply to wayfinder-discovery-v1__list_operation_repositories and the three discovery source calls
 
 wayfinder-discovery-v1__list_operation_repositories.repository_key
 → the three discovery source calls
