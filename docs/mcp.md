@@ -63,19 +63,32 @@ A valid operation packet authorizes one repository binding and exact retained so
 
 ### Cold-start Wayfinder discovery
 
-A Wayfinder discovery begins with:
+Through the public Wayfinder role app at `POST /mcp/wayfinder`, a discovery client uses the generated public advertised aliases in this sequence. Each alias is statically bound to `wayfinder-discovery.v1`; request content does not select the route.
 
 ```text
-list_projects
-→ create_operation_packet
-→ get_active_operation_packet
-→ list_operation_repositories
-→ list_source_tree
-→ search_source
-→ read_source_text
+wayfinder-discovery-v1__list_projects
+→ wayfinder-discovery-v1__create_operation_packet
+→ wayfinder-discovery-v1__get_active_operation_packet
+→ wayfinder-discovery-v1__list_operation_repositories
+→ wayfinder-discovery-v1__list_source_tree
+→ wayfinder-discovery-v1__search_source
+→ wayfinder-discovery-v1__read_source_text
 ```
 
-The identities flow as `list_projects.project_id` to `create_operation_packet.project_id`, `create_operation_packet.packet_id` to active lookup and repository/source calls, and `list_operation_repositories.repository_key` to source calls.
+The identities flow as:
+
+```text
+wayfinder-discovery-v1__list_projects.project_id
+→ wayfinder-discovery-v1__create_operation_packet.project_id
+
+wayfinder-discovery-v1__create_operation_packet.packet_id
+→ wayfinder-discovery-v1__get_active_operation_packet
+→ wayfinder-discovery-v1__list_operation_repositories
+→ the three discovery source calls
+
+wayfinder-discovery-v1__list_operation_repositories.repository_key
+→ the three discovery source calls
+```
 
 ## Private role-app ingress
 
