@@ -9,6 +9,8 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
+
+	"relay/internal/operations/registry"
 )
 
 const (
@@ -254,6 +256,13 @@ func main() {
 		}
 		if !ok {
 			fatalf("schema %q missing", name)
+		}
+		if input, output, owned := registry.SourceToolContractSchemas(name); owned {
+			if len(input) == 0 || len(output) == 0 {
+				fatalf("source tool schema %q is empty", name)
+			}
+			tool.InputSchema = input
+			tool.OutputSchema = output
 		}
 		tool.Name = name
 		tool.Category = meta.Category

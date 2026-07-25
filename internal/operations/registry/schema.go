@@ -64,6 +64,26 @@ func ValidateRequest(surface SurfaceContractID, tool string, raw []byte) (map[st
 	return request, nil
 }
 
+// ValidateSchemaInstance validates one decoded JSON object against one
+// published schema document expressed in the supported draft 2020-12 subset.
+func ValidateSchemaInstance(schema json.RawMessage, instance []byte) error {
+	parsed, err := parseOrderedJSON(schema)
+	if err != nil {
+		return requestError("request_schema_invalid", "$")
+	}
+	definitions := map[string]*orderedValue{}
+	if node, ok := objectValue(parsed, "$defs"); ok && node.kind == 'o' {
+		for _, member := range node.object {
+			definitions[member.Name] = member.Value
+		}
+	}
+	value, err := decodeRequest(instance)
+	if err != nil {
+		return requestError("request_json_invalid", "$")
+	}
+	return boundedRequestError(validateInstance(value, parsed, definitions, "$"))
+}
+
 func ValidateSchemaDocument(raw []byte) error {
 	root, err := parseOrderedJSON(raw)
 	if err != nil {

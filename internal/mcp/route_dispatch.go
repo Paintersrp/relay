@@ -304,6 +304,28 @@ type packetSourceContext struct {
 	Revision      sourcegateway.RevisionReference `json:"revision"`
 }
 
+// packetSourceRoute is the request context for the packet-authorized source
+// read tools. The mounted route stays the surface authority; a supplied
+// surface_contract is only ever verified against it.
+type packetSourceRoute struct {
+	SurfaceContract registry.SurfaceContractID `json:"surface_contract"`
+	PacketID        string                     `json:"packet_id"`
+	OperationID     registry.OperationID       `json:"operation_id"`
+	RepositoryKey   string                     `json:"repository_key"`
+}
+
+type packetSourceRevision struct {
+	packetSourceRoute
+	Revision sourcegateway.RevisionReference `json:"revision"`
+}
+
+func requireSourceRoute(manifest routecontracts.RouteManifest, scope packetSourceRoute) (registry.SurfaceContractID, registry.OperationID, error) {
+	if scope.SurfaceContract != "" && string(scope.SurfaceContract) != manifest.SurfaceContract {
+		return "", "", fmt.Errorf("operation packet route does not match")
+	}
+	return requireManifestOperation(manifest, scope.OperationID)
+}
+
 func requireManifestOperation(manifest routecontracts.RouteManifest, requested registry.OperationID) (registry.SurfaceContractID, registry.OperationID, error) {
 	if requested == "" {
 		if len(manifest.Operations) != 1 {
@@ -324,7 +346,7 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 		switch name {
 		case "list_source_tree":
 			var in struct {
-				packetSourceContext
+				packetSourceRoute
 				Directory sourcegateway.PathReference `json:"directory"`
 				Recursive bool                        `json:"recursive"`
 				Limit     int                         `json:"limit"`
@@ -333,7 +355,7 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			surface, op, err := requireManifestOperation(manifest, in.OperationID)
+			surface, op, err := requireSourceRoute(manifest, in.packetSourceRoute)
 			if err != nil {
 				return toolErr(err.Error())
 			}
@@ -344,7 +366,7 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 			return workflowOK(value)
 		case "search_source":
 			var in struct {
-				packetSourceContext
+				packetSourceRevision
 				Mode              sourcegateway.SearchMode      `json:"mode"`
 				TextLiteral       string                        `json:"text_literal"`
 				ByteLiteralBase64 string                        `json:"byte_literal_base64"`
@@ -357,7 +379,7 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			surface, op, err := requireManifestOperation(manifest, in.OperationID)
+			surface, op, err := requireSourceRoute(manifest, in.packetSourceRoute)
 			if err != nil {
 				return toolErr(err.Error())
 			}
@@ -376,7 +398,7 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 			return workflowOK(value)
 		case "read_source_text":
 			var in struct {
-				packetSourceContext
+				packetSourceRevision
 				Path   sourcegateway.PathReference `json:"path"`
 				Offset int64                       `json:"offset"`
 				Limit  int64                       `json:"limit"`
@@ -385,7 +407,7 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			surface, op, err := requireManifestOperation(manifest, in.OperationID)
+			surface, op, err := requireSourceRoute(manifest, in.packetSourceRoute)
 			if err != nil {
 				return toolErr(err.Error())
 			}

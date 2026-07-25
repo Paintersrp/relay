@@ -976,6 +976,9 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 	if semanticCatalogErr != nil {
 		return nil, nil, semanticCatalogErr
 	}
+	if OwnedSourceToolContract(tool) {
+		return sourceToolInputSchema(surface, tool)
+	}
 	surfaces, ok := objectValue(semanticCatalog.root, "surfaces")
 	if !ok {
 		return nil, nil, errors.New("public contract surfaces are missing")
@@ -1017,6 +1020,34 @@ func isSharedPacketTool(tool string) bool {
 	default:
 		return false
 	}
+}
+
+// sourceToolInputSchema binds the owned source tool request contract to the
+// mounted surface so semantic validation and the strict route decoder accept
+// exactly the same request members.
+func sourceToolInputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[string]*orderedValue, error) {
+	raw, _, ok := SourceToolContractSchemas(tool)
+	if !ok || len(raw) == 0 {
+		return nil, nil, fmt.Errorf("tool %q source contract is missing", tool)
+	}
+	value, err := parseOrderedJSON(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	properties, ok := objectValue(value, "properties")
+	if !ok {
+		return nil, nil, fmt.Errorf("tool %q source contract has no properties", tool)
+	}
+	setSchemaMember(properties, "surface_contract", surfaceConstSchema(surface))
+	setSchemaMember(properties, "operation_id", operationIDSchemaForSurface(surface))
+	return value, map[string]*orderedValue{}, nil
+}
+
+func surfaceConstSchema(surface SurfaceContractID) *orderedValue {
+	return &orderedValue{kind: 'o', object: []orderedMember{
+		{Name: "type", Value: &orderedValue{kind: 's', text: "string"}},
+		{Name: "const", Value: &orderedValue{kind: 's', text: string(surface)}},
+	}}
 }
 
 func sharedPacketInputSchema(surface SurfaceContractID, tool string, source *orderedValue) *orderedValue {

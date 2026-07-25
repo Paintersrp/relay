@@ -193,7 +193,7 @@
       },
       "file_params": [],
       "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "schema_owner": "internal/operations/registry/source_tool_contract.go",
       "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
     },
     {
@@ -209,7 +209,7 @@
       },
       "file_params": [],
       "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "schema_owner": "internal/operations/registry/source_tool_contract.go",
       "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
     },
     {
@@ -225,7 +225,7 @@
       },
       "file_params": [],
       "metadata_source": "legacy_exact_copy",
-      "schema_owner": "published_public_contract.json",
+      "schema_owner": "internal/operations/registry/source_tool_contract.go",
       "dispatcher_owner": "internal/mcp source adapter -> internal/sourcegateway.Service"
     },
     {

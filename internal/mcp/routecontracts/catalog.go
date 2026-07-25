@@ -185,7 +185,7 @@ func buildManifest(lock authorityLock, route registry.RouteDefinition) (RouteMan
 }
 
 func specializeRouteSchema(raw json.RawMessage, route registry.RouteDefinition, toolName string) json.RawMessage {
-	if !isSharedPacketTool(toolName) {
+	if !isRouteBoundSchemaTool(toolName) {
 		return raw
 	}
 	var root map[string]any
@@ -209,6 +209,12 @@ func isSharedPacketTool(tool string) bool {
 	default:
 		return false
 	}
+}
+
+// isRouteBoundSchemaTool reports whether the published schema for one tool is
+// specialized to the mounted route rather than copied verbatim.
+func isRouteBoundSchemaTool(tool string) bool {
+	return isSharedPacketTool(tool) || registry.OwnedSourceToolContract(tool)
 }
 
 func specializeRouteSchemaNode(value map[string]any, surface string, operations []registry.OperationID) {

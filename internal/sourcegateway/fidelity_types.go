@@ -20,7 +20,9 @@ const (
 	binaryProbeBytes         int64 = 8000
 )
 
-type RevisionReference struct{ AnchorName string }
+type RevisionReference struct {
+	AnchorName string `json:"anchor_name"`
+}
 
 type FidelityVaultReader interface {
 	ReadRetainedCommitRange(context.Context, sourcevault.ReadRetainedCommitRangeRequest) (sourcevault.ReadRetainedCommitRangeResult, error)
