@@ -29,7 +29,10 @@ func NewServerForRoute(log *slog.Logger, deps *MCPDeps, manifest routecontracts.
 		if _, dup := dispatch[tool.Name]; dup {
 			return nil, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate %s/%s", manifest.RoutePath, tool.Name)
 		}
-		dispatch[tool.Name] = surfaceDispatch{surface: registry.SurfaceContractID(manifest.SurfaceContract), toolName: tool.Name, handle: handler.Handle}
+		dispatch[tool.Name] = surfaceDispatch{
+			surface: registry.SurfaceContractID(manifest.SurfaceContract), toolName: tool.Name,
+			requestSchema: append(json.RawMessage(nil), tool.InputSchema...), handle: handler.Handle,
+		}
 		definitions[i] = routeToolDefinition(tool.Name, tool.Description, tool, manifest, "", "")
 	}
 	return &Server{log: log, deps: deps, tools: definitions, surfaceHandlers: dispatch}, nil
@@ -60,7 +63,8 @@ func NewServerForAppSurface(log *slog.Logger, deps *MCPDeps, surface routecontra
 			descriptionPrefix = registration.SurfaceContract + " surface: "
 		}
 		dispatch[registration.AdvertisedName] = surfaceDispatch{
-			surface: registry.SurfaceContractID(registration.SurfaceContract), toolName: registration.InternalToolName, routeBound: true, handle: registration.Handler.Handle,
+			surface: registry.SurfaceContractID(registration.SurfaceContract), toolName: registration.InternalToolName,
+			requestSchema: append(json.RawMessage(nil), registration.Tool.InputSchema...), routeBound: true, handle: registration.Handler.Handle,
 		}
 		definitions = append(definitions, routeToolDefinition(
 			registration.AdvertisedName, descriptionPrefix+registration.Tool.Description, registration.Tool,

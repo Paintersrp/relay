@@ -14,10 +14,11 @@ import (
 type SurfaceHandler func(json.RawMessage) ToolCallResult
 
 type surfaceDispatch struct {
-	surface    registry.SurfaceContractID
-	toolName   string
-	routeBound bool
-	handle     SurfaceHandler
+	surface       registry.SurfaceContractID
+	toolName      string
+	requestSchema json.RawMessage
+	routeBound    bool
+	handle        SurfaceHandler
 }
 
 type SurfaceToolHandler struct {
@@ -58,7 +59,10 @@ func NewServerForSurface(log *slog.Logger, deps *MCPDeps, surface registry.Surfa
 		if handler.ReadOnly != tool.Annotations.ReadOnlyHint {
 			return nil, fmt.Errorf("surface %q handler %q read-only classification differs from manifest", surface, handler.Name)
 		}
-		dispatch[handler.Name] = surfaceDispatch{surface: surface, toolName: handler.Name, handle: handler.Handle}
+		dispatch[handler.Name] = surfaceDispatch{
+			surface: surface, toolName: handler.Name,
+			requestSchema: append(json.RawMessage(nil), tool.InputSchema...), handle: handler.Handle,
+		}
 		definitions[index] = toolDefinitionFromContract(tool)
 	}
 	for name := range dispatch {
@@ -226,15 +230,15 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 	if !ok {
 		return ToolCallResult{}, errors.New("surface handler is not configured")
 	}
+	if err := registry.ValidateSchemaInstance(dispatch.requestSchema, args); err != nil {
+		return ToolCallResult{}, err
+	}
 	if dispatch.routeBound {
 		boundArgs, err := withoutSurfaceContract(args)
 		if err != nil {
 			return ToolCallResult{}, err
 		}
 		return dispatch.handle(boundArgs), nil
-	}
-	if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, args); err != nil {
-		return ToolCallResult{}, err
 	}
 	return dispatch.handle(args), nil
 }
