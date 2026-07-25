@@ -24,6 +24,14 @@ Methods other than POST return HTTP 405. When `RELAY_MCP_AUTH_TOKEN` is configur
 
 The seven former `/mcp/v1/...` routes are removed and return HTTP `404`; no legacy route redirects to a role app.
 
+Wayfinder compiles these three internal route manifests:
+
+- `/mcp/v1/wayfinder/workspace`;
+- `/mcp/v1/wayfinder/discovery`;
+- `/mcp/v1/wayfinder/investigation`.
+
+They are internal route identities, not public connector URLs. Clients call the role app at `POST /mcp/wayfinder`; request content cannot select an internal route or another role.
+
 ### Generated catalog and inventory
 
 `BuildMCPAppSurfaceManifests` is the single generated and tested inventory table for the public role apps. Each `AppSurfaceManifest.Tools` row maps these identities without hand-maintained aliases:
@@ -33,6 +41,41 @@ The seven former `/mcp/v1/...` routes are removed and return HTTP `404`; no lega
 | `AppSurfaceManifest.Surface` | `AppToolManifest.AdvertisedName` | `AppToolManifest.InternalToolName` | `AppToolManifest.InternalRoutePath` | `AppToolManifest.SurfaceContract` |
 
 Only `AdvertisedName` is exposed as the MCP tool name in that app's `tools/list`. If an internal tool name collides within one role app, its public name is the deterministic catalog alias `<surface-contract-with-dots-replaced-by-hyphens>__<internal-tool-name>`; otherwise it remains the internal tool name. Public aliases are catalog-only: a request cannot select a route, a role, an internal name, or authority context. Each alias is statically bound to exactly one compiled internal route and its standing authority. The route-contract tests build and verify every generated inventory row, including public name, internal name, route path, surface contract, manifest digest, and authority identity.
+
+## Wayfinder operation packets
+
+The route-bound packet tools establish and read the authority for an operation. They cannot select another surface contract through request data.
+
+- `get_active_operation_packet` looks up the active packet by project, operation ID, and route-bound surface contract.
+- `create_operation_packet` creates a complete immutable packet for the route-bound operation. It does not require a prior packet ID and returns a structured packet view containing the direct packet ID.
+- `refresh_operation_packet` creates a replacement for the supplied active packet rather than mutating the prior packet.
+- `close_operation_packet` closes the supplied active packet while retaining packet evidence.
+- `read_operation_input` returns bounded exact bytes and identity metadata for an input bound to an active or retained packet.
+- `list_operation_repositories` returns the packet-bound repository and revision authority, including the primary revision and authorized comparison anchors.
+
+## Packet-authorized source reads
+
+A valid operation packet authorizes one repository binding and exact retained source revision. The tools may investigate any relevant repository-relative path inside that retained source-vault closure. Packet authority is repository-and-revision scoped: packet inputs and comparison anchors are not ordinary path allowlists. Reads use retained source-vault authority, not the current working tree or a newer branch tip. Unbound repositories, absolute paths, and traversal paths are rejected; results and continuations are bounded and deterministic.
+
+- `list_source_tree` lists the root or a nested directory in the primary packet revision. It can traverse recursively, orders repository-relative entries deterministically, and uses a bounded limit with a continuation cursor.
+- `search_source` performs exact literal search in text-literal or byte-literal mode, optionally below repository-relative prefixes. It has bounded object and byte examination budgets, deterministic matches and continuation, and can use a packet-authorized comparison-anchor revision. It is not semantic, fuzzy, vector, or regular-expression search.
+- `read_source_text` reads an exact repository-relative text file from the primary revision or a packet-authorized comparison-anchor revision. It supports offset, limit, and continuation, preserves exact text bytes within the current text-projection contract, and rejects directories and unsupported binary text projections. Raw binary reading belongs to `read_source_blob`.
+
+### Cold-start Wayfinder discovery
+
+A Wayfinder discovery begins with:
+
+```text
+list_projects
+→ create_operation_packet
+→ get_active_operation_packet
+→ list_operation_repositories
+→ list_source_tree
+→ search_source
+→ read_source_text
+```
+
+The identities flow as `list_projects.project_id` to `create_operation_packet.project_id`, `create_operation_packet.packet_id` to active lookup and repository/source calls, and `list_operation_repositories.repository_key` to source calls.
 
 ## Private role-app ingress
 
@@ -192,16 +235,17 @@ Tool results distinguish successful workflow output from blocked business state.
 
 Relay MCP does not expose:
 
-- arbitrary filesystem reads or writes;
-- repository source browsing or search;
+- arbitrary host-filesystem access;
+- unrestricted source access outside packet authority;
 - shell execution;
-- Git status, diff, branch, worktree, staging, commit, push, or pull-request mutation;
+- Git mutation;
+- caller-selected arbitrary commits or repositories;
 - executor dispatch or validation-result recording;
 - Project mutation;
 - automatic pass selection;
 - historical compatibility actions.
 
-The canonical runtime has no handoff, context-broker, source-snapshot, Plan Seed, refactor-backlog, local-audit, intent-drift, closeout, or generated-reference action surface.
+Relay provides bounded packet-authorized retained-source reads, not arbitrary filesystem or Git access. The canonical runtime has no handoff, context-broker, Plan Seed, refactor-backlog, local-audit, intent-drift, closeout, or generated-reference action surface.
 
 ## Validation
 
