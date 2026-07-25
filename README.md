@@ -57,15 +57,23 @@ The Go server normally listens at `http://localhost:8080`, owns `/api/*` and `/m
 
 ## MCP
 
-Relay serves one JSON-RPC registry over stdio (`cmd/mcpserver`) and HTTP (`/mcp`). `RELAY_MCP_PROFILE` defaults to `planner` and selects the exact ordered surface:
+Relay has one aggregate compatibility registry over stdio (`cmd/mcpserver`) and `POST /mcp`. `RELAY_MCP_PROFILE` defaults to `planner` and applies only to that aggregate compatibility surface. Its aggregate compatibility profiles are:
 
-| Profile | Tools |
+| Aggregate compatibility profile | Tools |
 | --- | --- |
 | `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run` |
 | `auditor` | `validate_artifact`, `create_run`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
 | `local_operator` | Ordered eight-tool union of the Planner and Auditor profiles |
 
-File-bearing submission tools accept one bounded HTTPS artifact, validate the exact downloaded bytes, and use the same application services as HTTP. The registry does not expose shell, arbitrary filesystem, source-search, or Git mutation tools.
+Relay also exposes three public HTTP role apps:
+
+| Role app | Endpoint | Summary |
+| --- | --- | --- |
+| Wayfinder | `POST /mcp/wayfinder` | Route-bound operation packets and bounded retained-source investigation |
+| Planner | `POST /mcp/planner` | Planner role application |
+| Auditor | `POST /mcp/auditor` | Auditor role application |
+
+File-bearing submission tools accept one bounded HTTPS artifact, validate the exact downloaded bytes, and use the same application services as HTTP. Relay does not expose shell execution, arbitrary host-filesystem access, unrestricted source access outside packet authority, caller-selected arbitrary repositories or commits, or Git mutation; Wayfinder provides bounded packet-authorized source tree, literal-search, and text-read operations against the packet's retained repository revision.
 
 HTTP MCP accepts POST JSON-RPC only. When `RELAY_MCP_AUTH_TOKEN` is set, the endpoint requires `Authorization: Bearer <token>`. An empty token leaves the endpoint unauthenticated and emits a warning; that mode is for loopback-only connector proof and must not be exposed.
 
@@ -73,18 +81,18 @@ For the complete action and transport contract, see [docs/mcp.md](docs/mcp.md).
 
 ## Secure local ChatGPT tunnel
 
-The supported operator interface is the root package scripts:
+Three ChatGPT app registrations are required: Wayfinder, Planner, and Auditor. Each registration uses its own role-specific tunnel. The supported operator workflow is:
 
 ```bash
-npm run chatgpt-mcp:help
-npm run chatgpt-mcp:init
-npm run chatgpt-mcp:doctor
-npm run chatgpt-mcp:start
+npm run chatgpt-mcp:init:all
+npm run chatgpt-mcp:doctor:all
+npm run chatgpt-mcp:start:all
+npm run chatgpt-mcp:status:all
+npm run chatgpt-mcp:stop:all
 ```
 
-Stdio is the default and launches the canonical `cmd/mcpserver` process through `scripts/local/relay-mcp-stdio.mjs`. Advanced HTTP mode uses `http://127.0.0.1:8080/mcp` and requires the Relay daemon to be running. Keep tunnel credentials only in ignored `.env`, `.env.local`, or process environment values.
+`start:all` is the normal daily startup command. Single-profile commands remain supported as compatibility commands. For setup, diagnostics, and tunnel details, see [docs/chatgpt-mcp-local.md](docs/chatgpt-mcp-local.md).
 
-See [docs/chatgpt-mcp-local.md](docs/chatgpt-mcp-local.md) for setup, diagnostics, profiles, and troubleshooting.
 
 ## Ticket-oriented cutover
 
@@ -208,7 +216,7 @@ Relay currently does not:
 - expose validation-result recording through HTTP/web or audit decision recording through HTTP/web;
 - automatically repair validation failures or audit revisions;
 - create branches or worktrees, stage or commit changes, push, create pull requests, or run hosted CI;
-- provide arbitrary MCP filesystem, shell, source-search, or Git tools;
+- provide arbitrary MCP host-filesystem access, shell execution, unrestricted source access outside operation-packet authority, or Git mutation;
 - automatically select or start the next Plan pass.
 
 Relay operates on an already registered local repository and its existing branch/worktree. Operators remain responsible for repository preparation, canonical artifact review, executor authentication, validation evidence outside the currently exposed transition, and final Git delivery.

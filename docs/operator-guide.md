@@ -52,6 +52,15 @@ Override storage with `RELAY_WORKFLOW_DB_PATH` and `RELAY_WORKFLOW_ARTIFACTS_DIR
 
 A Project is an organizational container. It does not alter canonical artifact bytes, approval identity, Run execution, or repository access.
 
+## Inspect retained source with Wayfinder
+
+1. Connect through the public Wayfinder role app at `POST /mcp/wayfinder`.
+2. Select an active Project and create a route-bound operation packet.
+3. Confirm the active packet, then list its packet-authorized repositories.
+4. Use the repository key and packet ID for bounded tree, literal-search, and text-read operations.
+
+Source reads remain bound to the repository revision retained by the packet, even if the local branch or working repository later advances. Public role-app tool names may be generated surface-qualified aliases; use the public advertised aliases returned by Wayfinder `tools/list`. `/mcp/v1/wayfinder/...` paths are internal route identities, not connector URLs. See [mcp.md](mcp.md) for the exact discovery sequence and public aliases.
+
 ## Submit a Plan
 
 Use `/plans/new` or the Planner/`local_operator` MCP profile.
@@ -122,16 +131,17 @@ The web audit view does not record the decision.
 
 ## Secure ChatGPT tunnel
 
-Use the stable package interface:
+Three ChatGPT role registrations are required. Use the stable package interface:
 
 ```bash
-npm run chatgpt-mcp:help
-npm run chatgpt-mcp:init
-npm run chatgpt-mcp:doctor
-npm run chatgpt-mcp:start
+npm run chatgpt-mcp:init:all
+npm run chatgpt-mcp:doctor:all
+npm run chatgpt-mcp:start:all
+npm run chatgpt-mcp:status:all
+npm run chatgpt-mcp:stop:all
 ```
 
-Stdio is the default transport and launches the canonical MCP server locally. Keep the start process open while ChatGPT uses the connector. See [chatgpt-mcp-local.md](chatgpt-mcp-local.md) for environment values, profiles, advanced HTTP mode, and troubleshooting.
+`start:all` is the normal daily workflow. It verifies all three role endpoints and fails closed on partial health. Single-profile commands remain available for compatibility. See [chatgpt-mcp-local.md](chatgpt-mcp-local.md) for detailed setup and troubleshooting.
 
 ## Maintenance and validation
 
@@ -156,5 +166,5 @@ Relay does not currently:
 - stage, commit, push, or open pull requests;
 - run hosted CI;
 - automatically start the next Plan pass;
-- provide arbitrary MCP shell, filesystem, source-search, or Git tools;
+- provide arbitrary MCP shell or host-filesystem access, unrestricted source access outside operation-packet authority, or Git mutation;
 - operate removed handoff, context, seed, refactor, local-audit, or intent-drift workflows.
