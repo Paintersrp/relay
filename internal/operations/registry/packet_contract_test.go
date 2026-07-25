@@ -54,3 +54,27 @@ func TestSharedPacketReadContractsUseCoherentIdentities(t *testing.T) {
 		t.Fatal("repository listing accepted an unknown field")
 	}
 }
+
+func TestWayfinderDiscoveryRequestContractsResolveWithoutWarmup(t *testing.T) {
+	if err := ValidateOperationRequest("wayfinder-discovery.v1", "list_projects", []byte("{\"surface_contract\":\"wayfinder-discovery.v1\"}")); err != nil {
+		t.Fatalf("discovery lookup request rejected: %v", err)
+	}
+
+	packet := []byte("{\"surface_contract\":\"wayfinder-discovery.v1\",\"packet_id\":\"packet-1\"}")
+	if err := ValidateOperationRequest("wayfinder-discovery.v1", "list_operation_repositories", packet); err != nil {
+		t.Fatalf("discovery packet request rejected: %v", err)
+	}
+	if err := ValidateOperationRequest("wayfinder-discovery.v1", "list_operation_repositories", []byte("{\"surface_contract\":\"wayfinder-workspace.v1\",\"packet_id\":\"packet-1\"}")); err == nil {
+		t.Fatal("foreign Wayfinder surface was accepted")
+	}
+	if err := ValidateOperationRequest("wayfinder-discovery.v1", "create_operation_packet", []byte("{\"surface_contract\":\"wayfinder-discovery.v1\",\"mutation_id\":\"mutation-1\",\"operation_id\":\"wayfinder.workspace\",\"project_id\":\"project-1\",\"inputs\":[],\"workflow_references\":[],\"attestations\":[]}")); err == nil {
+		t.Fatal("foreign Wayfinder operation was accepted")
+	}
+	if err := ValidateOperationRequest("wayfinder-discovery.v1", "list_operation_repositories", []byte("{\"surface_contract\":\"wayfinder-discovery.v1\",\"packet_id\":\"packet-1\",\"unknown\":true}")); err == nil {
+		t.Fatal("unknown packet request field was accepted")
+	}
+
+	if err := ValidateOperationRequest("planner-plan.v1", "validate_artifact", artifactRequest("https://files.example/one", "file-one")); err != nil {
+		t.Fatalf("planner compatibility request changed: %v", err)
+	}
+}

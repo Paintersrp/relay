@@ -167,8 +167,8 @@ func buildManifest(lock authorityLock, route registry.RouteDefinition) (RouteMan
 		if !ok {
 			return RouteManifest{}, fmt.Errorf("MCP_TOOL_CONTRACT_INVALID: %q", name)
 		}
-		tool.InputSchema = specializeRouteSchema(tool.InputSchema, route, name)
-		tool.OutputSchema = specializeRouteSchema(tool.OutputSchema, route, name)
+		tool.InputSchema = registry.SpecializeRouteSchema(tool.InputSchema, route.Surface, name, route.Operations)
+		tool.OutputSchema = registry.SpecializeRouteSchema(tool.OutputSchema, route.Surface, name, route.Operations)
 		in := sha256.Sum256(tool.InputSchema)
 		outputSchemaDigest := sha256.Sum256(tool.OutputSchema)
 		manifest.Tools = append(manifest.Tools, ToolManifest{Name: tool.Name, Category: tool.Category, SemanticToolID: tool.SemanticToolID, OperationID: string(tool.OperationID), InputSchemaSHA256: hex.EncodeToString(in[:]), OutputSchemaSHA256: hex.EncodeToString(outputSchemaDigest[:]), Annotations: ToolAnnotations{tool.Annotations.ReadOnlyHint, tool.Annotations.DestructiveHint, tool.Annotations.IdempotentHint, tool.Annotations.OpenWorldHint}, FileParams: append([]string(nil), tool.FileParams...), SchemaOwner: tool.SchemaOwner, DispatcherOwner: tool.DispatcherOwner, Adapter: tool.Adapter, Title: tool.Title, Description: tool.Description, Invoking: tool.Invoking, Invoked: tool.Invoked, InputSchema: append(json.RawMessage(nil), tool.InputSchema...), OutputSchema: append(json.RawMessage(nil), tool.OutputSchema...)})
@@ -182,87 +182,6 @@ func buildManifest(lock authorityLock, route registry.RouteDefinition) (RouteMan
 	manifest.ManifestBasisSizeBytes = len(basis)
 	manifest.ManifestSHA256 = hex.EncodeToString(digest[:])
 	return manifest, nil
-}
-
-func specializeRouteSchema(raw json.RawMessage, route registry.RouteDefinition, toolName string) json.RawMessage {
-	if !isRouteBoundSchemaTool(toolName) {
-		return raw
-	}
-	var root map[string]any
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return raw
-	}
-	root["$id"] = fmt.Sprintf("urn:relay:mcp:%s:%s:%s:v1", route.Surface, toolName, schemaDirection(root))
-	operationIDs := append([]registry.OperationID(nil), route.Operations...)
-	specializeRouteSchemaNode(root, string(route.Surface), operationIDs)
-	encoded, err := json.Marshal(root)
-	if err != nil {
-		return raw
-	}
-	return encoded
-}
-
-func isSharedPacketTool(tool string) bool {
-	switch tool {
-	case "get_active_operation_packet", "create_operation_packet", "refresh_operation_packet", "close_operation_packet", "read_operation_input", "list_operation_repositories":
-		return true
-	default:
-		return false
-	}
-}
-
-// isRouteBoundSchemaTool reports whether the published schema for one tool is
-// specialized to the mounted route rather than copied verbatim.
-func isRouteBoundSchemaTool(tool string) bool {
-	return isSharedPacketTool(tool) || registry.OwnedSourceToolContract(tool)
-}
-
-func specializeRouteSchemaNode(value map[string]any, surface string, operations []registry.OperationID) {
-	if properties, ok := value["properties"].(map[string]any); ok {
-		if member, ok := properties["surface_contract"].(map[string]any); ok {
-			delete(member, "enum")
-			member["const"] = surface
-		}
-		if member, ok := properties["operation_id"].(map[string]any); ok && len(operations) != 0 {
-			delete(member, "const")
-			values := make([]any, len(operations))
-			for index, operation := range operations {
-				values[index] = string(operation)
-			}
-			member["enum"] = values
-		}
-		for _, child := range properties {
-			if childMap, ok := child.(map[string]any); ok {
-				specializeRouteSchemaNode(childMap, surface, operations)
-			}
-		}
-	}
-	if defs, ok := value["$defs"].(map[string]any); ok {
-		if member, ok := defs["SurfaceContractID"].(map[string]any); ok {
-			member["enum"] = []any{surface}
-		}
-		if member, ok := defs["OperationID"].(map[string]any); ok && len(operations) != 0 {
-			values := make([]any, len(operations))
-			for index, operation := range operations {
-				values[index] = string(operation)
-			}
-			member["enum"] = values
-		}
-	}
-	if branches, ok := value["oneOf"].([]any); ok {
-		for _, branch := range branches {
-			if branchMap, ok := branch.(map[string]any); ok {
-				specializeRouteSchemaNode(branchMap, surface, operations)
-			}
-		}
-	}
-}
-
-func schemaDirection(value map[string]any) string {
-	if _, ok := value["oneOf"]; ok {
-		return "output"
-	}
-	return "input"
 }
 
 func encodeBasis(value RouteManifest) ([]byte, error) {

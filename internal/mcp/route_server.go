@@ -31,7 +31,7 @@ func NewServerForRoute(log *slog.Logger, deps *MCPDeps, manifest routecontracts.
 		}
 		dispatch[tool.Name] = surfaceDispatch{
 			surface: registry.SurfaceContractID(manifest.SurfaceContract), toolName: tool.Name,
-			requestSchema: append(json.RawMessage(nil), tool.InputSchema...), handle: handler.Handle,
+			staticRoute: true, handle: handler.Handle,
 		}
 		definitions[i] = routeToolDefinition(tool.Name, tool.Description, tool, manifest, "", "")
 	}
@@ -64,7 +64,7 @@ func NewServerForAppSurface(log *slog.Logger, deps *MCPDeps, surface routecontra
 		}
 		dispatch[registration.AdvertisedName] = surfaceDispatch{
 			surface: registry.SurfaceContractID(registration.SurfaceContract), toolName: registration.InternalToolName,
-			requestSchema: append(json.RawMessage(nil), registration.Tool.InputSchema...), routeBound: true, handle: registration.Handler.Handle,
+			routeBound: true, staticRoute: true, handle: registration.Handler.Handle,
 		}
 		definitions = append(definitions, routeToolDefinition(
 			registration.AdvertisedName, descriptionPrefix+registration.Tool.Description, registration.Tool,

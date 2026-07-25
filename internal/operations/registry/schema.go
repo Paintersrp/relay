@@ -64,6 +64,127 @@ func ValidateRequest(surface SurfaceContractID, tool string, raw []byte) (map[st
 	return request, nil
 }
 
+// SpecializeRouteSchema returns one immutable route-bound copy of a published
+// schema. Route identity and operation membership are registry-owned contract
+// data, so route manifests and request validation share this implementation.
+func SpecializeRouteSchema(raw json.RawMessage, surface SurfaceContractID, tool string, operations []OperationID) json.RawMessage {
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return append(json.RawMessage(nil), raw...)
+	}
+	if !isSharedPacketTool(tool) && !OwnedSourceToolContract(tool) && !schemaHasSurfaceContract(root) {
+		return append(json.RawMessage(nil), raw...)
+	}
+	root["$id"] = fmt.Sprintf("urn:relay:mcp:%s:%s:%s:v1", surface, tool, schemaDirection(root))
+	specializeRouteSchemaNode(root, string(surface), operations)
+	if tool == "list_projects" {
+		removeRequiredSchemaField(root, "surface_contract")
+	}
+	encoded, err := json.Marshal(root)
+	if err != nil {
+		return append(json.RawMessage(nil), raw...)
+	}
+	return encoded
+}
+
+func schemaHasSurfaceContract(root map[string]any) bool {
+	properties, ok := root["properties"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = properties["surface_contract"]
+	return ok
+}
+
+func removeRequiredSchemaField(root map[string]any, field string) {
+	required, ok := root["required"].([]any)
+	if !ok {
+		return
+	}
+	filtered := make([]any, 0, len(required))
+	for _, value := range required {
+		if value != field {
+			filtered = append(filtered, value)
+		}
+	}
+	root["required"] = filtered
+}
+
+// PublishedRouteToolInputSchema resolves one exact published route/tool pair
+// from immutable embedded data. It does not depend on a prior lookup or
+// server construction having warmed package state.
+func PublishedRouteToolInputSchema(surface SurfaceContractID, tool string) (json.RawMessage, error) {
+	routes, err := ListRouteDefinitions()
+	if err != nil {
+		return nil, err
+	}
+	for _, route := range routes {
+		if route.Surface != surface || !containsString(route.Tools, tool) {
+			continue
+		}
+		contract, ok := LookupPublishedToolContract(tool)
+		if !ok {
+			return nil, fmt.Errorf("published tool %q is missing", tool)
+		}
+		raw := contract.InputSchema
+		if OwnedSourceToolContract(tool) {
+			if sourceInput, _, owned := SourceToolContractSchemas(tool); owned {
+				raw = sourceInput
+			}
+		}
+		return SpecializeRouteSchema(raw, surface, tool, route.Operations), nil
+	}
+	return nil, fmt.Errorf("tool %q is not registered on route surface %q", tool, surface)
+}
+
+func specializeRouteSchemaNode(value map[string]any, surface string, operations []OperationID) {
+	if properties, ok := value["properties"].(map[string]any); ok {
+		if member, ok := properties["surface_contract"].(map[string]any); ok {
+			delete(member, "enum")
+			member["const"] = surface
+		}
+		if member, ok := properties["operation_id"].(map[string]any); ok && len(operations) != 0 {
+			delete(member, "const")
+			values := make([]any, len(operations))
+			for index, operation := range operations {
+				values[index] = string(operation)
+			}
+			member["enum"] = values
+		}
+		for _, child := range properties {
+			if childMap, ok := child.(map[string]any); ok {
+				specializeRouteSchemaNode(childMap, surface, operations)
+			}
+		}
+	}
+	if defs, ok := value["$defs"].(map[string]any); ok {
+		if member, ok := defs["SurfaceContractID"].(map[string]any); ok {
+			member["enum"] = []any{surface}
+		}
+		if member, ok := defs["OperationID"].(map[string]any); ok && len(operations) != 0 {
+			values := make([]any, len(operations))
+			for index, operation := range operations {
+				values[index] = string(operation)
+			}
+			member["enum"] = values
+		}
+	}
+	if branches, ok := value["oneOf"].([]any); ok {
+		for _, branch := range branches {
+			if branchMap, ok := branch.(map[string]any); ok {
+				specializeRouteSchemaNode(branchMap, surface, operations)
+			}
+		}
+	}
+}
+
+func schemaDirection(value map[string]any) string {
+	if _, ok := value["oneOf"]; ok {
+		return "output"
+	}
+	return "input"
+}
+
 // ValidateSchemaInstance validates one decoded JSON object against one
 // published schema document expressed in the supported draft 2020-12 subset.
 func ValidateSchemaInstance(schema json.RawMessage, instance []byte) error {

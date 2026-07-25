@@ -976,6 +976,13 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 	if semanticCatalogErr != nil {
 		return nil, nil, semanticCatalogErr
 	}
+	if raw, err := PublishedRouteToolInputSchema(surface, tool); err == nil {
+		schema, err := parseOrderedJSON(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		return schema, semanticCatalog.defs, nil
+	}
 	if OwnedSourceToolContract(tool) {
 		return sourceToolInputSchema(surface, tool)
 	}
@@ -984,11 +991,6 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 		return nil, nil, errors.New("public contract surfaces are missing")
 	}
 	surfaceNode, ok := objectValue(surfaces, string(surface))
-	if !ok && isSharedPacketTool(tool) {
-		// Wayfinder packet schemas are specialized by the current route
-		// catalog; use the aggregate packet definition as the semantic source.
-		surfaceNode, ok = objectValue(surfaces, "planner-authoring.v1")
-	}
 	if !ok {
 		return nil, nil, fmt.Errorf("surface %q is not registered", surface)
 	}

@@ -14,11 +14,11 @@ import (
 type SurfaceHandler func(json.RawMessage) ToolCallResult
 
 type surfaceDispatch struct {
-	surface       registry.SurfaceContractID
-	toolName      string
-	requestSchema json.RawMessage
-	routeBound    bool
-	handle        SurfaceHandler
+	surface     registry.SurfaceContractID
+	toolName    string
+	routeBound  bool
+	staticRoute bool
+	handle      SurfaceHandler
 }
 
 type SurfaceToolHandler struct {
@@ -61,7 +61,7 @@ func NewServerForSurface(log *slog.Logger, deps *MCPDeps, surface registry.Surfa
 		}
 		dispatch[handler.Name] = surfaceDispatch{
 			surface: surface, toolName: handler.Name,
-			requestSchema: append(json.RawMessage(nil), tool.InputSchema...), handle: handler.Handle,
+			handle: handler.Handle,
 		}
 		definitions[index] = toolDefinitionFromContract(tool)
 	}
@@ -230,17 +230,65 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 	if !ok {
 		return ToolCallResult{}, errors.New("surface handler is not configured")
 	}
-	if err := registry.ValidateSchemaInstance(dispatch.requestSchema, args); err != nil {
-		return ToolCallResult{}, err
-	}
-	if dispatch.routeBound {
-		boundArgs, err := withoutSurfaceContract(args)
+	if dispatch.staticRoute {
+		boundArgs, err := withDefaultSurfaceContract(args, dispatch.surface)
+		if dispatch.routeBound {
+			boundArgs, err = withBoundSurfaceContract(args, dispatch.surface)
+		}
 		if err != nil {
 			return ToolCallResult{}, err
 		}
-		return dispatch.handle(boundArgs), nil
+		if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, boundArgs); err != nil {
+			return ToolCallResult{}, err
+		}
+		if !dispatch.routeBound {
+			return dispatch.handle(args), nil
+		}
+		publicArgs, err := withoutSurfaceContract(args)
+		if err != nil {
+			return ToolCallResult{}, err
+		}
+		return dispatch.handle(publicArgs), nil
+	}
+	if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, args); err != nil {
+		return ToolCallResult{}, err
 	}
 	return dispatch.handle(args), nil
+}
+
+func withBoundSurfaceContract(raw json.RawMessage, surface registry.SurfaceContractID) (json.RawMessage, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.Marshal(map[string]any{"surface_contract": surface})
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return raw, nil
+	}
+	encodedSurface, err := json.Marshal(surface)
+	if err != nil {
+		return nil, err
+	}
+	object["surface_contract"] = encodedSurface
+	return json.Marshal(object)
+}
+
+func withDefaultSurfaceContract(raw json.RawMessage, surface registry.SurfaceContractID) (json.RawMessage, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.Marshal(map[string]any{"surface_contract": surface})
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return raw, nil
+	}
+	if _, exists := object["surface_contract"]; exists {
+		return raw, nil
+	}
+	encodedSurface, err := json.Marshal(surface)
+	if err != nil {
+		return nil, err
+	}
+	object["surface_contract"] = encodedSurface
+	return json.Marshal(object)
 }
 
 // withoutSurfaceContract prevents an app-surface caller from supplying route
