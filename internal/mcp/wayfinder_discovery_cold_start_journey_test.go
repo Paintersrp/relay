@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -158,9 +159,15 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	var repositoryResult struct {
 		Packet       OperationPacketSummary `json:"packet"`
 		Repositories []struct {
-			RepositoryKey string `json:"repository_key"`
-			CommitOID     string `json:"commit_oid"`
-			TreeOID       string `json:"tree_oid"`
+			RepositoryKey                        string            `json:"repository_key"`
+			RepositoryTarget                     string            `json:"repository_target"`
+			BindingOrder                         int64             `json:"binding_order"`
+			RevisionSource                       string            `json:"revision_source"`
+			ConfiguredWorkingBranchRef           string            `json:"configured_working_branch_ref"`
+			RepositoryTargetConfigurationVersion int64             `json:"repository_target_configuration_version"`
+			CommitOID                            string            `json:"commit_oid"`
+			TreeOID                              string            `json:"tree_oid"`
+			Anchors                              []json.RawMessage `json:"anchors"`
 		} `json:"repositories"`
 	}
 	coldStartDecode(t, listed, &repositoryResult)
@@ -168,7 +175,7 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 		t.Fatalf("repository projection = %#v", repositoryResult)
 	}
 	repository := repositoryResult.Repositories[0]
-	if repository.RepositoryKey == "" || repository.CommitOID == "" || repository.TreeOID == "" || repository.CommitOID != commitA {
+	if repository.RepositoryKey == "" || repository.CommitOID == "" || repository.TreeOID == "" || repository.CommitOID != commitA || repository.Anchors == nil || len(repository.Anchors) != 0 {
 		t.Fatalf("repository authority = %#v want commit %s", repository, commitA)
 	}
 
