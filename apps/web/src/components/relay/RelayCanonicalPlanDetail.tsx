@@ -132,7 +132,7 @@ export function RelayCanonicalPlanDetail({
               </Link>
               <Button asChild size="sm" variant="outline">
                 <Link
-                  to="/runs/new"
+                  to="/execution-packages/new"
                   search={{
                     planId: plan.planId,
                     passId: pass.passId,

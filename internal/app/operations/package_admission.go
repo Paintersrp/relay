@@ -22,12 +22,12 @@ func IsPackageWorkflowNotFound(err error) bool {
 }
 
 const (
-	packageSelectionDependencyClass = "execution_package_selection"
-	packageSpecDependencyClass      = "execution_package_execution_spec"
-	packageBriefDependencyClass     = "execution_package_ticket_design_brief"
-	packageBasisDependencyClass     = "execution_package_basis"
-	runDependencyClass              = "workflow_run"
-	mutationLeaseDependencyClass    = "repository_branch_mutation_lease"
+	packageSelectionDependencyClass  = "execution_package_selection"
+	packageOperationsDependencyClass = "execution_package_deterministic_operations"
+	packageBriefDependencyClass      = "execution_package_ticket_design_brief"
+	packageBasisDependencyClass      = "execution_package_basis"
+	runDependencyClass               = "workflow_run"
+	mutationLeaseDependencyClass     = "repository_branch_mutation_lease"
 )
 
 // PackageOperationRequest binds an operator mutation to one retained packet.
@@ -151,7 +151,7 @@ func (s *PackageWorkflowService) Prepare(ctx context.Context, input PackagePrepa
 	if err != nil {
 		return PackageDetailView{}, err
 	}
-	return packageDetailView(packages.Detail{Package: result.Package, Members: result.Members, Briefs: result.Briefs, ExecutionSpec: result.ExecutionSpec}), nil
+	return packageDetailView(packages.Detail{Package: result.Package, Members: result.Members, TicketDesignBrief: result.TicketDesignBrief, DeterministicOperations: result.DeterministicOperations}), nil
 }
 
 type PackageApproveOperationInput struct {
@@ -267,8 +267,8 @@ func PackagePreparePayloadSHA256(input packages.PrepareInput) (string, error) {
 
 func PackageApprovePayloadSHA256(packageID, expectedPackageSha256, evidence string) (string, error) {
 	return packagePayloadSHA256(struct {
-		PackageID                   string `json:"package_id"`
-		ExpectedPackageSha256       string `json:"expected_package_sha256"`
+		PackageID                    string `json:"package_id"`
+		ExpectedPackageSha256        string `json:"expected_package_sha256"`
 		OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
 	}{PackageID: packageID, ExpectedPackageSha256: expectedPackageSha256, OperatorConfirmationEvidence: evidence})
 }
@@ -290,11 +290,11 @@ func packagePayloadSHA256(value any) (string, error) {
 }
 
 func packagePrepareDependencies(input packages.PrepareInput) []DependencyRequirement {
-	values := make([]DependencyRequirement, 0, len(input.TicketDesignBriefs)+2)
+	values := make([]DependencyRequirement, 0, 3)
 	values = append(values, DependencyRequirement{Class: packageSelectionDependencyClass, Key: "selection:" + input.SelectionID})
-	values = append(values, DependencyRequirement{Class: packageSpecDependencyClass, Key: packageArtifactDependencyKey(input.ExecutionSpec)})
-	for _, brief := range input.TicketDesignBriefs {
-		values = append(values, DependencyRequirement{Class: packageBriefDependencyClass, Key: packageArtifactDependencyKey(brief)})
+	values = append(values, DependencyRequirement{Class: packageBriefDependencyClass, Key: packageArtifactDependencyKey(input.TicketDesignBrief)})
+	if input.DeterministicOperations != nil {
+		values = append(values, DependencyRequirement{Class: packageOperationsDependencyClass, Key: packageArtifactDependencyKey(*input.DeterministicOperations)})
 	}
 	return sortedDependencies(values)
 }

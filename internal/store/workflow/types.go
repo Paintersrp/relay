@@ -305,7 +305,7 @@ type Run struct {
 	Status                string
 	Branch                string
 	BaseCommit            string
-	CanonicalSHA256       string
+	CanonicalSHA256       sql.NullString
 	CreatedAt             string
 	UpdatedAt             string
 	CompletedAt           sql.NullString

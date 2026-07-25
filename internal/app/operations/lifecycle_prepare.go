@@ -546,7 +546,10 @@ func (s *LifecycleService) resolveWorkflowReference(ctx context.Context, request
 			return packet.WorkflowReference{}, err
 		}
 		artifacts, listErr := s.store.ListArtifactsByRun(ctx, run.ID)
-		artifact, err := findArtifactBySHA(artifacts, run.CanonicalSHA256, listErr)
+		if !run.CanonicalSHA256.Valid {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		artifact, err := findArtifactBySHA(artifacts, run.CanonicalSHA256.String, listErr)
 		if err != nil {
 			return packet.WorkflowReference{}, err
 		}

@@ -14,17 +14,17 @@ import (
 
 const (
 	AuthorityRepository = "Paintersrp/relay-specs"
-	AuthorityCommit     = "cba7f79963e457266dafc2fd1865fd605a40b7bc"
+	AuthorityCommit     = "0b1ab1705157d0b0fcc184b35037008fce64c469"
 )
 
 type Kind string
 
 const (
-	KindPlan           Kind = "plan"
-	KindExecutionSpec  Kind = "execution_spec"
-	KindAuditPacket    Kind = "audit_packet"
-	KindDeliveryTicket Kind = "delivery_ticket"
-	KindTransitionPlan Kind = "transition_plan"
+	KindPlan                    Kind = "plan"
+	KindDeterministicOperations Kind = "deterministic_operations"
+	KindAuditPacket             Kind = "audit_packet"
+	KindDeliveryTicket          Kind = "delivery_ticket"
+	KindTransitionPlan          Kind = "transition_plan"
 )
 
 type Definition struct {
@@ -48,8 +48,8 @@ var schemaFS embed.FS
 
 var authoritativeCatalog = []catalogEntry{
 	{Kind: KindPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/plan.schema.json", Filename: "plan.schema.json", SHA256: "03a75ab1352d27193ec27b5aec9f449e65daf69de66d6897ab74672bdc705cf8"},
-	{Kind: KindExecutionSpec, ProducerVersion: "2.0", AuthorityPath: "schemas/execution-spec.schema.json", Filename: "execution-spec.schema.json", SHA256: "92a1e8f1c2b9cc7bd4382f69f3d8bf8668c1ab72f2985c10fd746ba23a3df4d7"},
-	{Kind: KindAuditPacket, ProducerVersion: "2.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "91aaed33acca520d0ad2f511a472be7296993b37cb1dcd0b1976025b648850cf"},
+	{Kind: KindDeterministicOperations, ProducerVersion: "1.0", AuthorityPath: "schemas/deterministic-operations.schema.json", Filename: "deterministic-operations.schema.json", SHA256: "630d5e028c243deae76038e3e44b6c4ff9a3f482f32d1aece69573ba04e9df28"},
+	{Kind: KindAuditPacket, ProducerVersion: "3.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "cf66e0775593079a2e288ef2634e12fb40a19d02b2e7637fdaeffee49c4ac95b"},
 	{Kind: KindDeliveryTicket, ProducerVersion: "1.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "663845dfe1191d397102e689fd09f1ff1d26823ae6dc6798a2ec9cd623a02ee7"},
 	{Kind: KindTransitionPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/transition-plan.schema.json", Filename: "transition-plan.schema.json", SHA256: "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
 }
@@ -92,7 +92,7 @@ func Validate(kind Kind, raw []byte) (bool, error) {
 	loader.AutoDetect = false
 	loader.Draft = gojsonschema.Draft7
 	if kind == KindAuditPacket {
-		for _, dependencyKind := range []Kind{KindPlan, KindExecutionSpec} {
+		for _, dependencyKind := range []Kind{KindPlan, KindDeterministicOperations} {
 			dependency, _ := Current(dependencyKind)
 			dependencyPrepared, err := prepareSchema(dependency)
 			if err != nil {
@@ -249,6 +249,10 @@ func portablePatternConstraints(pattern string) ([]any, error) {
 		return []any{patternConstraint(`^[0-9a-f]{40}$`)}, nil
 	case `^(?!.*[\r\n])[0-9a-f]{64}$`:
 		return []any{patternConstraint(`^[0-9a-f]{64}$`)}, nil
+	case `^[0-9a-f]{40}$`:
+		return []any{patternConstraint(`^[0-9a-f]{40}$`)}, nil
+	case `^[0-9a-f]{64}$`:
+		return []any{patternConstraint(`^[0-9a-f]{64}$`)}, nil
 	case `^(?!.*[\r\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\)(?!.*(?:^|/)\.\.?$)(?!.*(?:^|/)\.\.?/)(?!\s)(?!.*\s$)(?!.*[\u0000-\u001F\u007F]).*\S.*$`:
 		return []any{
 			patternConstraint(`^[^\x00-\x1F\x7F\\]+$`),
@@ -262,10 +266,8 @@ func portablePatternConstraints(pattern string) ([]any, error) {
 		return []any{patternConstraint(`^[1-9][0-9]*\.[1-9][0-9]*$`)}, nil
 	case `^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$`:
 		return []any{patternConstraint(`^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$`)}, nil
-	case `^(?!.*[\r\n])(?!\s*$).+\.execution-spec\.json$`:
-		return []any{patternConstraint(`^.+\.execution-spec\.json$`)}, nil
-	case `^(?!.*[\r\n])(?!\s*$).+\.executor-brief\.md$`:
-		return []any{patternConstraint(`^.+\.executor-brief\.md$`)}, nil
+	case `^[a-z0-9]+(?:-[a-z0-9]+)*\.ticket-[^.]+\.r[1-9][0-9]*\.deterministic-operations\.json$`:
+		return []any{patternConstraint(`^[a-z0-9]+(-[a-z0-9]+)*\.ticket-[^.]+\.r[1-9][0-9]*\.deterministic-operations\.json$`)}, nil
 	default:
 		return nil, fmt.Errorf("unsupported authoritative schema pattern %q", pattern)
 	}

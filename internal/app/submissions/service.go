@@ -205,96 +205,10 @@ func (s *Service) SubmitPlan(ctx context.Context, input SubmitPlanInput) (Submit
 }
 
 func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRunResult, error) {
-	if input.PlanID != strings.TrimSpace(input.PlanID) {
-		return CreateRunResult{}, applicationError(ErrorPlanPassAssociation, "Plan ID must not contain outer whitespace", "plan_id", true, nil)
-	}
-	if input.RemediatesRunID != strings.TrimSpace(input.RemediatesRunID) {
-		return CreateRunResult{}, applicationError(ErrorRemediationAssociation, "remediates Run ID must not contain outer whitespace", "remediates_run_id", true, nil)
-	}
-	managed := input.PlanID != "" || input.PassNumber != 0
-	if managed && (input.PlanID == "" || input.PassNumber < 1) {
-		return CreateRunResult{}, applicationError(
-			ErrorPlanPassAssociation,
-			"Plan ID and positive pass number must be supplied together",
-			"association",
-			true,
-			nil,
-		)
-	}
-
-	if s.cutoverGate != nil {
-		decision, err := s.cutoverGate.AllowNewManagedRun(ctx)
-		if err != nil {
-			return CreateRunResult{}, applicationError(ErrorPersistence, "cutover service unavailable", "cutover", false, err)
-		}
-		if !decision.Allowed {
-			return CreateRunResult{}, applicationError(ErrorPersistence, "legacy Run creation is closed; use ticket-oriented admission", "cutover", true, nil)
-		}
-	}
-
-	identity, markdown, err := compileMutation(input.DisplayName, input.ExpectedSHA256, input.CanonicalBytes, speccompiler.ArtifactExecutionSpec)
-	if err != nil {
-		return CreateRunResult{}, err
-	}
-	if managed {
-		if !identity.HasPassQualifier {
-			return CreateRunResult{}, applicationError(
-				ErrorSelectedPassFilename,
-				"managed Run Execution Spec filename must include a terminal .pass-<number> qualifier",
-				"file_name",
-				true,
-				nil,
-			)
-		}
-		if identity.PassNumber != input.PassNumber {
-			return CreateRunResult{}, applicationError(
-				ErrorSelectedPassFilename,
-				"Execution Spec filename pass qualifier does not match pass_number",
-				"file_name",
-				true,
-				nil,
-			)
-		}
-	} else if identity.HasPassQualifier {
-		return CreateRunResult{}, applicationError(
-			ErrorSelectedPassFilename,
-			"Standalone Run Execution Spec filename must not include a pass qualifier",
-			"file_name",
-			true,
-			nil,
-		)
-	}
-
-	var model executionSpecModel
-	if err := json.Unmarshal(input.CanonicalBytes, &model); err != nil {
-		return CreateRunResult{}, compilerError(
-			"compiled Execution Spec could not be decoded for persistence metadata",
-			"artifact_file",
-			nil,
-			nil,
-		)
-	}
-	runs, err := workflowruns.NewService(s.store)
-	if err != nil {
-		return CreateRunResult{}, applicationError(ErrorPersistence, "workflow Run service is unavailable", "workflow_store", false, err)
-	}
-	created, err := runs.CreateRun(ctx, workflowruns.CreateRunInput{
-		FeatureSlug:      model.FeatureSlug,
-		RepoTarget:       model.RepoTarget,
-		Branch:           model.Branch,
-		BaseCommit:       model.BaseCommit,
-		CanonicalJSON:    input.CanonicalBytes,
-		RenderedMarkdown: []byte(markdown),
-		PlanID:           input.PlanID,
-		PassNumber:       input.PassNumber,
-		RemediatesRunID:  input.RemediatesRunID,
-	})
-	if err != nil {
-		return CreateRunResult{}, classifyRunError(err)
-	}
-	return CreateRunResult{Run: created.Run, Artifacts: created.Artifacts}, nil
+	_ = ctx
+	_ = input
+	return CreateRunResult{}, applicationError(ErrorPersistence, "authored Execution Spec Run admission has been removed; use selected-package admission", "create_run", true, nil)
 }
-
 func compileMutation(displayName, expectedSHA string, data []byte, expectedKind speccompiler.ArtifactKind) (speccompiler.FilenameInfo, string, error) {
 	if !lowercaseSHA256.MatchString(expectedSHA) {
 		return speccompiler.FilenameInfo{}, "", applicationError(
@@ -346,13 +260,16 @@ func compileMutation(displayName, expectedSHA string, data []byte, expectedKind 
 		)
 	}
 	compiled := speccompiler.Compile(displayName, data)
-	if len(compiled.Errors) != 0 || compiled.Markdown == nil {
+	if len(compiled.Errors) != 0 || (compiled.Markdown == nil && identity.Kind != speccompiler.ArtifactDeterministicOperations) {
 		return speccompiler.FilenameInfo{}, "", compilerError(
 			"canonical artifact failed deterministic compiler validation",
 			"artifact_file",
 			compiled.Errors,
 			compiled.Notices,
 		)
+	}
+	if identity.Kind == speccompiler.ArtifactDeterministicOperations {
+		return identity, "", nil
 	}
 	return identity, *compiled.Markdown, nil
 }

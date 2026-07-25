@@ -145,16 +145,16 @@ func resolveWorkflowAuditTicketPackage(
 				SourceClosureRowID: closure.ID, ClosureID: closure.ClosureID, CommitOID: closure.CommitOID,
 				TreeOID: closure.TreeOID, RefName: closure.RefName, SHA256: pkg.SourceSha256,
 			},
-			DesignBriefSHA256: pkg.DesignBriefSha256, ExecutionSpecSHA256: pkg.ExecutionSpecSha256,
+			DesignBriefSHA256: pkg.DesignBriefSha256, ExecutionSpecSHA256: nullableString(pkg.DeterministicOperationsSha256),
 			ExecutionSpec: WorkflowAuditPacketArtifact{
-				ArtifactType: workflowAuditArtifactTypeApprovedExecutionSpec, SHA256: pkg.ExecutionSpecSha256,
-				Description: "Immutable copy of the approved package Execution Spec.",
+				ArtifactType: workflowAuditArtifactTypeApprovedExecutionSpec, SHA256: nullableString(pkg.DeterministicOperationsSha256),
+				Description: "Deferred package deterministic operations artifact.",
 			},
 			PackageApproval: WorkflowAuditPackageApprovalEvidence{
-				ApprovalRowID:              approval.ID,
-				ApprovalID:                 approval.ApprovalID,
-				PackageRowID:               approval.PackageRowID,
-				ApprovedPackageSha256:       approval.PackageSha256,
+				ApprovalRowID:                approval.ID,
+				ApprovalID:                   approval.ApprovalID,
+				PackageRowID:                 approval.PackageRowID,
+				ApprovedPackageSha256:        approval.PackageSha256,
 				OperatorConfirmationEvidence: approval.OperatorConfirmationEvidence,
 			},
 		},
@@ -230,8 +230,8 @@ func resolveWorkflowAuditTicketPackage(
 			},
 		})
 	}
-	specName := workspace.FeatureSlug + ".execution-spec.json"
-	spec, specBytes, err := readWorkflowAuditPackageFile(store.ArtifactStore(), pkg.PackageID, specName, pkg.ExecutionSpecSha256, "application/json", MaxWorkflowAuditSourceBytes)
+	specName := workspace.FeatureSlug + ".deterministic-operations.json"
+	spec, specBytes, err := readWorkflowAuditPackageFile(store.ArtifactStore(), pkg.PackageID, specName, nullableString(pkg.DeterministicOperationsSha256), "application/json", MaxWorkflowAuditSourceBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read ticket audit execution spec: %w", err)
 	}
@@ -290,13 +290,13 @@ func getWorkflowAuditExecutionPackageByRowID(ctx context.Context, store *workflo
 	err := store.DB().QueryRowContext(ctx, `
 SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit,
        source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256,
-       source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+       source_sha256, design_brief_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
 FROM execution_packages
 WHERE id = ?`, rowID).Scan(
 		&value.ID, &value.PackageID, &value.SelectionRowID, &value.WorkspaceRowID,
 		&value.RepoTarget, &value.Branch, &value.BaseCommit, &value.SourceClosureRowID,
 		&value.AuthorityRevisionRowID, &value.PackageSha256, &value.AuthoritySha256,
-		&value.SourceSha256, &value.DesignBriefSha256, &value.ExecutionSpecSha256, &value.CreatedAt,
+		&value.SourceSha256, &value.DesignBriefSha256, &value.DeterministicOperationsSha256, &value.DeterministicOperationsCoverage, &value.CreatedAt,
 	)
 	return value, err
 }

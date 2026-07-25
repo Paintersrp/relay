@@ -349,21 +349,22 @@ type ExecutionAttempt struct {
 }
 
 type ExecutionPackage struct {
-	ID                     int64  `json:"id"`
-	PackageID              string `json:"package_id"`
-	SelectionRowID         int64  `json:"selection_row_id"`
-	WorkspaceRowID         int64  `json:"workspace_row_id"`
-	RepoTarget             string `json:"repo_target"`
-	Branch                 string `json:"branch"`
-	BaseCommit             string `json:"base_commit"`
-	SourceClosureRowID     int64  `json:"source_closure_row_id"`
-	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
-	PackageSha256          string `json:"package_sha256"`
-	AuthoritySha256        string `json:"authority_sha256"`
-	SourceSha256           string `json:"source_sha256"`
-	DesignBriefSha256      string `json:"design_brief_sha256"`
-	ExecutionSpecSha256    string `json:"execution_spec_sha256"`
-	CreatedAt              string `json:"created_at"`
+	ID                              int64          `json:"id"`
+	PackageID                       string         `json:"package_id"`
+	SelectionRowID                  int64          `json:"selection_row_id"`
+	WorkspaceRowID                  int64          `json:"workspace_row_id"`
+	RepoTarget                      string         `json:"repo_target"`
+	Branch                          string         `json:"branch"`
+	BaseCommit                      string         `json:"base_commit"`
+	SourceClosureRowID              int64          `json:"source_closure_row_id"`
+	AuthorityRevisionRowID          int64          `json:"authority_revision_row_id"`
+	PackageSha256                   string         `json:"package_sha256"`
+	AuthoritySha256                 string         `json:"authority_sha256"`
+	SourceSha256                    string         `json:"source_sha256"`
+	DesignBriefSha256               string         `json:"design_brief_sha256"`
+	DeterministicOperationsSha256   sql.NullString `json:"deterministic_operations_sha256"`
+	DeterministicOperationsCoverage sql.NullString `json:"deterministic_operations_coverage"`
+	CreatedAt                       string         `json:"created_at"`
 }
 
 type ExecutionPackageApproval struct {
@@ -772,7 +773,7 @@ type Run struct {
 	Status                string         `json:"status"`
 	Branch                string         `json:"branch"`
 	BaseCommit            string         `json:"base_commit"`
-	CanonicalSha256       string         `json:"canonical_sha256"`
+	CanonicalSha256       sql.NullString `json:"canonical_sha256"`
 	CreatedAt             string         `json:"created_at"`
 	UpdatedAt             string         `json:"updated_at"`
 	CompletedAt           sql.NullString `json:"completed_at"`

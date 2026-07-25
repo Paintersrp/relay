@@ -72,7 +72,7 @@ func TestExecutionPackageConsumptionPersistsExactImmutableBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 	if stored.SelectionRowID != seed.selection.ID || stored.AuthorityRevisionRowID != seed.authority.ID ||
-		stored.SourceClosureRowID != seed.closure.ID || stored.ExecutionSpecSha256 != executionPackageHash('3') ||
+		stored.SourceClosureRowID != seed.closure.ID || !stored.DeterministicOperationsSha256.Valid || stored.DeterministicOperationsSha256.String != executionPackageHash('3') ||
 		stored.DesignBriefSha256 != executionPackageHash('2') {
 		t.Fatalf("stored execution package basis = %#v", stored)
 	}
@@ -403,19 +403,20 @@ func seedExecutionPackageInputs(t *testing.T, ctx context.Context, store *Store)
 
 func createExecutionPackage(ctx context.Context, queries *workflowgenerated.Queries, seed executionPackageSeed) (workflowgenerated.ExecutionPackage, error) {
 	return queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
-		PackageID:              "package-p5-t1",
-		SelectionRowID:         seed.selection.ID,
-		WorkspaceRowID:         seed.workspace.ID,
-		RepoTarget:             "relay",
-		Branch:                 "main",
-		BaseCommit:             seed.closure.CommitOID,
-		SourceClosureRowID:     seed.closure.ID,
-		AuthorityRevisionRowID: seed.authority.ID,
-		PackageSha256:          executionPackageHash('1'),
-		AuthoritySha256:        executionPackageHash('a'),
-		SourceSha256:           executionPackageHash('b'),
-		DesignBriefSha256:      executionPackageHash('2'),
-		ExecutionSpecSha256:    executionPackageHash('3'),
+		PackageID:                       "package-p5-t1",
+		SelectionRowID:                  seed.selection.ID,
+		WorkspaceRowID:                  seed.workspace.ID,
+		RepoTarget:                      "relay",
+		Branch:                          "main",
+		BaseCommit:                      seed.closure.CommitOID,
+		SourceClosureRowID:              seed.closure.ID,
+		AuthorityRevisionRowID:          seed.authority.ID,
+		PackageSha256:                   executionPackageHash('1'),
+		AuthoritySha256:                 executionPackageHash('a'),
+		SourceSha256:                    executionPackageHash('b'),
+		DesignBriefSha256:               executionPackageHash('2'),
+		DeterministicOperationsSha256:   sql.NullString{String: executionPackageHash('3'), Valid: true},
+		DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true},
 	})
 }
 

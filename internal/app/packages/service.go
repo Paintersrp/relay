@@ -22,13 +22,13 @@ import (
 )
 
 var (
-	ErrInvalidPackageInput   = errors.New("invalid execution package input")
-	ErrSelectionNotFound     = errors.New("delivery ticket selection not found")
-	ErrSelectionNotActive    = errors.New("delivery ticket selection is not active")
-	ErrSelectionInvalid      = errors.New("delivery ticket selection cardinality is invalid")
-	ErrPackageNotFound       = errors.New("execution package not found")
-	ErrPackageAlreadyRun     = errors.New("execution package already has a Run")
-	ErrPackageBasisChanged   = errors.New("execution package basis changed")
+	ErrInvalidPackageInput = errors.New("invalid execution package input")
+	ErrSelectionNotFound   = errors.New("delivery ticket selection not found")
+	ErrSelectionNotActive  = errors.New("delivery ticket selection is not active")
+	ErrSelectionInvalid    = errors.New("delivery ticket selection cardinality is invalid")
+	ErrPackageNotFound     = errors.New("execution package not found")
+	ErrPackageAlreadyRun   = errors.New("execution package already has a Run")
+	ErrPackageBasisChanged = errors.New("execution package basis changed")
 )
 
 var packageSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -39,15 +39,22 @@ type Service struct {
 }
 
 type validatedInput struct {
-	specIdentity speccompiler.FilenameInfo
-	spec         *speccompiler.ExecutionDocument
-	rendered     []byte
-	briefs       map[string]validatedBrief
+	brief              validatedBrief
+	operations         *validatedOperations
+	operationsSHA256   string
+	operationsCoverage string
 }
 
 type validatedBrief struct {
 	input    ArtifactInput
 	identity speccompiler.FilenameInfo
+	sha256   string
+}
+
+type validatedOperations struct {
+	input    ArtifactInput
+	identity speccompiler.FilenameInfo
+	document *speccompiler.DeterministicOperationsDocument
 	sha256   string
 }
 
@@ -67,10 +74,12 @@ type packageBasis struct {
 	closure   workflowstore.SourceVaultClosure
 	members   []packageMemberBasis
 
-	sourceSHA256      string
-	authoritySHA256   string
-	designBriefSHA256 string
-	packageSHA256     string
+	sourceSHA256       string
+	authoritySHA256    string
+	designBriefSHA256  string
+	operationsSHA256   string
+	operationsCoverage string
+	packageSHA256      string
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
@@ -101,17 +110,17 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 		}
 	}()
 
-	briefFiles := make([]workflowartifacts.File, 0, len(input.TicketDesignBriefs))
-	for _, brief := range input.TicketDesignBriefs {
-		file, stageErr := batch.Stage("ticket_design_brief", brief.DisplayName, "text/markdown", brief.Bytes)
+	briefFile, err := batch.Stage("ticket_design_brief", input.TicketDesignBrief.DisplayName, "text/markdown", input.TicketDesignBrief.Bytes)
+	if err != nil {
+		return PrepareResult{}, err
+	}
+	var operationsFile *workflowartifacts.File
+	if input.DeterministicOperations != nil {
+		file, stageErr := batch.Stage("deterministic_operations", input.DeterministicOperations.DisplayName, "application/json", input.DeterministicOperations.Bytes)
 		if stageErr != nil {
 			return PrepareResult{}, stageErr
 		}
-		briefFiles = append(briefFiles, file)
-	}
-	specFile, err := batch.Stage("execution_spec", input.ExecutionSpec.DisplayName, "application/json", input.ExecutionSpec.Bytes)
-	if err != nil {
-		return PrepareResult{}, err
+		operationsFile = &file
 	}
 
 	result := PrepareResult{}
@@ -121,19 +130,20 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 			return basisErr
 		}
 		packageRow, createErr := tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{
-			PackageID:              packageID,
-			SelectionRowID:         basis.selection.ID,
-			WorkspaceRowID:         basis.workspace.ID,
-			RepoTarget:             validated.spec.RepoTarget,
-			Branch:                 validated.spec.Branch,
-			BaseCommit:             validated.spec.BaseCommit,
-			SourceClosureRowID:     basis.closure.ID,
-			AuthorityRevisionRowID: basis.authority.ID,
-			PackageSha256:          basis.packageSHA256,
-			AuthoritySha256:        basis.authoritySHA256,
-			SourceSha256:           basis.sourceSHA256,
-			DesignBriefSha256:      basis.designBriefSHA256,
-			ExecutionSpecSha256:    validated.specIdentityHash(input.ExecutionSpec),
+			PackageID:                       packageID,
+			SelectionRowID:                  basis.selection.ID,
+			WorkspaceRowID:                  basis.workspace.ID,
+			RepoTarget:                      basis.members[0].revision.RepoTarget,
+			Branch:                          basis.members[0].revision.Branch,
+			BaseCommit:                      basis.members[0].revision.BaseCommit,
+			SourceClosureRowID:              basis.closure.ID,
+			AuthorityRevisionRowID:          basis.authority.ID,
+			PackageSha256:                   basis.packageSHA256,
+			AuthoritySha256:                 basis.authoritySHA256,
+			SourceSha256:                    basis.sourceSHA256,
+			DesignBriefSha256:               basis.designBriefSHA256,
+			DeterministicOperationsSha256:   nullableString(validated.operationsSHA256),
+			DeterministicOperationsCoverage: nullableString(validated.operationsCoverage),
 		})
 		if createErr != nil {
 			return fmt.Errorf("create execution package: %w", createErr)
@@ -153,8 +163,11 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 			}
 			result.Members = append(result.Members, packageMember)
 		}
-		result.Briefs = packageArtifactsFromFiles(briefFiles)
-		result.ExecutionSpec = packageArtifactFromFile(specFile)
+		result.TicketDesignBrief = packageArtifactFromFile(briefFile)
+		if operationsFile != nil {
+			artifact := packageArtifactFromFile(*operationsFile)
+			result.DeterministicOperations = &artifact
+		}
 		return nil
 	})
 	if err != nil {
@@ -203,19 +216,17 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 		return ApproveResult{}, err
 	}
 	var (
-		approvalID       = workflowstore.NewExecutionPackageApprovalID()
-		approvalRowID    int64
+		approvalID    = workflowstore.NewExecutionPackageApprovalID()
+		approvalRowID int64
 	)
 
 	created, err := s.runs.CreatePackageRun(ctx, workflowruns.CreatePackageRunInput{
-		FeatureSlug:              validated.spec.FeatureSlug,
-		RepoTarget:               validated.spec.RepoTarget,
-		Branch:                   validated.spec.Branch,
-		BaseCommit:               validated.spec.BaseCommit,
-		CanonicalJSON:            prepareInput.ExecutionSpec.Bytes,
-		RenderedMarkdown:         validated.rendered,
-		ExecutionPackageRowID:    packageRow.ID,
-		PackageApprovalRowIDRef:  &approvalRowID,
+		FeatureSlug:             validated.brief.identity.FeatureSlug,
+		RepoTarget:              packageRow.RepoTarget,
+		Branch:                  packageRow.Branch,
+		BaseCommit:              packageRow.BaseCommit,
+		ExecutionPackageRowID:   packageRow.ID,
+		PackageApprovalRowIDRef: &approvalRowID,
 		Preflight: func(ctx context.Context, tx *workflowstore.Tx) error {
 			freshInput, readErr := s.rereadPackageInput(packageRow.PackageID, prepareInput)
 			if readErr != nil {
@@ -330,7 +341,9 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	briefs := make([]PackageArtifact, 0, len(members))
+	var briefArtifact PackageArtifact
+	var selectedTicket workflowstore.DeliveryTicket
+	var selectedRevision workflowstore.DeliveryTicketRevision
 	for _, member := range members {
 		revision, revisionErr := s.store.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
 		if revisionErr != nil {
@@ -340,6 +353,7 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 		if ticketErr != nil {
 			return Detail{}, ticketErr
 		}
+		selectedTicket, selectedRevision = memberTicket, revision
 		filename := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, memberTicket.TicketID, revision.RevisionNumber)
 		bytes, readErr := s.readPackageFile(packageRow.PackageID, filename)
 		if readErr != nil {
@@ -349,23 +363,28 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 		if sha != member.MemberSha256 {
 			return Detail{}, fmt.Errorf("%w: design brief %s no longer matches its package member", ErrPackageBasisChanged, filename)
 		}
-		briefs = append(briefs, PackageArtifact{DisplayName: filename, RelativePath: filepath.ToSlash(filepath.Join("packages", packageRow.PackageID, filename)), SHA256: sha, SizeBytes: int64(len(bytes))})
+		briefArtifact = PackageArtifact{DisplayName: filename, RelativePath: filepath.ToSlash(filepath.Join("packages", packageRow.PackageID, filename)), SHA256: sha, SizeBytes: int64(len(bytes))}
 	}
-	specName := workspace.FeatureSlug + ".execution-spec.json"
-	specBytes, err := s.readPackageFile(packageRow.PackageID, specName)
-	if err != nil {
-		return Detail{}, err
-	}
-	specSHA := sha256Hex(specBytes)
-	if specSHA != packageRow.ExecutionSpecSha256 {
-		return Detail{}, fmt.Errorf("%w: execution spec no longer matches its package basis", ErrPackageBasisChanged)
+	var operationsArtifact *PackageArtifact
+	if packageRow.DeterministicOperationsSha256.Valid {
+		operationsName := fmt.Sprintf("%s.ticket-%s.r%d.deterministic-operations.json", workspace.FeatureSlug, selectedTicket.TicketID, selectedRevision.RevisionNumber)
+		operationsBytes, readErr := s.readPackageFile(packageRow.PackageID, operationsName)
+		if readErr != nil {
+			return Detail{}, readErr
+		}
+		operationsSHA := sha256Hex(operationsBytes)
+		if operationsSHA != packageRow.DeterministicOperationsSha256.String {
+			return Detail{}, fmt.Errorf("%w: deterministic operations no longer matches its package basis", ErrPackageBasisChanged)
+		}
+		artifact := PackageArtifact{DisplayName: operationsName, RelativePath: filepath.ToSlash(filepath.Join("packages", packageRow.PackageID, operationsName)), SHA256: operationsSHA, SizeBytes: int64(len(operationsBytes))}
+		operationsArtifact = &artifact
 	}
 	detail := Detail{
-		Package:          packageRow,
-		Members:          members,
-		ApprovalBindings: bindings,
-		Briefs:           briefs,
-		ExecutionSpec:    PackageArtifact{DisplayName: specName, RelativePath: filepath.ToSlash(filepath.Join("packages", packageRow.PackageID, specName)), SHA256: specSHA, SizeBytes: int64(len(specBytes))},
+		Package:                 packageRow,
+		Members:                 members,
+		ApprovalBindings:        bindings,
+		TicketDesignBrief:       briefArtifact,
+		DeterministicOperations: operationsArtifact,
 	}
 	if run, runErr := s.store.GetRunByExecutionPackageRowID(ctx, packageRow.ID); runErr == nil {
 		detail.Run = &run
@@ -385,45 +404,34 @@ func validateInput(input PrepareInput) (validatedInput, error) {
 	if input.SelectionID == "" || strings.TrimSpace(input.SelectionID) != input.SelectionID {
 		return validatedInput{}, fmt.Errorf("%w: selection ID must be nonblank without outer whitespace", ErrInvalidPackageInput)
 	}
-	if len(input.TicketDesignBriefs) == 0 {
-		return validatedInput{}, fmt.Errorf("%w: at least one Ticket Design Brief is required", ErrInvalidPackageInput)
+	identity, diagnostics := speccompiler.ParseFilename(input.TicketDesignBrief.DisplayName)
+	if len(diagnostics) != 0 || identity.Kind != speccompiler.ArtifactTicketDesignBrief {
+		return validatedInput{}, fmt.Errorf("%w: invalid Ticket Design Brief filename %q", ErrInvalidPackageInput, input.TicketDesignBrief.DisplayName)
 	}
-	specIdentity, diagnostics := speccompiler.ParseFilename(input.ExecutionSpec.DisplayName)
-	if len(diagnostics) != 0 || specIdentity.Kind != speccompiler.ArtifactExecutionSpec || specIdentity.HasPassQualifier {
-		return validatedInput{}, fmt.Errorf("%w: Execution Spec filename must be one unqualified canonical basename", ErrInvalidPackageInput)
-	}
-	if err := validateArtifactHash(input.ExecutionSpec); err != nil {
+	if err := validateArtifactHash(input.TicketDesignBrief); err != nil {
 		return validatedInput{}, err
 	}
-	compiled, document := speccompiler.CompileExecutionSpec(input.ExecutionSpec.DisplayName, input.ExecutionSpec.Bytes)
-	if len(compiled.Errors) != 0 || document == nil || compiled.Markdown == nil {
-		return validatedInput{}, fmt.Errorf("%w: Execution Spec compiler rejected exact bytes: %v", ErrInvalidPackageInput, compiled.Errors)
+	if diagnostics := planningartifacts.Validate(speccompiler.ArtifactTicketDesignBrief, input.TicketDesignBrief.Bytes); len(diagnostics) != 0 {
+		return validatedInput{}, fmt.Errorf("%w: Ticket Design Brief %q has invalid structure", ErrInvalidPackageInput, input.TicketDesignBrief.DisplayName)
 	}
-	if document.FeatureSlug != specIdentity.FeatureSlug || document.RepoTarget == "" || document.Branch == "" || document.BaseCommit == "" {
-		return validatedInput{}, fmt.Errorf("%w: Execution Spec identity is incomplete or disagrees with its filename", ErrInvalidPackageInput)
-	}
-	briefs := make(map[string]validatedBrief, len(input.TicketDesignBriefs))
-	for _, brief := range input.TicketDesignBriefs {
-		identity, briefDiagnostics := speccompiler.ParseFilename(brief.DisplayName)
-		if len(briefDiagnostics) != 0 || identity.Kind != speccompiler.ArtifactTicketDesignBrief {
-			return validatedInput{}, fmt.Errorf("%w: invalid Ticket Design Brief filename %q", ErrInvalidPackageInput, brief.DisplayName)
+	validated := validatedInput{brief: validatedBrief{input: input.TicketDesignBrief, identity: identity, sha256: sha256Hex(input.TicketDesignBrief.Bytes)}}
+	if input.DeterministicOperations != nil {
+		operationsIdentity, operationsDiagnostics := speccompiler.ParseFilename(input.DeterministicOperations.DisplayName)
+		if len(operationsDiagnostics) != 0 || operationsIdentity.Kind != speccompiler.ArtifactDeterministicOperations {
+			return validatedInput{}, fmt.Errorf("%w: invalid Deterministic Operations filename %q", ErrInvalidPackageInput, input.DeterministicOperations.DisplayName)
 		}
-		if err := validateArtifactHash(brief); err != nil {
+		if err := validateArtifactHash(*input.DeterministicOperations); err != nil {
 			return validatedInput{}, err
 		}
-		if diagnostics := planningartifacts.Validate(speccompiler.ArtifactTicketDesignBrief, brief.Bytes); len(diagnostics) != 0 {
-			return validatedInput{}, fmt.Errorf("%w: Ticket Design Brief %q has invalid structure", ErrInvalidPackageInput, brief.DisplayName)
+		compiled, document := speccompiler.CompileDeterministicOperations(input.DeterministicOperations.DisplayName, input.DeterministicOperations.Bytes)
+		if len(compiled.Errors) != 0 || document == nil {
+			return validatedInput{}, fmt.Errorf("%w: Deterministic Operations compiler rejected exact bytes: %v", ErrInvalidPackageInput, compiled.Errors)
 		}
-		if identity.FeatureSlug != document.FeatureSlug {
-			return validatedInput{}, fmt.Errorf("%w: Ticket Design Brief %q has a different feature slug", ErrInvalidPackageInput, brief.DisplayName)
-		}
-		key := briefKey(identity.TicketID, identity.Revision)
-		if _, exists := briefs[key]; exists {
-			return validatedInput{}, fmt.Errorf("%w: duplicate Ticket Design Brief %q", ErrInvalidPackageInput, brief.DisplayName)
-		}
-		briefs[key] = validatedBrief{input: brief, identity: identity, sha256: sha256Hex(brief.Bytes)}
+		validated.operations = &validatedOperations{input: *input.DeterministicOperations, identity: operationsIdentity, document: document, sha256: sha256Hex(input.DeterministicOperations.Bytes)}
+		validated.operationsSHA256 = validated.operations.sha256
+		validated.operationsCoverage = document.Coverage
 	}
-	return validatedInput{specIdentity: specIdentity, spec: document, rendered: []byte(*compiled.Markdown), briefs: briefs}, nil
+	return validated, nil
 }
 
 func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input PrepareInput, validated validatedInput, packageRow *workflowstore.ExecutionPackage) (packageBasis, error) {
@@ -444,8 +452,8 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if err != nil {
 		return packageBasis{}, err
 	}
-	if workspace.FeatureSlug != validated.spec.FeatureSlug || !workspace.CurrentAuthorityRevisionRowID.Valid {
-		return packageBasis{}, fmt.Errorf("%w: current workspace authority does not match the unqualified Execution Spec", ErrPackageBasisChanged)
+	if workspace.FeatureSlug != validated.brief.identity.FeatureSlug || !workspace.CurrentAuthorityRevisionRowID.Valid {
+		return packageBasis{}, fmt.Errorf("%w: current workspace authority does not match the Ticket Design Brief", ErrPackageBasisChanged)
 	}
 	authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
 	if err != nil {
@@ -454,20 +462,6 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if authority.WorkspaceRowID != workspace.ID || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != selection.SourceClosureRowID.Int64 {
 		return packageBasis{}, fmt.Errorf("%w: current authority is not bound to the selected source closure", ErrPackageBasisChanged)
 	}
-	closure, err := tx.GetSourceVaultClosureByRowID(ctx, selection.SourceClosureRowID.Int64)
-	if err != nil {
-		return packageBasis{}, err
-	}
-	if closure.State != workflowstore.SourceVaultClosureStateReady || closure.CommitOID != validated.spec.BaseCommit {
-		return packageBasis{}, fmt.Errorf("%w: source closure is not the exact ready Execution Spec base", ErrPackageBasisChanged)
-	}
-	target, err := tx.GetRepositoryTarget(ctx, validated.spec.RepoTarget)
-	if err != nil {
-		return packageBasis{}, err
-	}
-	if target.RepoTarget != validated.spec.RepoTarget || !target.ConfiguredBranchRef.Valid || target.ConfiguredBranchRef.String != "refs/heads/"+validated.spec.Branch {
-		return packageBasis{}, fmt.Errorf("%w: repository target and configured branch do not match the package", ErrPackageBasisChanged)
-	}
 	selectionMembers, err := tx.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
 	if err != nil {
 		return packageBasis{}, err
@@ -475,65 +469,73 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if len(selectionMembers) != 1 {
 		return packageBasis{}, fmt.Errorf("%w: selection must have exactly one member, found %d", ErrSelectionInvalid, len(selectionMembers))
 	}
-	members := make([]packageMemberBasis, 0, len(selectionMembers))
-	for _, selectionMember := range selectionMembers {
-		revision, revisionErr := tx.GetDeliveryTicketRevisionByRowID(ctx, selectionMember.RevisionRowID)
-		if revisionErr != nil {
-			return packageBasis{}, revisionErr
-		}
-		ticket, ticketErr := tx.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
-		if ticketErr != nil {
-			return packageBasis{}, ticketErr
-		}
-		if !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID ||
-			revision.RepoTarget != validated.spec.RepoTarget || revision.Branch != validated.spec.Branch || revision.BaseCommit != validated.spec.BaseCommit ||
-			revision.SourceClosureRowID != closure.ID {
-			return packageBasis{}, fmt.Errorf("%w: selected ticket %s is not current on the exact package target/source", ErrPackageBasisChanged, ticket.TicketID)
-		}
-		approvals, approvalErr := tx.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
-		if approvalErr != nil {
-			return packageBasis{}, approvalErr
-		}
-		var approval workflowstore.DeliveryTicketRevisionApproval
-		foundApproval := false
-		for _, candidate := range approvals {
-			if candidate.ID == selectionMember.ApprovalRowID {
-				approval = candidate
-				foundApproval = true
-				break
-			}
-		}
-		if !foundApproval || approval.ApprovalKind != "delivery" || approval.ApprovalState != "approved" ||
-			approval.SourceClosureRowID != closure.ID || !approval.AuthorityRevisionRowID.Valid || approval.AuthorityRevisionRowID.Int64 != authority.ID {
-			return packageBasis{}, fmt.Errorf("%w: selected ticket %s approval is not current", ErrPackageBasisChanged, ticket.TicketID)
-		}
-		brief, ok := validated.briefs[briefKey(ticket.TicketID, revision.RevisionNumber)]
-		if !ok || brief.identity.FeatureSlug != workspace.FeatureSlug {
-			return packageBasis{}, fmt.Errorf("%w: selected ticket %s has no exact current Ticket Design Brief", ErrPackageBasisChanged, ticket.TicketID)
-		}
-		members = append(members, packageMemberBasis{selectionMember: selectionMember, revision: revision, ticket: ticket, approval: approval, brief: brief})
+	selectionMember := selectionMembers[0]
+	revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, selectionMember.RevisionRowID)
+	if err != nil {
+		return packageBasis{}, err
 	}
+	ticket, err := tx.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+	if err != nil {
+		return packageBasis{}, err
+	}
+	if validated.brief.identity.FeatureSlug != workspace.FeatureSlug || validated.brief.identity.TicketID != ticket.TicketID || validated.brief.identity.Revision != revision.RevisionNumber {
+		return packageBasis{}, fmt.Errorf("%w: Ticket Design Brief does not match selected Ticket revision", ErrPackageBasisChanged)
+	}
+	if !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID || revision.SourceClosureRowID != selection.SourceClosureRowID.Int64 {
+		return packageBasis{}, fmt.Errorf("%w: selected Ticket is not current on the exact package source", ErrPackageBasisChanged)
+	}
+	closure, err := tx.GetSourceVaultClosureByRowID(ctx, selection.SourceClosureRowID.Int64)
+	if err != nil {
+		return packageBasis{}, err
+	}
+	if closure.State != workflowstore.SourceVaultClosureStateReady || closure.CommitOID != revision.BaseCommit {
+		return packageBasis{}, fmt.Errorf("%w: source closure is not the exact ready Ticket base", ErrPackageBasisChanged)
+	}
+	target, err := tx.GetRepositoryTarget(ctx, revision.RepoTarget)
+	if err != nil {
+		return packageBasis{}, err
+	}
+	if target.RepoTarget != revision.RepoTarget || !target.ConfiguredBranchRef.Valid || target.ConfiguredBranchRef.String != "refs/heads/"+revision.Branch {
+		return packageBasis{}, fmt.Errorf("%w: repository target and configured branch do not match the selected Ticket", ErrPackageBasisChanged)
+	}
+	if validated.operations != nil {
+		if validated.operations.identity.FeatureSlug != workspace.FeatureSlug || validated.operations.identity.TicketID != ticket.TicketID || validated.operations.identity.Revision != revision.RevisionNumber ||
+			validated.operations.document.RepoTarget != revision.RepoTarget || validated.operations.document.Branch != revision.Branch || validated.operations.document.BaseCommit != revision.BaseCommit {
+			return packageBasis{}, fmt.Errorf("%w: Deterministic Operations does not match the selected Ticket basis", ErrPackageBasisChanged)
+		}
+	}
+	approvals, err := tx.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
+	if err != nil {
+		return packageBasis{}, err
+	}
+	var approval workflowstore.DeliveryTicketRevisionApproval
+	foundApproval := false
+	for _, candidate := range approvals {
+		if candidate.ID == selectionMember.ApprovalRowID {
+			approval, foundApproval = candidate, true
+			break
+		}
+	}
+	if !foundApproval || approval.ApprovalKind != "delivery" || approval.ApprovalState != "approved" ||
+		approval.SourceClosureRowID != closure.ID || !approval.AuthorityRevisionRowID.Valid || approval.AuthorityRevisionRowID.Int64 != authority.ID {
+		return packageBasis{}, fmt.Errorf("%w: selected Ticket approval is not current", ErrPackageBasisChanged)
+	}
+	members := []packageMemberBasis{{selectionMember: selectionMember, revision: revision, ticket: ticket, approval: approval, brief: validated.brief}}
 	sourceSHA := sourceBasisSHA256(closure)
 	authoritySHA, err := authorityBasisSHA256(ctx, tx, workspace, authority, closure)
 	if err != nil {
 		return packageBasis{}, err
 	}
-	designParts := []string{"design-briefs-v1"}
-	for _, member := range members {
-		designParts = append(designParts, strconv.FormatInt(member.selectionMember.Sequence, 10), member.ticket.TicketID, strconv.FormatInt(member.revision.RevisionNumber, 10), member.brief.input.DisplayName, member.brief.sha256)
+	designSHA := compoundSHA256("ticket-design-brief-v2", strconv.FormatInt(selectionMember.Sequence, 10), ticket.TicketID, strconv.FormatInt(revision.RevisionNumber, 10), validated.brief.input.DisplayName, validated.brief.sha256)
+	operationsSHA, operationsCoverage, operationsMarker := "", "", "operations absent"
+	if validated.operations != nil {
+		operationsSHA, operationsCoverage, operationsMarker = validated.operations.sha256, validated.operations.document.Coverage, "operations present"
 	}
-	designSHA := compoundSHA256(designParts...)
-	specSHA := validated.specIdentityHash(input.ExecutionSpec)
-	packageParts := []string{"execution-package-v1", input.SelectionID, strconv.FormatInt(selection.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, validated.spec.RepoTarget, validated.spec.Branch, validated.spec.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, designSHA, specSHA}
-	for _, member := range members {
-		packageParts = append(packageParts, strconv.FormatInt(member.selectionMember.Sequence, 10), strconv.FormatInt(member.selectionMember.ID, 10), strconv.FormatInt(member.revision.ID, 10), strconv.FormatInt(member.approval.ID, 10), member.brief.input.DisplayName, member.brief.sha256)
-	}
+	packageParts := []string{"selected-package-v2", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, designSHA, validated.brief.input.DisplayName, validated.brief.sha256, operationsMarker, operationsSHA, operationsCoverage}
 	packageSHA := compoundSHA256(packageParts...)
-	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, designBriefSHA256: designSHA, packageSHA256: packageSHA}
-	if packageRow != nil {
-		if packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != validated.spec.RepoTarget || packageRow.Branch != validated.spec.Branch || packageRow.BaseCommit != validated.spec.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || packageRow.DesignBriefSha256 != designSHA || packageRow.ExecutionSpecSha256 != specSHA {
-			return packageBasis{}, fmt.Errorf("%w: immutable package identity no longer matches current ticket, authority, source, or bytes", ErrPackageBasisChanged)
-		}
+	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, designBriefSHA256: designSHA, operationsSHA256: operationsSHA, operationsCoverage: operationsCoverage, packageSHA256: packageSHA}
+	if packageRow != nil && (packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != revision.RepoTarget || packageRow.Branch != revision.Branch || packageRow.BaseCommit != revision.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || packageRow.DesignBriefSha256 != designSHA || nullStringValue(packageRow.DeterministicOperationsSha256) != nullableValue(operationsSHA) || nullStringValue(packageRow.DeterministicOperationsCoverage) != nullableValue(operationsCoverage)) {
+		return packageBasis{}, fmt.Errorf("%w: immutable package identity no longer matches current Ticket, authority, source, or bytes", ErrPackageBasisChanged)
 	}
 	return basis, nil
 }
@@ -559,50 +561,54 @@ func (s *Service) readPackageInput(ctx context.Context, packageRow workflowstore
 	for _, member := range packageMembers {
 		memberHashes[member.RevisionRowID] = member.MemberSha256
 	}
-	briefs := make([]ArtifactInput, 0, len(selectionMembers))
-	for _, member := range selectionMembers {
-		revision, revisionErr := s.store.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
-		if revisionErr != nil {
-			return PrepareInput{}, revisionErr
-		}
-		ticket, ticketErr := s.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
-		if ticketErr != nil {
-			return PrepareInput{}, ticketErr
-		}
-		filename := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
-		bytes, readErr := s.readPackageFile(packageRow.PackageID, filename)
-		if readErr != nil {
-			return PrepareInput{}, readErr
-		}
-		expectedSHA, ok := memberHashes[member.RevisionRowID]
-		if !ok {
-			return PrepareInput{}, fmt.Errorf("%w: package member for revision %d is missing", ErrPackageBasisChanged, member.RevisionRowID)
-		}
-		briefs = append(briefs, ArtifactInput{DisplayName: filename, ExpectedSHA256: expectedSHA, Bytes: bytes})
+	if len(selectionMembers) != 1 {
+		return PrepareInput{}, fmt.Errorf("%w: package selection must have exactly one member", ErrPackageBasisChanged)
 	}
-	specName := workspace.FeatureSlug + ".execution-spec.json"
-	specBytes, err := s.readPackageFile(packageRow.PackageID, specName)
+	member := selectionMembers[0]
+	revision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
 	if err != nil {
 		return PrepareInput{}, err
 	}
-	return PrepareInput{SelectionID: selection.SelectionID, TicketDesignBriefs: briefs, ExecutionSpec: ArtifactInput{DisplayName: specName, ExpectedSHA256: packageRow.ExecutionSpecSha256, Bytes: specBytes}}, nil
+	ticket, err := s.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+	if err != nil {
+		return PrepareInput{}, err
+	}
+	filename := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
+	briefBytes, err := s.readPackageFile(packageRow.PackageID, filename)
+	if err != nil {
+		return PrepareInput{}, err
+	}
+	expectedSHA, ok := memberHashes[member.RevisionRowID]
+	if !ok {
+		return PrepareInput{}, fmt.Errorf("%w: package member for revision %d is missing", ErrPackageBasisChanged, member.RevisionRowID)
+	}
+	input := PrepareInput{SelectionID: selection.SelectionID, TicketDesignBrief: ArtifactInput{DisplayName: filename, ExpectedSHA256: expectedSHA, Bytes: briefBytes}}
+	if packageRow.DeterministicOperationsSha256.Valid {
+		operationsName := fmt.Sprintf("%s.ticket-%s.r%d.deterministic-operations.json", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
+		operationsBytes, readErr := s.readPackageFile(packageRow.PackageID, operationsName)
+		if readErr != nil {
+			return PrepareInput{}, readErr
+		}
+		input.DeterministicOperations = &ArtifactInput{DisplayName: operationsName, ExpectedSHA256: packageRow.DeterministicOperationsSha256.String, Bytes: operationsBytes}
+	}
+	return input, nil
 }
 
 func (s *Service) rereadPackageInput(packageID string, input PrepareInput) (PrepareInput, error) {
 	fresh := input
-	fresh.TicketDesignBriefs = make([]ArtifactInput, len(input.TicketDesignBriefs))
-	for index, brief := range input.TicketDesignBriefs {
-		bytes, err := s.readPackageFile(packageID, brief.DisplayName)
-		if err != nil {
-			return PrepareInput{}, err
-		}
-		fresh.TicketDesignBriefs[index] = ArtifactInput{DisplayName: brief.DisplayName, ExpectedSHA256: brief.ExpectedSHA256, Bytes: bytes}
-	}
-	bytes, err := s.readPackageFile(packageID, input.ExecutionSpec.DisplayName)
+	bytes, err := s.readPackageFile(packageID, input.TicketDesignBrief.DisplayName)
 	if err != nil {
 		return PrepareInput{}, err
 	}
-	fresh.ExecutionSpec = ArtifactInput{DisplayName: input.ExecutionSpec.DisplayName, ExpectedSHA256: input.ExecutionSpec.ExpectedSHA256, Bytes: bytes}
+	fresh.TicketDesignBrief = ArtifactInput{DisplayName: input.TicketDesignBrief.DisplayName, ExpectedSHA256: input.TicketDesignBrief.ExpectedSHA256, Bytes: bytes}
+	if input.DeterministicOperations != nil {
+		bytes, err := s.readPackageFile(packageID, input.DeterministicOperations.DisplayName)
+		if err != nil {
+			return PrepareInput{}, err
+		}
+		operations := ArtifactInput{DisplayName: input.DeterministicOperations.DisplayName, ExpectedSHA256: input.DeterministicOperations.ExpectedSHA256, Bytes: bytes}
+		fresh.DeterministicOperations = &operations
+	}
 	return fresh, nil
 }
 
@@ -628,11 +634,14 @@ func validateArtifactHash(input ArtifactInput) error {
 }
 
 func samePackageInput(left, right PrepareInput) bool {
-	if left.SelectionID != right.SelectionID || left.ExecutionSpec.DisplayName != right.ExecutionSpec.DisplayName || left.ExecutionSpec.ExpectedSHA256 != right.ExecutionSpec.ExpectedSHA256 || !bytes.Equal(left.ExecutionSpec.Bytes, right.ExecutionSpec.Bytes) || len(left.TicketDesignBriefs) != len(right.TicketDesignBriefs) {
+	if left.SelectionID != right.SelectionID || left.TicketDesignBrief.DisplayName != right.TicketDesignBrief.DisplayName || left.TicketDesignBrief.ExpectedSHA256 != right.TicketDesignBrief.ExpectedSHA256 || !bytes.Equal(left.TicketDesignBrief.Bytes, right.TicketDesignBrief.Bytes) {
 		return false
 	}
-	for index := range left.TicketDesignBriefs {
-		first, second := left.TicketDesignBriefs[index], right.TicketDesignBriefs[index]
+	if (left.DeterministicOperations == nil) != (right.DeterministicOperations == nil) {
+		return false
+	}
+	if left.DeterministicOperations != nil {
+		first, second := *left.DeterministicOperations, *right.DeterministicOperations
 		if first.DisplayName != second.DisplayName || first.ExpectedSHA256 != second.ExpectedSHA256 || !bytes.Equal(first.Bytes, second.Bytes) {
 			return false
 		}
@@ -650,10 +659,6 @@ func packageArtifactsFromFiles(files []workflowartifacts.File) []PackageArtifact
 
 func packageArtifactFromFile(file workflowartifacts.File) PackageArtifact {
 	return PackageArtifact{DisplayName: filepath.Base(file.RelativePath), RelativePath: file.RelativePath, SHA256: file.SHA256, SizeBytes: file.SizeBytes}
-}
-
-func (v validatedInput) specIdentityHash(input ArtifactInput) string {
-	return sha256Hex(input.Bytes)
 }
 
 func briefKey(ticketID string, revision int64) string {
@@ -697,4 +702,19 @@ func nullInt64Text(value sql.NullInt64) string {
 		return "null"
 	}
 	return strconv.FormatInt(value.Int64, 10)
+}
+
+func nullableString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: value != ""}
+}
+
+func nullableValue(value string) string {
+	return value
+}
+
+func nullStringValue(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }

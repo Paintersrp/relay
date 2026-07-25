@@ -11,20 +11,21 @@ import (
 // package. It is owned by the application service so transports never project
 // workflow-store records directly.
 type PackageIdentityView struct {
-	PackageID              string `json:"packageId"`
-	SelectionRowID         int64  `json:"selectionRowId"`
-	WorkspaceRowID         int64  `json:"workspaceRowId"`
-	RepoTarget             string `json:"repoTarget"`
-	Branch                 string `json:"branch"`
-	BaseCommit             string `json:"baseCommit"`
-	SourceClosureRowID     int64  `json:"sourceClosureRowId"`
-	AuthorityRevisionRowID int64  `json:"authorityRevisionRowId"`
-	PackageSHA256          string `json:"packageSha256"`
-	AuthoritySHA256        string `json:"authoritySha256"`
-	SourceSHA256           string `json:"sourceSha256"`
-	DesignBriefSHA256      string `json:"designBriefSha256"`
-	ExecutionSpecSHA256    string `json:"executionSpecSha256"`
-	CreatedAt              string `json:"createdAt"`
+	PackageID                       string `json:"packageId"`
+	SelectionRowID                  int64  `json:"selectionRowId"`
+	WorkspaceRowID                  int64  `json:"workspaceRowId"`
+	RepoTarget                      string `json:"repoTarget"`
+	Branch                          string `json:"branch"`
+	BaseCommit                      string `json:"baseCommit"`
+	SourceClosureRowID              int64  `json:"sourceClosureRowId"`
+	AuthorityRevisionRowID          int64  `json:"authorityRevisionRowId"`
+	PackageSHA256                   string `json:"packageSha256"`
+	AuthoritySHA256                 string `json:"authoritySha256"`
+	SourceSHA256                    string `json:"sourceSha256"`
+	DesignBriefSHA256               string `json:"designBriefSha256"`
+	DeterministicOperationsSHA256   string `json:"deterministicOperationsSha256,omitempty"`
+	DeterministicOperationsCoverage string `json:"deterministicOperationsCoverage,omitempty"`
+	CreatedAt                       string `json:"createdAt"`
 }
 
 type PackageMemberView struct {
@@ -61,12 +62,12 @@ type RunView struct {
 
 type PackageDetailView struct {
 	PackageIdentityView
-	Members            []PackageMemberView          `json:"members"`
-	ApprovalBindings   []PackageApprovalBindingView `json:"approvalBindings"`
-	TicketDesignBriefs []PackageArtifactView        `json:"ticketDesignBriefs"`
-	ExecutionSpec      PackageArtifactView          `json:"executionSpec"`
-	Run                *RunView                     `json:"run"`
-	PackageApprovalID  string                       `json:"packageApprovalId,omitempty"`
+	Members                 []PackageMemberView          `json:"members"`
+	ApprovalBindings        []PackageApprovalBindingView `json:"approvalBindings"`
+	TicketDesignBrief       PackageArtifactView          `json:"ticketDesignBrief"`
+	DeterministicOperations *PackageArtifactView         `json:"deterministicOperations,omitempty"`
+	Run                     *RunView                     `json:"run"`
+	PackageApprovalID       string                       `json:"packageApprovalId,omitempty"`
 }
 
 type PackageApprovalView struct {
@@ -103,8 +104,7 @@ func packageDetailView(value packages.Detail) PackageDetailView {
 		PackageIdentityView: packageIdentityView(value.Package),
 		Members:             make([]PackageMemberView, 0, len(value.Members)),
 		ApprovalBindings:    make([]PackageApprovalBindingView, 0, len(value.ApprovalBindings)),
-		TicketDesignBriefs:  make([]PackageArtifactView, 0, len(value.Briefs)),
-		ExecutionSpec:       packageArtifactView(value.ExecutionSpec),
+		TicketDesignBrief:   packageArtifactView(value.TicketDesignBrief),
 		PackageApprovalID:   value.PackageApprovalID,
 	}
 	for _, member := range value.Members {
@@ -113,8 +113,9 @@ func packageDetailView(value packages.Detail) PackageDetailView {
 	for _, binding := range value.ApprovalBindings {
 		view.ApprovalBindings = append(view.ApprovalBindings, PackageApprovalBindingView{PackageMemberRowID: binding.PackageMemberRowID, ApprovalRowID: binding.ApprovalRowID, AuthorityRevisionRowID: binding.AuthorityRevisionRowID, SourceClosureRowID: binding.SourceClosureRowID, ApprovalBasisSHA256: binding.ApprovalBasisSha256, CreatedAt: binding.CreatedAt})
 	}
-	for _, brief := range value.Briefs {
-		view.TicketDesignBriefs = append(view.TicketDesignBriefs, packageArtifactView(brief))
+	if value.DeterministicOperations != nil {
+		artifact := packageArtifactView(*value.DeterministicOperations)
+		view.DeterministicOperations = &artifact
 	}
 	if value.Run != nil {
 		run := runView(*value.Run)
@@ -124,7 +125,12 @@ func packageDetailView(value packages.Detail) PackageDetailView {
 }
 
 func packageIdentityView(value workflowstore.ExecutionPackage) PackageIdentityView {
-	return PackageIdentityView{PackageID: value.PackageID, SelectionRowID: value.SelectionRowID, WorkspaceRowID: value.WorkspaceRowID, RepoTarget: value.RepoTarget, Branch: value.Branch, BaseCommit: value.BaseCommit, SourceClosureRowID: value.SourceClosureRowID, AuthorityRevisionRowID: value.AuthorityRevisionRowID, PackageSHA256: value.PackageSha256, AuthoritySHA256: value.AuthoritySha256, SourceSHA256: value.SourceSha256, DesignBriefSHA256: value.DesignBriefSha256, ExecutionSpecSHA256: value.ExecutionSpecSha256, CreatedAt: value.CreatedAt}
+	identity := PackageIdentityView{PackageID: value.PackageID, SelectionRowID: value.SelectionRowID, WorkspaceRowID: value.WorkspaceRowID, RepoTarget: value.RepoTarget, Branch: value.Branch, BaseCommit: value.BaseCommit, SourceClosureRowID: value.SourceClosureRowID, AuthorityRevisionRowID: value.AuthorityRevisionRowID, PackageSHA256: value.PackageSha256, AuthoritySHA256: value.AuthoritySha256, SourceSHA256: value.SourceSha256, DesignBriefSHA256: value.DesignBriefSha256, CreatedAt: value.CreatedAt}
+	if value.DeterministicOperationsSha256.Valid {
+		identity.DeterministicOperationsSHA256 = value.DeterministicOperationsSha256.String
+		identity.DeterministicOperationsCoverage = value.DeterministicOperationsCoverage.String
+	}
+	return identity
 }
 
 func packageArtifactView(value packages.PackageArtifact) PackageArtifactView {

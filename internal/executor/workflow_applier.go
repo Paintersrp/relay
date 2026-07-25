@@ -51,49 +51,13 @@ func (s *WorkflowExecutionService) applyDeterministicFirst(
 	executionSpec []byte,
 	executionSpecArtifact workflowstore.Artifact,
 ) (*WorkflowApplierResult, error) {
-	filename := filepath.Base(filepath.FromSlash(executionSpecArtifact.RelativePath))
-	compiled, document := speccompiler.CompileExecutionSpec(filename, executionSpec)
-	if len(compiled.Errors) > 0 || document == nil {
-		result := projectionDiagnosticResult(compiled.Errors)
-		writer := workflowRunEvidenceWriter{store: s.store, run: run}
-		if err := writeJSONEvidence(ctx, writer, "applier_failure_packet_json", "applier-failure-packet.json", result.FailurePacket, &result.Evidence); err != nil {
-			return nil, err
-		}
-		if err := writeJSONEvidence(ctx, writer, "applier_projection_diagnostics_json", "applier-projection-diagnostics.json", compiled.Errors, &result.Evidence); err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-	projection, diagnostics := speccompiler.ProjectExecutionSpec(document)
-	if len(diagnostics) > 0 {
-		result := projectionDiagnosticResult(diagnostics)
-		writer := workflowRunEvidenceWriter{store: s.store, run: run}
-		if err := writeJSONEvidence(ctx, writer, "applier_failure_packet_json", "applier-failure-packet.json", result.FailurePacket, &result.Evidence); err != nil {
-			return nil, err
-		}
-		if err := writeJSONEvidence(ctx, writer, "applier_projection_diagnostics_json", "applier-projection-diagnostics.json", diagnostics, &result.Evidence); err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-	if len(projection.FileWork) == 0 {
-		return nil, nil
-	}
-	apply := s.applier
-	if apply == nil {
-		apply = defaultWorkflowApplier()
-	}
-	writer := workflowRunEvidenceWriter{store: s.store, run: run}
-	raw, err := apply(ctx, applier.Input{WorkspaceRoot: repoPath, Projection: projection, EvidenceWriter: writer})
-	if err != nil {
-		return nil, fmt.Errorf("deterministic applier: %w", err)
-	}
-	result := workflowApplierResult(raw)
-	result.Document = document
-	result.Projection = projection
-	return &result, nil
+	_ = ctx
+	_ = run
+	_ = repoPath
+	_ = executionSpec
+	_ = executionSpecArtifact
+	return nil, fmt.Errorf("package execution preparation is not implemented")
 }
-
 func projectionDiagnosticResult(diagnostics []speccompiler.Diagnostic) *WorkflowApplierResult {
 	summary := "canonical Execution Spec compilation or projection diagnostics blocked deterministic-first execution"
 	failure := &applier.FailurePacket{

@@ -14,27 +14,27 @@ const (
 	RelaySpecsRepo   = artifactschema.AuthorityRepository
 	RelaySpecsCommit = artifactschema.AuthorityCommit
 
-	planSuffix                   = ".plan.json"
-	executionSpecSuffix          = ".execution-spec.json"
-	deliveryTicketJSONSuffix     = ".delivery-ticket.json"
-	deliveryTicketMarkdownSuffix = ".delivery-ticket.md"
-	transitionPlanJSONSuffix     = ".transition-plan.json"
-	transitionPlanMarkdownSuffix = ".transition-plan.md"
-	requirementsSuffix           = ".requirements.md"
-	sharedDesignSuffix           = ".design.md"
-	ticketDesignBriefSuffix      = ".design-brief.md"
+	planSuffix                    = ".plan.json"
+	deterministicOperationsSuffix = ".deterministic-operations.json"
+	deliveryTicketJSONSuffix      = ".delivery-ticket.json"
+	deliveryTicketMarkdownSuffix  = ".delivery-ticket.md"
+	transitionPlanJSONSuffix      = ".transition-plan.json"
+	transitionPlanMarkdownSuffix  = ".transition-plan.md"
+	requirementsSuffix            = ".requirements.md"
+	sharedDesignSuffix            = ".design.md"
+	ticketDesignBriefSuffix       = ".design-brief.md"
 )
 
 type ArtifactKind string
 
 const (
-	ArtifactPlan              ArtifactKind = "plan"
-	ArtifactExecutionSpec     ArtifactKind = "execution_spec"
-	ArtifactDeliveryTicket    ArtifactKind = "delivery_ticket"
-	ArtifactTransitionPlan    ArtifactKind = "transition_plan"
-	ArtifactRequirements      ArtifactKind = "requirements"
-	ArtifactSharedDesign      ArtifactKind = "shared_design"
-	ArtifactTicketDesignBrief ArtifactKind = "ticket_design_brief"
+	ArtifactPlan                    ArtifactKind = "plan"
+	ArtifactDeterministicOperations ArtifactKind = "deterministic_operations"
+	ArtifactDeliveryTicket          ArtifactKind = "delivery_ticket"
+	ArtifactTransitionPlan          ArtifactKind = "transition_plan"
+	ArtifactRequirements            ArtifactKind = "requirements"
+	ArtifactSharedDesign            ArtifactKind = "shared_design"
+	ArtifactTicketDesignBrief       ArtifactKind = "ticket_design_brief"
 )
 
 type filenameRule struct {
@@ -45,7 +45,7 @@ type filenameRule struct {
 }
 
 var canonicalFilenameRules = []filenameRule{
-	{suffix: executionSpecSuffix, kind: ArtifactExecutionSpec, allowPassQualifier: true},
+	{suffix: deterministicOperationsSuffix, kind: ArtifactDeterministicOperations, ticketQualified: true},
 	{suffix: planSuffix, kind: ArtifactPlan},
 	{suffix: deliveryTicketJSONSuffix, kind: ArtifactDeliveryTicket, ticketQualified: true},
 	{suffix: deliveryTicketMarkdownSuffix, kind: ArtifactDeliveryTicket, ticketQualified: true},
@@ -73,11 +73,8 @@ func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
 	switch kind {
 	case ArtifactPlan:
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindPlan}, true
-	case ArtifactExecutionSpec:
-		return currentArtifactDefinition{
-			Kind: kind, ProducerVersion: "2.0", SchemaKind: artifactschema.KindExecutionSpec,
-			CanonicalSubstep: []string{"number", "instruction", "depends_on", "atomic", "files", "completion_criteria"},
-		}, true
+	case ArtifactDeterministicOperations:
+		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindDeterministicOperations}, true
 	case ArtifactDeliveryTicket:
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindDeliveryTicket}, true
 	case ArtifactTransitionPlan:
@@ -125,7 +122,7 @@ type Provenance struct {
 
 func SourceProvenance() Provenance {
 	schemas := make([]SchemaProvenance, 0, 4)
-	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactExecutionSpec, ArtifactDeliveryTicket, ArtifactTransitionPlan} {
+	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactDeterministicOperations, ArtifactDeliveryTicket, ArtifactTransitionPlan} {
 		definition, _ := currentDefinition(kind)
 		shared, _ := artifactschema.Current(definition.SchemaKind)
 		schemas = append(schemas, SchemaProvenance{ArtifactKind: kind, Version: definition.ProducerVersion, Path: shared.AuthorityPath})
@@ -139,8 +136,8 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 		return failed(filenameErrors, nil)
 	}
 	switch filename.Kind {
-	case ArtifactExecutionSpec:
-		result, _ := CompileExecutionSpec(filenameBasename, rawJSON)
+	case ArtifactDeterministicOperations:
+		result, _ := CompileDeterministicOperations(filenameBasename, rawJSON)
 		return result
 	case ArtifactPlan:
 		return compilePlan(filename, rawJSON)
@@ -247,49 +244,6 @@ func compileTransitionPlanDocument(filename FilenameInfo, root *jsonNode, rawJSO
 		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Render validated Transition Plan: %v", err)}}, notices), nil
 	}
 	output := filename.OutputStem + ".transition-plan.md"
-	return Result{OutputFilename: &output, Markdown: &markdown, Errors: []Diagnostic{}, Notices: notices}, document
-}
-
-func CompileExecutionSpec(filenameBasename string, rawJSON []byte) (Result, *ExecutionDocument) {
-	filename, filenameErrors := ParseFilename(filenameBasename)
-	if len(filenameErrors) != 0 {
-		return failed(filenameErrors, nil), nil
-	}
-	if filename.Kind != ArtifactExecutionSpec {
-		return failed([]Diagnostic{Diagnostic{Code: "unsupported_artifact_filename", Path: "", Message: "Filename must identify an Execution Spec."}}, nil), nil
-	}
-
-	root, lexicalErrors := parseDocument(rawJSON)
-	if len(lexicalErrors) != 0 {
-		return failed(lexicalErrors, nil), nil
-	}
-	return compileExecutionDocument(filename, root, rawJSON)
-}
-
-func compileExecutionDocument(filename FilenameInfo, root *jsonNode, rawJSON []byte) (Result, *ExecutionDocument) {
-	definition, _ := currentDefinition(filename.Kind)
-	notices := schemaVersionNotice(root, definition)
-	schemaValid, schemaErr := artifactschema.Validate(definition.SchemaKind, rawJSON)
-	errors := validateExecutionSpec(root, filename.FeatureSlug, definition)
-	if schemaErr != nil {
-		errors = append(errors, Diagnostic{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Embedded current %s schema validation failed: %v", definition.Kind, schemaErr)})
-	} else if !schemaValid && len(errors) == 0 {
-		errors = append(errors, Diagnostic{Code: "invalid_value_type", Path: "", Message: fmt.Sprintf("Artifact does not satisfy the embedded current %s JSON Schema.", definition.Kind)})
-	}
-	errors = normalizeDiagnostics(errors)
-	notices = normalizeDiagnostics(notices)
-	if len(errors) != 0 {
-		return failed(errors, notices), nil
-	}
-	document, err := decodeExecutionDocument(rawJSON)
-	if err != nil {
-		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Execution Spec: %v", err)}}, notices), nil
-	}
-	markdown, err := renderExecutionSpec(document)
-	if err != nil {
-		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Render validated Execution Spec: %v", err)}}, notices), nil
-	}
-	output := filename.OutputStem + ".executor-brief.md"
 	return Result{OutputFilename: &output, Markdown: &markdown, Errors: []Diagnostic{}, Notices: notices}, document
 }
 

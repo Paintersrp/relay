@@ -130,7 +130,7 @@ CREATE TABLE runs (
     )),
     branch TEXT NOT NULL,
     base_commit TEXT NOT NULL,
-    canonical_sha256 TEXT NOT NULL,
+    canonical_sha256 TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     completed_at TEXT,
@@ -141,7 +141,7 @@ CREATE TABLE runs (
     CHECK (feature_slug <> '' AND trim(feature_slug) = feature_slug),
     CHECK (branch <> '' AND trim(branch) = branch),
     CHECK (length(base_commit) = 40 AND base_commit NOT GLOB '*[^0-9a-f]*'),
-    CHECK (length(canonical_sha256) = 64 AND canonical_sha256 NOT GLOB '*[^0-9a-f]*'),
+    CHECK (canonical_sha256 IS NULL OR (length(canonical_sha256) = 64 AND canonical_sha256 NOT GLOB '*[^0-9a-f]*')),
     CHECK (
         (plan_row_id IS NULL AND plan_pass_row_id IS NULL) OR
         (plan_row_id IS NOT NULL AND plan_pass_row_id IS NOT NULL)

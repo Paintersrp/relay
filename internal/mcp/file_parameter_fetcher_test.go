@@ -304,7 +304,7 @@ func TestHTTPSFileParameterFetcherArtifactValidation(t *testing.T) {
 			}, nil
 		})},
 	}
-	for _, name := range []string{"feature.plan.json", "feature.execution-spec.json"} {
+	for _, name := range []string{"feature.plan.json", "feature.ticket-T1.r1.deterministic-operations.json"} {
 		t.Run(name, func(t *testing.T) {
 			out, err := fetcher.FetchArtifact(context.Background(), ChatGPTFileReference{
 				DownloadURL: "https://files.example.test/artifact?signature=secret",

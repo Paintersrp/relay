@@ -78,13 +78,7 @@ Inspect the Plan at `/plans/{planId}` and a pass at `/plans/{planId}/passes/{pas
 
 ## Create a Run
 
-Use `/runs/new` or `create_run`.
-
-- Managed Run: submit `<feature-slug>.pass-<number>.execution-spec.json` with matching `plan_id` and positive `pass_number`.
-- Standalone Run: submit `<feature-slug>.execution-spec.json` without a Plan/pass association.
-- Remediation Run: create a remediation Delivery Ticket revision through the ordinary Planner ticket route. The Auditor issues `needs_revision` decisions that produce immutable remediation seeds, not standalone remediation Execution Specs.
-
-Relay verifies the exact SHA-256, validates the Execution Spec, renders the Executor Brief, and creates a setup-ready Run. Run creation does not start execution.
+Prepare and approve one selected package containing exactly one Ticket Design Brief and optionally one Deterministic Operations artifact. Approval verifies the exact package basis and creates the linked setup-ready Run. Authored Execution Spec submission is retired.
 
 ## Execute
 
@@ -102,7 +96,7 @@ The executor edits the existing worktree but does not stage, commit, push, creat
 
 ## Record validation
 
-The Execution Spec defines ordered validation commands. Relay supports validation state and evidence, but the current HTTP/web surface does not expose the validation-result transition. Operators must complete that transition through the currently available application path outside the workbench.
+Validation extraction and execution are deferred until the package execution task is implemented.
 
 Do not mark validation successful unless every required command was actually executed successfully.
 

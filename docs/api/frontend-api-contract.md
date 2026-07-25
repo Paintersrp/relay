@@ -295,22 +295,7 @@ Returns:
 
 Optional properties are omitted when not applicable.
 
-### `POST /api/runs`
-
-Request:
-
-```json
-{
-  "fileName": "feature.pass-1.execution-spec.json",
-  "canonicalContent": "{...}\n",
-  "expectedSha256": "64 lowercase hex characters",
-  "planId": "plan-*",
-  "passNumber": 1,
-  "remediatesRunId": "run-*"
-}
-```
-
-`planId` and `passNumber` are supplied together for a Managed Run, whose `fileName` must end in the matching `.pass-<number>.execution-spec.json` qualifier. A Standalone Run omits both association fields and must use the unqualified `feature.execution-spec.json` form. Missing, malformed, mismatched, or Standalone pass qualifiers block before persistence. Run creation never accepts or stores a direct Project association.
+`POST /api/runs` is retired. Runs are created only by approving an exact selected package through the execution-package workflow.
 
 ### `GET /api/runs/{runId}`
 

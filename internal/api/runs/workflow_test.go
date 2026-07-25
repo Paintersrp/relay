@@ -41,7 +41,7 @@ func TestWorkflowRunRoutesExposeThreeStageStateAndExplicitArtifacts(t *testing.T
 	run := workflowstore.Run{
 		RunID: "run-test", FeatureSlug: "feature", RepoTarget: "relay",
 		Status: workflowstore.RunStatusSetupReady, Branch: "main",
-		BaseCommit: strings.Repeat("a", 40), CanonicalSHA256: strings.Repeat("b", 64),
+		BaseCommit: strings.Repeat("a", 40), CanonicalSHA256: sql.NullString{String: strings.Repeat("b", 64), Valid: true},
 	}
 	summary := workflowapp.RunSummary{Run: run, Stage: workflowapp.RunStageSpecification}
 	project := workflowapp.ProjectReference{ProjectID: "project-test", Name: "Relay", Status: workflowstore.ProjectStatusArchived}

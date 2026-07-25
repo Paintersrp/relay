@@ -1,6 +1,6 @@
 # Relay
 
-Relay is a local-first workflow application for turning canonical Plans and Execution Specs into tracked implementation Runs. It provides a React operator workbench, a Go API and execution service, profile-gated MCP tools, SQLite workflow state, and filesystem-backed evidence artifacts.
+Relay is a local-first workflow application for turning canonical Plans and approved Ticket Design Brief packages into tracked implementation Runs. It provides a React operator workbench, a Go API and execution service, profile-gated MCP tools, SQLite workflow state, and filesystem-backed evidence artifacts.
 
 Relay accepts canonical JSON. It does not ingest free-form Planner handoffs or operate the retired handoff, context-packet, Plan Seed, refactor-backlog, local-audit, or generated-reference pipelines.
 
@@ -13,11 +13,11 @@ Relay accepts canonical JSON. It does not ingest free-form Planner handoffs or o
 3. Submit a canonical Plan named `<feature-slug>.plan.json` to an active Project. Relay validates it, renders the Markdown Plan, and persists the Plan and ordered passes.
 4. Inspect the Plan and pass records in the web application. A Plan is an optional coordination layer; standalone Runs remain supported.
 
-A managed Run selects a Plan and positive pass number and uses `<feature-slug>.pass-<number>.execution-spec.json`. A standalone Run omits the Plan/pass association and uses `<feature-slug>.execution-spec.json`. Submission verifies the caller-provided SHA-256, validates the canonical document, renders the Executor Brief, and stores both source and rendered artifacts.
+Current Runs are created by approving one selected Ticket Design Brief package with zero or one exact Deterministic Operations artifact. Authored Execution Spec submission is retired; package-linked Runs begin at `setup_ready` without authored execution artifacts.
 
 ### Execution
 
-Starting a Run requires an executor adapter and model. Relay verifies the repository path, branch, base commit, canonical Execution Spec, and rendered Executor Brief before implementation begins.
+Execution startup for package-linked Runs is deferred until deterministic preflight and execution-assignment support is implemented.
 
 Execution is deterministic-first:
 
@@ -31,7 +31,7 @@ The current adapters are OpenCode Go (`opencode_go`), Codex (`codex`), Antigravi
 
 ### Validation and audit
 
-The Execution Spec is authoritative for ordered validation commands. The Run lifecycle distinguishes `validating`, `validation_failed`, `audit_ready`, `needs_revision`, and `completed`. The application service records pass/fail validation outcomes, but the current HTTP/web surface does not expose the validation-result transition.
+The package Ticket Design Brief is the authored semantic authority. Deterministic preflight, validation extraction, and audit packet construction are deferred to the next execution task.
 
 For an audit-ready Run, Relay prepares an audit packet against a full audited commit SHA. Packet preparation resolves the selected implementation actor, verifies repository evidence, captures the audited commit diff, and persists a content-addressed packet. Packet freshness, artifact ownership, size, and SHA-256 are rechecked on readback and decision submission.
 
@@ -48,7 +48,7 @@ The TanStack Start application in `apps/web` is normally available at `http://lo
 | `/plans`, `/plans/new` | Plan registry and canonical Plan submission |
 | `/plans/{planId}` | Plan and pass overview |
 | `/plans/{planId}/passes/{passId}` | Pass detail and associated Runs |
-| `/runs`, `/runs/new` | Run registry and canonical Execution Spec submission |
+| `/runs`, `/runs/new` | Run registry and selected-package guidance |
 | `/runs/{runId}/specification` | Canonical spec and rendered Executor Brief |
 | `/runs/{runId}/execute` | Adapter/model selection, attempts, cancellation, and evidence |
 | `/runs/{runId}/audit` | Audit readiness, packet preparation, and packet status |
@@ -61,9 +61,9 @@ Relay has one aggregate compatibility registry over stdio (`cmd/mcpserver`) and 
 
 | Aggregate compatibility profile | Tools |
 | --- | --- |
-| `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run` |
-| `auditor` | `validate_artifact`, `create_run`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
-| `local_operator` | Ordered eight-tool union of the Planner and Auditor profiles |
+| `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan` |
+| `auditor` | `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
+| `local_operator` | Ordered union of the Planner and Auditor profiles |
 
 Relay also exposes three public HTTP role apps:
 

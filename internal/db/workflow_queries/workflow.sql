@@ -813,9 +813,10 @@ INSERT INTO execution_packages (
     authority_sha256,
     source_sha256,
     design_brief_sha256,
-    execution_spec_sha256
+    deterministic_operations_sha256,
+    deterministic_operations_coverage
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetExecutionPackageByPackageID :one

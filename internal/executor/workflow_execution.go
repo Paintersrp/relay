@@ -186,6 +186,9 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 	if err != nil {
 		return WorkflowStartResult{}, fmt.Errorf("load Run: %w", err)
 	}
+	if run.ExecutionPackageRowID.Valid {
+		return WorkflowStartResult{Run: run}, fmt.Errorf("package execution preparation is not implemented")
+	}
 	switch run.Status {
 	case workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusCancelled:
 	default:

@@ -82,10 +82,10 @@ export function RelayCanonicalRunsRegistry({
           <RelayStateSurface
             tone="empty"
             title="No Runs match"
-            description="Create a Managed or Standalone Run from a canonical Execution Spec."
+            description="Runs are created by approving an exact selected package."
             action={
               <Button asChild variant="outline" size="sm">
-                <Link to="/runs/new">Create Run</Link>
+                <Link to="/execution-packages/new">Prepare Package</Link>
               </Button>
             }
           />

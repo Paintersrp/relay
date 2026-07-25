@@ -19,7 +19,7 @@ function RunsListPage() {
       description="Canonical managed, standalone, and remediation executions"
       actions={
         <Button asChild variant="outline" size="sm">
-          <Link to="/runs/new"><Plus className="size-3.5" /> New Run</Link>
+          <Link to="/execution-packages/new"><Plus className="size-3.5" /> Prepare Package</Link>
         </Button>
       }
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"

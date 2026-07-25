@@ -33,7 +33,7 @@ var artifactFileSchema = json.RawMessage(`{
     "download_url": {"type": "string", "format": "uri"},
     "file_id": {"type": "string", "minLength": 1},
     "mime_type": {"type": "string"},
-    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\.plan\\.json|\\.execution-spec\\.json)$"}
+    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.plan\\.json$"}
   }
 }`)
 
@@ -45,7 +45,7 @@ var validationArtifactFileSchema = json.RawMessage(`{
     "download_url": {"type": "string", "format": "uri"},
     "file_id": {"type": "string", "minLength": 1},
     "mime_type": {"type": "string"},
-    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\.plan\\.json|\\.execution-spec\\.json|\\.requirements\\.md|\\.design\\.md|\\.ticket-[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*\\.r[1-9][0-9]*\\.design-brief\\.md)$"}
+    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\.plan\\.json|\\.deterministic-operations\\.json|\\.requirements\\.md|\\.design\\.md|\\.ticket-[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*\\.r[1-9][0-9]*\\.design-brief\\.md)$"}
   }
 }`)
 
@@ -74,24 +74,10 @@ var getPlanSchema = json.RawMessage(`{
   "properties": {"plan_id": {"type": "string", "minLength": 1}}
 }`)
 
-var createRunSchema = json.RawMessage(`{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["artifact_file", "expected_sha256"],
-  "properties": {
-    "artifact_file": ` + string(artifactFileSchema) + `,
-    "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "plan_id": {"type": "string", "minLength": 1},
-    "pass_number": {"type": "integer", "minimum": 1},
-    "remediates_run_id": {"type": "string", "minLength": 1}
-  },
-  "dependentRequired": {"plan_id": ["pass_number"], "pass_number": ["plan_id"]}
-}`)
-
 var (
 	ToolValidateArtifact = ToolDefinition{
 		Name:        "validate_artifact",
-		Description: "Validate one canonical Plan or Execution Spec JSON file, or authored Requirements, Shared Design, or Ticket Design Brief Markdown file, by exact downloaded bytes. Returns bounded diagnostics and SHA-256 only; never returns artifact bodies.",
+		Description: "Validate one canonical Plan or Deterministic Operations JSON file, or authored Requirements, Shared Design, or Ticket Design Brief Markdown file, by exact downloaded bytes. Returns bounded diagnostics and SHA-256 only; never returns artifact bodies.",
 		InputSchema: validateArtifactSchema,
 		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
 	}
@@ -105,12 +91,6 @@ var (
 		Name:        "get_plan",
 		Description: "Read bounded Project, Plan, Pass, and artifact metadata without returning canonical JSON or rendered Markdown bodies.",
 		InputSchema: getPlanSchema,
-	}
-	ToolCreateRun = ToolDefinition{
-		Name:        "create_run",
-		Description: "Submit one canonical Execution Spec JSON file after exact SHA-256 verification and deterministic recompilation. Creates a setup-ready Run atomically.",
-		InputSchema: createRunSchema,
-		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
 	}
 )
 
@@ -206,13 +186,13 @@ type workflowArtifactOutput struct {
 func workflowToolDefinitions(profile ToolProfile) []ToolDefinition {
 	switch profile {
 	case ToolProfileAuditor:
-		return []ToolDefinition{ToolValidateArtifact, ToolCreateRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
+		return []ToolDefinition{ToolValidateArtifact, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
 	case ToolProfileLocalOperator:
-		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolCreateRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
 	case ToolProfilePlanner:
-		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolCreateRun}
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan}
 	default:
-		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolCreateRun}
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan}
 	}
 }
 
@@ -470,6 +450,10 @@ func artifactOut(artifacts []workflowstore.Artifact) []workflowArtifactOutput {
 }
 
 func runOut(run workflowstore.Run, store *workflowstore.Store) runMetadata {
+	canonicalSHA256 := ""
+	if run.CanonicalSHA256.Valid {
+		canonicalSHA256 = run.CanonicalSHA256.String
+	}
 	out := runMetadata{
 		RunID:           run.RunID,
 		FeatureSlug:     run.FeatureSlug,
@@ -477,7 +461,7 @@ func runOut(run workflowstore.Run, store *workflowstore.Store) runMetadata {
 		Status:          run.Status,
 		Branch:          run.Branch,
 		BaseCommit:      run.BaseCommit,
-		CanonicalSHA256: run.CanonicalSHA256,
+		CanonicalSHA256: canonicalSHA256,
 		CreatedAt:       run.CreatedAt,
 		UpdatedAt:       run.UpdatedAt,
 	}

@@ -122,7 +122,7 @@ export function CommandPalette({ open, onOpenChange, className }: CommandPalette
   const handlers = React.useMemo(
     () => ({
       onNewRun: () => {
-        void navigate({ to: "/runs/new", search: { planId: undefined, passId: undefined } });
+        void navigate({ to: "/execution-packages/new" });
       },
       onNewPlan: () => {
         void navigate({ to: "/plans/new" });

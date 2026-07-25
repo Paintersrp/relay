@@ -56,9 +56,8 @@ func TestPackageWorkflowPrepareRequiresExactPacketDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := packages.PrepareInput{
-		SelectionID:        "selection-1",
-		TicketDesignBriefs: []packages.ArtifactInput{{DisplayName: "feature.ticket-T1.r1.design-brief.md", ExpectedSHA256: strings.Repeat("b", 64), Bytes: []byte("# Brief\n")}},
-		ExecutionSpec:      packages.ArtifactInput{DisplayName: "feature.execution-spec.json", ExpectedSHA256: strings.Repeat("c", 64), Bytes: []byte("{}")},
+		SelectionID:       "selection-1",
+		TicketDesignBrief: packages.ArtifactInput{DisplayName: "feature.ticket-T1.r1.design-brief.md", ExpectedSHA256: strings.Repeat("b", 64), Bytes: []byte("# Brief\n")},
 	}
 	payload, err := PackagePreparePayloadSHA256(input)
 	if err != nil {

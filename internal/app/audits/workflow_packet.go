@@ -39,6 +39,9 @@ func buildWorkflowAuditPacket(
 	diffArtifact workflowstore.Artifact,
 	ticketPackageArtifacts []workflowstore.Artifact,
 ) ([]byte, error) {
+	if run.ExecutionPackageRowID.Valid {
+		return nil, fmt.Errorf("package audit packet construction is deferred")
+	}
 	runArtifacts, err := store.ListArtifactsByRun(ctx, run.ID)
 	if err != nil {
 		return nil, err
@@ -105,22 +108,6 @@ func buildWorkflowAuditPacket(
 		return nil, fmt.Errorf("decode canonical Execution Spec for audit packet: %w", err)
 	}
 	executionProjection := speccompiler.ExecutionProjection{}
-	if _, hasSteps := executionRoot["steps"]; hasSteps {
-		compiled, executionDocument := speccompiler.CompileExecutionSpec(filepath.Base(executionSpecArtifact.RelativePath), executionSpec)
-		if len(compiled.Errors) != 0 || executionDocument == nil {
-			if len(compiled.Errors) == 0 {
-				return nil, fmt.Errorf("project canonical Execution Spec metadata: execution document is unavailable")
-			}
-			first := compiled.Errors[0]
-			return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
-		}
-		var projectionDiagnostics []speccompiler.Diagnostic
-		executionProjection, projectionDiagnostics = speccompiler.ProjectExecutionSpec(executionDocument)
-		if len(projectionDiagnostics) != 0 {
-			first := projectionDiagnostics[0]
-			return nil, fmt.Errorf("project canonical Execution Spec metadata: %s: %s", first.Code, first.Message)
-		}
-	}
 	validation, err := mapWorkflowAuditValidation(implementation, executionProjection.ValidationCommands)
 	if err != nil {
 		return nil, err
@@ -136,7 +123,7 @@ func buildWorkflowAuditPacket(
 		RepoTarget:      run.RepoTarget,
 		Branch:          run.Branch,
 		BaseCommit:      run.BaseCommit,
-		CanonicalSHA256: run.CanonicalSHA256,
+		CanonicalSHA256: nullableString(run.CanonicalSHA256),
 	}
 	if plan != nil {
 		runAuthority.PlanID = plan.ID

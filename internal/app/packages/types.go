@@ -12,9 +12,9 @@ type ArtifactInput struct {
 }
 
 type PrepareInput struct {
-	SelectionID        string
-	TicketDesignBriefs []ArtifactInput
-	ExecutionSpec      ArtifactInput
+	SelectionID             string
+	TicketDesignBrief       ArtifactInput
+	DeterministicOperations *ArtifactInput
 }
 
 type PackageArtifact struct {
@@ -25,15 +25,15 @@ type PackageArtifact struct {
 }
 
 type PrepareResult struct {
-	Package       workflowstore.ExecutionPackage
-	Members       []workflowstore.ExecutionPackageMember
-	Briefs        []PackageArtifact
-	ExecutionSpec PackageArtifact
+	Package                 workflowstore.ExecutionPackage
+	Members                 []workflowstore.ExecutionPackageMember
+	TicketDesignBrief       PackageArtifact
+	DeterministicOperations *PackageArtifact
 }
 
 type ApproveInput struct {
-	PackageID                   string
-	ExpectedPackageSha256       string
+	PackageID                    string
+	ExpectedPackageSha256        string
 	OperatorConfirmationEvidence string
 }
 
@@ -47,11 +47,11 @@ type ApproveResult struct {
 // Detail is the bounded package projection used by later operation, UI, and
 // audit owners. A nil Run means the immutable package is still unapproved.
 type Detail struct {
-	Package           workflowstore.ExecutionPackage
-	Members           []workflowstore.ExecutionPackageMember
-	ApprovalBindings  []workflowstore.ExecutionPackageApprovalBinding
-	Briefs            []PackageArtifact
-	ExecutionSpec     PackageArtifact
-	Run               *workflowstore.Run
-	PackageApprovalID string
+	Package                 workflowstore.ExecutionPackage
+	Members                 []workflowstore.ExecutionPackageMember
+	ApprovalBindings        []workflowstore.ExecutionPackageApprovalBinding
+	TicketDesignBrief       PackageArtifact
+	DeterministicOperations *PackageArtifact
+	Run                     *workflowstore.Run
+	PackageApprovalID       string
 }

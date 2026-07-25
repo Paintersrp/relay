@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deterministic Operations v1.0",
+  "description": "Structural schema for the optional canonical Deterministic Operations artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {},
+    "feature_slug": { "$ref": "#/$defs/feature_slug" },
+    "repo_target": { "$ref": "#/$defs/machine_string" },
+    "branch": { "$ref": "#/$defs/machine_string" },
+    "base_commit": { "$ref": "#/$defs/commit_sha" },
+    "coverage": { "enum": ["complete", "partial"] },
+    "operations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/operation" } }
+  },
+  "required": ["feature_slug", "repo_target", "branch", "base_commit", "coverage", "operations"],
+  "$defs": {
+    "feature_slug": { "type": "string", "pattern": "^(?!.*[\\r\\n])[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "machine_string": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!\\s*$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$" },
+    "commit_sha": { "type": "string", "pattern": "^(?!.*[\\r\\n])[0-9a-f]{40}$" },
+    "content": { "type": "string", "pattern": "^[\\s\\S]*\\S[\\s\\S]*$" },
+    "path": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$" },
+    "occurrences": { "type": "integer", "minimum": 1 },
+    "operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/modify" },
+        { "$ref": "#/$defs/create" },
+        { "$ref": "#/$defs/delete" },
+        { "$ref": "#/$defs/rename" }
+      ]
+    },
+    "modify": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "path": { "$ref": "#/$defs/path" }, "operation": { "const": "modify" }, "implementation": { "type": "object", "additionalProperties": false, "properties": { "changes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/change" } } }, "required": ["changes"] } },
+      "required": ["path", "operation", "implementation"]
+    },
+    "create": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "path": { "$ref": "#/$defs/path" }, "operation": { "const": "create" }, "implementation": { "type": "object", "additionalProperties": false, "properties": { "content": { "$ref": "#/$defs/content" } }, "required": ["content"] } },
+      "required": ["path", "operation", "implementation"]
+    },
+    "delete": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "path": { "$ref": "#/$defs/path" }, "operation": { "const": "delete" }, "implementation": { "type": "object", "additionalProperties": false, "properties": { "expected_content": { "$ref": "#/$defs/content" } }, "required": ["expected_content"] } },
+      "required": ["path", "operation", "implementation"]
+    },
+    "rename": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "path": { "$ref": "#/$defs/path" }, "destination_path": { "$ref": "#/$defs/path" }, "operation": { "const": "rename" }, "implementation": { "type": "object", "additionalProperties": false, "properties": { "expected_content": { "$ref": "#/$defs/content" }, "preserve_content": { "const": true }, "content": { "$ref": "#/$defs/content" } }, "required": ["expected_content"], "oneOf": [{ "required": ["preserve_content"], "not": { "required": ["content"] } }, { "required": ["content"], "not": { "required": ["preserve_content"] } }] } },
+      "required": ["path", "destination_path", "operation", "implementation"]
+    },
+    "change": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "properties": { "kind": { "const": "replace" }, "old_text": { "$ref": "#/$defs/content" }, "new_text": { "$ref": "#/$defs/content" }, "expected_occurrences": { "$ref": "#/$defs/occurrences" } }, "required": ["kind", "old_text", "new_text", "expected_occurrences"] },
+        { "type": "object", "additionalProperties": false, "properties": { "kind": { "const": "insert_before" }, "anchor": { "$ref": "#/$defs/content" }, "content": { "$ref": "#/$defs/content" }, "expected_occurrences": { "$ref": "#/$defs/occurrences" } }, "required": ["kind", "anchor", "content", "expected_occurrences"] },
+        { "type": "object", "additionalProperties": false, "properties": { "kind": { "const": "insert_after" }, "anchor": { "$ref": "#/$defs/content" }, "content": { "$ref": "#/$defs/content" }, "expected_occurrences": { "$ref": "#/$defs/occurrences" } }, "required": ["kind", "anchor", "content", "expected_occurrences"] },
+        { "type": "object", "additionalProperties": false, "properties": { "kind": { "const": "remove" }, "old_text": { "$ref": "#/$defs/content" }, "expected_occurrences": { "$ref": "#/$defs/occurrences" } }, "required": ["kind", "old_text", "expected_occurrences"] },
+        { "type": "object", "additionalProperties": false, "properties": { "kind": { "const": "replace_file" }, "expected_content": { "$ref": "#/$defs/content" }, "content": { "$ref": "#/$defs/content" } }, "required": ["kind", "expected_content", "content"] }
+      ]
+    }
+  }
+}

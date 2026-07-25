@@ -613,19 +613,20 @@ func createCutoverBoundaryRun(t *testing.T, ctx context.Context, store *Store, s
 		}
 		queries := workflowgenerated.New(tx.tx)
 		executionPackage, err := queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
-			PackageID:              "package-cutover-boundary",
-			SelectionRowID:         selection.ID,
-			WorkspaceRowID:         seed.workspace.ID,
-			RepoTarget:             "relay",
-			Branch:                 "main",
-			BaseCommit:             seed.closure.CommitOID,
-			SourceClosureRowID:     seed.closure.ID,
-			AuthorityRevisionRowID: seed.authority.ID,
-			PackageSha256:          workflowHash('1'),
-			AuthoritySha256:        seed.authoritySHA256,
-			SourceSha256:           workflowHash('2'),
-			DesignBriefSha256:      workflowHash('3'),
-			ExecutionSpecSha256:    workflowHash('4'),
+			PackageID:                       "package-cutover-boundary",
+			SelectionRowID:                  selection.ID,
+			WorkspaceRowID:                  seed.workspace.ID,
+			RepoTarget:                      "relay",
+			Branch:                          "main",
+			BaseCommit:                      seed.closure.CommitOID,
+			SourceClosureRowID:              seed.closure.ID,
+			AuthorityRevisionRowID:          seed.authority.ID,
+			PackageSha256:                   workflowHash('1'),
+			AuthoritySha256:                 seed.authoritySHA256,
+			SourceSha256:                    workflowHash('2'),
+			DesignBriefSha256:               workflowHash('3'),
+			DeterministicOperationsSha256:   sql.NullString{String: workflowHash('4'), Valid: true},
+			DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true},
 		})
 		if err != nil {
 			return err
@@ -920,19 +921,20 @@ func createOrdinaryTicketRunTx(t *testing.T, ctx context.Context, tx *Tx, seed c
 	}
 	queries := workflowgenerated.New(tx.tx)
 	executionPackage, err := queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
-		PackageID:              "package-ordinary-" + runID,
-		SelectionRowID:         selection.ID,
-		WorkspaceRowID:         seed.workspace.ID,
-		RepoTarget:             "relay",
-		Branch:                 "main",
-		BaseCommit:             seed.closure.CommitOID,
-		SourceClosureRowID:     seed.closure.ID,
-		AuthorityRevisionRowID: seed.authority.ID,
-		PackageSha256:          workflowHash('0'),
-		AuthoritySha256:        seed.authoritySHA256,
-		SourceSha256:           workflowHash('1'),
-		DesignBriefSha256:      workflowHash('2'),
-		ExecutionSpecSha256:    workflowHash('3'),
+		PackageID:                       "package-ordinary-" + runID,
+		SelectionRowID:                  selection.ID,
+		WorkspaceRowID:                  seed.workspace.ID,
+		RepoTarget:                      "relay",
+		Branch:                          "main",
+		BaseCommit:                      seed.closure.CommitOID,
+		SourceClosureRowID:              seed.closure.ID,
+		AuthorityRevisionRowID:          seed.authority.ID,
+		PackageSha256:                   workflowHash('0'),
+		AuthoritySha256:                 seed.authoritySHA256,
+		SourceSha256:                    workflowHash('1'),
+		DesignBriefSha256:               workflowHash('2'),
+		DeterministicOperationsSha256:   sql.NullString{String: workflowHash('3'), Valid: true},
+		DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true},
 	})
 	if err != nil {
 		return err
@@ -1054,19 +1056,20 @@ func createOrdinaryTicketRunWithoutApproval(t *testing.T, ctx context.Context, s
 		}
 		queries := workflowgenerated.New(tx.tx)
 		executionPackage, err := queries.CreateExecutionPackage(ctx, workflowgenerated.CreateExecutionPackageParams{
-			PackageID:              "package-noappr-" + runID,
-			SelectionRowID:         selection.ID,
-			WorkspaceRowID:         seed.workspace.ID,
-			RepoTarget:             "relay",
-			Branch:                 "main",
-			BaseCommit:             seed.closure.CommitOID,
-			SourceClosureRowID:     seed.closure.ID,
-			AuthorityRevisionRowID: seed.authority.ID,
-			PackageSha256:          workflowHash('8'),
-			AuthoritySha256:        seed.authoritySHA256,
-			SourceSha256:           workflowHash('9'),
-			DesignBriefSha256:      workflowHash('0'),
-			ExecutionSpecSha256:    workflowHash('1'),
+			PackageID:                       "package-noappr-" + runID,
+			SelectionRowID:                  selection.ID,
+			WorkspaceRowID:                  seed.workspace.ID,
+			RepoTarget:                      "relay",
+			Branch:                          "main",
+			BaseCommit:                      seed.closure.CommitOID,
+			SourceClosureRowID:              seed.closure.ID,
+			AuthorityRevisionRowID:          seed.authority.ID,
+			PackageSha256:                   workflowHash('8'),
+			AuthoritySha256:                 seed.authoritySHA256,
+			SourceSha256:                    workflowHash('9'),
+			DesignBriefSha256:               workflowHash('0'),
+			DeterministicOperationsSha256:   sql.NullString{String: workflowHash('1'), Valid: true},
+			DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true},
 		})
 		if err != nil {
 			return err

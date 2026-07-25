@@ -349,16 +349,16 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 	}{
 		{
 			profile: ToolProfilePlanner,
-			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"},
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"},
 		},
-		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
+		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
 		{
 			profile: ToolProfileLocalOperator,
-			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"},
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "get_audit_packet", "get_run_artifact", "record_audit_decision"},
 		},
 		{
 			profile: ToolProfile("restricted"),
-			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"},
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"},
 		},
 	}
 	for _, tt := range tests {
@@ -491,6 +491,7 @@ func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
 }
 
 func TestCreateRunPersistsSetupReadyMetadataAndArtifacts(t *testing.T) {
+	t.Skip("authored Execution Spec admission is retired")
 	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000/")
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	h.registerRepo(t, "relay")
@@ -511,6 +512,7 @@ func TestCreateRunPersistsSetupReadyMetadataAndArtifacts(t *testing.T) {
 }
 
 func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
+	t.Skip("authored Execution Spec admission is retired")
 	t.Run("managed matching qualifier", func(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		h.registerRepo(t, "relay")
@@ -596,6 +598,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 }
 
 func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
+	t.Skip("authored Execution Spec admission is retired")
 	t.Run("hash mismatch", func(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		data := canonicalExecutionSpecBytes("relay")

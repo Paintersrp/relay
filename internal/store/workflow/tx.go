@@ -186,7 +186,7 @@ RETURNING id, project_row_id, plan_id, feature_slug, status, canonical_sha256, c
 		params.ProjectRowID,
 		params.PlanID,
 		params.FeatureSlug,
-		params.CanonicalSHA256,
+		sql.NullString{String: params.CanonicalSHA256, Valid: params.CanonicalSHA256 != ""},
 	).Scan(
 		&value.ID,
 		&value.ProjectRowID,
@@ -344,7 +344,7 @@ RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id,
 		params.Status,
 		params.Branch,
 		params.BaseCommit,
-		params.CanonicalSHA256,
+		sql.NullString{String: params.CanonicalSHA256, Valid: params.CanonicalSHA256 != ""},
 	).Scan(
 		&value.ID,
 		&value.RunID,

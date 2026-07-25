@@ -115,8 +115,10 @@ CREATE TABLE execution_packages (
     authority_sha256 TEXT NOT NULL CHECK (length(authority_sha256) = 64 AND authority_sha256 NOT GLOB '*[^0-9a-f]*'),
     source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64 AND source_sha256 NOT GLOB '*[^0-9a-f]*'),
     design_brief_sha256 TEXT NOT NULL CHECK (length(design_brief_sha256) = 64 AND design_brief_sha256 NOT GLOB '*[^0-9a-f]*'),
-    execution_spec_sha256 TEXT NOT NULL CHECK (length(execution_spec_sha256) = 64 AND execution_spec_sha256 NOT GLOB '*[^0-9a-f]*'),
+    deterministic_operations_sha256 TEXT CHECK (deterministic_operations_sha256 IS NULL OR (length(deterministic_operations_sha256) = 64 AND deterministic_operations_sha256 NOT GLOB '*[^0-9a-f]*')),
+    deterministic_operations_coverage TEXT CHECK (deterministic_operations_coverage IS NULL OR deterministic_operations_coverage IN ('complete', 'partial')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    CHECK ((deterministic_operations_sha256 IS NULL AND deterministic_operations_coverage IS NULL) OR (deterministic_operations_sha256 IS NOT NULL AND deterministic_operations_coverage IS NOT NULL)),
     CHECK (package_id GLOB 'package-*' AND trim(package_id) = package_id),
     CHECK (branch <> '' AND trim(branch) = branch)
 );

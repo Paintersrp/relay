@@ -92,7 +92,7 @@ func TestHTTPHandlerCanonicalProtocol(t *testing.T) {
 		if err := json.Unmarshal(data, &list); err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}
+		want := []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"}
 		if got := toolNames(list.Tools); !reflect.DeepEqual(got, want) {
 			t.Fatalf("tools = %v, want %v", got, want)
 		}
@@ -150,9 +150,9 @@ func TestHTTPHandlerToolsListUsesCanonicalProfiles(t *testing.T) {
 		profile ToolProfile
 		want    []string
 	}{
-		{profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}},
-		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
-		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
+		{profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"}},
+		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
+		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.profile), func(t *testing.T) {

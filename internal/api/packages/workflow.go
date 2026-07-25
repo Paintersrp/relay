@@ -44,14 +44,14 @@ type artifactRequest struct {
 
 type prepareRequest struct {
 	admissionRequest
-	SelectionID        string            `json:"selectionId"`
-	TicketDesignBriefs []artifactRequest `json:"ticketDesignBriefs"`
-	ExecutionSpec      artifactRequest   `json:"executionSpec"`
+	SelectionID             string           `json:"selectionId"`
+	TicketDesignBrief       artifactRequest  `json:"ticketDesignBrief"`
+	DeterministicOperations *artifactRequest `json:"deterministicOperations,omitempty"`
 }
 
 type approveRequest struct {
 	admissionRequest
-	ExpectedPackageSha256       string `json:"expectedPackageSha256"`
+	ExpectedPackageSha256        string `json:"expectedPackageSha256"`
 	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
 }
 
@@ -63,21 +63,21 @@ func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid execution package preparation request")
 		return
 	}
-	briefs := make([]packages.ArtifactInput, 0, len(request.TicketDesignBriefs))
-	for _, brief := range request.TicketDesignBriefs {
-		value, err := artifactInput(brief)
-		if err != nil {
+	brief, err := artifactInput(request.TicketDesignBrief)
+	if err != nil {
+		badRequest(w, "Invalid package artifact bytes")
+		return
+	}
+	var operations *packages.ArtifactInput
+	if request.DeterministicOperations != nil {
+		value, decodeErr := artifactInput(*request.DeterministicOperations)
+		if decodeErr != nil {
 			badRequest(w, "Invalid package artifact bytes")
 			return
 		}
-		briefs = append(briefs, value)
+		operations = &value
 	}
-	spec, err := artifactInput(request.ExecutionSpec)
-	if err != nil {
-		badRequest(w, "Invalid execution package bytes")
-		return
-	}
-	input := packages.PrepareInput{SelectionID: request.SelectionID, TicketDesignBriefs: briefs, ExecutionSpec: spec}
+	input := packages.PrepareInput{SelectionID: request.SelectionID, TicketDesignBrief: brief, DeterministicOperations: operations}
 	payload, err := appoperations.PackagePreparePayloadSHA256(input)
 	if err != nil {
 		badRequest(w, "Invalid execution package preparation request")

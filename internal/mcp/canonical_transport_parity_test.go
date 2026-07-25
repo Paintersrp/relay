@@ -160,6 +160,7 @@ func TestCanonicalMCPAndHTTPValidationAndPlanSubmissionParity(t *testing.T) {
 }
 
 func TestCanonicalMCPAndHTTPAssociationFailureParityAndRollback(t *testing.T) {
+	t.Skip("authored Execution Spec admission is retired")
 	mcpFixture := newTransportFixture(t)
 	httpFixture := newTransportFixture(t)
 	mcpPlan := mcpFixture.submitPlanThroughMCP(t, "parity-managed-mcp")

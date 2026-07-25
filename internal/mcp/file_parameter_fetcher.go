@@ -455,8 +455,8 @@ func canonicalArtifactDisplayName(name string) (string, error) {
 	if name != filepath.Base(name) || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
 		return "", fmt.Errorf("artifact_file.file_name must be a safe basename")
 	}
-	if !strings.HasSuffix(name, ".plan.json") && !strings.HasSuffix(name, ".execution-spec.json") {
-		return "", fmt.Errorf("artifact_file.file_name must end with .plan.json or .execution-spec.json")
+	if !strings.HasSuffix(name, ".plan.json") && !strings.HasSuffix(name, ".deterministic-operations.json") {
+		return "", fmt.Errorf("artifact_file.file_name must end with .plan.json or .deterministic-operations.json")
 	}
 	return name, nil
 }

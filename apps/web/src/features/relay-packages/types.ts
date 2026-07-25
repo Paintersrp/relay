@@ -42,12 +42,13 @@ export interface ExecutionPackageDetail {
   authoritySha256: string;
   sourceSha256: string;
   designBriefSha256: string;
-  executionSpecSha256: string;
+  deterministicOperationsSha256?: string;
+  deterministicOperationsCoverage?: "complete" | "partial";
   createdAt: string;
   members: { selectionMemberRowId: number; sequence: number; revisionRowId: number; memberSha256: string }[];
   approvalBindings: { packageMemberRowId: number; approvalRowId: number; authorityRevisionRowId: number; sourceClosureRowId: number; approvalBasisSha256: string; createdAt: string }[];
-  ticketDesignBriefs: PackageArtifact[];
-  executionSpec: PackageArtifact;
+  ticketDesignBrief: PackageArtifact;
+  deterministicOperations?: PackageArtifact;
   run: ExecutionPackageRun | null;
   packageApprovalId?: string;
 }

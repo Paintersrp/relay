@@ -128,22 +128,22 @@ Segments rotate at eight mebibytes. Trace persistence failure leaves the authori
 
 | Profile | Ordered tools |
 | --- | --- |
-| `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run` |
-| `auditor` | `validate_artifact`, `create_run`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
-| `local_operator` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
+| `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan` |
+| `auditor` | `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
+| `local_operator` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
 
 A tool outside the active aggregate profile is not registered and returns JSON-RPC method-not-found when called. The server registers the selected definitions before dispatch, so every advertised name reaches one canonical handler branch.
 
 ## File parameters
 
-`validate_artifact`, `submit_plan`, and `create_run` advertise one OpenAI file parameter named `artifact_file`. It contains:
+`validate_artifact` and `submit_plan` advertise one OpenAI file parameter named `artifact_file`. It contains:
 
 - `download_url` — bounded HTTPS source URL;
 - `file_id` — nonempty external file identity;
-- `file_name` — a canonical `.plan.json` or `.execution-spec.json` basename;
+- `file_name` — a canonical `.plan.json` or `.deterministic-operations.json` basename;
 - optional `mime_type`.
 
-For `validate_artifact`, the accepted filename forms also include `.requirements.md`, `.design.md`, and ticket-qualified `.design-brief.md`; `submit_plan` and `create_run` remain JSON-only admission paths.
+For `validate_artifact`, the accepted filename forms also include `.requirements.md`, `.design.md`, and ticket-qualified `.design-brief.md`; package admission uses the selected-package API.
 
 The fetcher retrieves exact bytes, rejects unsafe or unsupported references, and never returns signed download URLs in tool output. Submission actions compare the downloaded bytes with the required `expected_sha256` before durable mutation.
 
@@ -155,7 +155,7 @@ The fetcher retrieves exact bytes, rejects unsafe or unsupported references, and
 
 **Input:** `artifact_file`.
 
-Validates one canonical Plan or Execution Spec JSON artifact, or authored Requirements, Shared Design, or Ticket Design Brief Markdown artifact, by exact downloaded bytes. Markdown validation checks only required headings: it does not score or interpret content. It returns the computed SHA-256, artifact kind, bounded diagnostics, and notices. It does not persist the artifact, admit a ticket, or return its body.
+Validates one canonical Plan or Deterministic Operations JSON artifact, or authored Requirements, Shared Design, or Ticket Design Brief Markdown artifact, by exact downloaded bytes. Markdown validation checks only required headings: it does not score or interpret content. It returns the computed SHA-256, artifact kind, bounded diagnostics, and notices. It does not persist the artifact, admit a ticket, or return its body.
 
 ### `list_projects`
 
@@ -181,15 +181,9 @@ Downloads and verifies one approved canonical Plan, recompiles it deterministica
 
 Returns bounded Project, Plan, pass, and artifact metadata. It does not return canonical Plan JSON or rendered Markdown bodies.
 
-### `create_run`
+### Run admission
 
-**Profiles:** Planner, Auditor, local operator.
-
-**Required input:** `artifact_file` and lowercase 64-character `expected_sha256`.
-
-Optional managed association uses `plan_id` and positive `pass_number` together. Optional `remediates_run_id` associates a standalone remediation Run where current application rules allow it.
-
-The action verifies exact bytes, recompiles the Execution Spec, and atomically creates a setup-ready Run plus canonical source and rendered Executor Brief artifacts. It does not start execution, mutate Git, or select a model.
+Authored `create_run` admission is retired. Exact selected-package preparation and approval create one setup-ready Run without authored execution artifacts.
 
 ### `get_audit_packet`
 

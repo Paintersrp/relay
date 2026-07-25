@@ -227,45 +227,13 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 	if input.ExecutionPackageRowID < 1 || input.Preflight == nil {
 		return CreateRunResult{}, fmt.Errorf("%w: execution package and preflight are required", ErrInvalidRunInput)
 	}
-	if err := validateCreateRunInput(CreateRunInput{
-		FeatureSlug:      input.FeatureSlug,
-		RepoTarget:       input.RepoTarget,
-		Branch:           input.Branch,
-		BaseCommit:       input.BaseCommit,
-		CanonicalJSON:    input.CanonicalJSON,
-		RenderedMarkdown: input.RenderedMarkdown,
-	}); err != nil {
-		return CreateRunResult{}, err
+	if !validFeatureSlug(input.FeatureSlug) || strings.TrimSpace(input.RepoTarget) != input.RepoTarget || strings.TrimSpace(input.RepoTarget) == "" ||
+		strings.TrimSpace(input.Branch) != input.Branch || strings.TrimSpace(input.Branch) == "" || !validCommit(input.BaseCommit) {
+		return CreateRunResult{}, fmt.Errorf("%w: invalid package Run identity", ErrInvalidRunInput)
 	}
-
 	runID := s.ids.RunID()
-	batch, err := s.store.ArtifactStore().Begin("runs/" + runID)
-	if err != nil {
-		return CreateRunResult{}, err
-	}
-	canonical, err := batch.Stage(
-		"execution_spec",
-		input.FeatureSlug+".execution-spec.json",
-		"application/json",
-		input.CanonicalJSON,
-	)
-	if err != nil {
-		_ = batch.Rollback()
-		return CreateRunResult{}, err
-	}
-	rendered, err := batch.Stage(
-		"executor_brief",
-		input.FeatureSlug+".executor-brief.md",
-		"text/markdown",
-		input.RenderedMarkdown,
-	)
-	if err != nil {
-		_ = batch.Rollback()
-		return CreateRunResult{}, err
-	}
-
 	result := CreateRunResult{}
-	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrRepositoryTargetNotFound, input.RepoTarget)
@@ -276,18 +244,13 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 		if registered.RepoTarget != input.RepoTarget {
 			return fmt.Errorf("%w: repository target %q must use registered key casing %q", ErrRepositoryTargetNotFound, input.RepoTarget, registered.RepoTarget)
 		}
-
 		if err := input.Preflight(ctx, tx); err != nil {
 			return fmt.Errorf("package Run preflight: %w", err)
 		}
 		run, err := tx.CreateRun(ctx, workflowstore.CreateRunParams{
-			RunID:           runID,
-			FeatureSlug:     input.FeatureSlug,
-			RepoTarget:      input.RepoTarget,
-			Status:          workflowstore.RunStatusCreated,
-			Branch:          input.Branch,
-			BaseCommit:      input.BaseCommit,
-			CanonicalSHA256: canonical.SHA256,
+			RunID: runID, FeatureSlug: input.FeatureSlug, RepoTarget: input.RepoTarget,
+			Status: workflowstore.RunStatusCreated, Branch: input.Branch, BaseCommit: input.BaseCommit,
+			CanonicalSHA256: "",
 		})
 		if err != nil {
 			return fmt.Errorf("create package Run: %w", err)
@@ -302,31 +265,13 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 		}
 		if input.PackageApprovalRowIDRef != nil && *input.PackageApprovalRowIDRef != 0 {
 			run, err = tx.LinkRunToExecutionPackageApproval(ctx, workflowstore.LinkRunToExecutionPackageApprovalParams{
-				PackageApprovalRowID: sql.NullInt64{Int64: *input.PackageApprovalRowIDRef, Valid: true},
-				RunID:                run.RunID,
+				PackageApprovalRowID: sql.NullInt64{Int64: *input.PackageApprovalRowIDRef, Valid: true}, RunID: run.RunID,
 			})
 			if err != nil {
 				return fmt.Errorf("link package Run to approval: %w", err)
 			}
 		}
 		result.Run = run
-
-		for _, staged := range []workflowartifacts.File{canonical, rendered} {
-			artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
-				ArtifactID:   s.ids.ArtifactID(),
-				OwnerType:    workflowstore.ArtifactOwnerRun,
-				RunRowID:     sql.NullInt64{Int64: run.ID, Valid: true},
-				Kind:         staged.Kind,
-				RelativePath: staged.RelativePath,
-				MediaType:    staged.MediaType,
-				SHA256:       staged.SHA256,
-				SizeBytes:    staged.SizeBytes,
-			})
-			if err != nil {
-				return fmt.Errorf("create package Run artifact metadata: %w", err)
-			}
-			result.Artifacts = append(result.Artifacts, artifact)
-		}
 		return nil
 	})
 	if err != nil {
@@ -334,7 +279,6 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 	}
 	return result, nil
 }
-
 func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutionAttemptInput) (BeginExecutionAttemptResult, error) {
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.Adapter) == "" || strings.TrimSpace(input.Model) == "" {
 		return BeginExecutionAttemptResult{}, fmt.Errorf("run ID, adapter, and model are required")

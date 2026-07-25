@@ -41,7 +41,7 @@ export function RelayCanonicalPlanPassDetail({
           </div>
           <Button asChild size="sm">
             <Link
-              to="/runs/new"
+              to="/execution-packages/new"
               search={{
                 planId: plan.planId,
                 passId: pass.passId,

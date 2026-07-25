@@ -204,7 +204,7 @@ func workflowRunSummaryDTO(value workflowapp.RunSummary) workflowRunSummaryRespo
 		Stage:           value.Stage,
 		Branch:          value.Run.Branch,
 		BaseCommit:      value.Run.BaseCommit,
-		CanonicalSHA256: value.Run.CanonicalSHA256,
+		CanonicalSHA256: nullStringText(value.Run.CanonicalSHA256),
 		PlanID:          value.PlanID,
 		PassID:          value.PassID,
 		PassNumber:      value.PassNumber,
@@ -300,4 +300,11 @@ func MountWorkflowReadRoutes(r chi.Router, handler *WorkflowReadHandler) {
 	r.Get("/runs", handler.List)
 	r.Get("/runs/{runID}", handler.Get)
 	r.Get("/runs/{runID}/specification", handler.GetSpecification)
+}
+
+func nullStringText(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }

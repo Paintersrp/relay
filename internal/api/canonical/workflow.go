@@ -2,6 +2,7 @@ package canonical
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -210,7 +211,7 @@ func (h *WorkflowHandler) CreateRun(w http.ResponseWriter, r *http.Request) {
 		Status:          result.Run.Status,
 		Branch:          result.Run.Branch,
 		BaseCommit:      result.Run.BaseCommit,
-		CanonicalSHA256: result.Run.CanonicalSHA256,
+		CanonicalSHA256: nullStringText(result.Run.CanonicalSHA256),
 		CreatedAt:       result.Run.CreatedAt,
 		UpdatedAt:       result.Run.UpdatedAt,
 		ReviewURL:       runReviewURL(result.Run.RunID),
@@ -219,6 +220,13 @@ func (h *WorkflowHandler) CreateRun(w http.ResponseWriter, r *http.Request) {
 		"run":       response,
 		"artifacts": artifacts,
 	})
+}
+
+func nullStringText(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func planDTO(plan workflowsubmissions.Plan, project workflowsubmissions.Project) planResponse {
@@ -335,5 +343,4 @@ func MountWorkflowRoutes(r chi.Router, handler *WorkflowHandler) {
 	r.Post("/canonical-artifacts/validate", handler.ValidateArtifact)
 	r.Post("/plans", handler.SubmitPlan)
 	r.Patch("/plans/{planID}/project", handler.MovePlan)
-	r.Post("/runs", handler.CreateRun)
 }

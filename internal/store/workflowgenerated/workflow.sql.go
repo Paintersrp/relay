@@ -1107,26 +1107,28 @@ INSERT INTO execution_packages (
     authority_sha256,
     source_sha256,
     design_brief_sha256,
-    execution_spec_sha256
+    deterministic_operations_sha256,
+    deterministic_operations_coverage
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
 `
 
 type CreateExecutionPackageParams struct {
-	PackageID              string `json:"package_id"`
-	SelectionRowID         int64  `json:"selection_row_id"`
-	WorkspaceRowID         int64  `json:"workspace_row_id"`
-	RepoTarget             string `json:"repo_target"`
-	Branch                 string `json:"branch"`
-	BaseCommit             string `json:"base_commit"`
-	SourceClosureRowID     int64  `json:"source_closure_row_id"`
-	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
-	PackageSha256          string `json:"package_sha256"`
-	AuthoritySha256        string `json:"authority_sha256"`
-	SourceSha256           string `json:"source_sha256"`
-	DesignBriefSha256      string `json:"design_brief_sha256"`
-	ExecutionSpecSha256    string `json:"execution_spec_sha256"`
+	PackageID                       string         `json:"package_id"`
+	SelectionRowID                  int64          `json:"selection_row_id"`
+	WorkspaceRowID                  int64          `json:"workspace_row_id"`
+	RepoTarget                      string         `json:"repo_target"`
+	Branch                          string         `json:"branch"`
+	BaseCommit                      string         `json:"base_commit"`
+	SourceClosureRowID              int64          `json:"source_closure_row_id"`
+	AuthorityRevisionRowID          int64          `json:"authority_revision_row_id"`
+	PackageSha256                   string         `json:"package_sha256"`
+	AuthoritySha256                 string         `json:"authority_sha256"`
+	SourceSha256                    string         `json:"source_sha256"`
+	DesignBriefSha256               string         `json:"design_brief_sha256"`
+	DeterministicOperationsSha256   sql.NullString `json:"deterministic_operations_sha256"`
+	DeterministicOperationsCoverage sql.NullString `json:"deterministic_operations_coverage"`
 }
 
 func (q *Queries) CreateExecutionPackage(ctx context.Context, arg CreateExecutionPackageParams) (ExecutionPackage, error) {
@@ -1143,7 +1145,8 @@ func (q *Queries) CreateExecutionPackage(ctx context.Context, arg CreateExecutio
 		arg.AuthoritySha256,
 		arg.SourceSha256,
 		arg.DesignBriefSha256,
-		arg.ExecutionSpecSha256,
+		arg.DeterministicOperationsSha256,
+		arg.DeterministicOperationsCoverage,
 	)
 	var i ExecutionPackage
 	err := row.Scan(
@@ -1160,7 +1163,8 @@ func (q *Queries) CreateExecutionPackage(ctx context.Context, arg CreateExecutio
 		&i.AuthoritySha256,
 		&i.SourceSha256,
 		&i.DesignBriefSha256,
-		&i.ExecutionSpecSha256,
+		&i.DeterministicOperationsSha256,
+		&i.DeterministicOperationsCoverage,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2076,15 +2080,15 @@ RETURNING id, run_id, feature_slug, repo_target, plan_row_id, plan_pass_row_id, 
 `
 
 type CreateRunParams struct {
-	RunID              string        `json:"run_id"`
-	FeatureSlug        string        `json:"feature_slug"`
-	RepoTarget         string        `json:"repo_target"`
-	PlanRowID          sql.NullInt64 `json:"plan_row_id"`
-	PlanPassRowID      sql.NullInt64 `json:"plan_pass_row_id"`
-	RemediatesRunRowID sql.NullInt64 `json:"remediates_run_row_id"`
-	Branch             string        `json:"branch"`
-	BaseCommit         string        `json:"base_commit"`
-	CanonicalSha256    string        `json:"canonical_sha256"`
+	RunID              string         `json:"run_id"`
+	FeatureSlug        string         `json:"feature_slug"`
+	RepoTarget         string         `json:"repo_target"`
+	PlanRowID          sql.NullInt64  `json:"plan_row_id"`
+	PlanPassRowID      sql.NullInt64  `json:"plan_pass_row_id"`
+	RemediatesRunRowID sql.NullInt64  `json:"remediates_run_row_id"`
+	Branch             string         `json:"branch"`
+	BaseCommit         string         `json:"base_commit"`
+	CanonicalSha256    sql.NullString `json:"canonical_sha256"`
 }
 
 func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, error) {
@@ -2653,7 +2657,7 @@ func (q *Queries) GetExecutionPackageApprovalByPackageRowID(ctx context.Context,
 }
 
 const getExecutionPackageByPackageID = `-- name: GetExecutionPackageByPackageID :one
-SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
 FROM execution_packages
 WHERE package_id = ?
 `
@@ -2675,14 +2679,15 @@ func (q *Queries) GetExecutionPackageByPackageID(ctx context.Context, packageID 
 		&i.AuthoritySha256,
 		&i.SourceSha256,
 		&i.DesignBriefSha256,
-		&i.ExecutionSpecSha256,
+		&i.DeterministicOperationsSha256,
+		&i.DeterministicOperationsCoverage,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getExecutionPackageBySelectionRowID = `-- name: GetExecutionPackageBySelectionRowID :one
-SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
 FROM execution_packages
 WHERE selection_row_id = ?
 `
@@ -2704,7 +2709,8 @@ func (q *Queries) GetExecutionPackageBySelectionRowID(ctx context.Context, selec
 		&i.AuthoritySha256,
 		&i.SourceSha256,
 		&i.DesignBriefSha256,
-		&i.ExecutionSpecSha256,
+		&i.DeterministicOperationsSha256,
+		&i.DeterministicOperationsCoverage,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -4188,7 +4194,7 @@ func (q *Queries) ListExecutionPackageMembers(ctx context.Context, packageRowID 
 }
 
 const listExecutionPackagesByWorkspace = `-- name: ListExecutionPackagesByWorkspace :many
-SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, execution_spec_sha256, created_at
+SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
 FROM execution_packages
 WHERE workspace_row_id = ?
 ORDER BY created_at, id
@@ -4217,7 +4223,8 @@ func (q *Queries) ListExecutionPackagesByWorkspace(ctx context.Context, workspac
 			&i.AuthoritySha256,
 			&i.SourceSha256,
 			&i.DesignBriefSha256,
-			&i.ExecutionSpecSha256,
+			&i.DeterministicOperationsSha256,
+			&i.DeterministicOperationsCoverage,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
