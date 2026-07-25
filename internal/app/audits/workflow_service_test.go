@@ -20,6 +20,7 @@ import (
 	"relay/internal/artifactschema"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testfixtures"
 )
 
 type auditFixture struct {
@@ -1595,7 +1596,7 @@ func newTicketPackageAuditFixture(t *testing.T) *auditFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	brief := []byte("# Ticket Design Brief\n\n## Ticket Identity\n\n## Context\n\n## Design\n\n## Implementation Notes\n\n## Validation\n")
+	brief := []byte(testfixtures.TicketDesignBrief)
 	prepared, err := packageService.Prepare(ctx, workflowpackages.PrepareInput{
 		SelectionID: selection.SelectionID,
 		TicketDesignBrief: workflowpackages.ArtifactInput{

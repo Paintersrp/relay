@@ -15,6 +15,7 @@ import (
 	"relay/internal/executor"
 	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testfixtures"
 )
 
 type apiPacketAuthorizer struct{ request appoperations.MutationRequest }
@@ -56,7 +57,7 @@ func TestPrepareRouteUsesPacketAdmittedPackageOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := NewWorkflowHandler(service)
-	body := `{"packetId":"packet-api","operationId":"local_operator.ticket_workflow","selectionId":"selection-api","ticketDesignBrief":{"displayName":"feature.ticket-T1.r1.design-brief.md","expectedSha256":"` + strings.Repeat("b", 64) + `","bytesBase64":"` + base64.StdEncoding.EncodeToString([]byte("# Brief\n")) + `"},"requiredDependencies":[{"class":"execution_package_selection","key":"selection:selection-api"},{"class":"execution_package_ticket_design_brief","key":"feature.ticket-T1.r1.design-brief.md:` + strings.Repeat("b", 64) + `"}]}`
+	body := `{"packetId":"packet-api","operationId":"local_operator.ticket_workflow","selectionId":"selection-api","ticketDesignBrief":{"displayName":"feature.ticket-T1.r1.design-brief.md","expectedSha256":"` + strings.Repeat("b", 64) + `","bytesBase64":"` + base64.StdEncoding.EncodeToString([]byte(testfixtures.TicketDesignBrief)) + `"},"requiredDependencies":[{"class":"execution_package_selection","key":"selection:selection-api"},{"class":"execution_package_ticket_design_brief","key":"feature.ticket-T1.r1.design-brief.md:` + strings.Repeat("b", 64) + `"}]}`
 	request := httptest.NewRequest(http.MethodPost, "/execution-packages", strings.NewReader(body))
 	response := httptest.NewRecorder()
 	handler.Prepare(response, request)

@@ -1,8 +1,12 @@
 package packages
 
-import "testing"
+import (
+	"testing"
 
-const packageBrief = "# Ticket Design Brief\n\n## Ticket Identity\n\n## Context\n\n## Design\n\n## Implementation Notes\n\n## Validation\n"
+	"relay/internal/testfixtures"
+)
+
+const packageBrief = testfixtures.TicketDesignBrief
 
 func TestValidateInputAcceptsBriefOnlyAndDoesNotInventOperations(t *testing.T) {
 	brief := ArtifactInput{DisplayName: "checkout.ticket-P2-T2.r1.design-brief.md", Bytes: []byte(packageBrief)}

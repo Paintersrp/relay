@@ -10,6 +10,7 @@ import (
 	"relay/internal/executor"
 	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testfixtures"
 )
 
 type fakePackagePacketAuthorizer struct{ request MutationRequest }
@@ -57,7 +58,7 @@ func TestPackageWorkflowPrepareRequiresExactPacketDependencies(t *testing.T) {
 	}
 	input := packages.PrepareInput{
 		SelectionID:       "selection-1",
-		TicketDesignBrief: packages.ArtifactInput{DisplayName: "feature.ticket-T1.r1.design-brief.md", ExpectedSHA256: strings.Repeat("b", 64), Bytes: []byte("# Brief\n")},
+		TicketDesignBrief: packages.ArtifactInput{DisplayName: "feature.ticket-T1.r1.design-brief.md", ExpectedSHA256: strings.Repeat("b", 64), Bytes: []byte(testfixtures.TicketDesignBrief)},
 	}
 	payload, err := PackagePreparePayloadSHA256(input)
 	if err != nil {
