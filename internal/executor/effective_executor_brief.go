@@ -76,12 +76,6 @@ func (s *EffectiveExecutorBriefService) Prepare(ctx context.Context, runID strin
 	if err != nil {
 		return EffectiveExecutorBriefResult{}, err
 	}
-	if prepared.mode == EffectiveExecutorBriefDeterministicComplete {
-		if prepared.existing != nil {
-			return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
-		}
-		return EffectiveExecutorBriefResult{Mode: prepared.mode}, nil
-	}
 	if prepared.existing != nil {
 		return s.resolveExistingEffectiveExecutorBrief(*prepared.existing, prepared.authority.Run, prepared.filename, prepared.mode, prepared.content)
 	}
@@ -124,12 +118,6 @@ func (s *EffectiveExecutorBriefService) Load(ctx context.Context, runID string) 
 	prepared, err := s.loadPreparedEffectiveExecutorBrief(ctx, runID)
 	if err != nil {
 		return EffectiveExecutorBriefResult{}, err
-	}
-	if prepared.mode == EffectiveExecutorBriefDeterministicComplete {
-		if prepared.existing != nil {
-			return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
-		}
-		return EffectiveExecutorBriefResult{Mode: prepared.mode}, nil
 	}
 	if prepared.existing == nil {
 		return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
@@ -176,9 +164,6 @@ func (s *EffectiveExecutorBriefService) loadPreparedEffectiveExecutorBrief(ctx c
 	if err != nil {
 		return preparedEffectiveExecutorBrief{}, err
 	}
-	if mode == EffectiveExecutorBriefDeterministicComplete {
-		return preparedEffectiveExecutorBrief{authority: authority, mode: mode, existing: existing}, nil
-	}
 	content, filename, err := renderEffectiveExecutorBrief(authority, assignment, outcome, mode)
 	if err != nil {
 		return preparedEffectiveExecutorBrief{}, err
@@ -188,7 +173,7 @@ func (s *EffectiveExecutorBriefService) loadPreparedEffectiveExecutorBrief(ctx c
 
 func effectiveExecutorBriefResult(mode EffectiveExecutorBriefMode, artifact workflowstore.Artifact, content []byte) EffectiveExecutorBriefResult {
 	copyArtifact := artifact
-	return EffectiveExecutorBriefResult{Mode: mode, AdaptiveDispatchRequired: true, Artifact: &copyArtifact, Bytes: append([]byte(nil), content...)}
+	return EffectiveExecutorBriefResult{Mode: mode, AdaptiveDispatchRequired: mode != EffectiveExecutorBriefDeterministicComplete, Artifact: &copyArtifact, Bytes: append([]byte(nil), content...)}
 }
 
 func findEffectiveExecutorBrief(artifacts []workflowstore.Artifact, run workflowstore.Run) (*workflowstore.Artifact, error) {
@@ -277,6 +262,8 @@ func renderEffectiveExecutorBrief(authority executionpackages.ApprovedAuthority,
 		b.WriteString("- Mode: adaptive_preflight_failed\n- Adaptive Executor dispatch required: yes\n- Deterministic Operations coverage: " + outcome.Outcome.Outcome.Coverage + "\n- Deterministic application: not performed\n- Required behavior: Implement the complete approved Ticket Design Brief adaptively from the unchanged worktree.\n- Evidence authority: The failure record below is source-state evidence only and is not semantic implementation authority.\n")
 	case EffectiveExecutorBriefAdaptiveAfterPartialApplication:
 		b.WriteString("- Mode: adaptive_after_partial_application\n- Adaptive Executor dispatch required: yes\n- Deterministic Operations coverage: partial\n- Deterministic application: applied successfully\n- Required behavior: Preserve Relay-applied work and complete the remaining approved Ticket Design Brief obligations adaptively.\n- Prohibition: Do not repeat, revert, repair, complete, or reinterpret the deterministic operations.\n")
+	case EffectiveExecutorBriefDeterministicComplete:
+		b.WriteString("- Mode: deterministic_complete\n- Adaptive Executor dispatch required: no\n- Deterministic Operations coverage: complete\n- Deterministic application: applied successfully\n- Required behavior: Do not dispatch an adaptive Executor.\n- Audit requirement: Audit the complete approved Ticket Design Brief against the resulting source, not merely the deterministic operations.\n")
 	default:
 		return nil, "", ErrEffectiveExecutorBriefConflict
 	}
@@ -294,22 +281,9 @@ func renderEffectiveExecutorBrief(authority executionpackages.ApprovedAuthority,
 			b.WriteString("- " + field.name + ": " + field.value + "\n")
 		}
 	case EffectiveExecutorBriefAdaptiveAfterPartialApplication:
-		application := outcome.Outcome.Application
-		b.WriteString("- Coverage: partial\n- Changed paths:\n")
-		for _, path := range application.ChangedPaths {
-			b.WriteString("  - " + path + "\n")
-		}
-		b.WriteString("\nApplied operations:\n")
-		for _, operation := range application.Operations {
-			b.WriteString("- Operation " + fmt.Sprint(operation.Index) + ": " + operation.Operation + "\n  - Source path: " + operation.SourcePath + "\n  - Destination path: " + operation.DestinationPath + "\n")
-			for _, state := range []struct {
-				name  string
-				value DeterministicOutcomeFileState
-			}{{"Source before", operation.SourceBefore}, {"Source after", operation.SourceAfter}, {"Destination before", operation.DestinationBefore}, {"Destination after", operation.DestinationAfter}} {
-				b.WriteString("  - " + state.name + ": exists=" + fmt.Sprint(state.value.Exists) + " sha256=" + state.value.SHA256 + " size=" + fmt.Sprint(state.value.Size) + "\n")
-			}
-		}
-		b.WriteString("\nThese mutations are already applied source state. They are not a replacement for, subtraction from, or reinterpretation of the approved Ticket Design Brief.\n")
+		writeAppliedDeterministicApplicationEvidence(&b, outcome.Outcome.Outcome.Coverage, outcome.Outcome.Application)
+	case EffectiveExecutorBriefDeterministicComplete:
+		writeAppliedDeterministicApplicationEvidence(&b, outcome.Outcome.Outcome.Coverage, outcome.Outcome.Application)
 	}
 	b.WriteString("\n## Approved Authority Layers\n")
 	for _, layer := range authority.AuthorityLayers {
@@ -319,6 +293,24 @@ func renderEffectiveExecutorBrief(authority executionpackages.ApprovedAuthority,
 	b.WriteString("\n## Approved Ticket Design Brief\n\n- Display name: " + authority.TicketDesignBrief.DisplayName + "\n- Relative path: " + authority.TicketDesignBrief.RelativePath + "\n- Media type: " + authority.TicketDesignBrief.MediaType + "\n- SHA-256: " + authority.TicketDesignBrief.SHA256 + "\n- Byte count: " + fmt.Sprint(len(authority.TicketDesignBrief.Bytes)) + "\n")
 	writeFencedContent(&b, authority.TicketDesignBrief.MediaType, authority.TicketDesignBrief.Bytes, int64(len(authority.TicketDesignBrief.Bytes)), authority.TicketDesignBrief.SHA256)
 	return []byte(strings.TrimRight(b.String(), "\n") + "\n"), fmt.Sprintf("%s.ticket-%s.r%d.effective-executor-brief.md", authority.Workspace.FeatureSlug, authority.Ticket.TicketID, authority.TicketRevision.RevisionNumber), nil
+}
+
+func writeAppliedDeterministicApplicationEvidence(b *strings.Builder, coverage string, application *DeterministicApplicationEvidence) {
+	b.WriteString("- Coverage: " + coverage + "\n- Changed paths:\n")
+	for _, path := range application.ChangedPaths {
+		b.WriteString("  - " + path + "\n")
+	}
+	b.WriteString("\nApplied operations:\n")
+	for _, operation := range application.Operations {
+		b.WriteString("- Operation " + fmt.Sprint(operation.Index) + ": " + operation.Operation + "\n  - Source path: " + operation.SourcePath + "\n  - Destination path: " + operation.DestinationPath + "\n")
+		for _, state := range []struct {
+			name  string
+			value DeterministicOutcomeFileState
+		}{{"Source before", operation.SourceBefore}, {"Source after", operation.SourceAfter}, {"Destination before", operation.DestinationBefore}, {"Destination after", operation.DestinationAfter}} {
+			b.WriteString("  - " + state.name + ": exists=" + fmt.Sprint(state.value.Exists) + " sha256=" + state.value.SHA256 + " size=" + fmt.Sprint(state.value.Size) + "\n")
+		}
+	}
+	b.WriteString("\nThese mutations are already applied source state. Application evidence is execution evidence and does not replace or narrow the complete approved Ticket Design Brief.\n")
 }
 
 func textualMediaType(mediaType string) bool {

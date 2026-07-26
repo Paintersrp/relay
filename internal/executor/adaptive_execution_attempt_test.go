@@ -78,6 +78,49 @@ func TestPrepareAdaptiveExecutionAttemptModes(t *testing.T) {
 	}
 }
 
+func TestAdaptiveExecutionAttemptCompletePreparationAndReadbackOwnsNoAttemptOrInput(t *testing.T) {
+	fixture := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
+	service := newAdaptiveAttemptService(t, fixture)
+	prepared, err := service.Prepare(context.Background(), AdaptiveExecutionAttemptInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Mode != EffectiveExecutorBriefDeterministicComplete || prepared.AdaptiveDispatchRequired || prepared.Attempt != nil || prepared.InputArtifact != nil || len(prepared.InputBytes) != 0 {
+		t.Fatalf("complete prepared result = %#v", prepared)
+	}
+	artifacts, err := fixture.store.ListArtifactsByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var effectiveBriefs int
+	for _, artifact := range artifacts {
+		if artifact.Kind == effectiveExecutorBriefKind && artifact.OwnerType == workflowstore.ArtifactOwnerRun {
+			effectiveBriefs++
+		}
+		if artifact.Kind == adaptiveExecutionInputKind {
+			t.Fatalf("complete run owns adaptive input artifact: %#v", artifact)
+		}
+	}
+	if effectiveBriefs != 1 {
+		t.Fatalf("effective brief artifacts = %d", effectiveBriefs)
+	}
+	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("complete attempts = %#v", attempts)
+	}
+
+	loaded, err := service.Load(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Mode != EffectiveExecutorBriefDeterministicComplete || loaded.AdaptiveDispatchRequired || loaded.Attempt != nil || loaded.InputArtifact != nil || len(loaded.InputBytes) != 0 {
+		t.Fatalf("complete loaded result = %#v", loaded)
+	}
+}
+
 func TestPrepareAdaptiveExecutionAttemptIdempotencyAndConflicts(t *testing.T) {
 	fixture := adaptiveAttemptFixture(t, false, "", DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
 	service := newAdaptiveAttemptService(t, fixture)

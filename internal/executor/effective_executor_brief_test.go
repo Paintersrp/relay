@@ -56,27 +56,42 @@ func TestPrepareEffectiveExecutorBriefDecidesEveryOutcome(t *testing.T) {
 			if result.Mode != test.mode || result.AdaptiveDispatchRequired != test.adaptive {
 				t.Fatalf("result = %#v", result)
 			}
-			if test.adaptive {
-				if result.Artifact == nil || len(result.Bytes) == 0 {
-					t.Fatalf("adaptive result = %#v", result)
+			if result.Artifact == nil || len(result.Bytes) == 0 {
+				t.Fatalf("result = %#v", result)
+			}
+			if !bytes.Contains(result.Bytes, []byte(testfixturesBrief(t))) {
+				t.Fatal("full approved Ticket Design Brief is not embedded")
+			}
+			if !strings.HasSuffix(string(result.Bytes), "\n") || strings.HasSuffix(string(result.Bytes), "\n\n") {
+				t.Fatal("brief does not have exactly one trailing newline")
+			}
+			if got := strings.Index(string(result.Bytes), "## Approved Authority Layers"); got < 0 || strings.Index(string(result.Bytes), "## Approved Ticket Design Brief") < got {
+				t.Fatal("canonical section order changed")
+			}
+			if test.mode == EffectiveExecutorBriefAdaptivePreflightFailed && !bytes.Contains(result.Bytes, []byte("Source-state evidence only")) {
+				t.Fatal("failed outcome evidence missing")
+			}
+			if test.mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication && !bytes.Contains(result.Bytes, []byte("Application evidence is execution evidence")) {
+				t.Fatal("applied outcome evidence missing")
+			}
+			if test.mode == EffectiveExecutorBriefDeterministicComplete {
+				for _, fact := range []string{
+					"- Mode: deterministic_complete",
+					"- Adaptive Executor dispatch required: no",
+					"- Deterministic Operations coverage: complete",
+					"- Deterministic application: applied successfully",
+					"- Required behavior: Do not dispatch an adaptive Executor.",
+					"- Audit requirement: Audit the complete approved Ticket Design Brief against the resulting source, not merely the deterministic operations.",
+				} {
+					if !bytes.Contains(result.Bytes, []byte(fact)) {
+						t.Fatalf("complete-mode fact missing: %q", fact)
+					}
 				}
-				if !bytes.Contains(result.Bytes, []byte(testfixturesBrief(t))) {
-					t.Fatal("full approved Ticket Design Brief is not embedded")
+				for _, evidence := range []string{"- Coverage: complete", "- Changed paths:", "Applied operations:", "- Operation 1:", "- Source path:", "- Destination path:", "Source before:", "Source after:", "Destination before:", "Destination after:", "Application evidence is execution evidence and does not replace or narrow the complete approved Ticket Design Brief."} {
+					if !bytes.Contains(result.Bytes, []byte(evidence)) {
+						t.Fatalf("complete application evidence missing: %q", evidence)
+					}
 				}
-				if !strings.HasSuffix(string(result.Bytes), "\n") || strings.HasSuffix(string(result.Bytes), "\n\n") {
-					t.Fatal("brief does not have exactly one trailing newline")
-				}
-				if got := strings.Index(string(result.Bytes), "## Approved Authority Layers"); got < 0 || strings.Index(string(result.Bytes), "## Approved Ticket Design Brief") < got {
-					t.Fatal("canonical section order changed")
-				}
-				if test.mode == EffectiveExecutorBriefAdaptivePreflightFailed && !bytes.Contains(result.Bytes, []byte("Source-state evidence only")) {
-					t.Fatal("failed outcome evidence missing")
-				}
-				if test.mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication && !bytes.Contains(result.Bytes, []byte("These mutations are already applied source state.")) {
-					t.Fatal("applied outcome evidence missing")
-				}
-			} else if result.Artifact != nil || len(result.Bytes) != 0 {
-				t.Fatalf("complete outcome created a brief: %#v", result)
 			}
 		})
 	}
@@ -117,6 +132,110 @@ func TestPrepareEffectiveExecutorBriefIsIdempotentAndRejectsCompleteConflict(t *
 	}
 	if _, err := completeService.Prepare(context.Background(), complete.run.RunID); !errors.Is(err, ErrEffectiveExecutorBriefConflict) {
 		t.Fatalf("complete conflict = %v", err)
+	}
+}
+
+func TestPrepareEffectiveExecutorBriefCompleteIsIdempotent(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "complete")
+	prepareExecutionAssignment(t, fixture)
+	persistOutcome(t, fixture, appliedOutcomeInput("complete"))
+	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.Prepare(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Prepare(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Mode != EffectiveExecutorBriefDeterministicComplete || first.AdaptiveDispatchRequired || first.Artifact == nil || second.Artifact == nil || first.Artifact.ID != second.Artifact.ID || first.Artifact.RelativePath != second.Artifact.RelativePath || !bytes.Equal(first.Bytes, second.Bytes) {
+		t.Fatalf("repeated complete result differs: %#v %#v", first, second)
+	}
+}
+
+func TestLoadEffectiveExecutorBriefCompleteVerifiesArtifact(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "complete")
+	prepareExecutionAssignment(t, fixture)
+	persistOutcome(t, fixture, appliedOutcomeInput("complete"))
+	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := service.Prepare(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := service.Load(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Mode != EffectiveExecutorBriefDeterministicComplete || loaded.AdaptiveDispatchRequired || loaded.Artifact == nil || loaded.Artifact.ID != prepared.Artifact.ID || !bytes.Equal(loaded.Bytes, prepared.Bytes) {
+		t.Fatalf("loaded complete result = %#v, prepared = %#v", loaded, prepared)
+	}
+}
+
+func TestLoadEffectiveExecutorBriefCompleteRejectsMissingDuplicateMalformedAndChangedArtifact(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, fixture *executionAssignmentFixture, artifact workflowstore.Artifact)
+	}{
+		{name: "missing", mutate: func(t *testing.T, fixture *executionAssignmentFixture, artifact workflowstore.Artifact) {
+			if _, err := fixture.store.DB().ExecContext(context.Background(), "DELETE FROM artifacts WHERE id = ?", artifact.ID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "malformed", mutate: func(t *testing.T, fixture *executionAssignmentFixture, artifact workflowstore.Artifact) {
+			if _, err := fixture.store.DB().ExecContext(context.Background(), "UPDATE artifacts SET media_type = ? WHERE id = ?", "application/json", artifact.ID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "changed bytes", mutate: func(t *testing.T, fixture *executionAssignmentFixture, artifact workflowstore.Artifact) {
+			if err := os.WriteFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath)), []byte("changed\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newExecutionAssignmentFixture(t, true, "complete")
+			prepareExecutionAssignment(t, fixture)
+			persistOutcome(t, fixture, appliedOutcomeInput("complete"))
+			service, err := NewEffectiveExecutorBriefService(fixture.store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := service.Prepare(context.Background(), fixture.run.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, fixture, *prepared.Artifact)
+			if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrEffectiveExecutorBriefConflict) {
+				t.Fatalf("complete load error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadEffectiveExecutorBriefCompleteRejectsDuplicateArtifactRecords(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "complete")
+	prepareExecutionAssignment(t, fixture)
+	persistOutcome(t, fixture, appliedOutcomeInput("complete"))
+	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := service.Prepare(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate := *prepared.Artifact
+	duplicate.ID++
+	duplicate.ArtifactID = workflowstore.NewArtifactID()
+	if _, err := findEffectiveExecutorBrief([]workflowstore.Artifact{*prepared.Artifact, duplicate}, fixture.run); !errors.Is(err, ErrEffectiveExecutorBriefConflict) {
+		t.Fatalf("duplicate artifact error = %v", err)
 	}
 }
 
