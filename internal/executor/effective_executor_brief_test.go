@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +134,71 @@ func TestLoadDeterministicOutcomeRejectsChangedBytes(t *testing.T) {
 	if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrDeterministicOutcomeConflict) {
 		t.Fatalf("changed outcome = %v", err)
 	}
+}
+
+func TestEffectiveExecutorBriefContentUsesExactSourceRepresentation(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content []byte
+		base64  bool
+	}{
+		{name: "LF", content: []byte("line one\nline two\n")},
+		{name: "without trailing newline", content: []byte("line one\nline two"), base64: true},
+		{name: "CRLF", content: []byte("line one\r\nline two\r\n")},
+		{name: "trailing spaces", content: []byte("line with spaces   \n")},
+		{name: "long backtick run", content: []byte("before `````` after\n")},
+		{name: "empty", content: []byte{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var rendered strings.Builder
+			digest := sha256Hex(test.content)
+			writeFencedContent(&rendered, "text/plain", test.content, int64(len(test.content)), digest)
+			value := rendered.String()
+			if !strings.Contains(value, "- Source byte count: "+fmt.Sprint(len(test.content))+"\n") || !strings.Contains(value, "- Source SHA-256: "+digest+"\n") {
+				t.Fatalf("metadata missing: %q", value)
+			}
+			if test.base64 {
+				if !strings.Contains(value, "Source representation: base64") {
+					t.Fatalf("base64 representation missing: %q", value)
+				}
+				encoded := strings.TrimSuffix(strings.TrimPrefix(strings.Split(value, "```text/base64\n")[1], ""), "\n```\n")
+				decoded, err := base64.StdEncoding.DecodeString(encoded)
+				if err != nil || !bytes.Equal(decoded, test.content) {
+					t.Fatalf("decoded content=%q err=%v", decoded, err)
+				}
+				return
+			}
+			fence := deterministicFence(test.content)
+			if len(fence) <= longestBacktickRun(test.content) {
+				t.Fatalf("fence=%q is not longer than content run", fence)
+			}
+			opening := "\n" + fence + "text/plain\n"
+			start := strings.Index(value, opening)
+			if start < 0 {
+				t.Fatalf("opening fence missing: %q", value)
+			}
+			body := value[start+len(opening):]
+			closing := fence + "\n"
+			if !strings.HasSuffix(body, closing) || !bytes.Equal([]byte(strings.TrimSuffix(body, closing)), test.content) {
+				t.Fatalf("fenced content changed: %q", body)
+			}
+		})
+	}
+}
+
+func longestBacktickRun(content []byte) int {
+	longest, current := 0, 0
+	for _, value := range content {
+		if value == '`' {
+			current++
+			if current > longest {
+				longest = current
+			}
+		} else {
+			current = 0
+		}
+	}
+	return longest
 }
 
 func failedOutcomeInput(coverage string) DeterministicOutcomeInput {

@@ -339,6 +339,10 @@ END`); err != nil {
 }
 
 func newExecutionAssignmentFixture(t *testing.T, withOperations bool, coverage string) *executionAssignmentFixture {
+	return newExecutionAssignmentFixtureWithOperations(t, withOperations, coverage, []byte(executionAssignmentOperations))
+}
+
+func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bool, coverage string, authoredOperations []byte) *executionAssignmentFixture {
 	t.Helper()
 	root := t.TempDir()
 	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
@@ -369,7 +373,7 @@ func newExecutionAssignmentFixture(t *testing.T, withOperations bool, coverage s
 	briefName := "checkout.ticket-P2-T2.r1.design-brief.md"
 	operationsName := "checkout.ticket-P2-T2.r1.deterministic-operations.json"
 	briefBytes := []byte(testfixtures.TicketDesignBrief)
-	operationsBytes := []byte(executionAssignmentOperations)
+	operationsBytes := append([]byte(nil), authoredOperations...)
 	if coverage == "partial" {
 		operationsBytes = []byte(strings.Replace(string(operationsBytes), `"coverage":"complete"`, `"coverage":"partial"`, 1))
 	}

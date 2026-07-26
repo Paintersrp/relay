@@ -3,7 +3,9 @@ package executor
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -304,12 +306,12 @@ func validApplicationEvidence(value *DeterministicApplicationEvidence, document 
 	}
 	virtual := make(map[string]DeterministicOutcomeFileState, len(value.Operations)*2)
 	virtualDirectories := make(map[string]bool, len(value.Operations)*2)
-	changedPaths := make([]string, 0, len(value.Operations)*2)
-	changed := make(map[string]bool, len(value.Operations)*2)
-	addChangedPath := func(path string) {
-		if !changed[path] {
-			changed[path] = true
-			changedPaths = append(changedPaths, path)
+	initial := make(map[string]DeterministicOutcomeFileState, len(value.Operations)*2)
+	paths := make([]string, 0, len(value.Operations)*2)
+	recordInitial := func(path string, state DeterministicOutcomeFileState) {
+		if _, exists := initial[path]; !exists {
+			initial[path] = state
+			paths = append(paths, path)
 		}
 	}
 	for index, operation := range value.Operations {
@@ -324,21 +326,32 @@ func validApplicationEvidence(value *DeterministicApplicationEvidence, document 
 			if !equalOutcomeFileState(current, operation.SourceBefore) {
 				return false
 			}
+		} else {
+			recordInitial(operation.SourcePath, operation.SourceBefore)
 		}
-		addChangedPath(operation.SourcePath)
+		if !validAuthoredWholeFileState(operation, expected) {
+			return false
+		}
 		if operation.Operation == "rename" {
 			if current, exists := virtual[operation.DestinationPath]; exists {
 				if !equalOutcomeFileState(current, operation.DestinationBefore) {
 					return false
 				}
+			} else {
+				recordInitial(operation.DestinationPath, operation.DestinationBefore)
 			}
-			addChangedPath(operation.DestinationPath)
 		}
 		virtual[operation.SourcePath] = operation.SourceAfter
 		addVirtualEvidenceParents(operation.SourcePath, virtualDirectories)
 		if operation.Operation == "rename" {
 			virtual[operation.DestinationPath] = operation.DestinationAfter
 			addVirtualEvidenceParents(operation.DestinationPath, virtualDirectories)
+		}
+	}
+	changedPaths := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if !equalOutcomeFileState(initial[path], virtual[path]) {
+			changedPaths = append(changedPaths, path)
 		}
 	}
 	if len(value.ChangedPaths) != len(changedPaths) {
@@ -365,6 +378,26 @@ func validApplicationOperationShape(actual AppliedDeterministicOperationEvidence
 		return actual.SourceBefore.Exists && !actual.SourceAfter.Exists && actual.DestinationPath == expected.DestinationPath && !actual.DestinationBefore.Exists && actual.DestinationAfter.Exists && actual.SourcePath != actual.DestinationPath
 	default:
 		return false
+	}
+}
+
+func validAuthoredWholeFileState(actual AppliedDeterministicOperationEvidence, expected speccompiler.DeterministicOperation) bool {
+	switch expected.Operation {
+	case "create":
+		return equalOutcomeFileState(actual.SourceAfter, authoredOutcomeFileState([]byte(expected.Implementation.Content)))
+	case "delete":
+		return equalOutcomeFileState(actual.SourceBefore, authoredOutcomeFileState([]byte(expected.Implementation.ExpectedContent)))
+	case "rename":
+		if !equalOutcomeFileState(actual.SourceBefore, authoredOutcomeFileState([]byte(expected.Implementation.ExpectedContent))) {
+			return false
+		}
+		wantDestination := authoredOutcomeFileState([]byte(expected.Implementation.Content))
+		if expected.Implementation.PreserveContent != nil && *expected.Implementation.PreserveContent {
+			wantDestination = actual.SourceBefore
+		}
+		return equalOutcomeFileState(actual.DestinationAfter, wantDestination)
+	default:
+		return true
 	}
 }
 
@@ -538,6 +571,11 @@ func applicationEvidence(model deterministicPlanModel, changedPaths []string) De
 
 func outcomeFileState(value FileState) DeterministicOutcomeFileState {
 	return DeterministicOutcomeFileState{Exists: value.Exists, SHA256: value.SHA256, Size: value.Size}
+}
+
+func authoredOutcomeFileState(content []byte) DeterministicOutcomeFileState {
+	digest := sha256.Sum256(content)
+	return DeterministicOutcomeFileState{Exists: true, SHA256: hex.EncodeToString(digest[:]), Size: int64(len(content))}
 }
 
 func marshalDeterministicOutcome(outcome DeterministicOutcome) ([]byte, error) {
