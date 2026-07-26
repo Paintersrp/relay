@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -210,6 +211,24 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 func packageEvidenceSHA(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// packageEvidenceMutatePreflightCoverage changes the deterministic outcome summary
+// coverage and re-derives the artifact digest so the mutated result still
+// passes artifact verification. It is used to exercise the coverage decision
+// through the outcome seam without constructing new database fixtures.
+func packageEvidenceMutatePreflightCoverage(t *testing.T, outcome executor.DeterministicOutcomeResult, coverage string) executor.DeterministicOutcomeResult {
+	t.Helper()
+	outcome.Outcome.Outcome.Coverage = coverage
+	bytes, err := json.Marshal(outcome.Outcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome.Bytes = bytes
+	outcome.Artifact.SizeBytes = int64(len(bytes))
+	sum := sha256.Sum256(bytes)
+	outcome.Artifact.SHA256 = hex.EncodeToString(sum[:])
+	return outcome
 }
 
 func packageEvidenceModes() []executor.EffectiveExecutorBriefMode {
@@ -501,8 +520,12 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil {
+		_, err = service.Load(context.Background(), fixture.run.RunID)
+		if err == nil {
 			t.Fatal("missing assignment was accepted")
+		}
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("missing assignment error = %v", err)
 		}
 	})
 	t.Run("missing outcome", func(t *testing.T) {
@@ -518,8 +541,12 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil {
+		_, err = service.Load(context.Background(), fixture.run.RunID)
+		if err == nil {
 			t.Fatal("missing outcome was accepted")
+		}
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("missing outcome error = %v", err)
 		}
 	})
 	t.Run("missing effective brief", func(t *testing.T) {
@@ -542,8 +569,12 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil {
+		_, err = service.Load(context.Background(), fixture.run.RunID)
+		if err == nil {
 			t.Fatal("missing effective brief was accepted")
+		}
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("missing effective brief error = %v", err)
 		}
 	})
 }
@@ -557,8 +588,128 @@ func TestWorkflowPackageExecutionEvidenceDuplicateFromLoaderIsConflict(t *testin
 	service.loadAssignment = func(context.Context, string) (executor.ExecutionAssignmentResult, error) {
 		return executor.ExecutionAssignmentResult{}, executor.ErrExecutionAssignmentConflict
 	}
-	if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, executor.ErrExecutionAssignmentConflict) {
+	_, err = service.Load(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, executor.ErrExecutionAssignmentConflict) {
 		t.Fatalf("duplicate assignment error = %v", err)
+	}
+	if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("duplicate assignment not classified as audit conflict: %v", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidenceDeterministicOutcomeConflictIsClassified(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.loadOutcome = func(context.Context, string) (executor.DeterministicOutcomeResult, error) {
+		return executor.DeterministicOutcomeResult{}, executor.ErrDeterministicOutcomeConflict
+	}
+	_, err = service.Load(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, executor.ErrDeterministicOutcomeConflict) {
+		t.Fatalf("deterministic outcome conflict error = %v", err)
+	}
+	if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("deterministic outcome conflict not classified as audit conflict: %v", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidenceEffectiveBriefConflictIsClassified(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.loadBrief = func(context.Context, string) (executor.EffectiveExecutorBriefResult, error) {
+		return executor.EffectiveExecutorBriefResult{}, executor.ErrEffectiveExecutorBriefConflict
+	}
+	_, err = service.Load(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, executor.ErrEffectiveExecutorBriefConflict) {
+		t.Fatalf("effective brief conflict error = %v", err)
+	}
+	if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("effective brief conflict not classified as audit conflict: %v", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidenceApprovedAuthorityInvalidIsClassified(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.loadAuthority = func(context.Context, string) (workflowpackages.ApprovedAuthority, error) {
+		return workflowpackages.ApprovedAuthority{}, workflowpackages.ErrApprovedAuthorityInvalid
+	}
+	_, err = service.Load(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, workflowpackages.ErrApprovedAuthorityInvalid) {
+		t.Fatalf("approved authority invalid error = %v", err)
+	}
+	if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("approved authority invalid not classified as audit conflict: %v", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidenceInfrastructureErrorIsNotClassified(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infrastructure := errors.New("simulated infrastructure failure")
+	service.loadAssignment = func(context.Context, string) (executor.ExecutionAssignmentResult, error) {
+		return executor.ExecutionAssignmentResult{}, infrastructure
+	}
+	_, err = service.Load(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, infrastructure) {
+		t.Fatalf("infrastructure error = %v", err)
+	}
+	if errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("infrastructure error misclassified as audit conflict: %v", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidencePreflightFailedCoverage(t *testing.T) {
+	tests := []struct {
+		name     string
+		coverage string
+		wantErr  bool
+	}{
+		{"partial", "partial", false},
+		{"complete", "complete", false},
+		{"empty", "", true},
+		{"unknown", "unknown", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptivePreflightFailed)
+			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			realOutcome := service.loadOutcome
+			service.loadOutcome = func(ctx context.Context, runID string) (executor.DeterministicOutcomeResult, error) {
+				outcome, err := realOutcome(ctx, runID)
+				if err != nil {
+					return outcome, err
+				}
+				return packageEvidenceMutatePreflightCoverage(t, outcome, test.coverage), nil
+			}
+			_, err = service.Load(context.Background(), fixture.run.RunID)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected conflict")
+				}
+				if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+					t.Fatalf("error = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

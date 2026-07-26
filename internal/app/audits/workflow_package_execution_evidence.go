@@ -126,19 +126,19 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 
 	authority, err := s.loadAuthority(ctx, runID)
 	if err != nil {
-		return WorkflowPackageExecutionEvidence{}, err
+		return WorkflowPackageExecutionEvidence{}, workflowPackageEvidenceReadError("authority", err)
 	}
 	assignment, err := s.loadAssignment(ctx, runID)
 	if err != nil {
-		return WorkflowPackageExecutionEvidence{}, err
+		return WorkflowPackageExecutionEvidence{}, workflowPackageEvidenceReadError("assignment", err)
 	}
 	outcome, err := s.loadOutcome(ctx, runID)
 	if err != nil {
-		return WorkflowPackageExecutionEvidence{}, err
+		return WorkflowPackageExecutionEvidence{}, workflowPackageEvidenceReadError("outcome", err)
 	}
 	brief, err := s.loadBrief(ctx, runID)
 	if err != nil {
-		return WorkflowPackageExecutionEvidence{}, err
+		return WorkflowPackageExecutionEvidence{}, workflowPackageEvidenceReadError("brief", err)
 	}
 
 	if err := verifyWorkflowPackageRunAndPackage(run, authority); err != nil {
@@ -314,7 +314,11 @@ func deriveWorkflowPackageEffectiveMode(summary executor.DeterministicOutcomeSum
 		}
 		return executor.EffectiveExecutorBriefAdaptiveNoOperations, true, nil
 	case string(executor.DeterministicPreflightFailed):
-		return executor.EffectiveExecutorBriefAdaptivePreflightFailed, true, nil
+		switch summary.Coverage {
+		case "partial", "complete":
+			return executor.EffectiveExecutorBriefAdaptivePreflightFailed, true, nil
+		}
+		return "", false, evidenceConflict("preflight_failed deterministic outcome coverage must be partial or complete")
 	case "applied":
 		switch summary.Coverage {
 		case "partial":
@@ -367,4 +371,46 @@ func validWorkflowPackageSHA256(value string) bool {
 
 func evidenceConflict(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{ErrWorkflowPackageExecutionEvidenceConflict}, args...)...)
+}
+
+const (
+	workflowPackageExecutionAssignmentMissing    = "Run execution_assignment artifact is missing"
+	workflowPackageExecutionDeterministicMissing = "Run deterministic_outcome artifact is missing"
+)
+
+// workflowPackageEvidenceReadError classifies loader-originated errors that
+// represent missing, duplicate, changed, malformed, or contradictory
+// immutable evidence as audit evidence conflicts. It preserves the original
+// error so callers can still detect the underlying sentinel.
+func workflowPackageEvidenceReadError(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	switch stage {
+	case "authority":
+		if errors.Is(err, workflowpackages.ErrRunNotPackage) ||
+			errors.Is(err, workflowpackages.ErrPackageApprovalMissing) ||
+			errors.Is(err, workflowpackages.ErrApprovedAuthorityInvalid) {
+			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
+		}
+	case "assignment":
+		if errors.Is(err, executor.ErrExecutionAssignmentConflict) {
+			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
+		}
+		if err.Error() == workflowPackageExecutionAssignmentMissing {
+			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
+		}
+	case "outcome":
+		if errors.Is(err, executor.ErrDeterministicOutcomeConflict) {
+			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
+		}
+		if err.Error() == workflowPackageExecutionDeterministicMissing {
+			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
+		}
+	case "brief":
+		if errors.Is(err, executor.ErrEffectiveExecutorBriefConflict) {
+			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
+		}
+	}
+	return err
 }
