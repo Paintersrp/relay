@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	workflowruns "relay/internal/app/runs/workflow"
@@ -286,6 +288,290 @@ func TestPackageDeterministicExecutionFailureSettlement(t *testing.T) {
 		}
 		assertNoActivePackageDeterministicLease(t, fixture)
 	})
+}
+
+type packageDeterministicExecutionContextKey string
+
+const packageDeterministicExecutionCallerKey packageDeterministicExecutionContextKey = "caller"
+
+func TestPackageDeterministicExecutionPostAcquisitionOutcomeWindow(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "complete")
+	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	previousHasOutcome, previousPreflight, previousApply, previousAcquire, previousRelease := packageDeterministicHasOutcome, packageDeterministicPreflight, packageDeterministicApply, packageDeterministicAcquire, packageDeterministicRelease
+	t.Cleanup(func() {
+		packageDeterministicHasOutcome = previousHasOutcome
+		packageDeterministicPreflight = previousPreflight
+		packageDeterministicApply = previousApply
+		packageDeterministicAcquire = previousAcquire
+		packageDeterministicRelease = previousRelease
+	})
+
+	firstInitial, secondInitial, firstReleased := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var checksMu sync.Mutex
+	checks := make(map[string]int)
+	packageDeterministicHasOutcome = func(ctx context.Context, service *PackageDeterministicExecutionService, runRowID int64) (bool, error) {
+		caller, _ := ctx.Value(packageDeterministicExecutionCallerKey).(string)
+		checksMu.Lock()
+		checks[caller]++
+		call := checks[caller]
+		checksMu.Unlock()
+		if call != 1 {
+			return service.runHasDeterministicOutcome(ctx, runRowID)
+		}
+		switch caller {
+		case "first":
+			close(firstInitial)
+			<-secondInitial
+		case "second":
+			close(secondInitial)
+		default:
+			return false, fmt.Errorf("unexpected caller %q", caller)
+		}
+		return false, nil
+	}
+	packageDeterministicPreflight = func(DeterministicPreflightInput) (DeterministicPreflightResult, error) {
+		return readyPackageDeterministicPreflight("complete"), nil
+	}
+	applicationCalls := 0
+	var applicationMu sync.Mutex
+	packageDeterministicApply = func(input DeterministicApplyInput) (DeterministicApplicationResult, error) {
+		applicationMu.Lock()
+		applicationCalls++
+		applicationMu.Unlock()
+		model, err := validateDeterministicPlan(input.Plan)
+		if err != nil {
+			return DeterministicApplicationResult{}, err
+		}
+		return applicationResult(model), nil
+	}
+	packageDeterministicAcquire = func(ctx context.Context, runs *workflowruns.Service, runID string) (workflowstore.RepositoryBranchMutationLease, error) {
+		if caller, _ := ctx.Value(packageDeterministicExecutionCallerKey).(string); caller == "second" {
+			<-firstReleased
+		}
+		return previousAcquire(ctx, runs, runID)
+	}
+	packageDeterministicRelease = func(ctx context.Context, runs *workflowruns.Service, runID, leaseID string) (workflowstore.RepositoryBranchMutationLease, error) {
+		released, releaseErr := previousRelease(ctx, runs, runID, leaseID)
+		if releaseErr == nil {
+			if caller, _ := ctx.Value(packageDeterministicExecutionCallerKey).(string); caller == "first" {
+				close(firstReleased)
+			}
+		}
+		return released, releaseErr
+	}
+
+	type executionCallResult struct {
+		caller string
+		result PackageDeterministicExecutionResult
+		err    error
+	}
+	results := make(chan executionCallResult, 2)
+	go func() {
+		ctx := context.WithValue(context.Background(), packageDeterministicExecutionCallerKey, "first")
+		result, executeErr := service.Execute(ctx, fixture.run.RunID)
+		results <- executionCallResult{caller: "first", result: result, err: executeErr}
+	}()
+	<-firstInitial
+	go func() {
+		ctx := context.WithValue(context.Background(), packageDeterministicExecutionCallerKey, "second")
+		result, executeErr := service.Execute(ctx, fixture.run.RunID)
+		results <- executionCallResult{caller: "second", result: result, err: executeErr}
+	}()
+
+	first, second := executionCallResult{}, executionCallResult{}
+	for range 2 {
+		result := <-results
+		if result.caller == "first" {
+			first = result
+		} else {
+			second = result
+		}
+	}
+	if first.err != nil || second.err != nil {
+		t.Fatalf("execution errors = first: %v, second: %v", first.err, second.err)
+	}
+	applicationMu.Lock()
+	calls := applicationCalls
+	applicationMu.Unlock()
+	if calls != 1 || first.result.Application == nil || second.result.Application != nil {
+		t.Fatalf("application calls/results = %d/%#v/%#v", calls, first.result.Application, second.result.Application)
+	}
+	if second.result.Outcome.Artifact.ArtifactID != first.result.Outcome.Artifact.ArtifactID {
+		t.Fatalf("second outcome = %#v, want first outcome %#v", second.result.Outcome.Artifact, first.result.Outcome.Artifact)
+	}
+	if first.result.ActiveLease != nil || second.result.ActiveLease != nil {
+		t.Fatalf("active result leases = %#v/%#v", first.result.ActiveLease, second.result.ActiveLease)
+	}
+	if artifacts := listRunArtifacts(t, fixture); len(artifacts) != 2 {
+		t.Fatalf("Run artifacts = %d, want assignment and one outcome", len(artifacts))
+	}
+	leases, err := fixture.store.ListRepositoryBranchMutationLeases(context.Background(), fixture.run.RepoTarget, fixture.run.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leases) != 2 {
+		t.Fatalf("leases = %#v, want two released lease history rows", leases)
+	}
+	for _, lease := range leases {
+		if lease.State != workflowstore.RepositoryBranchMutationLeaseStateReleased {
+			t.Fatalf("lease = %#v, want released", lease)
+		}
+	}
+}
+
+func TestPackageDeterministicExecutionPostAcquisitionPartialOutcomeConflicts(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "partial")
+	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousHasOutcome, previousPreflight, previousApply := packageDeterministicHasOutcome, packageDeterministicPreflight, packageDeterministicApply
+	t.Cleanup(func() {
+		packageDeterministicHasOutcome = previousHasOutcome
+		packageDeterministicPreflight = previousPreflight
+		packageDeterministicApply = previousApply
+	})
+	preflight := readyPackageDeterministicPreflight("partial")
+	packageDeterministicPreflight = func(DeterministicPreflightInput) (DeterministicPreflightResult, error) {
+		return preflight, nil
+	}
+	hasChecks := 0
+	packageDeterministicHasOutcome = func(ctx context.Context, service *PackageDeterministicExecutionService, _ int64) (bool, error) {
+		hasChecks++
+		if hasChecks == 1 {
+			return false, nil
+		}
+		if _, err := persistPackageDeterministicTestOutcome(ctx, service.outcomes, fixture.run.RunID, preflight); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	applicationCalls := 0
+	packageDeterministicApply = func(DeterministicApplyInput) (DeterministicApplicationResult, error) {
+		applicationCalls++
+		return DeterministicApplicationResult{}, errors.New("application must not be called")
+	}
+
+	result, err := service.Execute(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, ErrPackageDeterministicExecutionConflict) || result.ActiveLease != nil || applicationCalls != 0 {
+		t.Fatalf("result/error/application calls = %#v/%v/%d", result, err, applicationCalls)
+	}
+	assertNoActivePackageDeterministicLease(t, fixture)
+}
+
+func TestPackageDeterministicExecutionPostAcquisitionLoadFailureReleasesLease(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "complete")
+	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousHasOutcome, previousPreflight, previousApply, previousLoad := packageDeterministicHasOutcome, packageDeterministicPreflight, packageDeterministicApply, packageDeterministicLoad
+	t.Cleanup(func() {
+		packageDeterministicHasOutcome = previousHasOutcome
+		packageDeterministicPreflight = previousPreflight
+		packageDeterministicApply = previousApply
+		packageDeterministicLoad = previousLoad
+	})
+	packageDeterministicPreflight = func(DeterministicPreflightInput) (DeterministicPreflightResult, error) {
+		return readyPackageDeterministicPreflight("complete"), nil
+	}
+	hasChecks := 0
+	packageDeterministicHasOutcome = func(context.Context, *PackageDeterministicExecutionService, int64) (bool, error) {
+		hasChecks++
+		return hasChecks > 1, nil
+	}
+	loadErr := errors.New("injected post-acquisition outcome load failure")
+	packageDeterministicLoad = func(context.Context, *DeterministicOutcomeService, string) (DeterministicOutcomeResult, error) {
+		return DeterministicOutcomeResult{}, loadErr
+	}
+	applicationCalls := 0
+	packageDeterministicApply = func(DeterministicApplyInput) (DeterministicApplicationResult, error) {
+		applicationCalls++
+		return DeterministicApplicationResult{}, errors.New("application must not be called")
+	}
+
+	result, err := service.Execute(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, loadErr) || result.ActiveLease != nil || applicationCalls != 0 {
+		t.Fatalf("result/error/application calls = %#v/%v/%d", result, err, applicationCalls)
+	}
+	assertNoActivePackageDeterministicLease(t, fixture)
+}
+
+func TestPackageDeterministicExecutionPostAcquisitionReleaseFailureRetainsLease(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, true, "complete")
+	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousHasOutcome, previousPreflight, previousApply, previousAcquire, previousRelease := packageDeterministicHasOutcome, packageDeterministicPreflight, packageDeterministicApply, packageDeterministicAcquire, packageDeterministicRelease
+	t.Cleanup(func() {
+		packageDeterministicHasOutcome = previousHasOutcome
+		packageDeterministicPreflight = previousPreflight
+		packageDeterministicApply = previousApply
+		packageDeterministicAcquire = previousAcquire
+		packageDeterministicRelease = previousRelease
+	})
+	preflight := readyPackageDeterministicPreflight("complete")
+	packageDeterministicPreflight = func(DeterministicPreflightInput) (DeterministicPreflightResult, error) {
+		return preflight, nil
+	}
+	hasChecks := 0
+	var durable DeterministicOutcomeResult
+	packageDeterministicHasOutcome = func(ctx context.Context, service *PackageDeterministicExecutionService, _ int64) (bool, error) {
+		hasChecks++
+		if hasChecks == 1 {
+			return false, nil
+		}
+		outcome, persistErr := persistPackageDeterministicTestOutcome(ctx, service.outcomes, fixture.run.RunID, preflight)
+		durable = outcome
+		return persistErr == nil, persistErr
+	}
+	applicationCalls := 0
+	packageDeterministicApply = func(DeterministicApplyInput) (DeterministicApplicationResult, error) {
+		applicationCalls++
+		return DeterministicApplicationResult{}, errors.New("application must not be called")
+	}
+	var acquired workflowstore.RepositoryBranchMutationLease
+	packageDeterministicAcquire = func(ctx context.Context, runs *workflowruns.Service, runID string) (workflowstore.RepositoryBranchMutationLease, error) {
+		lease, acquireErr := previousAcquire(ctx, runs, runID)
+		acquired = lease
+		return lease, acquireErr
+	}
+	releaseErr := errors.New("injected post-acquisition lease release failure")
+	packageDeterministicRelease = func(_ context.Context, _ *workflowruns.Service, _ string, leaseID string) (workflowstore.RepositoryBranchMutationLease, error) {
+		if leaseID != acquired.LeaseID {
+			return workflowstore.RepositoryBranchMutationLease{}, fmt.Errorf("released lease ID = %q, want acquired lease %q", leaseID, acquired.LeaseID)
+		}
+		return workflowstore.RepositoryBranchMutationLease{}, releaseErr
+	}
+
+	result, err := service.Execute(context.Background(), fixture.run.RunID)
+	if !errors.Is(err, releaseErr) || applicationCalls != 0 || result.ActiveLease == nil || result.ActiveLease.LeaseID != acquired.LeaseID {
+		t.Fatalf("result/error/application calls = %#v/%v/%d", result, err, applicationCalls)
+	}
+	if result.Outcome.Artifact.ArtifactID != durable.Artifact.ArtifactID || !reflect.DeepEqual(result.Outcome.Bytes, durable.Bytes) {
+		t.Fatalf("durable outcome changed: result = %#v, durable = %#v", result.Outcome, durable)
+	}
+	lease, err := fixture.store.GetRepositoryBranchMutationLeaseByLeaseID(context.Background(), acquired.LeaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.State != workflowstore.RepositoryBranchMutationLeaseStateActive || lease.UncertaintyState != workflowstore.RepositoryBranchMutationLeaseCertaintyCertain || lease.ReconciliationState != workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired {
+		t.Fatalf("retained lease = %#v", lease)
+	}
+}
+
+func persistPackageDeterministicTestOutcome(ctx context.Context, outcomes *DeterministicOutcomeService, runID string, preflight DeterministicPreflightResult) (DeterministicOutcomeResult, error) {
+	model, err := validateDeterministicPlan(preflight.Plan)
+	if err != nil {
+		return DeterministicOutcomeResult{}, err
+	}
+	application := applicationResult(model)
+	return outcomes.Persist(ctx, DeterministicOutcomeInput{RunID: runID, Preflight: preflight, Application: &application})
 }
 
 func readyPackageDeterministicPreflight(coverage string) DeterministicPreflightResult {

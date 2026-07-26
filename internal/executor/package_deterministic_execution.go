@@ -46,6 +46,9 @@ var (
 	packageDeterministicMarkUncertain = func(ctx context.Context, service *workflowruns.Service, runID, leaseID, reason string) (workflowstore.RepositoryBranchMutationLease, error) {
 		return service.MarkRunMutationLeaseUncertain(ctx, runID, leaseID, reason)
 	}
+	packageDeterministicHasOutcome = func(ctx context.Context, service *PackageDeterministicExecutionService, runRowID int64) (bool, error) {
+		return service.runHasDeterministicOutcome(ctx, runRowID)
+	}
 )
 
 type PackageDeterministicExecutionService struct {
@@ -103,7 +106,7 @@ func (s *PackageDeterministicExecutionService) Execute(ctx context.Context, runI
 		return PackageDeterministicExecutionResult{}, err
 	}
 
-	if hasOutcome, err := s.runHasDeterministicOutcome(ctx, authority.Run.ID); err != nil {
+	if hasOutcome, err := packageDeterministicHasOutcome(ctx, s, authority.Run.ID); err != nil {
 		return PackageDeterministicExecutionResult{}, err
 	} else if hasOutcome {
 		outcome, loadErr := packageDeterministicLoad(ctx, s.outcomes, runID)
@@ -163,6 +166,15 @@ func (s *PackageDeterministicExecutionService) Execute(ctx context.Context, runI
 		return PackageDeterministicExecutionResult{Assignment: assignment, Preflight: preflight}, err
 	}
 	base := PackageDeterministicExecutionResult{Assignment: assignment, Preflight: preflight}
+	if hasOutcome, outcomeErr := packageDeterministicHasOutcome(ctx, s, authority.Run.ID); outcomeErr != nil {
+		return s.releasePostAcquisitionLease(ctx, base, runID, lease, outcomeErr)
+	} else if hasOutcome {
+		outcome, loadErr := packageDeterministicLoad(ctx, s.outcomes, runID)
+		if loadErr != nil {
+			return s.releasePostAcquisitionLease(ctx, PackageDeterministicExecutionResult{Assignment: assignment}, runID, lease, loadErr)
+		}
+		return s.settleOutcomeAfterAcquisition(ctx, assignment, outcome, runID, lease)
+	}
 	application, applicationErr := packageDeterministicApply(DeterministicApplyInput{
 		RepositoryRoot: repository.LocalPath,
 		ExpectedBranch: assignment.Assignment.Repository.Branch,
@@ -195,6 +207,36 @@ func (s *PackageDeterministicExecutionService) Execute(ctx context.Context, runI
 		return base, releaseErr
 	}
 	return base, nil
+}
+
+// settleOutcomeAfterAcquisition settles only the lease obtained by this
+// invocation. A durable partial outcome cannot be handed off through a new
+// lease because its required ownership continuity has already been broken.
+func (s *PackageDeterministicExecutionService) settleOutcomeAfterAcquisition(ctx context.Context, assignment ExecutionAssignmentResult, outcome DeterministicOutcomeResult, runID string, lease workflowstore.RepositoryBranchMutationLease) (PackageDeterministicExecutionResult, error) {
+	result := PackageDeterministicExecutionResult{Assignment: assignment, Outcome: outcome}
+	switch outcome.Outcome.Outcome.Status {
+	case string(DeterministicPreflightNotPresent), string(DeterministicPreflightFailed):
+		return s.releasePostAcquisitionLease(ctx, result, runID, lease, nil)
+	case "applied":
+		switch outcome.Outcome.Outcome.Coverage {
+		case "complete":
+			return s.releasePostAcquisitionLease(ctx, result, runID, lease, nil)
+		case "partial":
+			return s.releasePostAcquisitionLease(ctx, result, runID, lease, ErrPackageDeterministicExecutionConflict)
+		default:
+			return s.releasePostAcquisitionLease(ctx, result, runID, lease, fmt.Errorf("unsupported durable deterministic outcome coverage %q", outcome.Outcome.Outcome.Coverage))
+		}
+	default:
+		return s.releasePostAcquisitionLease(ctx, result, runID, lease, fmt.Errorf("unsupported durable deterministic outcome status %q", outcome.Outcome.Outcome.Status))
+	}
+}
+
+func (s *PackageDeterministicExecutionService) releasePostAcquisitionLease(ctx context.Context, result PackageDeterministicExecutionResult, runID string, lease workflowstore.RepositoryBranchMutationLease, operationErr error) (PackageDeterministicExecutionResult, error) {
+	if _, releaseErr := packageDeterministicRelease(ctx, s.runs, runID, lease.LeaseID); releaseErr != nil {
+		result.ActiveLease = &lease
+		return result, errors.Join(operationErr, releaseErr)
+	}
+	return result, operationErr
 }
 
 func (s *PackageDeterministicExecutionService) persistWithoutLease(ctx context.Context, assignment ExecutionAssignmentResult, preflight DeterministicPreflightResult) (PackageDeterministicExecutionResult, error) {
