@@ -90,6 +90,13 @@ func (s *AdaptiveDispatchAdmissionService) Begin(ctx context.Context, input Adap
 		if err != nil {
 			return AdaptiveDispatchAdmissionResult{}, err
 		}
+		attempts, err := s.store.ListExecutionAttemptsByRun(ctx, run.ID)
+		if err != nil {
+			return AdaptiveDispatchAdmissionResult{}, err
+		}
+		if len(attempts) != 0 {
+			return AdaptiveDispatchAdmissionResult{}, ErrAdaptiveDispatchAdmissionConflict
+		}
 		_, leaseErr := s.runs.GetActiveRunMutationLease(ctx, run.RunID)
 		if leaseErr == nil {
 			return AdaptiveDispatchAdmissionResult{}, ErrAdaptiveDispatchAdmissionConflict
