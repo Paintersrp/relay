@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -49,6 +50,13 @@ type AuditFileChange struct {
 
 type AuditGitRunner interface {
 	Run(ctx context.Context, directory string, maxBytes int, args ...string) ([]byte, error)
+}
+
+type auditNumstatEntry struct {
+	Path         string
+	PreviousPath string
+	Additions    int64
+	Deletions    int64
 }
 
 type boundedGitRunner struct{}
@@ -197,11 +205,27 @@ func parseChangedFiles(nameStatus string) []string {
 }
 
 func parseAuditFileChanges(statusBytes, numstatBytes []byte) ([]AuditFileChange, error) {
+	if len(statusBytes) == 0 {
+		return nil, errors.New("structured status evidence is empty")
+	}
+	if len(numstatBytes) == 0 {
+		return nil, errors.New("structured numstat evidence is empty")
+	}
 	changes, err := parseAuditFileChangeStatuses(statusBytes)
 	if err != nil {
 		return nil, err
 	}
-	changes, err = parseAuditFileChangeCounts(changes, numstatBytes)
+	if len(changes) == 0 {
+		return nil, errors.New("structured status evidence contains no changes")
+	}
+	entries, err := parseAuditNumstat(numstatBytes)
+	if err != nil {
+		return nil, fmt.Errorf("count stream: %w", err)
+	}
+	if len(entries) == 0 {
+		return nil, errors.New("structured numstat evidence contains no changes")
+	}
+	changes, err = joinAuditFileChangeCounts(changes, entries)
 	if err != nil {
 		return nil, err
 	}
@@ -291,81 +315,128 @@ func parseAuditFileChangeStatuses(raw []byte) ([]AuditFileChange, error) {
 	return changes, nil
 }
 
-func parseAuditFileChangeCounts(changes []AuditFileChange, raw []byte) ([]AuditFileChange, error) {
-	tokens, err := splitNulTerminated(raw)
-	if err != nil {
-		return nil, fmt.Errorf("count stream: %w", err)
+func parseAuditNumstat(raw []byte) ([]auditNumstatEntry, error) {
+	if len(raw) == 0 {
+		return nil, nil
 	}
-	if len(changes) == 0 && len(tokens) > 0 {
-		return nil, errors.New("extra numstat entries")
-	}
-	result := make([]AuditFileChange, len(changes))
-	copy(result, changes)
-	seenIdentity := map[string]struct{}{}
-	i := 0
-	for idx, change := range changes {
-		if i+1 >= len(tokens) {
-			return nil, fmt.Errorf("missing numstat entry for %q", change.Path)
+	rest := raw
+	var entries []auditNumstatEntry
+	for len(rest) > 0 {
+		nulIdx := bytes.IndexByte(rest, '\x00')
+		if nulIdx < 0 {
+			return nil, errors.New("numstat stream is missing terminating NUL")
 		}
-		additionsToken := tokens[i]
-		deletionsToken := tokens[i+1]
-		i += 2
-		var additions, deletions int64
-		if additionsToken == "-" && deletionsToken == "-" {
-			additions = 0
-			deletions = 0
-		} else {
-			additions, err = parseAuditNumstatValue(additionsToken)
-			if err != nil {
-				return nil, fmt.Errorf("malformed addition count %q for %q: %w", additionsToken, change.Path, err)
-			}
-			deletions, err = parseAuditNumstatValue(deletionsToken)
-			if err != nil {
-				return nil, fmt.Errorf("malformed deletion count %q for %q: %w", deletionsToken, change.Path, err)
-			}
+		header := rest[:nulIdx]
+		rest = rest[nulIdx+1:]
+		tab1 := bytes.IndexByte(header, '\t')
+		if tab1 < 0 {
+			return nil, errors.New("numstat entry missing first tab")
+		}
+		addToken := string(header[:tab1])
+		afterTab1 := header[tab1+1:]
+		tab2 := bytes.IndexByte(afterTab1, '\t')
+		if tab2 < 0 {
+			return nil, errors.New("numstat entry missing second tab")
+		}
+		delToken := string(afterTab1[:tab2])
+		pathField := string(afterTab1[tab2+1:])
+		additions, deletions, err := parseAuditNumstatCounts(addToken, delToken)
+		if err != nil {
+			return nil, err
 		}
 		var previousPath, path string
-		if change.PreviousPath == "" {
-			if i >= len(tokens) {
-				return nil, fmt.Errorf("numstat entry missing resulting path for %q", change.Path)
+		if pathField == "" {
+			if len(rest) == 0 {
+				return nil, errors.New("numstat rename/copy missing previous path")
 			}
-			path = tokens[i]
-			i++
-			previousPath = ""
-			if path != change.Path {
-				return nil, fmt.Errorf("numstat path disagreement for %q: got %q", change.Path, path)
+			nulIdx := bytes.IndexByte(rest, '\x00')
+			if nulIdx < 0 {
+				return nil, errors.New("numstat rename/copy missing previous path terminator")
 			}
+			previousPath = string(rest[:nulIdx])
+			rest = rest[nulIdx+1:]
+			if len(rest) == 0 {
+				return nil, errors.New("numstat rename/copy missing resulting path")
+			}
+			nulIdx = bytes.IndexByte(rest, '\x00')
+			if nulIdx < 0 {
+				return nil, errors.New("numstat rename/copy missing resulting path terminator")
+			}
+			path = string(rest[:nulIdx])
+			rest = rest[nulIdx+1:]
 		} else {
-			if i+1 >= len(tokens) {
-				return nil, fmt.Errorf("numstat entry missing rename/copy paths for %q", change.Path)
-			}
-			previousPath = tokens[i]
-			path = tokens[i+1]
-			i += 2
-			if previousPath != change.PreviousPath || path != change.Path {
-				return nil, fmt.Errorf("numstat rename/copy path disagreement for %q -> %q: got %q -> %q", change.PreviousPath, change.Path, previousPath, path)
-			}
+			path = pathField
 		}
-		if err := validateAuditPath(path); err != nil {
+		entries = append(entries, auditNumstatEntry{
+			Path:         path,
+			PreviousPath: previousPath,
+			Additions:    additions,
+			Deletions:    deletions,
+		})
+	}
+	return entries, nil
+}
+
+func parseAuditNumstatCounts(addToken, delToken string) (int64, int64, error) {
+	if addToken == "-" && delToken == "-" {
+		return 0, 0, nil
+	}
+	if addToken == "-" || delToken == "-" {
+		return 0, 0, errors.New("mixed binary/numeric count forms")
+	}
+	additions, err := parseAuditNumstatValue(addToken)
+	if err != nil {
+		return 0, 0, fmt.Errorf("malformed addition count %q: %w", addToken, err)
+	}
+	deletions, err := parseAuditNumstatValue(delToken)
+	if err != nil {
+		return 0, 0, fmt.Errorf("malformed deletion count %q: %w", delToken, err)
+	}
+	return additions, deletions, nil
+}
+
+func joinAuditFileChangeCounts(changes []AuditFileChange, entries []auditNumstatEntry) ([]AuditFileChange, error) {
+	numstatByIdentity := make(map[string]*auditNumstatEntry, len(entries))
+	seenResulting := map[string]struct{}{}
+	for i := range entries {
+		e := &entries[i]
+		if err := validateAuditPath(e.Path); err != nil {
 			return nil, fmt.Errorf("numstat resulting path: %w", err)
 		}
-		if previousPath != "" {
-			if err := validateAuditPath(previousPath); err != nil {
+		if e.PreviousPath != "" {
+			if err := validateAuditPath(e.PreviousPath); err != nil {
 				return nil, fmt.Errorf("numstat previous path: %w", err)
 			}
 		}
-		identity := path
-		if previousPath != "" {
-			identity = previousPath + "\x00" + path
+		if _, ok := seenResulting[e.Path]; ok {
+			return nil, fmt.Errorf("duplicate numstat resulting path %q", e.Path)
 		}
-		if _, ok := seenIdentity[identity]; ok {
+		seenResulting[e.Path] = struct{}{}
+		identity := e.Path
+		if e.PreviousPath != "" {
+			identity = e.PreviousPath + "\x00" + e.Path
+		}
+		if _, ok := numstatByIdentity[identity]; ok {
 			return nil, fmt.Errorf("duplicate numstat identity %q", identity)
 		}
-		seenIdentity[identity] = struct{}{}
-		result[idx].Additions = additions
-		result[idx].Deletions = deletions
+		numstatByIdentity[identity] = e
 	}
-	if i != len(tokens) {
+	result := make([]AuditFileChange, len(changes))
+	copy(result, changes)
+	for i := range result {
+		identity := result[i].Path
+		if result[i].PreviousPath != "" {
+			identity = result[i].PreviousPath + "\x00" + result[i].Path
+		}
+		entry, ok := numstatByIdentity[identity]
+		if !ok {
+			return nil, fmt.Errorf("missing numstat entry for identity %q", identity)
+		}
+		delete(numstatByIdentity, identity)
+		result[i].Additions = entry.Additions
+		result[i].Deletions = entry.Deletions
+	}
+	if len(numstatByIdentity) > 0 {
 		return nil, errors.New("extra numstat entries")
 	}
 	return result, nil
@@ -434,6 +505,9 @@ func validateAuditPath(p string) error {
 	if p == "" {
 		return errors.New("path is empty")
 	}
+	if !utf8.ValidString(p) {
+		return fmt.Errorf("path %q contains invalid UTF-8", p)
+	}
 	if p[0] == '/' || p[0] == '\\' {
 		return fmt.Errorf("path %q has leading separator", p)
 	}
@@ -448,7 +522,7 @@ func validateAuditPath(p string) error {
 		return fmt.Errorf("path %q has leading or trailing whitespace", p)
 	}
 	for _, r := range runes {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) && r != '\t' {
 			return fmt.Errorf("path %q contains control character", p)
 		}
 	}
