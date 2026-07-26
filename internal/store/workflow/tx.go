@@ -423,6 +423,28 @@ WHERE run_row_id = ?`, runRowID).Scan(&number)
 	return number, err
 }
 
+func (tx *Tx) ListExecutionAttemptsByRun(ctx context.Context, runRowID int64) ([]ExecutionAttempt, error) {
+	rows, err := tx.tx.QueryContext(ctx, `
+SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json,
+       created_at, started_at, finished_at, cancellation_requested_at
+FROM execution_attempts
+WHERE run_row_id = ?
+ORDER BY attempt_number`, runRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]ExecutionAttempt, 0)
+	for rows.Next() {
+		var value ExecutionAttempt
+		if err := rows.Scan(&value.ID, &value.AttemptID, &value.RunRowID, &value.AttemptNumber, &value.Adapter, &value.Model, &value.Status, &value.ResultJSON, &value.CreatedAt, &value.StartedAt, &value.FinishedAt, &value.CancellationRequestedAt); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 func (tx *Tx) CreateExecutionAttempt(ctx context.Context, params CreateExecutionAttemptParams) (ExecutionAttempt, error) {
 	var value ExecutionAttempt
 	err := tx.tx.QueryRowContext(ctx, `
