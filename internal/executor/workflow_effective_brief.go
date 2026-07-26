@@ -18,10 +18,18 @@ import (
 )
 
 type effectiveBriefInput struct {
-	Mode     speccompiler.EffectiveBriefMode
-	Content  []byte
-	Artifact workflowstore.Artifact
-	Path     string
+	Mode         speccompiler.EffectiveBriefMode
+	RecordedMode string
+	Content      []byte
+	Artifact     workflowstore.Artifact
+	Path         string
+}
+
+func (input effectiveBriefInput) evidenceMode() string {
+	if strings.TrimSpace(input.RecordedMode) != "" {
+		return input.RecordedMode
+	}
+	return string(input.Mode)
 }
 
 func fullEffectiveBriefInput(content []byte, artifact workflowstore.Artifact, path string) effectiveBriefInput {

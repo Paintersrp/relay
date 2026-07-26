@@ -132,6 +132,7 @@ func (r *workflowRuntime) closeOutputs() (workflowOutputSnapshot, workflowOutput
 type WorkflowExecutionService struct {
 	store               *workflowstore.Store
 	runs                *workflowruns.Service
+	adaptiveAdmission   *AdaptiveDispatchAdmissionService
 	log                 *slog.Logger
 	ownerInstanceID     string
 	controller          pipeline.ProcessController
@@ -148,9 +149,11 @@ type WorkflowExecutionService struct {
 
 func NewWorkflowExecutionService(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string) *WorkflowExecutionService {
 	runService, _ := workflowruns.NewService(store)
+	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store)
 	return &WorkflowExecutionService{
 		store:               store,
 		runs:                runService,
+		adaptiveAdmission:   adaptiveAdmission,
 		log:                 log,
 		ownerInstanceID:     ownerInstanceID,
 		controller:          pipeline.DefaultProcessController(),
@@ -719,7 +722,7 @@ func (s *WorkflowExecutionService) recordEffectiveBriefIdentity(ctx context.Cont
 	}
 	state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
 	state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-	state.EffectiveBriefMode = string(selected.Mode)
+	state.EffectiveBriefMode = selected.evidenceMode()
 	data, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("encode effective brief identity: %w", err)
@@ -753,7 +756,7 @@ func (s *WorkflowExecutionService) execute(
 	state.CommandPreview = redactSensitive(invocation.Preview)
 	state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
 	state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-	state.EffectiveBriefMode = string(selected.Mode)
+	state.EffectiveBriefMode = selected.evidenceMode()
 	state.MutationLeaseID = lease.LeaseID
 	state.SourceMutationStarted = state.SourceMutationStarted || sourceMutationStarted
 	updateState := func() {
@@ -824,7 +827,7 @@ func (s *WorkflowExecutionService) execute(
 				state.ProcessIdentity = identity.Encode()
 				state.SourceMutationStarted = true
 				data, _ := json.Marshal(state)
-				if _, err := s.runs.MarkExecutionAttemptRunning(context.Background(), attempt.AttemptID, string(data)); err != nil {
+				if _, err := s.recordProcessStart(context.Background(), attempt.AttemptID, string(data)); err != nil {
 					return err
 				}
 				return nil
@@ -960,7 +963,7 @@ func (s *WorkflowExecutionService) finishPrelaunchFailure(attempt workflowstore.
 	if selected != nil {
 		state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
 		state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-		state.EffectiveBriefMode = string(selected.Mode)
+		state.EffectiveBriefMode = selected.evidenceMode()
 	}
 	state.TerminationVerified = true
 	state.Error = redactSensitive(message)
