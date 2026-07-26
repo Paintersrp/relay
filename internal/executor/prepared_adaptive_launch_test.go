@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -272,6 +273,136 @@ func TestLaunchPreparedAdaptiveRejectsChangedInvocationIdentity(t *testing.T) {
 			attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), prepared.Attempt.AttemptID)
 			if err != nil || attempt.Status != workflowstore.AttemptStatusFailed {
 				t.Fatalf("attempt=%#v err=%v", attempt, err)
+			}
+		})
+	}
+}
+
+func TestLaunchPreparedAdaptiveResultPaths(t *testing.T) {
+	type resultPathCase struct {
+		name       string
+		valid      bool
+		resultPath func(*testing.T, ExecutorAdapterRequest) string
+	}
+
+	cases := []resultPathCase{
+		{name: "empty result file", valid: true, resultPath: func(_ *testing.T, _ ExecutorAdapterRequest) string { return "" }},
+		{name: "exact supplied result path", valid: true, resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string { return request.ResultPath }},
+		{name: "alternate filename", resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string {
+			return filepath.Join(filepath.Dir(request.ResultPath), "alternate-result.tmp")
+		}},
+		{name: "sibling directory", resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string {
+			return filepath.Join(filepath.Dir(filepath.Dir(request.ResultPath)), "sibling", "executor-result.tmp")
+		}},
+		{name: "different attempt directory", resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string {
+			return filepath.Join(filepath.Dir(filepath.Dir(request.ResultPath)), "other-attempt", "executor-result.tmp")
+		}},
+		{name: "external absolute path", resultPath: func(t *testing.T, _ ExecutorAdapterRequest) string {
+			path := filepath.Join(t.TempDir(), "sentinel.txt")
+			if err := os.WriteFile(path, []byte("sentinel bytes\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return path
+		}},
+		{name: "traversal path", resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string {
+			return filepath.Dir(request.ResultPath) + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "traversal-result.tmp"
+		}},
+		{name: "relative path", resultPath: func(_ *testing.T, _ ExecutorAdapterRequest) string { return "relative-result.tmp" }},
+		{name: "effective Brief path", resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string { return request.BriefPath }},
+		{name: "repository path", resultPath: func(_ *testing.T, request ExecutorAdapterRequest) string { return request.RepoPath }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture, prepared := prepareLaunchFixture(t, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
+			var sentinelPath string
+			resultPath := tc.resultPath
+			if tc.name == "external absolute path" {
+				sentinelPath = filepath.Join(t.TempDir(), "sentinel.txt")
+				if err := os.WriteFile(sentinelPath, []byte("sentinel bytes\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				resultPath = func(_ *testing.T, _ ExecutorAdapterRequest) string { return sentinelPath }
+			}
+			adapter := &preparedLaunchAdapter{id: AdapterCodex, mutate: func(invocation *ExecutorInvocation, request ExecutorAdapterRequest) {
+				invocation.ResultFile = resultPath(t, request)
+			}}
+			service := newPreparedLaunchService(t, fixture, adapter)
+			preflightCalls, launchCalls := 0, 0
+			service.invocationPreflight = func(ExecutorInvocation) ExecutorPreflightResult {
+				preflightCalls++
+				return ExecutorPreflightResult{OK: true}
+			}
+			service.launch = func(fn func()) {
+				launchCalls++
+				fn()
+			}
+
+			adapter.mu.Lock()
+			requestCount := len(adapter.requests)
+			adapter.mu.Unlock()
+			if requestCount != 0 {
+				t.Fatalf("adapter request count before launch=%d", requestCount)
+			}
+
+			result, err := service.LaunchPreparedAdaptive(context.Background(), PreparedAdaptiveLaunchInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
+
+			adapter.mu.Lock()
+			requests := append([]ExecutorAdapterRequest(nil), adapter.requests...)
+			adapter.mu.Unlock()
+			if len(requests) != 1 {
+				t.Fatalf("adapter requests=%d, want 1", len(requests))
+			}
+			expectedResultPath := filepath.Join(fixture.store.ArtifactStore().Root(), ".runtime", fixture.run.RunID, prepared.Attempt.AttemptID, "executor-result.tmp")
+			if requests[0].ResultPath != expectedResultPath {
+				t.Fatalf("adapter ResultPath=%q, want exact attempt-specific path %q", requests[0].ResultPath, expectedResultPath)
+			}
+
+			if tc.valid {
+				if err != nil || !result.NewlyAdmitted || !result.NewlyLaunched || preflightCalls != 1 || launchCalls != 1 {
+					t.Fatalf("result=%#v err=%v preflight=%d launch=%d", result, err, preflightCalls, launchCalls)
+				}
+				return
+			}
+
+			if err == nil || result.NewlyLaunched || preflightCalls != 0 || launchCalls != 0 {
+				t.Fatalf("result=%#v err=%v preflight=%d launch=%d", result, err, preflightCalls, launchCalls)
+			}
+			attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), prepared.Attempt.AttemptID)
+			if err != nil || attempt.Status != workflowstore.AttemptStatusFailed {
+				t.Fatalf("attempt=%#v err=%v", attempt, err)
+			}
+			var state workflowAttemptRuntime
+			if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
+				t.Fatal(err)
+			}
+			if state.SourceMutationStarted || !state.TerminationVerified || state.MutationLeaseID == "" || state.EffectiveBriefArtifactID == "" || state.EffectiveBriefSHA256 == "" || state.EffectiveBriefMode != string(EffectiveExecutorBriefAdaptiveNoOperations) {
+				t.Fatalf("settled state=%#v", state)
+			}
+			run, err := fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
+			if err != nil || run.Status != workflowstore.RunStatusExecutionFailed {
+				t.Fatalf("run=%#v err=%v", run, err)
+			}
+			if _, err := service.runs.GetActiveRunMutationLease(context.Background(), fixture.run.RunID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("active lease err=%v", err)
+			}
+			artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), attempt.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, artifact := range artifacts {
+				if artifact.Kind != adaptiveExecutionInputKind {
+					t.Fatalf("unexpected prelaunch output artifact=%#v", artifact)
+				}
+			}
+			if sentinelPath != "" {
+				contents, err := os.ReadFile(sentinelPath)
+				if err != nil {
+					t.Fatalf("read sentinel after rejection: %v", err)
+				}
+				if string(contents) != "sentinel bytes\n" {
+					t.Fatalf("sentinel contents=%q", contents)
+				}
 			}
 		})
 	}

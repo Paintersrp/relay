@@ -102,7 +102,7 @@ func (s *WorkflowExecutionService) LaunchPreparedAdaptive(ctx context.Context, i
 	if err != nil {
 		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, fmt.Errorf("build executor invocation: %w", err))
 	}
-	if err := verifyPreparedInvocation(invocation, adapter, attempt, repository.LocalPath, selected); err != nil {
+	if err := verifyPreparedInvocation(invocation, adapter, attempt, repository.LocalPath, runtimeResultPath, selected); err != nil {
 		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, err)
 	}
 	if s.invocationPreflight == nil {
@@ -174,7 +174,7 @@ func validPreparedSHA256(value string) bool {
 	return err == nil
 }
 
-func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAdapter, attempt workflowstore.ExecutionAttempt, repositoryPath string, selected effectiveBriefInput) error {
+func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAdapter, attempt workflowstore.ExecutionAttempt, repositoryPath string, expectedResultPath string, selected effectiveBriefInput) error {
 	if invocation.Adapter != AdapterID(attempt.Adapter) {
 		return fmt.Errorf("executor invocation adapter %q does not match admitted adapter %q", invocation.Adapter, attempt.Adapter)
 	}
@@ -186,6 +186,9 @@ func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAda
 	}
 	if invocation.WorkDir != repositoryPath {
 		return fmt.Errorf("executor invocation working directory %q does not match registered repository path %q", invocation.WorkDir, repositoryPath)
+	}
+	if invocation.ResultFile != "" && invocation.ResultFile != expectedResultPath {
+		return fmt.Errorf("executor invocation result file %q does not match expected result path %q", invocation.ResultFile, expectedResultPath)
 	}
 	if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
 		return fmt.Errorf("executor invocation effective Brief integrity check failed: %w", err)
