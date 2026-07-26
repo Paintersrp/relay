@@ -522,7 +522,7 @@ func validateAuditPath(p string) error {
 		return fmt.Errorf("path %q has leading or trailing whitespace", p)
 	}
 	for _, r := range runes {
-		if unicode.IsControl(r) && r != '\t' {
+		if unicode.IsControl(r) {
 			return fmt.Errorf("path %q contains control character", p)
 		}
 	}

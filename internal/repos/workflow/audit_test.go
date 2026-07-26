@@ -264,12 +264,32 @@ func TestParseAuditFileChanges(t *testing.T) {
 			},
 		},
 		{
-			name:    "file names containing tabs are supported",
-			status:  nul("A", "my\tfile\twith\ttabs.txt"),
-			numstat: numstat("my\tfile\twith\ttabs.txt", "1", "0"),
-			want: []AuditFileChange{
-				{Path: "my\tfile\twith\ttabs.txt", ChangeType: "added", Additions: 1, Deletions: 0},
-			},
+			name:        "name-status path containing tab is rejected",
+			status:      nul("A", "my\tfile.txt"),
+			numstat:     numstat("valid.txt", "1", "0"),
+			wantErr:     true,
+			errContains: "control character",
+		},
+		{
+			name:        "numstat path containing tab is rejected",
+			status:      nul("A", "valid.txt"),
+			numstat:     numstat("my\tfile.txt", "1", "0"),
+			wantErr:     true,
+			errContains: "control character",
+		},
+		{
+			name:        "rename previous path containing tab is rejected",
+			status:      nul("R100", "old\tpath.go", "new.go"),
+			numstat:     renameNumstat("old.go", "new.go", "1", "0"),
+			wantErr:     true,
+			errContains: "control character",
+		},
+		{
+			name:        "rename resulting path containing tab is rejected",
+			status:      nul("R100", "old.go", "new\tpath.go"),
+			numstat:     renameNumstat("old.go", "new.go", "1", "0"),
+			wantErr:     true,
+			errContains: "control character",
 		},
 		{
 			name:        "mixed binary/numeric count forms are rejected",
