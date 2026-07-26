@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	workflowpackages "relay/internal/app/packages"
 	workflowruns "relay/internal/app/runs/workflow"
 	"relay/internal/executor"
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
 )
@@ -22,12 +24,13 @@ import (
 const workflowPackageEvidenceOperations = `{"schema_version":"1.0","feature_slug":"checkout","repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`
 
 type packageEvidenceFixture struct {
-	store      *workflowstore.Store
-	run        workflowstore.Run
-	packageID  string
-	assignment executor.ExecutionAssignmentResult
-	outcome    executor.DeterministicOutcomeResult
-	brief      executor.EffectiveExecutorBriefResult
+	store             *workflowstore.Store
+	run               workflowstore.Run
+	packageID         string
+	assignment        executor.ExecutionAssignmentResult
+	outcome           executor.DeterministicOutcomeResult
+	brief             executor.EffectiveExecutorBriefResult
+	sourceVaultReader *evidenceSourceVaultReader
 }
 
 // buildPackageEvidence constructs a committed package-linked Run whose runtime
@@ -42,7 +45,7 @@ func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode
 	}
 	fixture := newPackageEvidenceFixture(t, withOperations, coverage)
 
-	assignments, err := executor.NewExecutionAssignmentService(fixture.store)
+	assignments, err := executor.NewExecutionAssignmentService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +55,7 @@ func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode
 	}
 	fixture.assignment = assignment
 
-	outcomes, err := executor.NewDeterministicOutcomeService(fixture.store)
+	outcomes, err := executor.NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +65,7 @@ func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode
 	}
 	fixture.outcome = outcome
 
-	briefs, err := executor.NewEffectiveExecutorBriefService(fixture.store)
+	briefs, err := executor.NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +115,15 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	packageService, err := workflowpackages.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)
+	sourcePath := "tickets/p2-t2.delivery-ticket.json"
+	reader := &evidenceSourceVaultReader{path: sourcePath, bytes: packageEvidenceDeliveryTicketBytes(baseCommit)}
+	packageService, err := workflowpackages.NewServiceWithSourceVaults(store, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authorityBytes := []byte("authority")
 	authoritySHA := packageEvidenceSHA(authorityBytes)
 	authorityPath := filepath.Join(store.ArtifactStore().Root(), "plans", "checkout", "requirements.json")
@@ -171,7 +176,7 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P2-T2', ?, 10) RETURNING id`, workspaceID).Scan(&ticketID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, 'tickets/p2-t2.delivery-ticket.json', 'Package the selected ticket.', 'Package basis context.', 'not_required') RETURNING id`, ticketID, baseCommit, closureID).Scan(&revisionID); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, ?, 'Package the selected ticket.', 'Package basis context.', 'not_required') RETURNING id`, ticketID, baseCommit, closureID, sourcePath).Scan(&revisionID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, revisionID, ticketID); err != nil {
@@ -205,12 +210,36 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &packageEvidenceFixture{store: store, run: approved.Run, packageID: prepared.Package.PackageID}
+	return &packageEvidenceFixture{store: store, run: approved.Run, packageID: prepared.Package.PackageID, sourceVaultReader: reader}
 }
 
 func packageEvidenceSHA(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func packageEvidenceDeliveryTicketBytes(baseCommit string) []byte {
+	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":[],"out_of_scope":[]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":[],"transition_applicability":"not_required","completion_criteria":[]}`, baseCommit))
+}
+
+type evidenceSourceVaultReader struct {
+	path  string
+	bytes []byte
+	err   error
+}
+
+func (r *evidenceSourceVaultReader) ReadPath(ctx context.Context, request sourcevault.ReadPathRequest) (sourcevault.ReadPathResult, error) {
+	if r.err != nil {
+		return sourcevault.ReadPathResult{}, r.err
+	}
+	if request.Path != r.path {
+		return sourcevault.ReadPathResult{}, &sourcevault.Error{Code: sourcevault.CodeObjectUnavailable}
+	}
+	return sourcevault.ReadPathResult{ObjectOID: strings.Repeat("d", 40), Bytes: append([]byte(nil), r.bytes...)}, nil
+}
+
+func (r *evidenceSourceVaultReader) WithErr(err error) *evidenceSourceVaultReader {
+	return &evidenceSourceVaultReader{path: r.path, bytes: r.bytes, err: err}
 }
 
 // packageEvidenceMutatePreflightCoverage changes the deterministic outcome summary
@@ -242,7 +271,7 @@ func packageEvidenceModes() []executor.EffectiveExecutorBriefMode {
 
 func TestWorkflowPackageExecutionEvidenceConstructorInitializesDependencies(t *testing.T) {
 	fixture := newPackageEvidenceFixture(t, false, "")
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,14 +281,14 @@ func TestWorkflowPackageExecutionEvidenceConstructorInitializesDependencies(t *t
 	if service.loadRun == nil || service.loadAuthority == nil || service.loadAssignment == nil || service.loadOutcome == nil || service.loadBrief == nil {
 		t.Fatal("service read seams are not initialized")
 	}
-	if _, err := NewWorkflowPackageExecutionEvidenceService(nil); err == nil {
+	if _, err := NewWorkflowPackageExecutionEvidenceService(nil, nil); err == nil {
 		t.Fatal("nil store was accepted")
 	}
 }
 
 func TestWorkflowPackageExecutionEvidenceRejectsInvalidRunIDWithoutReads(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +334,7 @@ func TestWorkflowPackageExecutionEvidenceRejectsNonPackageRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +347,7 @@ func TestWorkflowPackageExecutionEvidenceResolvesEveryMode(t *testing.T) {
 	for _, mode := range packageEvidenceModes() {
 		t.Run(string(mode), func(t *testing.T) {
 			fixture := buildPackageEvidence(t, mode)
-			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -348,7 +377,7 @@ func TestWorkflowPackageExecutionEvidenceResolvesEveryMode(t *testing.T) {
 
 func TestWorkflowPackageExecutionEvidenceCompleteHasBriefWithoutAdaptiveDispatch(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +495,7 @@ func TestWorkflowPackageExecutionEvidenceRejectsCrossServiceMismatches(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := buildPackageEvidence(t, test.mode)
-			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -491,7 +520,7 @@ func TestWorkflowPackageExecutionEvidenceMalformedArtifactFailsClosed(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -516,7 +545,7 @@ func TestWorkflowPackageExecutionEvidenceMalformedArtifactFailsClosed(t *testing
 func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T) {
 	t.Run("missing assignment", func(t *testing.T) {
 		fixture := newPackageEvidenceFixture(t, false, "")
-		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -530,14 +559,14 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 	})
 	t.Run("missing outcome", func(t *testing.T) {
 		fixture := newPackageEvidenceFixture(t, false, "")
-		assignments, err := executor.NewExecutionAssignmentService(fixture.store)
+		assignments, err := executor.NewExecutionAssignmentService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := assignments.PrepareExecutionAssignment(context.Background(), fixture.run.RunID); err != nil {
 			t.Fatal(err)
 		}
-		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -551,21 +580,21 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 	})
 	t.Run("missing effective brief", func(t *testing.T) {
 		fixture := newPackageEvidenceFixture(t, false, "")
-		assignments, err := executor.NewExecutionAssignmentService(fixture.store)
+		assignments, err := executor.NewExecutionAssignmentService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := assignments.PrepareExecutionAssignment(context.Background(), fixture.run.RunID); err != nil {
 			t.Fatal(err)
 		}
-		outcomes, err := executor.NewDeterministicOutcomeService(fixture.store)
+		outcomes, err := executor.NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := outcomes.Persist(context.Background(), packageEvidenceOutcomeInput(fixture.run.RunID, executor.EffectiveExecutorBriefAdaptiveNoOperations, "")); err != nil {
 			t.Fatal(err)
 		}
-		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -581,7 +610,7 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 
 func TestWorkflowPackageExecutionEvidenceDuplicateFromLoaderIsConflict(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +628,7 @@ func TestWorkflowPackageExecutionEvidenceDuplicateFromLoaderIsConflict(t *testin
 
 func TestWorkflowPackageExecutionEvidenceDeterministicOutcomeConflictIsClassified(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,7 +646,7 @@ func TestWorkflowPackageExecutionEvidenceDeterministicOutcomeConflictIsClassifie
 
 func TestWorkflowPackageExecutionEvidenceEffectiveBriefConflictIsClassified(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +664,7 @@ func TestWorkflowPackageExecutionEvidenceEffectiveBriefConflictIsClassified(t *t
 
 func TestWorkflowPackageExecutionEvidenceApprovedAuthorityInvalidIsClassified(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,7 +682,7 @@ func TestWorkflowPackageExecutionEvidenceApprovedAuthorityInvalidIsClassified(t 
 
 func TestWorkflowPackageExecutionEvidenceInfrastructureErrorIsNotClassified(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -684,7 +713,7 @@ func TestWorkflowPackageExecutionEvidencePreflightFailedCoverage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptivePreflightFailed)
-			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -715,7 +744,7 @@ func TestWorkflowPackageExecutionEvidencePreflightFailedCoverage(t *testing.T) {
 
 func TestWorkflowPackageExecutionEvidenceRepeatedLoadIsIdentical(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,7 +766,7 @@ func TestWorkflowPackageExecutionEvidenceRepeatedLoadIsIdentical(t *testing.T) {
 
 func TestWorkflowPackageExecutionEvidenceLoadPerformsNoWrites(t *testing.T) {
 	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}

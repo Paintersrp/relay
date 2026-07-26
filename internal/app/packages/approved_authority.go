@@ -3,13 +3,16 @@ package packages
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/planningartifacts"
+	"relay/internal/sourcevault"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -123,6 +126,10 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 	if len(diagnostics) != 0 {
 		return ApprovedAuthority{}, fmt.Errorf("%w: approved Ticket Design Brief projection failed: %v", ErrApprovedAuthorityInvalid, diagnostics)
 	}
+	deliveryTicketDocument, err := s.loadApprovedDeliveryTicketSource(ctx, rows.basis.closure, rows.basis.workspace, rows.basis.members[0].ticket, rows.basis.members[0].revision)
+	if err != nil {
+		return ApprovedAuthority{}, err
+	}
 	result := ApprovedAuthority{
 		Run:                run,
 		Package:            packageRow,
@@ -143,6 +150,7 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 			SHA256:       input.briefFile.SHA256,
 			Bytes:        append([]byte(nil), input.briefBytes...),
 		},
+		DeliveryTicket: deliveryTicketDocument,
 		BriefProjection: planningartifacts.TicketDesignBriefProjection{
 			ValidationCommands: append([]planningartifacts.ValidationCommand(nil), briefProjection.ValidationCommands...),
 		},
@@ -330,4 +338,91 @@ func cloneDeterministicOperations(document *speccompiler.DeterministicOperations
 		clone.Operations[index].Implementation.Changes = append([]speccompiler.DeterministicChange(nil), document.Operations[index].Implementation.Changes...)
 	}
 	return &clone
+}
+
+func (s *Service) loadApprovedDeliveryTicketSource(ctx context.Context, closure workflowstore.SourceVaultClosure, workspace workflowstore.FeatureWorkspace, ticket workflowstore.DeliveryTicket, revision workflowstore.DeliveryTicketRevision) (ApprovedSourceDocument, error) {
+	if s.sourceVaults == nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: source-vault reader is not configured", ErrApprovedAuthorityInvalid)
+	}
+	if err := validateDeliveryTicketSourcePath(revision.SourcePath); err != nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: %v", ErrApprovedAuthorityInvalid, err)
+	}
+	if revision.SourceClosureRowID != closure.ID {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: selected Ticket revision source closure row ID does not match approved closure", ErrApprovedAuthorityInvalid)
+	}
+	result, err := s.sourceVaults.ReadPath(ctx, sourcevault.ReadPathRequest{
+		ClosureID: closure.ClosureID,
+		Path:      revision.SourcePath,
+		MaxBytes:  approvedAuthorityReadLimit,
+	})
+	if err != nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is unavailable: %v", ErrApprovedAuthorityInvalid, err)
+	}
+	if len(result.Bytes) == 0 {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is empty", ErrApprovedAuthorityInvalid)
+	}
+	if !utf8.Valid(result.Bytes) {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is not valid UTF-8", ErrApprovedAuthorityInvalid)
+	}
+	var topObject map[string]json.RawMessage
+	if err := json.Unmarshal(result.Bytes, &topObject); err != nil || topObject == nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is not a top-level JSON object", ErrApprovedAuthorityInvalid)
+	}
+	var document speccompiler.DeliveryTicketDocument
+	if err := json.Unmarshal(result.Bytes, &document); err != nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is not valid JSON: %v", ErrApprovedAuthorityInvalid, err)
+	}
+	if document.FeatureSlug != workspace.FeatureSlug || document.TicketID != ticket.TicketID || document.Revision != revision.RevisionNumber || document.RepoTarget != revision.RepoTarget || document.Branch != revision.Branch || document.BaseCommit != revision.BaseCommit {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document identity does not match selected revision: feature_slug=%q/%q ticket_id=%q/%q revision=%d/%d repo_target=%q/%q branch=%q/%q base_commit=%q/%q", ErrApprovedAuthorityInvalid, document.FeatureSlug, workspace.FeatureSlug, document.TicketID, ticket.TicketID, document.Revision, revision.RevisionNumber, document.RepoTarget, revision.RepoTarget, document.Branch, revision.Branch, document.BaseCommit, revision.BaseCommit)
+	}
+	digest := sha256Hex(result.Bytes)
+	doc := ApprovedSourceDocument{
+		DisplayName:  filepath.Base(revision.SourcePath),
+		RelativePath: revision.SourcePath,
+		MediaType:    "application/json",
+		SHA256:       digest,
+		ObjectOID:    result.ObjectOID,
+		SizeBytes:    int64(len(result.Bytes)),
+		Bytes:        append([]byte(nil), result.Bytes...),
+	}
+	return doc, nil
+}
+
+func validateDeliveryTicketSourcePath(path string) error {
+	if path == "" || strings.TrimSpace(path) != path {
+		return fmt.Errorf("Delivery Ticket source path must be nonblank and free of outer whitespace")
+	}
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") {
+		return fmt.Errorf("Delivery Ticket source path must be repository-relative")
+	}
+	if len(path) >= 2 && path[1] == ':' {
+		c := path[0]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return fmt.Errorf("Delivery Ticket source path must not include a Windows drive prefix")
+		}
+	}
+	if strings.Contains(path, "\\") {
+		return fmt.Errorf("Delivery Ticket source path must not contain backslashes")
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("Delivery Ticket source path must not contain empty, current, or parent segments")
+		}
+	}
+	if !utf8.ValidString(path) {
+		return fmt.Errorf("Delivery Ticket source path must be valid UTF-8")
+	}
+	for _, r := range path {
+		if r < 0x20 {
+			return fmt.Errorf("Delivery Ticket source path must not contain control characters")
+		}
+	}
+	base := filepath.Base(path)
+	if base == "" || strings.TrimSpace(base) != base {
+		return fmt.Errorf("Delivery Ticket source path basename must be nonblank")
+	}
+	if strings.ContainsAny(base, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f") {
+		return fmt.Errorf("Delivery Ticket source path basename is not safe for packet embedding")
+	}
+	return nil
 }

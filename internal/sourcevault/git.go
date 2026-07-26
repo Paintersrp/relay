@@ -36,6 +36,7 @@ type gitClient interface {
 	ReadObject(context.Context, string, string, string, int64) ([]byte, error)
 	ReadTree(context.Context, string, string) ([]RetainedTreeEntry, error)
 	ReadBlobRange(context.Context, string, string, int64, int64) (ReadRetainedBlobRangeResult, error)
+	ResolvePath(context.Context, string, string, string) (string, string, error)
 	GarbageCollect(context.Context, string) error
 }
 

@@ -33,18 +33,19 @@ import (
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
 	"relay/internal/mcp"
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string) http.Handler {
-	handler, _ := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, nil)
+func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager) http.Handler {
+	handler, _ := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, sourceVaults, nil)
 	return handler
 }
 
-func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor) {
+func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor) {
 	if workflowStore == nil {
 		panic("workflow store is required")
 	}
@@ -80,7 +81,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		panic(err)
 	}
-	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID)
+	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID, sourceVaults)
 	ticketService, err := apptickets.NewService(workflowStore)
 	if err != nil {
 		panic(err)

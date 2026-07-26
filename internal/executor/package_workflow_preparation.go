@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	executionpackages "relay/internal/app/packages"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -44,7 +45,7 @@ type PackageWorkflowPreparationService struct {
 	adaptive      *AdaptiveExecutionAttemptService
 }
 
-func NewPackageWorkflowPreparationService(store *workflowstore.Store) (*PackageWorkflowPreparationService, error) {
+func NewPackageWorkflowPreparationService(store *workflowstore.Store, sourceVaults executionpackages.SourceVaultReader) (*PackageWorkflowPreparationService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
@@ -52,11 +53,11 @@ func NewPackageWorkflowPreparationService(store *workflowstore.Store) (*PackageW
 	if err != nil {
 		return nil, err
 	}
-	deterministic, err := NewPackageDeterministicExecutionService(store)
+	deterministic, err := NewPackageDeterministicExecutionService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	adaptive, err := NewAdaptiveExecutionAttemptService(store)
+	adaptive, err := NewAdaptiveExecutionAttemptService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

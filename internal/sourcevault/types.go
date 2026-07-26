@@ -135,6 +135,17 @@ type ReadObjectResult struct {
 	Bytes      []byte
 }
 
+type ReadPathRequest struct {
+	ClosureID string
+	Path      string
+	MaxBytes  int64
+}
+
+type ReadPathResult struct {
+	ObjectOID string
+	Bytes     []byte
+}
+
 type gitFailure struct {
 	reason string
 	code   string

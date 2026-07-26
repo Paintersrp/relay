@@ -68,6 +68,20 @@ type ApprovedDocument struct {
 	Bytes        []byte
 }
 
+// ApprovedSourceDocument is the exact retained Git source document for the
+// selected Delivery Ticket revision. It is intentionally distinct from
+// ApprovedDocument because the bytes come from the source-vault closure rather
+// than the managed artifact store.
+type ApprovedSourceDocument struct {
+	DisplayName  string
+	RelativePath string
+	MediaType    string
+	SHA256       string
+	ObjectOID    string
+	SizeBytes    int64
+	Bytes        []byte
+}
+
 type ApprovedAuthorityLayer struct {
 	Layer        workflowstore.FeatureWorkspaceAuthorityLayer
 	Kind         string
@@ -104,6 +118,8 @@ type ApprovedAuthority struct {
 
 	TicketDesignBrief ApprovedDocument
 	BriefProjection   planningartifacts.TicketDesignBriefProjection
+
+	DeliveryTicket ApprovedSourceDocument
 
 	DeterministicOperations *ApprovedDeterministicOperations
 }

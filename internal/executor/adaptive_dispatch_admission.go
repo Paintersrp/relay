@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	executionpackages "relay/internal/app/packages"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -55,15 +56,15 @@ type AdaptiveDispatchAdmissionService struct {
 	runs     *workflowruns.Service
 }
 
-func NewAdaptiveDispatchAdmissionService(store *workflowstore.Store) (*AdaptiveDispatchAdmissionService, error) {
+func NewAdaptiveDispatchAdmissionService(store *workflowstore.Store, sourceVaults executionpackages.SourceVaultReader) (*AdaptiveDispatchAdmissionService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	briefs, err := NewEffectiveExecutorBriefService(store)
+	briefs, err := NewEffectiveExecutorBriefService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	attempts, err := NewAdaptiveExecutionAttemptService(store)
+	attempts, err := NewAdaptiveExecutionAttemptService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

@@ -17,6 +17,7 @@ import (
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/planningartifacts"
+	"relay/internal/sourcevault"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -38,8 +39,16 @@ var (
 var packageSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Service struct {
-	store *workflowstore.Store
-	runs  *workflowruns.Service
+	store        *workflowstore.Store
+	runs         *workflowruns.Service
+	sourceVaults SourceVaultReader
+}
+
+// SourceVaultReader is the narrow source-vault surface required to read the
+// exact retained Delivery Ticket source document. It is implemented by
+// *sourcevault.Manager.
+type SourceVaultReader interface {
+	ReadPath(ctx context.Context, request sourcevault.ReadPathRequest) (sourcevault.ReadPathResult, error)
 }
 
 type validatedInput struct {
@@ -87,6 +96,13 @@ type packageBasis struct {
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
+	return NewServiceWithSourceVaults(store, nil)
+}
+
+// NewServiceWithSourceVaults creates a Service that can read the exact retained
+// Delivery Ticket source document from the supplied source-vault manager when
+// loading approved package authority.
+func NewServiceWithSourceVaults(store *workflowstore.Store, sourceVaults SourceVaultReader) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
@@ -94,7 +110,13 @@ func NewService(store *workflowstore.Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, runs: runs}, nil
+	return &Service{store: store, runs: runs, sourceVaults: sourceVaults}, nil
+}
+
+// SetSourceVaultsForTest is a package-private seam for tests that need to
+// inject a narrow source-vault reader without changing the public constructor.
+func (s *Service) SetSourceVaultsForTest(sourceVaults SourceVaultReader) {
+	s.sourceVaults = sourceVaults
 }
 
 func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResult, error) {

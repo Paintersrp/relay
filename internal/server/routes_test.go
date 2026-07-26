@@ -42,7 +42,7 @@ func TestResolveWorkflowRunStage(t *testing.T) {
 
 func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 	store, service := openWorkflowRouteTestStore(t)
-	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test")
+	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", nil)
 
 	for _, path := range []string{"/api/repositories", "/api/projects", "/api/plans", "/api/runs"} {
 		response := httptest.NewRecorder()
@@ -99,7 +99,7 @@ func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 	}
 
 	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000/")
-	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test")
+	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/"+created.Run.RunID, nil))
 	if response.Code != http.StatusFound {

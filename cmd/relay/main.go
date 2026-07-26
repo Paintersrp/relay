@@ -77,7 +77,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 		return fmt.Errorf("compose published MCP handlers: %w", err)
 	}
 	ownerInstanceID := executor.NewOwnerInstanceID()
-	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID, mcpHandlers)
+	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID, sourceVaults, mcpHandlers)
 	port := environmentOrDefault("PORT", "8080")
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {

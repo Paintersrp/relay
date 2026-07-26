@@ -60,23 +60,23 @@ type WorkflowPackageExecutionEvidenceService struct {
 	loadBrief      func(context.Context, string) (executor.EffectiveExecutorBriefResult, error)
 }
 
-func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store) (*WorkflowPackageExecutionEvidenceService, error) {
+func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sourceVaults workflowpackages.SourceVaultReader) (*WorkflowPackageExecutionEvidenceService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	packages, err := workflowpackages.NewService(store)
+	packages, err := workflowpackages.NewServiceWithSourceVaults(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	assignments, err := executor.NewExecutionAssignmentService(store)
+	assignments, err := executor.NewExecutionAssignmentService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	outcomes, err := executor.NewDeterministicOutcomeService(store)
+	outcomes, err := executor.NewDeterministicOutcomeService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	briefs, err := executor.NewEffectiveExecutorBriefService(store)
+	briefs, err := executor.NewEffectiveExecutorBriefService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

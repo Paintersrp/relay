@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	executionpackages "relay/internal/app/packages"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -44,11 +45,11 @@ type AdaptiveExecutionAttemptService struct {
 	briefs *EffectiveExecutorBriefService
 }
 
-func NewAdaptiveExecutionAttemptService(store *workflowstore.Store) (*AdaptiveExecutionAttemptService, error) {
+func NewAdaptiveExecutionAttemptService(store *workflowstore.Store, sourceVaults executionpackages.SourceVaultReader) (*AdaptiveExecutionAttemptService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	briefs, err := NewEffectiveExecutorBriefService(store)
+	briefs, err := NewEffectiveExecutorBriefService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

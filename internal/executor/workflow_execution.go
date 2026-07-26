@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	executionpackages "relay/internal/app/packages"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/pipeline"
@@ -158,10 +159,10 @@ var (
 	}
 )
 
-func NewWorkflowExecutionService(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string) *WorkflowExecutionService {
+func NewWorkflowExecutionService(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults executionpackages.SourceVaultReader) *WorkflowExecutionService {
 	runService, _ := workflowruns.NewService(store)
-	packagePreparation, _ := NewPackageWorkflowPreparationService(store)
-	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store)
+	packagePreparation, _ := NewPackageWorkflowPreparationService(store, sourceVaults)
+	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store, sourceVaults)
 	return &WorkflowExecutionService{
 		store:               store,
 		runs:                runService,
