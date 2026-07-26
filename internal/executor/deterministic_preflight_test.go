@@ -202,6 +202,142 @@ func TestPreflightDeterministicFilesystemSafety(t *testing.T) {
 	}
 }
 
+func TestPreflightDeterministicVirtualPathHierarchy(t *testing.T) {
+	tests := []struct {
+		name          string
+		files         map[string]string
+		document      *speccompiler.DeterministicOperationsDocument
+		wantStatus    DeterministicPreflightStatus
+		wantFailure   string
+		wantFailureOp int
+		assertPlan    func(*testing.T, *DeterministicMutationPlan)
+	}{
+		{
+			name:       "delete file then create descendant",
+			files:      map[string]string{"node": "old"},
+			document:   document("partial", operation("node", "delete", implExpected("old")), operation("node/child.go", "create", implContent("child"))),
+			wantStatus: DeterministicPreflightReady,
+			assertPlan: assertParentDirectories(1, []string{"node"}),
+		},
+		{
+			name:       "rename file away then create descendant",
+			files:      map[string]string{"node": "old"},
+			document:   document("partial", rename("node", "old-node", "old", true, ""), operation("node/child.go", "create", implContent("child"))),
+			wantStatus: DeterministicPreflightReady,
+			assertPlan: assertParentDirectories(1, []string{"node"}),
+		},
+		{
+			name:          "create file then create descendant",
+			document:      document("partial", operation("node", "create", implContent("file")), operation("node/child.go", "create", implContent("child"))),
+			wantStatus:    DeterministicPreflightFailed,
+			wantFailure:   "virtual_path_conflict",
+			wantFailureOp: 2,
+		},
+		{
+			name:          "rename file into ancestor then create descendant",
+			files:         map[string]string{"source": "old"},
+			document:      document("partial", rename("source", "node", "old", true, ""), operation("node/child.go", "create", implContent("child"))),
+			wantStatus:    DeterministicPreflightFailed,
+			wantFailure:   "virtual_path_conflict",
+			wantFailureOp: 2,
+		},
+		{
+			name:          "create descendant then create ancestor file",
+			document:      document("partial", operation("node/child.go", "create", implContent("child")), operation("node", "create", implContent("file"))),
+			wantStatus:    DeterministicPreflightFailed,
+			wantFailure:   "virtual_path_conflict",
+			wantFailureOp: 2,
+		},
+		{
+			name:          "rename into descendant then create ancestor file",
+			files:         map[string]string{"source": "old"},
+			document:      document("partial", rename("source", "node/child.go", "old", true, ""), operation("node", "create", implContent("file"))),
+			wantStatus:    DeterministicPreflightFailed,
+			wantFailure:   "virtual_path_conflict",
+			wantFailureOp: 2,
+		},
+		{
+			name:       "virtual directory is reused without stale parent cache",
+			files:      map[string]string{"node": "old"},
+			document:   document("partial", operation("node", "delete", implExpected("old")), operation("node/child.go", "create", implContent("child")), operation("node/second/grandchild.go", "create", implContent("grandchild"))),
+			wantStatus: DeterministicPreflightReady,
+			assertPlan: func(t *testing.T, plan *DeterministicMutationPlan) {
+				if !equalStrings(plan.Operations[1].ParentDirectories, []string{"node"}) || !equalStrings(plan.Operations[2].ParentDirectories, []string{"node/second"}) {
+					t.Fatalf("parent directories=%#v", plan.Operations)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newDeterministicPreflightRepo(t, test.files)
+			before := snapshotRepo(t, repo)
+			result, err := PreflightDeterministicOperations(preflightInput(t, repo, test.document))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != test.wantStatus {
+				t.Fatalf("status=%q result=%#v", result.Status, result)
+			}
+			if test.wantFailure != "" {
+				if result.Failure == nil || result.Failure.Code != test.wantFailure || result.Failure.OperationIndex != test.wantFailureOp {
+					t.Fatalf("failure=%#v", result.Failure)
+				}
+			}
+			if test.assertPlan != nil {
+				test.assertPlan(t, result.Plan)
+			}
+			assertSnapshotRepo(t, repo, before)
+		})
+	}
+}
+
+func TestPreflightDeterministicVirtualParentPhysicalInteractions(t *testing.T) {
+	t.Run("unchanged physical regular parent remains rejected", func(t *testing.T) {
+		repo := newDeterministicPreflightRepo(t, map[string]string{"node": "physical"})
+		_, err := PreflightDeterministicOperations(preflightInput(t, repo, document("partial", operation("node/child.go", "create", implContent("child")))))
+		if err == nil {
+			t.Fatal("expected physical regular parent error")
+		}
+	})
+	t.Run("unrelated delete does not alter parent resolution", func(t *testing.T) {
+		repo := newDeterministicPreflightRepo(t, map[string]string{"node": "physical", "unrelated": "old"})
+		_, err := PreflightDeterministicOperations(preflightInput(t, repo, document("partial", operation("unrelated", "delete", implExpected("old")), operation("node/child.go", "create", implContent("child")))))
+		if err == nil {
+			t.Fatal("expected physical regular parent error")
+		}
+	})
+	t.Run("physical directory remains usable", func(t *testing.T) {
+		repo := newDeterministicPreflightRepo(t, map[string]string{"node/existing": "present"})
+		result, err := PreflightDeterministicOperations(preflightInput(t, repo, document("partial", operation("node/child.go", "create", implContent("child")))))
+		if err != nil || result.Status != DeterministicPreflightReady || !equalStrings(result.Plan.Operations[0].ParentDirectories, nil) {
+			t.Fatalf("result=%#v err=%v", result, err)
+		}
+	})
+	if runtime.GOOS != "windows" {
+		t.Run("physical symlink remains rejected after virtual work", func(t *testing.T) {
+			repo := newDeterministicPreflightRepo(t, map[string]string{"target/keep": "present"})
+			if err := os.Symlink("target", filepath.Join(repo, "link")); err != nil {
+				t.Fatal(err)
+			}
+			gitRun(t, repo, "add", "link")
+			gitRun(t, repo, "commit", "-m", "symlink parent")
+			_, err := PreflightDeterministicOperations(preflightInput(t, repo, document("partial", operation("virtual/child.go", "create", implContent("child")), operation("link/child.go", "create", implContent("child")))))
+			if err == nil {
+				t.Fatal("expected unsafe symlink parent error")
+			}
+		})
+	}
+}
+
+func assertParentDirectories(operationIndex int, want []string) func(*testing.T, *DeterministicMutationPlan) {
+	return func(t *testing.T, plan *DeterministicMutationPlan) {
+		if !equalStrings(plan.Operations[operationIndex].ParentDirectories, want) {
+			t.Fatalf("operation %d parent directories=%#v want=%#v", operationIndex, plan.Operations[operationIndex].ParentDirectories, want)
+		}
+	}
+}
+
 func TestPreflightDeterministicRepositoryAdmission(t *testing.T) {
 	doc := document("partial", operation("a.txt", "delete", implExpected("x")))
 	tests := []struct {

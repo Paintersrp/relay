@@ -87,10 +87,11 @@ func PreflightDeterministicOperations(input DeterministicPreflightInput) (Determ
 	}
 
 	p := deterministicPreflighter{
-		root:      root,
-		states:    make(map[string]FileState),
-		inspected: make(map[string]bool),
-		safePaths: make(map[string][]string),
+		root:               root,
+		states:             make(map[string]FileState),
+		inspected:          make(map[string]bool),
+		virtualStates:      make(map[string]FileState),
+		virtualDescendants: make(map[string]int),
 	}
 	plan := &DeterministicMutationPlan{
 		Coverage:   input.Document.Coverage,
@@ -169,16 +170,23 @@ func samePath(left, right string) bool {
 }
 
 type deterministicPreflighter struct {
-	root      string
-	states    map[string]FileState
-	inspected map[string]bool
-	safePaths map[string][]string
+	root               string
+	states             map[string]FileState
+	inspected          map[string]bool
+	virtualStates      map[string]FileState
+	virtualDescendants map[string]int
 }
 
 func (p *deterministicPreflighter) operation(index int, operation speccompiler.DeterministicOperation) (PreparedDeterministicOperation, *DeterministicPreflightFailure, error) {
-	path, parentDirectories, err := p.safePath(operation.Path)
+	path, parentDirectories, pathFailure, err := p.safePath(operation.Path, index)
 	if err != nil {
 		return PreparedDeterministicOperation{}, nil, err
+	}
+	if pathFailure != nil {
+		return PreparedDeterministicOperation{}, pathFailure, nil
+	}
+	if operation.Operation == "create" && p.hasVirtualDescendant(path) {
+		return PreparedDeterministicOperation{Index: index, Operation: operation.Operation, SourcePath: path, ParentDirectories: parentDirectories}, virtualPathConflict(index, path, "virtual descendants exist"), nil
 	}
 	before, err := p.state(path)
 	if err != nil {
@@ -205,13 +213,14 @@ func (p *deterministicPreflighter) operation(index int, operation speccompiler.D
 		}
 		after := newFileState(current)
 		p.states[path] = after
+		p.setVirtualState(path, after)
 		prepared.After = cloneFileState(after)
 	case "create":
 		if before.Exists {
 			return prepared, failure("destination_exists", index, 0, path, "", "exists=false", stateSummary(before)), nil
 		}
 		after := newFileState([]byte(operation.Implementation.Content))
-		p.states[path] = after
+		p.setVirtualState(path, after)
 		prepared.After = cloneFileState(after)
 		prepared.ParentDirectories = parentDirectories
 	case "delete":
@@ -221,12 +230,18 @@ func (p *deterministicPreflighter) operation(index int, operation speccompiler.D
 		if string(before.Bytes) != operation.Implementation.ExpectedContent {
 			return prepared, failure("expected_content_mismatch", index, 0, path, "", contentSummary([]byte(operation.Implementation.ExpectedContent)), stateSummary(before)), nil
 		}
-		p.states[path] = FileState{}
+		p.setVirtualState(path, FileState{})
 		prepared.After = FileState{}
 	case "rename":
-		destination, destinationParents, destinationErr := p.safePath(operation.DestinationPath)
+		destination, destinationParents, destinationFailure, destinationErr := p.safePath(operation.DestinationPath, index)
 		if destinationErr != nil {
 			return PreparedDeterministicOperation{}, nil, destinationErr
+		}
+		if destinationFailure != nil {
+			return PreparedDeterministicOperation{}, destinationFailure, nil
+		}
+		if p.hasVirtualDescendant(destination) {
+			return PreparedDeterministicOperation{}, virtualPathConflict(index, destination, "virtual descendants exist"), nil
 		}
 		destinationBefore, stateErr := p.state(destination)
 		if stateErr != nil {
@@ -247,8 +262,8 @@ func (p *deterministicPreflighter) operation(index int, operation speccompiler.D
 		if operation.Implementation.PreserveContent == nil || !*operation.Implementation.PreserveContent {
 			afterDestination = newFileState([]byte(operation.Implementation.Content))
 		}
-		p.states[path] = FileState{}
-		p.states[destination] = afterDestination
+		p.setVirtualState(path, FileState{})
+		p.setVirtualState(destination, afterDestination)
 		prepared.After = FileState{}
 		prepared.DestinationAfter = cloneFileState(afterDestination)
 		prepared.ParentDirectories = destinationParents
@@ -258,50 +273,64 @@ func (p *deterministicPreflighter) operation(index int, operation speccompiler.D
 	return prepared, nil, nil
 }
 
-func (p *deterministicPreflighter) safePath(value string) (string, []string, error) {
+func (p *deterministicPreflighter) safePath(value string, operationIndex int) (string, []string, *DeterministicPreflightFailure, error) {
 	if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value || filepath.IsAbs(value) || strings.Contains(value, "\\") || strings.Contains(value, ":") {
-		return "", nil, fmt.Errorf("unsafe repository path %q", value)
+		return "", nil, nil, fmt.Errorf("unsafe repository path %q", value)
 	}
 	parts := strings.Split(value, "/")
 	for _, part := range parts {
 		if part == "" || part == "." || part == ".." {
-			return "", nil, fmt.Errorf("unsafe repository path %q", value)
+			return "", nil, nil, fmt.Errorf("unsafe repository path %q", value)
 		}
 	}
 	if parts[0] == ".git" {
-		return "", nil, fmt.Errorf("unsafe repository path %q", value)
+		return "", nil, nil, fmt.Errorf("unsafe repository path %q", value)
 	}
 	clean := strings.Join(parts, "/")
-	if parents, known := p.safePaths[clean]; known {
-		return clean, append([]string(nil), parents...), nil
-	}
 	absolute := filepath.Clean(filepath.Join(p.root, filepath.FromSlash(clean)))
 	if !withinRoot(p.root, absolute) {
-		return "", nil, fmt.Errorf("repository path escapes root %q", value)
+		return "", nil, nil, fmt.Errorf("repository path escapes root %q", value)
 	}
 	missing := make([]string, 0)
 	current := p.root
 	for i, part := range parts[:len(parts)-1] {
+		ancestor := strings.Join(parts[:i+1], "/")
+		virtualState, virtual := p.virtualStates[ancestor]
+		if virtual && virtualState.Exists {
+			return "", nil, virtualPathConflict(operationIndex, clean, "virtual regular-file ancestor "+ancestor), nil
+		}
 		current = filepath.Join(current, part)
 		info, err := os.Lstat(current)
 		if os.IsNotExist(err) {
+			if p.hasVirtualDescendant(ancestor) {
+				continue
+			}
 			for j := i; j < len(parts)-1; j++ {
 				missing = append(missing, strings.Join(parts[:j+1], "/"))
 			}
 			break
 		}
 		if err != nil {
-			return "", nil, fmt.Errorf("inspect path parent %q: %w", clean, err)
+			return "", nil, nil, fmt.Errorf("inspect path parent %q: %w", clean, err)
 		}
 		if isIndirect(info) {
-			return "", nil, fmt.Errorf("unsafe indirect path component %q", clean)
+			return "", nil, nil, fmt.Errorf("unsafe indirect path component %q", clean)
 		}
-		if !info.IsDir() {
-			return "", nil, fmt.Errorf("path parent is not a directory %q", clean)
+		if info.IsDir() {
+			continue
 		}
+		if info.Mode().IsRegular() && virtual && !virtualState.Exists {
+			if p.hasVirtualDescendant(ancestor) {
+				continue
+			}
+			for j := i; j < len(parts)-1; j++ {
+				missing = append(missing, strings.Join(parts[:j+1], "/"))
+			}
+			break
+		}
+		return "", nil, nil, fmt.Errorf("path parent is not a directory %q", clean)
 	}
-	p.safePaths[clean] = append([]string(nil), missing...)
-	return clean, missing, nil
+	return clean, missing, nil, nil
 }
 
 func withinRoot(root, value string) bool {
@@ -310,6 +339,9 @@ func withinRoot(root, value string) bool {
 }
 
 func (p *deterministicPreflighter) state(path string) (FileState, error) {
+	if state, virtual := p.virtualStates[path]; virtual {
+		return cloneFileState(state), nil
+	}
 	if p.inspected[path] {
 		return p.states[path], nil
 	}
@@ -336,6 +368,35 @@ func (p *deterministicPreflighter) state(path string) (FileState, error) {
 	state := newFileState(bytes)
 	p.states[path] = state
 	return state, nil
+}
+
+func (p *deterministicPreflighter) setVirtualState(path string, state FileState) {
+	if previous, exists := p.virtualStates[path]; exists && previous.Exists {
+		p.adjustVirtualDescendants(path, -1)
+	}
+	p.virtualStates[path] = cloneFileState(state)
+	if state.Exists {
+		p.adjustVirtualDescendants(path, 1)
+	}
+}
+
+func (p *deterministicPreflighter) adjustVirtualDescendants(path string, delta int) {
+	parts := strings.Split(path, "/")
+	for i := 1; i < len(parts); i++ {
+		ancestor := strings.Join(parts[:i], "/")
+		p.virtualDescendants[ancestor] += delta
+		if p.virtualDescendants[ancestor] == 0 {
+			delete(p.virtualDescendants, ancestor)
+		}
+	}
+}
+
+func (p *deterministicPreflighter) hasVirtualDescendant(path string) bool {
+	return p.virtualDescendants[path] > 0
+}
+
+func virtualPathConflict(operationIndex int, path, observed string) *DeterministicPreflightFailure {
+	return failure("virtual_path_conflict", operationIndex, 0, path, "", "path hierarchy is conflict-free", observed)
 }
 
 type nonRegularDeterministicPathError struct {
