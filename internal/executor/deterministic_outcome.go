@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	executionpackages "relay/internal/app/packages"
 	workflowartifacts "relay/internal/artifacts/workflow"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -188,6 +190,128 @@ func (s *DeterministicOutcomeService) Persist(ctx context.Context, input Determi
 		}
 	}
 	return DeterministicOutcomeResult{}, err
+}
+
+// Load resolves the one immutable deterministic outcome for a Run.  Unlike
+// Persist, it never creates an outcome: it verifies the recorded bytes against
+// the current, verified execution assignment and Run identity.
+func (s *DeterministicOutcomeService) Load(ctx context.Context, runID string) (DeterministicOutcomeResult, error) {
+	if s == nil || s.store == nil || s.assignments == nil {
+		return DeterministicOutcomeResult{}, fmt.Errorf("deterministic outcome service is unavailable")
+	}
+	assignment, err := s.assignments.LoadExecutionAssignment(ctx, runID)
+	if err != nil {
+		return DeterministicOutcomeResult{}, err
+	}
+	authority, err := s.assignments.packages.LoadApprovedAuthorityForRun(ctx, runID)
+	if err != nil {
+		return DeterministicOutcomeResult{}, err
+	}
+	run, err := s.store.GetRunByRunID(ctx, runID)
+	if err != nil {
+		return DeterministicOutcomeResult{}, err
+	}
+	if run.ID != assignment.Assignment.Run.RunRowID || run.RunID != assignment.Assignment.Run.RunID {
+		return DeterministicOutcomeResult{}, ErrDeterministicOutcomeConflict
+	}
+	artifacts, err := s.store.ListArtifactsByRun(ctx, run.ID)
+	if err != nil {
+		return DeterministicOutcomeResult{}, err
+	}
+	var existing *workflowstore.Artifact
+	for index := range artifacts {
+		if artifacts[index].Kind != deterministicOutcomeKind {
+			continue
+		}
+		if existing != nil || artifacts[index].OwnerType != workflowstore.ArtifactOwnerRun || !artifacts[index].RunRowID.Valid || artifacts[index].RunRowID.Int64 != run.ID {
+			return DeterministicOutcomeResult{}, ErrDeterministicOutcomeConflict
+		}
+		candidate := artifacts[index]
+		existing = &candidate
+	}
+	if existing == nil {
+		return DeterministicOutcomeResult{}, fmt.Errorf("Run deterministic_outcome artifact is missing")
+	}
+	wantPath := filepath.ToSlash(filepath.Join("runs", run.RunID, deterministicOutcomeFilename))
+	if existing.OwnerType != workflowstore.ArtifactOwnerRun || !existing.RunRowID.Valid || existing.RunRowID.Int64 != run.ID || existing.RelativePath != wantPath || existing.MediaType != deterministicOutcomeMediaType {
+		return DeterministicOutcomeResult{}, ErrDeterministicOutcomeConflict
+	}
+	verified, content, err := s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{Kind: existing.Kind, RelativePath: existing.RelativePath, MediaType: existing.MediaType, SHA256: existing.SHA256, SizeBytes: existing.SizeBytes}, deterministicOutcomeReadLimit)
+	if err != nil || verified.RelativePath != existing.RelativePath {
+		return DeterministicOutcomeResult{}, ErrDeterministicOutcomeConflict
+	}
+	var outcome DeterministicOutcome
+	if err := json.Unmarshal(content, &outcome); err != nil {
+		return DeterministicOutcomeResult{}, ErrDeterministicOutcomeConflict
+	}
+	canonical, err := marshalDeterministicOutcome(outcome)
+	if err != nil || !bytes.Equal(content, canonical) || !validLoadedDeterministicOutcome(outcome, run, assignment, authority.DeterministicOperations) {
+		return DeterministicOutcomeResult{}, ErrDeterministicOutcomeConflict
+	}
+	return deterministicOutcomeResult(*existing, outcome, content), nil
+}
+
+const deterministicOutcomeReadLimit = 64 << 20
+
+func validLoadedDeterministicOutcome(outcome DeterministicOutcome, run workflowstore.Run, assignment ExecutionAssignmentResult, approvedOperations *executionpackages.ApprovedDeterministicOperations) bool {
+	if outcome.SchemaVersion != "1.0" || outcome.Run != (DeterministicOutcomeRun{RunID: run.RunID, RunRowID: run.ID}) || outcome.Repository != assignment.Assignment.Repository || outcome.DeterministicOperations != assignment.Assignment.DeterministicOperations {
+		return false
+	}
+	wantAssignment := DeterministicOutcomeAssignment{ArtifactID: assignment.Artifact.ArtifactID, ArtifactRowID: assignment.Artifact.ID, RelativePath: assignment.Artifact.RelativePath, MediaType: assignment.Artifact.MediaType, SHA256: assignment.Artifact.SHA256}
+	if outcome.ExecutionAssignment != wantAssignment || !validAssignmentOperations(outcome.DeterministicOperations) {
+		return false
+	}
+	switch outcome.Outcome.Status {
+	case string(DeterministicPreflightNotPresent):
+		return approvedOperations == nil && outcome.DeterministicOperations.Presence == "absent" && outcome.Outcome.Coverage == "" && outcome.PreflightFailure == nil && outcome.Application == nil
+	case string(DeterministicPreflightFailed):
+		if approvedOperations == nil || outcome.DeterministicOperations.Presence != "present" || outcome.Outcome.Coverage != outcome.DeterministicOperations.Coverage || outcome.PreflightFailure == nil || outcome.Application != nil {
+			return false
+		}
+		_, err := verifiedPreflightFailure(DeterministicPreflightFailure{Code: outcome.PreflightFailure.Code, OperationIndex: outcome.PreflightFailure.OperationIndex, DirectiveIndex: outcome.PreflightFailure.DirectiveIndex, Path: outcome.PreflightFailure.Path, Destination: outcome.PreflightFailure.Destination, Expected: outcome.PreflightFailure.Expected, Observed: outcome.PreflightFailure.Observed})
+		return err == nil && validFailureAgainstDocument(*outcome.PreflightFailure, approvedOperations.Document)
+	case "applied":
+		return approvedOperations != nil && outcome.DeterministicOperations.Presence == "present" && outcome.Outcome.Coverage == outcome.DeterministicOperations.Coverage && outcome.PreflightFailure == nil && validApplicationEvidence(outcome.Application, approvedOperations.Document)
+	default:
+		return false
+	}
+}
+
+func validFailureAgainstDocument(value DeterministicOutcomePreflightFailure, document *speccompiler.DeterministicOperationsDocument) bool {
+	return document != nil && value.OperationIndex >= 1 && value.OperationIndex <= len(document.Operations) && (value.DirectiveIndex == 0 || (document.Operations[value.OperationIndex-1].Operation == "modify" && value.DirectiveIndex <= len(document.Operations[value.OperationIndex-1].Implementation.Changes)))
+}
+
+func validApplicationEvidence(value *DeterministicApplicationEvidence, document *speccompiler.DeterministicOperationsDocument) bool {
+	if document == nil || value == nil || len(value.Operations) != len(document.Operations) || len(value.Operations) == 0 {
+		return false
+	}
+	for index, operation := range value.Operations {
+		expected := document.Operations[index]
+		if operation.Index != index+1 || operation.Operation != expected.Operation || operation.SourcePath != expected.Path || operation.DestinationPath != expected.DestinationPath || !validDeterministicPath(operation.SourcePath) || (operation.DestinationPath != "" && !validDeterministicPath(operation.DestinationPath)) || !validOutcomeFileState(operation.SourceBefore) || !validOutcomeFileState(operation.SourceAfter) || !validOutcomeFileState(operation.DestinationBefore) || !validOutcomeFileState(operation.DestinationAfter) {
+			return false
+		}
+	}
+	for _, path := range value.ChangedPaths {
+		if !validDeterministicPath(path) {
+			return false
+		}
+	}
+	return true
+}
+
+func validOutcomeFileState(value DeterministicOutcomeFileState) bool {
+	if !value.Exists {
+		return value.SHA256 == "" && value.Size == 0
+	}
+	if len(value.SHA256) != 64 || value.Size < 0 {
+		return false
+	}
+	for _, character := range value.SHA256 {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *DeterministicOutcomeService) resolveExistingOutcome(artifact workflowstore.Artifact, run workflowstore.Run, outcome DeterministicOutcome, expected []byte) (DeterministicOutcomeResult, error) {
