@@ -36,6 +36,7 @@ type WorkflowStartResult struct {
 	Attempt   workflowstore.ExecutionAttempt
 	Preflight workflowrepos.ExecutionPreflightResult
 	Applier   *WorkflowApplierResult
+	Package   *PackageWorkflowDispatchResult
 }
 
 type WorkflowCancelResult struct {
@@ -132,6 +133,7 @@ func (r *workflowRuntime) closeOutputs() (workflowOutputSnapshot, workflowOutput
 type WorkflowExecutionService struct {
 	store               *workflowstore.Store
 	runs                *workflowruns.Service
+	packagePreparation  *PackageWorkflowPreparationService
 	adaptiveAdmission   *AdaptiveDispatchAdmissionService
 	log                 *slog.Logger
 	ownerInstanceID     string
@@ -147,12 +149,23 @@ type WorkflowExecutionService struct {
 	active              map[string]*workflowRuntime
 }
 
+var (
+	packageWorkflowStartPrepare = func(ctx context.Context, service *PackageWorkflowPreparationService, input PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		return service.Prepare(ctx, input)
+	}
+	packageWorkflowStartDispatch = func(ctx context.Context, service *WorkflowExecutionService, prepared PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		return service.DispatchPreparedPackageWorkflow(ctx, prepared)
+	}
+)
+
 func NewWorkflowExecutionService(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string) *WorkflowExecutionService {
 	runService, _ := workflowruns.NewService(store)
+	packagePreparation, _ := NewPackageWorkflowPreparationService(store)
 	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store)
 	return &WorkflowExecutionService{
 		store:               store,
 		runs:                runService,
+		packagePreparation:  packagePreparation,
 		adaptiveAdmission:   adaptiveAdmission,
 		log:                 log,
 		ownerInstanceID:     ownerInstanceID,
@@ -190,7 +203,19 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		return WorkflowStartResult{}, fmt.Errorf("load Run: %w", err)
 	}
 	if run.ExecutionPackageRowID.Valid {
-		return WorkflowStartResult{Run: run}, fmt.Errorf("package execution preparation is not implemented")
+		if s.packagePreparation == nil {
+			return WorkflowStartResult{Run: run}, fmt.Errorf("package workflow preparation service is unavailable")
+		}
+		prepared, err := packageWorkflowStartPrepare(ctx, s.packagePreparation, PackageWorkflowPreparationInput{
+			RunID:   input.RunID,
+			Adapter: normalizedAdapter,
+			Model:   input.Model,
+		})
+		if err != nil {
+			return workflowStartResultFromPackage(PackageWorkflowDispatchResult{Preparation: prepared}), err
+		}
+		dispatched, err := packageWorkflowStartDispatch(ctx, s, prepared)
+		return workflowStartResultFromPackage(dispatched), err
 	}
 	switch run.Status {
 	case workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusCancelled:
@@ -418,6 +443,25 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, validationCommands, invocation, adapter, runtime, lease, false)
 	})
 	return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
+}
+
+func workflowStartResultFromPackage(packageResult PackageWorkflowDispatchResult) WorkflowStartResult {
+	result := WorkflowStartResult{Package: &packageResult}
+	if packageResult.FinalizedRun != nil {
+		result.Run = *packageResult.FinalizedRun
+		return result
+	}
+	if packageResult.Launch.Run != nil {
+		result.Run = *packageResult.Launch.Run
+	} else {
+		result.Run = packageResult.Preparation.Run
+	}
+	if packageResult.Launch.Attempt != nil {
+		result.Attempt = *packageResult.Launch.Attempt
+	} else if packageResult.Preparation.Adaptive.Attempt != nil {
+		result.Attempt = *packageResult.Preparation.Adaptive.Attempt
+	}
+	return result
 }
 
 func (s *WorkflowExecutionService) Cancel(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
