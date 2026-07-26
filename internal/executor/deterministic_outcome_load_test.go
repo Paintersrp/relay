@@ -153,6 +153,229 @@ func TestLoadDeterministicOutcomeReadbackAcceptsValidOperationsAndCoverage(t *te
 	}
 }
 
+func TestLoadDeterministicOutcomeReadbackTracksCurrentVirtualDescendants(t *testing.T) {
+	tests := []struct {
+		name         string
+		document     *speccompiler.DeterministicOperationsDocument
+		plan         *DeterministicMutationPlan
+		changedPaths []string
+	}{
+		{
+			name: "create descendant delete descendant create ancestor",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/child.txt", "create", implContent("child\n")),
+				operation("a/child.txt", "delete", implExpected("child\n")),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("a/child.txt", "child\n"),
+				preparedDelete("a/child.txt", "child\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"a"},
+		},
+		{
+			name: "existing descendant delete descendant create ancestor",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/child.txt", "delete", implExpected("child\n")),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedDelete("a/child.txt", "child\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"a/child.txt", "a"},
+		},
+		{
+			name: "rename existing descendant away create ancestor",
+			document: deterministicOutcomeDocument("complete",
+				rename("a/child.txt", "archived.txt", "child\n", true, ""),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedRename("a/child.txt", "archived.txt", "child\n", "child\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"a/child.txt", "archived.txt", "a"},
+		},
+		{
+			name: "create descendant rename descendant away create ancestor",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/child.txt", "create", implContent("child\n")),
+				rename("a/child.txt", "archived.txt", "child\n", true, ""),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("a/child.txt", "child\n"),
+				preparedRename("a/child.txt", "archived.txt", "child\n", "child\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"archived.txt", "a"},
+		},
+		{
+			name: "nested descendant removal",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/b/c.txt", "create", implContent("nested\n")),
+				operation("a/b/c.txt", "delete", implExpected("nested\n")),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("a/b/c.txt", "nested\n"),
+				preparedDelete("a/b/c.txt", "nested\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"a"},
+		},
+		{
+			name: "multiple descendants removed",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/one.txt", "create", implContent("one\n")),
+				operation("a/two.txt", "create", implContent("two\n")),
+				operation("a/one.txt", "delete", implExpected("one\n")),
+				operation("a/two.txt", "delete", implExpected("two\n")),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("a/one.txt", "one\n"),
+				preparedCreate("a/two.txt", "two\n"),
+				preparedDelete("a/one.txt", "one\n"),
+				preparedDelete("a/two.txt", "two\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"a"},
+		},
+		{
+			name: "unrelated ancestor remains tracked",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/child.txt", "create", implContent("a child\n")),
+				operation("b/child.txt", "create", implContent("b child\n")),
+				operation("a/child.txt", "delete", implExpected("a child\n")),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("a/child.txt", "a child\n"),
+				preparedCreate("b/child.txt", "b child\n"),
+				preparedDelete("a/child.txt", "a child\n"),
+				preparedCreate("a", "ancestor\n"),
+			),
+			changedPaths: []string{"b/child.txt", "a"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evidence := applicationEvidenceForPlan(t, test.plan)
+			if !equalStrings(evidence.ChangedPaths, test.changedPaths) {
+				t.Fatalf("changed paths = %#v, want %#v", evidence.ChangedPaths, test.changedPaths)
+			}
+			if !validApplicationEvidence(&evidence, test.document) {
+				t.Fatal("validApplicationEvidence rejected current virtual descendant state")
+			}
+		})
+	}
+}
+
+func TestLoadDeterministicOutcomeRejectsCurrentVirtualHierarchyConflicts(t *testing.T) {
+	tests := []struct {
+		name     string
+		document *speccompiler.DeterministicOperationsDocument
+		evidence DeterministicApplicationEvidence
+	}{
+		{
+			name: "create ancestor while descendant remains",
+			document: deterministicOutcomeDocument("complete",
+				operation("a/child.txt", "create", implContent("child\n")),
+				operation("a", "create", implContent("ancestor\n")),
+			),
+			evidence: DeterministicApplicationEvidence{Operations: []AppliedDeterministicOperationEvidence{
+				outcomeCreateEvidence(1, "a/child.txt", "child\n"),
+				outcomeCreateEvidence(2, "a", "ancestor\n"),
+			}},
+		},
+		{
+			name: "create descendant beneath regular file",
+			document: deterministicOutcomeDocument("complete",
+				operation("a", "create", implContent("file\n")),
+				operation("a/child.txt", "create", implContent("child\n")),
+			),
+			evidence: DeterministicApplicationEvidence{Operations: []AppliedDeterministicOperationEvidence{
+				outcomeCreateEvidence(1, "a", "file\n"),
+				outcomeCreateEvidence(2, "a/child.txt", "child\n"),
+			}},
+		},
+		{
+			name: "rename destination with current descendant",
+			document: deterministicOutcomeDocument("complete",
+				operation("target/child.txt", "create", implContent("child\n")),
+				rename("source.txt", "target", "source\n", true, ""),
+			),
+			evidence: DeterministicApplicationEvidence{Operations: []AppliedDeterministicOperationEvidence{
+				outcomeCreateEvidence(1, "target/child.txt", "child\n"),
+				outcomeRenameEvidence(2, "source.txt", "target", "source\n", "source\n"),
+			}},
+		},
+		{
+			name: "rename destination beneath regular file",
+			document: deterministicOutcomeDocument("complete",
+				operation("a", "create", implContent("file\n")),
+				rename("source.txt", "a/child.txt", "source\n", true, ""),
+			),
+			evidence: DeterministicApplicationEvidence{Operations: []AppliedDeterministicOperationEvidence{
+				outcomeCreateEvidence(1, "a", "file\n"),
+				outcomeRenameEvidence(2, "source.txt", "a/child.txt", "source\n", "source\n"),
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if validApplicationEvidence(&test.evidence, test.document) {
+				t.Fatal("validApplicationEvidence accepted hierarchy conflict")
+			}
+		})
+	}
+}
+
+func TestLoadDeterministicOutcomeRejectsBrokenContinuity(t *testing.T) {
+	tests := []struct {
+		name     string
+		document *speccompiler.DeterministicOperationsDocument
+		plan     *DeterministicMutationPlan
+		mutate   func(*DeterministicOutcome)
+	}{
+		{
+			name: "create then modify source continuity",
+			document: deterministicOutcomeDocument("complete",
+				operation("a.txt", "create", implContent("old\n")),
+				operation("a.txt", "modify", speccompiler.DeterministicImplementation{Changes: []speccompiler.DeterministicChange{{Kind: "replace", OldText: "old", NewText: "new", ExpectedOccurrences: 1}}}),
+			),
+			plan: deterministicOutcomePlan("complete", preparedCreate("a.txt", "old\n"), preparedModify("a.txt", "old\n", "new\n")),
+			mutate: func(outcome *DeterministicOutcome) {
+				outcome.Application.Operations[1].SourceBefore.Size++
+			},
+		},
+		{
+			name: "rename chain source continuity",
+			document: deterministicOutcomeDocument("complete",
+				rename("a.txt", "b.txt", "old\n", true, ""),
+				rename("b.txt", "c.txt", "old\n", true, ""),
+			),
+			plan: deterministicOutcomePlan("complete", preparedRename("a.txt", "b.txt", "old\n", "old\n"), preparedRename("b.txt", "c.txt", "old\n", "old\n")),
+			mutate: func(outcome *DeterministicOutcome) {
+				outcome.Application.Operations[1].SourceBefore.SHA256 = strings.Repeat("0", 64)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evidence := applicationEvidenceForPlan(t, test.plan)
+			outcome := DeterministicOutcome{Application: &evidence}
+			test.mutate(&outcome)
+			if validApplicationEvidence(outcome.Application, test.document) {
+				t.Fatal("validApplicationEvidence accepted broken continuity")
+			}
+		})
+	}
+}
+
 func TestLoadDeterministicOutcomeRejectsFailureEvidenceBinding(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -242,8 +465,20 @@ func preparedDelete(path, content string) PreparedDeterministicOperation {
 	return PreparedDeterministicOperation{Index: 1, Operation: "delete", SourcePath: path, Before: newFileState([]byte(content))}
 }
 
+func preparedModify(path, before, after string) PreparedDeterministicOperation {
+	return PreparedDeterministicOperation{Index: 1, Operation: "modify", SourcePath: path, Before: newFileState([]byte(before)), After: newFileState([]byte(after))}
+}
+
 func preparedRename(source, destination, before, after string) PreparedDeterministicOperation {
 	return PreparedDeterministicOperation{Index: 1, Operation: "rename", SourcePath: source, DestinationPath: destination, Before: newFileState([]byte(before)), DestinationAfter: newFileState([]byte(after))}
+}
+
+func outcomeCreateEvidence(index int, path, content string) AppliedDeterministicOperationEvidence {
+	return AppliedDeterministicOperationEvidence{Index: index, Operation: "create", SourcePath: path, SourceBefore: DeterministicOutcomeFileState{}, SourceAfter: authoredOutcomeFileState([]byte(content))}
+}
+
+func outcomeRenameEvidence(index int, source, destination, before, after string) AppliedDeterministicOperationEvidence {
+	return AppliedDeterministicOperationEvidence{Index: index, Operation: "rename", SourcePath: source, DestinationPath: destination, SourceBefore: authoredOutcomeFileState([]byte(before)), SourceAfter: DeterministicOutcomeFileState{}, DestinationBefore: DeterministicOutcomeFileState{}, DestinationAfter: authoredOutcomeFileState([]byte(after))}
 }
 
 func applicationForPlan(t *testing.T, plan *DeterministicMutationPlan) *DeterministicApplicationResult {
@@ -254,6 +489,16 @@ func applicationForPlan(t *testing.T, plan *DeterministicMutationPlan) *Determin
 	}
 	application := applicationResult(model)
 	return &application
+}
+
+func applicationEvidenceForPlan(t *testing.T, plan *DeterministicMutationPlan) DeterministicApplicationEvidence {
+	t.Helper()
+	model, err := validateDeterministicPlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := applicationResult(model)
+	return applicationEvidence(model, application.ChangedPaths)
 }
 
 func assertValidOutcomeReadback(t *testing.T, document *speccompiler.DeterministicOperationsDocument, plan *DeterministicMutationPlan, coverage string) {

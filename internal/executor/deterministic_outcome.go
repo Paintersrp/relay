@@ -305,7 +305,7 @@ func validApplicationEvidence(value *DeterministicApplicationEvidence, document 
 		return false
 	}
 	virtual := make(map[string]DeterministicOutcomeFileState, len(value.Operations)*2)
-	virtualDirectories := make(map[string]bool, len(value.Operations)*2)
+	virtualDescendants := make(map[string]int, len(value.Operations)*2)
 	initial := make(map[string]DeterministicOutcomeFileState, len(value.Operations)*2)
 	paths := make([]string, 0, len(value.Operations)*2)
 	recordInitial := func(path string, state DeterministicOutcomeFileState) {
@@ -319,7 +319,7 @@ func validApplicationEvidence(value *DeterministicApplicationEvidence, document 
 		if operation.Index != index+1 || operation.Operation != expected.Operation || operation.SourcePath != expected.Path || operation.DestinationPath != expected.DestinationPath || !validDeterministicPath(operation.SourcePath) || (operation.DestinationPath != "" && !validDeterministicPath(operation.DestinationPath)) || !validOutcomeFileState(operation.SourceBefore) || !validOutcomeFileState(operation.SourceAfter) || !validOutcomeFileState(operation.DestinationBefore) || !validOutcomeFileState(operation.DestinationAfter) || !validApplicationOperationShape(operation, expected) {
 			return false
 		}
-		if !validEvidencePathPosition(operation.SourcePath, virtual, virtualDirectories) || (operation.Operation == "rename" && !validEvidencePathPosition(operation.DestinationPath, virtual, virtualDirectories)) {
+		if !validEvidencePathPosition(operation.SourcePath, virtual, virtualDescendants) || (operation.Operation == "rename" && !validEvidencePathPosition(operation.DestinationPath, virtual, virtualDescendants)) {
 			return false
 		}
 		if current, exists := virtual[operation.SourcePath]; exists {
@@ -341,11 +341,9 @@ func validApplicationEvidence(value *DeterministicApplicationEvidence, document 
 				recordInitial(operation.DestinationPath, operation.DestinationBefore)
 			}
 		}
-		virtual[operation.SourcePath] = operation.SourceAfter
-		addVirtualEvidenceParents(operation.SourcePath, virtualDirectories)
+		setVirtualEvidenceState(operation.SourcePath, operation.SourceAfter, virtual, virtualDescendants)
 		if operation.Operation == "rename" {
-			virtual[operation.DestinationPath] = operation.DestinationAfter
-			addVirtualEvidenceParents(operation.DestinationPath, virtualDirectories)
+			setVirtualEvidenceState(operation.DestinationPath, operation.DestinationAfter, virtual, virtualDescendants)
 		}
 	}
 	changedPaths := make([]string, 0, len(paths))
@@ -401,8 +399,8 @@ func validAuthoredWholeFileState(actual AppliedDeterministicOperationEvidence, e
 	}
 }
 
-func validEvidencePathPosition(path string, virtual map[string]DeterministicOutcomeFileState, virtualDirectories map[string]bool) bool {
-	if virtualDirectories[path] {
+func validEvidencePathPosition(path string, virtual map[string]DeterministicOutcomeFileState, virtualDescendants map[string]int) bool {
+	if virtualDescendants[path] > 0 {
 		return false
 	}
 	parts := strings.Split(path, "/")
@@ -411,18 +409,27 @@ func validEvidencePathPosition(path string, virtual map[string]DeterministicOutc
 			return false
 		}
 	}
-	for other, state := range virtual {
-		if state.Exists && strings.HasPrefix(other, path+"/") {
-			return false
-		}
-	}
 	return true
 }
 
-func addVirtualEvidenceParents(path string, virtualDirectories map[string]bool) {
+func setVirtualEvidenceState(path string, state DeterministicOutcomeFileState, virtual map[string]DeterministicOutcomeFileState, virtualDescendants map[string]int) {
+	if previous, exists := virtual[path]; exists && previous.Exists {
+		adjustVirtualEvidenceDescendants(path, -1, virtualDescendants)
+	}
+	virtual[path] = state
+	if state.Exists {
+		adjustVirtualEvidenceDescendants(path, 1, virtualDescendants)
+	}
+}
+
+func adjustVirtualEvidenceDescendants(path string, delta int, virtualDescendants map[string]int) {
 	parts := strings.Split(path, "/")
 	for index := 1; index < len(parts); index++ {
-		virtualDirectories[strings.Join(parts[:index], "/")] = true
+		ancestor := strings.Join(parts[:index], "/")
+		virtualDescendants[ancestor] += delta
+		if virtualDescendants[ancestor] == 0 {
+			delete(virtualDescendants, ancestor)
+		}
 	}
 }
 
