@@ -314,11 +314,6 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	t.Cleanup(func() { _ = store.Close() })
 	ctx := context.Background()
 
-	service, err := NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)
 	sourcePath := "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json"
@@ -390,7 +385,10 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	}
 
 	reader := newPackageSourceVaultReader(sourcePath, packageDeliveryTicketBytes(baseCommit))
-	service.SetSourceVaultsForTest(reader)
+	service, err := NewServiceWithSourceVaults(store, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	brief := ArtifactInput{DisplayName: briefName, Bytes: briefBytes, ExpectedSHA256: sha256Hex(briefBytes)}
 	operations := ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: sha256Hex(operationsBytes)}
@@ -398,7 +396,7 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 }
 
 func packageDeliveryTicketBytes(baseCommit string) []byte {
-	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":[],"out_of_scope":[]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":[],"transition_applicability":"not_required","completion_criteria":[]}`, baseCommit))
+	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, baseCommit))
 }
 
 func packageOperationsWithBaseCommit(baseCommit string) []byte {

@@ -118,7 +118,7 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	ctx := context.Background()
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)
-	sourcePath := "tickets/p2-t2.delivery-ticket.json"
+	sourcePath := "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json"
 	reader := &evidenceSourceVaultReader{path: sourcePath, bytes: packageEvidenceDeliveryTicketBytes(baseCommit)}
 	packageService, err := workflowpackages.NewServiceWithSourceVaults(store, reader)
 	if err != nil {
@@ -219,7 +219,7 @@ func packageEvidenceSHA(data []byte) string {
 }
 
 func packageEvidenceDeliveryTicketBytes(baseCommit string) []byte {
-	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":[],"out_of_scope":[]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":[],"transition_applicability":"not_required","completion_criteria":[]}`, baseCommit))
+	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, baseCommit))
 }
 
 type evidenceSourceVaultReader struct {

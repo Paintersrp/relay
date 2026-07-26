@@ -45,19 +45,23 @@ type PackageWorkflowPreparationService struct {
 	adaptive      *AdaptiveExecutionAttemptService
 }
 
-func NewPackageWorkflowPreparationService(store *workflowstore.Store, sourceVaults executionpackages.SourceVaultReader) (*PackageWorkflowPreparationService, error) {
+func NewPackageWorkflowPreparationService(store *workflowstore.Store, sourceVaults ...executionpackages.SourceVaultReader) (*PackageWorkflowPreparationService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
+	}
+	var reader executionpackages.SourceVaultReader
+	if len(sourceVaults) > 0 {
+		reader = sourceVaults[0]
 	}
 	runs, err := workflowruns.NewService(store)
 	if err != nil {
 		return nil, err
 	}
-	deterministic, err := NewPackageDeterministicExecutionService(store, sourceVaults)
+	deterministic, err := NewPackageDeterministicExecutionService(store, reader)
 	if err != nil {
 		return nil, err
 	}
-	adaptive, err := NewAdaptiveExecutionAttemptService(store, sourceVaults)
+	adaptive, err := NewAdaptiveExecutionAttemptService(store, reader)
 	if err != nil {
 		return nil, err
 	}

@@ -56,15 +56,19 @@ type AdaptiveDispatchAdmissionService struct {
 	runs     *workflowruns.Service
 }
 
-func NewAdaptiveDispatchAdmissionService(store *workflowstore.Store, sourceVaults executionpackages.SourceVaultReader) (*AdaptiveDispatchAdmissionService, error) {
+func NewAdaptiveDispatchAdmissionService(store *workflowstore.Store, sourceVaults ...executionpackages.SourceVaultReader) (*AdaptiveDispatchAdmissionService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	briefs, err := NewEffectiveExecutorBriefService(store, sourceVaults)
+	var reader executionpackages.SourceVaultReader
+	if len(sourceVaults) > 0 {
+		reader = sourceVaults[0]
+	}
+	briefs, err := NewEffectiveExecutorBriefService(store, reader)
 	if err != nil {
 		return nil, err
 	}
-	attempts, err := NewAdaptiveExecutionAttemptService(store, sourceVaults)
+	attempts, err := NewAdaptiveExecutionAttemptService(store, reader)
 	if err != nil {
 		return nil, err
 	}

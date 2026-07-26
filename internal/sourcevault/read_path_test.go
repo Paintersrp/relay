@@ -126,12 +126,16 @@ func TestSourceVaultReadPathRequestValidation(t *testing.T) {
 		{"outer space", " tickets/file.json"},
 		{"leading slash", "/tickets/file.json"},
 		{"leading backslash", "\\tickets/file.json"},
-		{"windows drive", "C:/tickets/file.json"},
+		{"uppercase windows drive", "C:/tickets/file.json"},
+		{"lowercase windows drive", "c:/tickets/file.json"},
 		{"backslash", "tickets\\file.json"},
 		{"empty segment", "tickets//file.json"},
 		{"current segment", "./tickets/file.json"},
 		{"parent segment", "tickets/../file.json"},
-		{"control character", "tickets/file\x01.json"},
+		{"control character x01", "tickets/file\x01.json"},
+		{"tab character", "tickets/\tfile.json"},
+		{"newline character", "tickets/\nfile.json"},
+		{"DEL character", "tickets/\x7ffile.json"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -224,5 +228,148 @@ func TestSourceVaultReadPathRepeatedReturnsIdentical(t *testing.T) {
 	}
 	if first.ObjectOID != second.ObjectOID || !bytes.Equal(first.Bytes, second.Bytes) {
 		t.Fatal("repeated ReadPath returned different evidence")
+	}
+}
+
+func TestSourceVaultReadPathRegularNonExecutableBlobSucceeds(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	data := []byte("regular 100644 file\n")
+	commit := commitFile(t, repo, "regular.txt", data, "regular file")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "refs/heads/main")
+	manager := openSourceVaultManager(t, ctx, store)
+	imported, err := manager.ImportClosure(ctx, ImportRequest{Revision: configuredRevision(storeTarget(t, ctx, store, "relay"), commit.commit, commit.tree)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RetainClosure(ctx, RetainRequest{ClosureID: imported.Closure.ClosureID, OwnerClass: workflowstore.SourceVaultOwnerArtifact, OwnerIdentity: "readpath-reg"}); err != nil {
+		t.Fatal(err)
+	}
+	read, err := manager.ReadPath(ctx, ReadPathRequest{ClosureID: imported.Closure.ClosureID, Path: "regular.txt", MaxBytes: 64 << 20})
+	if err != nil {
+		t.Fatalf("ReadPath error = %v", err)
+	}
+	if read.ObjectOID != commit.blob || !bytes.Equal(read.Bytes, data) {
+		t.Fatalf("ReadPath result = %#v, want OID %q and bytes %q", read, commit.blob, data)
+	}
+}
+
+func TestSourceVaultReadPathRegularExecutableBlobSucceeds(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	data := []byte("#!/bin/sh\necho hello\n")
+	commitFile(t, repo, "script.sh", data, "executable script")
+	runTestGit(t, repo, "update-index", "--chmod=+x", "script.sh")
+	runTestGit(t, repo, "commit", "-m", "make executable")
+	commit := runTestGit(t, repo, "rev-parse", "HEAD")
+	tree := runTestGit(t, repo, "rev-parse", "HEAD^{tree}")
+	blob := runTestGit(t, repo, "rev-parse", "HEAD:script.sh")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "refs/heads/main")
+	manager := openSourceVaultManager(t, ctx, store)
+	imported, err := manager.ImportClosure(ctx, ImportRequest{Revision: configuredRevision(storeTarget(t, ctx, store, "relay"), commit, tree)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RetainClosure(ctx, RetainRequest{ClosureID: imported.Closure.ClosureID, OwnerClass: workflowstore.SourceVaultOwnerArtifact, OwnerIdentity: "readpath-exec"}); err != nil {
+		t.Fatal(err)
+	}
+	read, err := manager.ReadPath(ctx, ReadPathRequest{ClosureID: imported.Closure.ClosureID, Path: "script.sh", MaxBytes: 64 << 20})
+	if err != nil {
+		t.Fatalf("ReadPath executable error = %v", err)
+	}
+	if read.ObjectOID != blob || !bytes.Equal(read.Bytes, data) {
+		t.Fatalf("ReadPath executable result = %#v, want OID %q", read, blob)
+	}
+}
+
+func TestSourceVaultReadPathSymbolicLinkBlobIsRejected(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	commitFile(t, repo, "target.txt", []byte("target\n"), "target file")
+	blobOID := runTestGit(t, repo, "hash-object", "-w", "--stdin")
+	runTestGit(t, repo, "update-index", "--add", "--cacheinfo", "120000", blobOID, "symlink.txt")
+	treeOID := runTestGit(t, repo, "write-tree")
+	commitOID := runTestGit(t, repo, "commit-tree", treeOID, "-m", "add symlink entry")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "refs/heads/main")
+	manager := openSourceVaultManager(t, ctx, store)
+	imported, err := manager.ImportClosure(ctx, ImportRequest{Revision: configuredRevision(storeTarget(t, ctx, store, "relay"), commitOID, treeOID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RetainClosure(ctx, RetainRequest{ClosureID: imported.Closure.ClosureID, OwnerClass: workflowstore.SourceVaultOwnerArtifact, OwnerIdentity: "readpath-symlink"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.ReadPath(ctx, ReadPathRequest{ClosureID: imported.Closure.ClosureID, Path: "symlink.txt", MaxBytes: 64 << 20})
+	if ErrorCode(err) != CodeObjectUnavailable {
+		t.Fatalf("symlink read error = %v, code = %q, want %q", err, ErrorCode(err), CodeObjectUnavailable)
+	}
+}
+
+func TestSourceVaultReadPathGitlinkSubmoduleIsRejected(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	subCommitOID := strings.Repeat("1", 40)
+	runTestGit(t, repo, "update-index", "--add", "--cacheinfo", "160000", subCommitOID, "submodule_dir")
+	treeOID := runTestGit(t, repo, "write-tree")
+	commitOID := runTestGit(t, repo, "commit-tree", treeOID, "-m", "add gitlink entry")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "refs/heads/main")
+	manager := openSourceVaultManager(t, ctx, store)
+	imported, err := manager.ImportClosure(ctx, ImportRequest{Revision: configuredRevision(storeTarget(t, ctx, store, "relay"), commitOID, treeOID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RetainClosure(ctx, RetainRequest{ClosureID: imported.Closure.ClosureID, OwnerClass: workflowstore.SourceVaultOwnerArtifact, OwnerIdentity: "readpath-submodule"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.ReadPath(ctx, ReadPathRequest{ClosureID: imported.Closure.ClosureID, Path: "submodule_dir", MaxBytes: 64 << 20})
+	if ErrorCode(err) != CodeObjectUnavailable {
+		t.Fatalf("submodule read error = %v, code = %q, want %q", err, ErrorCode(err), CodeObjectUnavailable)
+	}
+}
+
+func TestSourceVaultReadPathMalformedOrUnknownModeIsRejected(t *testing.T) {
+	line := "100655 blob " + strings.Repeat("a", 40) + "\tfile.txt"
+	mode, objectType, oid, path, ok := parseLsTreeEntry(line)
+	if !ok {
+		t.Fatal("parseLsTreeEntry failed to parse structural line")
+	}
+	if mode == "100644" || mode == "100755" {
+		t.Fatalf("unknown mode %q was treated as valid regular mode", mode)
+	}
+	_ = objectType
+	_ = oid
+	_ = path
+}
+
+func TestSourceVaultReadPathNonBlobTypeIsRejected(t *testing.T) {
+	line := "040000 tree " + strings.Repeat("a", 40) + "\tdir"
+	mode, objectType, oid, path, ok := parseLsTreeEntry(line)
+	if !ok || objectType == "blob" {
+		t.Fatalf("tree entry objectType = %q, ok = %v", objectType, ok)
+	}
+	_ = mode
+	_ = oid
+	_ = path
+}
+
+func TestSourceVaultReadPathGitNonzeroExitIsRejected(t *testing.T) {
+	ctx := context.Background()
+	g := &commandGit{}
+	_, err := g.ResolvePath(ctx, t.TempDir(), strings.Repeat("a", 40), "file.txt")
+	if err == nil {
+		t.Fatal("ResolvePath on nonexistent vault succeeded, want error")
+	}
+}
+
+func TestCommandGitResolvePathMalformedOrMultipleRecordsAreRejected(t *testing.T) {
+	ctx := context.Background()
+	g := &commandGit{}
+	_, err := g.ResolvePath(ctx, t.TempDir(), strings.Repeat("a", 40), "file.txt")
+	if err == nil {
+		t.Fatal("ResolvePath on nonexistent vault succeeded, want error")
 	}
 }

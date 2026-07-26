@@ -135,11 +135,21 @@ type ExecutionAssignmentService struct {
 	packages *executionpackages.Service
 }
 
-func NewExecutionAssignmentService(store *workflowstore.Store, sourceVaults executionpackages.SourceVaultReader) (*ExecutionAssignmentService, error) {
+func NewExecutionAssignmentService(store *workflowstore.Store, sourceVaults ...executionpackages.SourceVaultReader) (*ExecutionAssignmentService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	packages, err := executionpackages.NewServiceWithSourceVaults(store, sourceVaults)
+	var reader executionpackages.SourceVaultReader
+	if len(sourceVaults) > 0 {
+		reader = sourceVaults[0]
+	}
+	var packages *executionpackages.Service
+	var err error
+	if reader != nil {
+		packages, err = executionpackages.NewServiceWithSourceVaults(store, reader)
+	} else {
+		packages, err = executionpackages.NewService(store)
+	}
 	if err != nil {
 		return nil, err
 	}

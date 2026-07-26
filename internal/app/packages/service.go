@@ -96,13 +96,20 @@ type packageBasis struct {
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
-	return NewServiceWithSourceVaults(store, nil)
+	return newService(store, nil)
 }
 
 // NewServiceWithSourceVaults creates a Service that can read the exact retained
 // Delivery Ticket source document from the supplied source-vault manager when
 // loading approved package authority.
 func NewServiceWithSourceVaults(store *workflowstore.Store, sourceVaults SourceVaultReader) (*Service, error) {
+	if sourceVaults == nil {
+		return nil, fmt.Errorf("source-vault reader is required")
+	}
+	return newService(store, sourceVaults)
+}
+
+func newService(store *workflowstore.Store, sourceVaults SourceVaultReader) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
@@ -111,12 +118,6 @@ func NewServiceWithSourceVaults(store *workflowstore.Store, sourceVaults SourceV
 		return nil, err
 	}
 	return &Service{store: store, runs: runs, sourceVaults: sourceVaults}, nil
-}
-
-// SetSourceVaultsForTest is a package-private seam for tests that need to
-// inject a narrow source-vault reader without changing the public constructor.
-func (s *Service) SetSourceVaultsForTest(sourceVaults SourceVaultReader) {
-	s.sourceVaults = sourceVaults
 }
 
 func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResult, error) {

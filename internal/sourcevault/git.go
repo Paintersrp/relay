@@ -22,6 +22,12 @@ const gitDiagnosticLimit = 64 << 10
 
 var zeroOID = strings.Repeat("0", 40)
 
+type resolvedPath struct {
+	Mode       string
+	ObjectType string
+	ObjectOID  string
+}
+
 type gitClient interface {
 	ValidateRepositorySeparation(context.Context, string) (bool, error)
 	VaultPath(relativePath string) (string, error)
@@ -36,7 +42,7 @@ type gitClient interface {
 	ReadObject(context.Context, string, string, string, int64) ([]byte, error)
 	ReadTree(context.Context, string, string) ([]RetainedTreeEntry, error)
 	ReadBlobRange(context.Context, string, string, int64, int64) (ReadRetainedBlobRangeResult, error)
-	ResolvePath(context.Context, string, string, string) (string, string, error)
+	ResolvePath(context.Context, string, string, string) (resolvedPath, error)
 	GarbageCollect(context.Context, string) error
 }
 

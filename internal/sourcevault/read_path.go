@@ -1,13 +1,14 @@
 package sourcevault
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"io"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	workflowstore "relay/internal/store/workflow"
@@ -54,18 +55,21 @@ func (m *Manager) ReadPath(ctx context.Context, request ReadPathRequest) (ReadPa
 	if err := m.git.VerifyVaultClosure(ctx, vaultPath, closure.CommitOID, closure.TreeOID, closure.RefName); err != nil {
 		return ReadPathResult{}, m.failClosure(ctx, closure, err, workflowstore.SourceVaultFailurePostImportVerification)
 	}
-	oid, objectType, err := m.git.ResolvePath(ctx, vaultPath, closure.CommitOID, request.Path)
+	resolved, err := m.git.ResolvePath(ctx, vaultPath, closure.CommitOID, request.Path)
 	if err != nil {
 		return ReadPathResult{}, managerError(ctx, err, CodeObjectUnavailable)
 	}
-	if objectType != "blob" {
+	if resolved.ObjectType != "blob" || (resolved.Mode != "100644" && resolved.Mode != "100755") {
 		return ReadPathResult{}, &Error{Code: CodeObjectUnavailable}
 	}
-	data, err := m.git.ReadObject(ctx, vaultPath, oid, "blob", request.MaxBytes)
+	if !validOID(resolved.ObjectOID) {
+		return ReadPathResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	data, err := m.git.ReadObject(ctx, vaultPath, resolved.ObjectOID, "blob", request.MaxBytes)
 	if err != nil {
 		return ReadPathResult{}, managerError(ctx, err, CodeObjectUnavailable)
 	}
-	return ReadPathResult{ObjectOID: oid, Bytes: append([]byte(nil), data...)}, nil
+	return ReadPathResult{ObjectOID: resolved.ObjectOID, Bytes: append([]byte(nil), data...)}, nil
 }
 
 func validateReadPathRequest(request ReadPathRequest) error {
@@ -93,7 +97,7 @@ func validateReadPathRequest(request ReadPathRequest) error {
 		return &Error{Code: CodeInvalidRequest}
 	}
 	for _, r := range request.Path {
-		if r < 0x20 {
+		if unicode.IsControl(r) {
 			return &Error{Code: CodeInvalidRequest}
 		}
 	}
@@ -111,45 +115,53 @@ func isWindowsDrivePath(path string) bool {
 		return false
 	}
 	c := path[0]
-	return (c >= 'A' && c <= 'Z') && path[1] == ':'
+	return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) && path[1] == ':'
 }
 
 // ResolvePath resolves a repository-relative path within the retained vault to
 // its Git object type and OID. It uses git ls-tree against the supplied commit
 // and rejects ambiguous, multiple, or malformed results.
-func (g *commandGit) ResolvePath(ctx context.Context, vaultPath, commitOID, path string) (string, string, error) {
+func (g *commandGit) ResolvePath(ctx context.Context, vaultPath, commitOID, path string) (resolvedPath, error) {
 	cmd := gitCommand(ctx, vaultPath, true, "ls-tree", "-z", commitOID, "--", path)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
 	stderr := newLimitedBuffer(gitDiagnosticLimit)
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
-		return "", "", &gitFailure{reason: workflowstore.SourceVaultFailureVaultGitStartFailed, code: CodeVaultUnavailable, err: err}
+		return resolvedPath{}, &gitFailure{reason: workflowstore.SourceVaultFailureVaultGitStartFailed, code: CodeVaultUnavailable, err: err}
 	}
-	defer func() { _ = cmd.Wait() }()
 
-	buffered := bufio.NewReader(stdout)
-	line, err := buffered.ReadBytes(0)
-	if err == io.EOF && len(line) == 0 {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+	stdoutBytes, readErr := io.ReadAll(io.LimitReader(stdout, gitDiagnosticLimit+1))
+	_, _ = io.Copy(io.Discard, stdout)
+	waitErr := cmd.Wait()
+
+	if ctx.Err() != nil {
+		return resolvedPath{}, &gitFailure{reason: workflowstore.SourceVaultFailureOperationCancelled, code: CodeOperationCancelled, err: ctx.Err()}
 	}
-	if err != nil {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+	if readErr != nil || waitErr != nil {
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
-	if len(line) > 0 && line[len(line)-1] == 0 {
-		line = line[:len(line)-1]
+	if len(stdoutBytes) == 0 || stdoutBytes[len(stdoutBytes)-1] != 0 {
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
-	if _, peekErr := buffered.ReadByte(); peekErr != io.EOF {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+	entries := bytes.Split(stdoutBytes, []byte{0})
+	if len(entries) != 2 || len(entries[1]) != 0 {
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
-	mode, objectType, oid, resolvedPath, ok := parseLsTreeEntry(string(line))
-	if !ok || resolvedPath != path {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+
+	mode, objectType, oid, entryPath, ok := parseLsTreeEntry(string(entries[0]))
+	if !ok || entryPath != path {
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
-	_ = mode
-	return oid, objectType, nil
+	if objectType != "blob" {
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if mode != "100644" && mode != "100755" {
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
+	}
+	return resolvedPath{Mode: mode, ObjectType: objectType, ObjectOID: oid}, nil
 }
 
 func parseLsTreeEntry(line string) (mode, objectType, oid, path string, ok bool) {

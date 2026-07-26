@@ -895,30 +895,30 @@ func (g *fakeGit) ReadBlobRange(_ context.Context, _ string, blobOID string, off
 	return ReadRetainedBlobRangeResult{BlobOID: blobOID, Offset: offset, TotalSize: int64(len(value)), Bytes: append([]byte(nil), value[offset:end]...)}, nil
 }
 
-func (g *fakeGit) ResolvePath(_ context.Context, _ string, commitOID string, path string) (string, string, error) {
+func (g *fakeGit) ResolvePath(_ context.Context, _ string, commitOID string, path string) (resolvedPath, error) {
 	if err := g.call("resolve_path"); err != nil {
-		return "", "", err
+		return resolvedPath{}, err
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	treeOID, ok := g.trees[commitOID]
 	if !ok {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
 	value, ok := g.objects[treeOID]
 	if !ok {
-		return "", "", &Error{Code: CodeObjectUnavailable}
+		return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 	}
 	entries, err := parseRawTree(strings.NewReader(string(value)))
 	if err != nil {
-		return "", "", err
+		return resolvedPath{}, err
 	}
 	for _, entry := range entries {
 		if string(entry.Name) == path {
-			return entry.ObjectOID, entry.ObjectType, nil
+			return resolvedPath{Mode: entry.Mode, ObjectType: entry.ObjectType, ObjectOID: entry.ObjectOID}, nil
 		}
 	}
-	return "", "", &Error{Code: CodeObjectUnavailable}
+	return resolvedPath{}, &Error{Code: CodeObjectUnavailable}
 }
 
 func (g *fakeGit) GarbageCollect(context.Context, string) error { return g.call("gc") }

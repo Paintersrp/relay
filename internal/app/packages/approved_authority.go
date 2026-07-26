@@ -3,11 +3,11 @@ package packages
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
@@ -126,7 +126,7 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 	if len(diagnostics) != 0 {
 		return ApprovedAuthority{}, fmt.Errorf("%w: approved Ticket Design Brief projection failed: %v", ErrApprovedAuthorityInvalid, diagnostics)
 	}
-	deliveryTicketDocument, err := s.loadApprovedDeliveryTicketSource(ctx, rows.basis.closure, rows.basis.workspace, rows.basis.members[0].ticket, rows.basis.members[0].revision)
+	deliveryTicketDocument, err := s.loadApprovedDeliveryTicketSource(ctx, rows.basis.closure, rows.basis.workspace, rows.basis.members[0].ticket, rows.basis.members[0].revision, rows)
 	if err != nil {
 		return ApprovedAuthority{}, err
 	}
@@ -340,7 +340,14 @@ func cloneDeterministicOperations(document *speccompiler.DeterministicOperations
 	return &clone
 }
 
-func (s *Service) loadApprovedDeliveryTicketSource(ctx context.Context, closure workflowstore.SourceVaultClosure, workspace workflowstore.FeatureWorkspace, ticket workflowstore.DeliveryTicket, revision workflowstore.DeliveryTicketRevision) (ApprovedSourceDocument, error) {
+func (s *Service) loadApprovedDeliveryTicketSource(
+	ctx context.Context,
+	closure workflowstore.SourceVaultClosure,
+	workspace workflowstore.FeatureWorkspace,
+	ticket workflowstore.DeliveryTicket,
+	revision workflowstore.DeliveryTicketRevision,
+	rows approvedAuthorityRows,
+) (ApprovedSourceDocument, error) {
 	if s.sourceVaults == nil {
 		return ApprovedSourceDocument{}, fmt.Errorf("%w: source-vault reader is not configured", ErrApprovedAuthorityInvalid)
 	}
@@ -356,25 +363,85 @@ func (s *Service) loadApprovedDeliveryTicketSource(ctx context.Context, closure 
 		MaxBytes:  approvedAuthorityReadLimit,
 	})
 	if err != nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is unavailable: %v", ErrApprovedAuthorityInvalid, err)
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is unavailable: %w", ErrApprovedAuthorityInvalid, err)
 	}
-	if len(result.Bytes) == 0 {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is empty", ErrApprovedAuthorityInvalid)
+	if !validOID(result.ObjectOID) {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document object OID is invalid", ErrApprovedAuthorityInvalid)
 	}
-	if !utf8.Valid(result.Bytes) {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is not valid UTF-8", ErrApprovedAuthorityInvalid)
+
+	compileResult, document := speccompiler.CompileDeliveryTicket(
+		filepath.Base(revision.SourcePath),
+		result.Bytes,
+	)
+	if len(compileResult.Errors) != 0 || document == nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket compiler rejected document: %v", ErrApprovedAuthorityInvalid, compileResult.Errors)
 	}
-	var topObject map[string]json.RawMessage
-	if err := json.Unmarshal(result.Bytes, &topObject); err != nil || topObject == nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is not a top-level JSON object", ErrApprovedAuthorityInvalid)
+
+	if document.FeatureSlug != workspace.FeatureSlug ||
+		document.TicketID != ticket.TicketID ||
+		document.Revision != revision.RevisionNumber ||
+		document.RepoTarget != revision.RepoTarget ||
+		document.Branch != revision.Branch ||
+		document.BaseCommit != revision.BaseCommit ||
+		document.Goal != revision.Goal ||
+		document.Context != revision.Context ||
+		document.TransitionApplicability != revision.TransitionApplicability {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document identity does not match selected revision", ErrApprovedAuthorityInvalid)
 	}
-	var document speccompiler.DeliveryTicketDocument
-	if err := json.Unmarshal(result.Bytes, &document); err != nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is not valid JSON: %v", ErrApprovedAuthorityInvalid, err)
+
+	if revision.ReplacesRevisionRowID.Valid {
+		replacesRev, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, revision.ReplacesRevisionRowID.Int64)
+		if err != nil {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: load replaced Ticket revision: %w", ErrApprovedAuthorityInvalid, err)
+		}
+		if document.ReplacesRevision == nil || *document.ReplacesRevision != replacesRev.RevisionNumber {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document replaces_revision does not match selected revision", ErrApprovedAuthorityInvalid)
+		}
+	} else if document.ReplacesRevision != nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document replaces_revision does not match selected revision", ErrApprovedAuthorityInvalid)
 	}
-	if document.FeatureSlug != workspace.FeatureSlug || document.TicketID != ticket.TicketID || document.Revision != revision.RevisionNumber || document.RepoTarget != revision.RepoTarget || document.Branch != revision.Branch || document.BaseCommit != revision.BaseCommit {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document identity does not match selected revision: feature_slug=%q/%q ticket_id=%q/%q revision=%d/%d repo_target=%q/%q branch=%q/%q base_commit=%q/%q", ErrApprovedAuthorityInvalid, document.FeatureSlug, workspace.FeatureSlug, document.TicketID, ticket.TicketID, document.Revision, revision.RevisionNumber, document.RepoTarget, revision.RepoTarget, document.Branch, revision.Branch, document.BaseCommit, revision.BaseCommit)
+
+	if revision.CancellationReason.Valid {
+		if document.Cancellation == nil || document.Cancellation.Reason != revision.CancellationReason.String {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document cancellation does not match selected revision", ErrApprovedAuthorityInvalid)
+		}
+	} else if document.Cancellation != nil {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document cancellation does not match selected revision", ErrApprovedAuthorityInvalid)
 	}
+
+	if len(document.DependsOn) != len(rows.dependencies) {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document dependencies count does not match selected revision", ErrApprovedAuthorityInvalid)
+	}
+	for i, dep := range rows.dependencies {
+		depRev, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, dep.DependsOnRevisionRowID)
+		if err != nil {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: load dependency Ticket revision: %w", ErrApprovedAuthorityInvalid, err)
+		}
+		depTicket, err := s.store.GetDeliveryTicketByRowID(ctx, depRev.DeliveryTicketRowID)
+		if err != nil {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: load dependency Ticket: %w", ErrApprovedAuthorityInvalid, err)
+		}
+		if document.DependsOn[i].TicketID != depTicket.TicketID || document.DependsOn[i].Revision != depRev.RevisionNumber {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document dependency %d does not match stored revision", ErrApprovedAuthorityInvalid, i)
+		}
+	}
+
+	var storedObligations []workflowstore.DeliveryTicketRevisionMember
+	for _, member := range rows.members {
+		if member.MemberKind == "implementation_obligation" {
+			storedObligations = append(storedObligations, member)
+		}
+	}
+	if len(document.ImplementationObligations) != len(storedObligations) {
+		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document implementation obligations count does not match selected revision", ErrApprovedAuthorityInvalid)
+	}
+	for i, obl := range storedObligations {
+		docObl := document.ImplementationObligations[i]
+		if !obl.MemberPath.Valid || docObl.Path != obl.MemberPath.String || docObl.Obligation != obl.MemberText {
+			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document implementation obligation %d does not match stored revision", ErrApprovedAuthorityInvalid, i)
+		}
+	}
+
 	digest := sha256Hex(result.Bytes)
 	doc := ApprovedSourceDocument{
 		DisplayName:  filepath.Base(revision.SourcePath),
@@ -386,6 +453,18 @@ func (s *Service) loadApprovedDeliveryTicketSource(ctx context.Context, closure 
 		Bytes:        append([]byte(nil), result.Bytes...),
 	}
 	return doc, nil
+}
+
+func validOID(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, char := range value {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func validateDeliveryTicketSourcePath(path string) error {
@@ -413,7 +492,7 @@ func validateDeliveryTicketSourcePath(path string) error {
 		return fmt.Errorf("Delivery Ticket source path must be valid UTF-8")
 	}
 	for _, r := range path {
-		if r < 0x20 {
+		if unicode.IsControl(r) {
 			return fmt.Errorf("Delivery Ticket source path must not contain control characters")
 		}
 	}
