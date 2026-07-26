@@ -16,66 +16,66 @@ import (
 
 const WorkflowPackageAuditPacketSchemaVersion = "3.0"
 
-var ErrWorkflowPackageAuditPacketV3Invalid = errors.New(
-	"workflow package audit packet v3 is invalid",
+var ErrWorkflowPackageAuditPacketInvalid = errors.New(
+	"workflow package audit packet is invalid",
 )
 
-// WorkflowPackageAuditPacketV3 is the canonical package audit packet v3 model.
+// WorkflowPackageAuditPacket is the canonical package audit packet model.
 // Field order defines JSON property order.
-type WorkflowPackageAuditPacketV3 struct {
-	SchemaVersion            string                                         `json:"schema_version"`
-	Run                      WorkflowPackageAuditRunV3                      `json:"run"`
-	Repository               WorkflowPackageAuditRepositoryV3               `json:"repository"`
-	Authority                WorkflowPackageAuditAuthorityV3                `json:"authority"`
-	DeterministicApplication WorkflowPackageAuditDeterministicApplicationV3 `json:"deterministic_application"`
-	Execution                WorkflowPackageAuditExecutionV3                `json:"execution"`
-	ChangedFiles             []WorkflowPackageAuditChangedFileV3            `json:"changed_files"`
-	RelevantSourcePaths      []string                                       `json:"relevant_source_paths"`
-	Validation               []WorkflowPackageAuditValidationResultV3       `json:"validation"`
-	Artifacts                []WorkflowPackageAuditEmbeddedArtifactV3       `json:"artifacts"`
+type WorkflowPackageAuditPacket struct {
+	SchemaVersion            string                                       `json:"schema_version"`
+	Run                      WorkflowPackageAuditRun                      `json:"run"`
+	Repository               WorkflowPackageAuditRepository               `json:"repository"`
+	Authority                WorkflowPackageAuditAuthority                `json:"authority"`
+	DeterministicApplication WorkflowPackageAuditDeterministicApplication `json:"deterministic_application"`
+	Execution                WorkflowPackageAuditExecution                `json:"execution"`
+	ChangedFiles             []WorkflowPackageAuditChangedFile            `json:"changed_files"`
+	RelevantSourcePaths      []string                                     `json:"relevant_source_paths"`
+	Validation               []WorkflowPackageAuditValidationResult       `json:"validation"`
+	Artifacts                []WorkflowPackageAuditEmbeddedArtifact       `json:"artifacts"`
 }
 
-type WorkflowPackageAuditRunV3 struct {
+type WorkflowPackageAuditRun struct {
 	RunID      int64  `json:"run_id"`
 	UserIntent string `json:"user_intent"`
 }
 
-type WorkflowPackageAuditRepositoryV3 struct {
+type WorkflowPackageAuditRepository struct {
 	RepoTarget    string `json:"repo_target"`
 	Branch        string `json:"branch"`
 	BaseCommit    string `json:"base_commit"`
 	AuditedCommit string `json:"audited_commit"`
 }
 
-type WorkflowPackageAuditAuthorityV3 struct {
-	DeliveryTicket          WorkflowPackageAuditEmbeddedArtifactV3   `json:"delivery_ticket"`
-	Requirements            []WorkflowPackageAuditEmbeddedArtifactV3 `json:"requirements"`
-	SharedDesign            []WorkflowPackageAuditEmbeddedArtifactV3 `json:"shared_design"`
-	TicketDesignBrief       WorkflowPackageAuditEmbeddedArtifactV3   `json:"ticket_design_brief"`
-	DeterministicOperations *WorkflowPackageAuditEmbeddedArtifactV3  `json:"deterministic_operations,omitempty"`
-	ExecutionAssignment     WorkflowPackageAuditArtifactReferenceV3  `json:"execution_assignment"`
-	EffectiveExecutorBrief  WorkflowPackageAuditArtifactReferenceV3  `json:"effective_executor_brief"`
+type WorkflowPackageAuditAuthority struct {
+	DeliveryTicket          WorkflowPackageAuditEmbeddedArtifact   `json:"delivery_ticket"`
+	Requirements            []WorkflowPackageAuditEmbeddedArtifact `json:"requirements"`
+	SharedDesign            []WorkflowPackageAuditEmbeddedArtifact `json:"shared_design"`
+	TicketDesignBrief       WorkflowPackageAuditEmbeddedArtifact   `json:"ticket_design_brief"`
+	DeterministicOperations *WorkflowPackageAuditEmbeddedArtifact  `json:"deterministic_operations,omitempty"`
+	ExecutionAssignment     WorkflowPackageAuditArtifactReference  `json:"execution_assignment"`
+	EffectiveExecutorBrief  WorkflowPackageAuditArtifactReference  `json:"effective_executor_brief"`
 }
 
-type WorkflowPackageAuditArtifactReferenceV3 struct {
+type WorkflowPackageAuditArtifactReference struct {
 	ArtifactReference string `json:"artifact_reference"`
 	SHA256            string `json:"sha256"`
 }
 
-type WorkflowPackageAuditDeterministicApplicationV3 struct {
-	Outcome  string                                  `json:"outcome"`
-	Coverage *string                                 `json:"coverage,omitempty"`
-	Evidence WorkflowPackageAuditArtifactReferenceV3 `json:"evidence"`
+type WorkflowPackageAuditDeterministicApplication struct {
+	Outcome  string                                `json:"outcome"`
+	Coverage *string                               `json:"coverage,omitempty"`
+	Evidence WorkflowPackageAuditArtifactReference `json:"evidence"`
 }
 
-type WorkflowPackageAuditExecutionV3 struct {
+type WorkflowPackageAuditExecution struct {
 	AdaptiveAttemptDispatched bool   `json:"adaptive_attempt_dispatched"`
 	Status                    string `json:"status"`
 	CommittedSHA              string `json:"committed_sha"`
 	CompletionSummary         string `json:"completion_summary"`
 }
 
-type WorkflowPackageAuditChangedFileV3 struct {
+type WorkflowPackageAuditChangedFile struct {
 	Path         string `json:"path"`
 	PreviousPath string `json:"previous_path,omitempty"`
 	ChangeType   string `json:"change_type"`
@@ -83,95 +83,95 @@ type WorkflowPackageAuditChangedFileV3 struct {
 	Deletions    int64  `json:"deletions"`
 }
 
-type WorkflowPackageAuditValidationResultV3 struct {
+type WorkflowPackageAuditValidationResult struct {
 	Command       string `json:"command"`
 	Expected      string `json:"expected"`
 	Status        string `json:"status"`
 	ConciseResult string `json:"concise_result"`
 }
 
-// WorkflowPackageAuditEmbeddedArtifactV3 embeds an exact artifact. Content is
+// WorkflowPackageAuditEmbeddedArtifact embeds an exact artifact. Content is
 // json.RawMessage so JSON-authored artifacts render as JSON values and
 // Markdown/text artifacts render as JSON strings. SHA-256 always covers the
 // exact original artifact bytes, not the JSON encoding of content.
-type WorkflowPackageAuditEmbeddedArtifactV3 struct {
+type WorkflowPackageAuditEmbeddedArtifact struct {
 	Filename string          `json:"filename"`
 	SHA256   string          `json:"sha256"`
 	Content  json.RawMessage `json:"content"`
 }
 
-type WorkflowPackageAuditPacketV3Input struct {
+type WorkflowPackageAuditPacketInput struct {
 	Evidence WorkflowPackageExecutionEvidence
 
 	UserIntent string
 
-	DeliveryTicket WorkflowPackageAuditEmbeddedArtifactV3Input
+	DeliveryTicket WorkflowPackageAuditEmbeddedArtifactInput
 
-	Commit WorkflowPackageAuditCommitInputV3
+	Commit WorkflowPackageAuditCommitInput
 
-	Execution WorkflowPackageAuditExecutionInputV3
+	Execution WorkflowPackageAuditExecutionInput
 
 	RelevantSourcePaths []string
-	Validation          []WorkflowPackageAuditValidationResultV3
-	Artifacts           []WorkflowPackageAuditEmbeddedArtifactV3Input
+	Validation          []WorkflowPackageAuditValidationResult
+	Artifacts           []WorkflowPackageAuditEmbeddedArtifactInput
 }
 
-type WorkflowPackageAuditEmbeddedArtifactV3Input struct {
+type WorkflowPackageAuditEmbeddedArtifactInput struct {
 	Filename  string
 	MediaType string
 	SHA256    string
 	Bytes     []byte
 }
 
-type WorkflowPackageAuditCommitInputV3 struct {
+type WorkflowPackageAuditCommitInput struct {
 	RepoTarget    string
 	Branch        string
 	BaseCommit    string
 	AuditedCommit string
-	ChangedFiles  []WorkflowPackageAuditChangedFileV3
+	ChangedFiles  []WorkflowPackageAuditChangedFile
 }
 
-type WorkflowPackageAuditExecutionInputV3 struct {
+type WorkflowPackageAuditExecutionInput struct {
 	AdaptiveAttemptDispatched bool
 	Status                    string
 	CommittedSHA              string
 	CompletionSummary         string
 }
 
-func buildWorkflowPackageAuditPacketV3(
-	input WorkflowPackageAuditPacketV3Input,
-) (WorkflowPackageAuditPacketV3, []byte, error) {
-	if err := validateWorkflowPackageAuditPacketV3Input(input); err != nil {
-		return WorkflowPackageAuditPacketV3{}, nil, fmt.Errorf("%w: %v", ErrWorkflowPackageAuditPacketV3Invalid, err)
+func buildWorkflowPackageAuditPacket(
+	input WorkflowPackageAuditPacketInput,
+) (WorkflowPackageAuditPacket, []byte, error) {
+	if err := validateWorkflowPackageAuditPacketInput(input); err != nil {
+		return WorkflowPackageAuditPacket{}, nil, fmt.Errorf("%w: %v", ErrWorkflowPackageAuditPacketInvalid, err)
 	}
 
-	packet, err := constructWorkflowPackageAuditPacketV3(input)
+	packet, err := constructWorkflowPackageAuditPacket(input)
 	if err != nil {
-		return WorkflowPackageAuditPacketV3{}, nil, fmt.Errorf("%w: %v", ErrWorkflowPackageAuditPacketV3Invalid, err)
+		return WorkflowPackageAuditPacket{}, nil, fmt.Errorf("%w: %v", ErrWorkflowPackageAuditPacketInvalid, err)
 	}
 
 	data, err := json.MarshalIndent(packet, "", "  ")
 	if err != nil {
-		return WorkflowPackageAuditPacketV3{}, nil, fmt.Errorf("%w: marshal packet: %v", ErrWorkflowPackageAuditPacketV3Invalid, err)
+		return WorkflowPackageAuditPacket{}, nil, fmt.Errorf("%w: marshal packet: %v", ErrWorkflowPackageAuditPacketInvalid, err)
 	}
 	data = append(data, '\n')
 
-	if err := validateWorkflowPackageAuditPacketV3Bytes(data); err != nil {
-		return WorkflowPackageAuditPacketV3{}, nil, fmt.Errorf("%w: %v", ErrWorkflowPackageAuditPacketV3Invalid, err)
+	if err := validateWorkflowPackageAuditPacketBytes(data); err != nil {
+		return WorkflowPackageAuditPacket{}, nil, fmt.Errorf("%w: %v", ErrWorkflowPackageAuditPacketInvalid, err)
 	}
 
 	return packet, append([]byte(nil), data...), nil
 }
 
-func constructWorkflowPackageAuditPacketV3(input WorkflowPackageAuditPacketV3Input) (WorkflowPackageAuditPacketV3, error) {
+func constructWorkflowPackageAuditPacket(input WorkflowPackageAuditPacketInput) (WorkflowPackageAuditPacket, error) {
 	run := input.Evidence.Run
 
-	requirements := make([]WorkflowPackageAuditEmbeddedArtifactV3, 0, len(input.Evidence.Authority.AuthorityLayers))
-	sharedDesign := make([]WorkflowPackageAuditEmbeddedArtifactV3, 0, len(input.Evidence.Authority.AuthorityLayers))
+	requirements := make([]WorkflowPackageAuditEmbeddedArtifact, 0, len(input.Evidence.Authority.AuthorityLayers))
+	sharedDesign := make([]WorkflowPackageAuditEmbeddedArtifact, 0, len(input.Evidence.Authority.AuthorityLayers))
 	for _, layer := range input.Evidence.Authority.AuthorityLayers {
 		artifact, err := embeddedArtifactFromLayer(layer)
 		if err != nil {
-			return WorkflowPackageAuditPacketV3{}, fmt.Errorf("authority layer %d: %v", layer.Sequence, err)
+			return WorkflowPackageAuditPacket{}, fmt.Errorf("authority layer %d: %v", layer.Sequence, err)
 		}
 		switch layer.Kind {
 		case workflowPackageAuthorityLayerRequirements:
@@ -179,97 +179,97 @@ func constructWorkflowPackageAuditPacketV3(input WorkflowPackageAuditPacketV3Inp
 		case workflowPackageAuthorityLayerSharedDesign:
 			sharedDesign = append(sharedDesign, artifact)
 		default:
-			return WorkflowPackageAuditPacketV3{}, fmt.Errorf("authority layer %d: unknown kind %q", layer.Sequence, layer.Kind)
+			return WorkflowPackageAuditPacket{}, fmt.Errorf("authority layer %d: unknown kind %q", layer.Sequence, layer.Kind)
 		}
 	}
 
 	brief, err := embeddedArtifactFromApprovedDocument(input.Evidence.Authority.TicketDesignBrief)
 	if err != nil {
-		return WorkflowPackageAuditPacketV3{}, fmt.Errorf("ticket design brief: %v", err)
+		return WorkflowPackageAuditPacket{}, fmt.Errorf("ticket design brief: %v", err)
 	}
 
-	var deterministicOps *WorkflowPackageAuditEmbeddedArtifactV3
+	var deterministicOps *WorkflowPackageAuditEmbeddedArtifact
 	if input.Evidence.Authority.DeterministicOperations != nil {
 		ops, err := embeddedArtifactFromApprovedDocument(input.Evidence.Authority.DeterministicOperations.ApprovedDocument)
 		if err != nil {
-			return WorkflowPackageAuditPacketV3{}, fmt.Errorf("deterministic operations: %v", err)
+			return WorkflowPackageAuditPacket{}, fmt.Errorf("deterministic operations: %v", err)
 		}
-		if err := validateWorkflowPackageDeterministicOperationsArtifactV3(ops, input.Evidence.Authority.DeterministicOperations.Coverage); err != nil {
-			return WorkflowPackageAuditPacketV3{}, fmt.Errorf("deterministic operations: %v", err)
+		if err := validateWorkflowPackageDeterministicOperationsArtifact(ops, input.Evidence.Authority.DeterministicOperations.Coverage); err != nil {
+			return WorkflowPackageAuditPacket{}, fmt.Errorf("deterministic operations: %v", err)
 		}
 		deterministicOps = &ops
 	}
 
 	delivery, err := embeddedArtifactFromInput(input.DeliveryTicket)
 	if err != nil {
-		return WorkflowPackageAuditPacketV3{}, fmt.Errorf("delivery ticket: %v", err)
+		return WorkflowPackageAuditPacket{}, fmt.Errorf("delivery ticket: %v", err)
 	}
 	if !strings.EqualFold(input.DeliveryTicket.MediaType, "application/json") {
-		return WorkflowPackageAuditPacketV3{}, fmt.Errorf("delivery ticket media type must be application/json")
+		return WorkflowPackageAuditPacket{}, fmt.Errorf("delivery ticket media type must be application/json")
 	}
 	if !json.Valid(input.DeliveryTicket.Bytes) {
-		return WorkflowPackageAuditPacketV3{}, fmt.Errorf("delivery ticket content must be valid JSON")
+		return WorkflowPackageAuditPacket{}, fmt.Errorf("delivery ticket content must be valid JSON")
 	}
 
-	outcome, coverage, err := deterministicApplicationV3(input.Evidence.Deterministic)
+	outcome, coverage, err := deterministicApplication(input.Evidence.Deterministic)
 	if err != nil {
-		return WorkflowPackageAuditPacketV3{}, fmt.Errorf("deterministic application: %v", err)
+		return WorkflowPackageAuditPacket{}, fmt.Errorf("deterministic application: %v", err)
 	}
 
-	artifacts := make([]WorkflowPackageAuditEmbeddedArtifactV3, 0, len(input.Artifacts))
+	artifacts := make([]WorkflowPackageAuditEmbeddedArtifact, 0, len(input.Artifacts))
 	for _, artifactInput := range input.Artifacts {
 		artifact, err := embeddedArtifactFromInput(artifactInput)
 		if err != nil {
-			return WorkflowPackageAuditPacketV3{}, fmt.Errorf("artifact %q: %v", artifactInput.Filename, err)
+			return WorkflowPackageAuditPacket{}, fmt.Errorf("artifact %q: %v", artifactInput.Filename, err)
 		}
 		artifacts = append(artifacts, artifact)
 	}
 
-	changedFiles := make([]WorkflowPackageAuditChangedFileV3, len(input.Commit.ChangedFiles))
+	changedFiles := make([]WorkflowPackageAuditChangedFile, len(input.Commit.ChangedFiles))
 	copy(changedFiles, input.Commit.ChangedFiles)
 
-	validation := make([]WorkflowPackageAuditValidationResultV3, len(input.Validation))
+	validation := make([]WorkflowPackageAuditValidationResult, len(input.Validation))
 	copy(validation, input.Validation)
 
 	relevant := make([]string, len(input.RelevantSourcePaths))
 	copy(relevant, input.RelevantSourcePaths)
 
-	packet := WorkflowPackageAuditPacketV3{
+	packet := WorkflowPackageAuditPacket{
 		SchemaVersion: WorkflowPackageAuditPacketSchemaVersion,
-		Run: WorkflowPackageAuditRunV3{
+		Run: WorkflowPackageAuditRun{
 			RunID:      run.ID,
 			UserIntent: input.UserIntent,
 		},
-		Repository: WorkflowPackageAuditRepositoryV3{
+		Repository: WorkflowPackageAuditRepository{
 			RepoTarget:    input.Commit.RepoTarget,
 			Branch:        input.Commit.Branch,
 			BaseCommit:    input.Commit.BaseCommit,
 			AuditedCommit: input.Commit.AuditedCommit,
 		},
-		Authority: WorkflowPackageAuditAuthorityV3{
+		Authority: WorkflowPackageAuditAuthority{
 			DeliveryTicket:          delivery,
 			Requirements:            requirements,
 			SharedDesign:            sharedDesign,
 			TicketDesignBrief:       brief,
 			DeterministicOperations: deterministicOps,
-			ExecutionAssignment: WorkflowPackageAuditArtifactReferenceV3{
+			ExecutionAssignment: WorkflowPackageAuditArtifactReference{
 				ArtifactReference: input.Evidence.Assignment.Artifact.ArtifactID,
 				SHA256:            input.Evidence.Assignment.Artifact.SHA256,
 			},
-			EffectiveExecutorBrief: WorkflowPackageAuditArtifactReferenceV3{
+			EffectiveExecutorBrief: WorkflowPackageAuditArtifactReference{
 				ArtifactReference: input.Evidence.EffectiveBrief.Artifact.ArtifactID,
 				SHA256:            input.Evidence.EffectiveBrief.Artifact.SHA256,
 			},
 		},
-		DeterministicApplication: WorkflowPackageAuditDeterministicApplicationV3{
+		DeterministicApplication: WorkflowPackageAuditDeterministicApplication{
 			Outcome:  outcome,
 			Coverage: coverage,
-			Evidence: WorkflowPackageAuditArtifactReferenceV3{
+			Evidence: WorkflowPackageAuditArtifactReference{
 				ArtifactReference: input.Evidence.Deterministic.Artifact.ArtifactID,
 				SHA256:            input.Evidence.Deterministic.Artifact.SHA256,
 			},
 		},
-		Execution: WorkflowPackageAuditExecutionV3{
+		Execution: WorkflowPackageAuditExecution{
 			AdaptiveAttemptDispatched: input.Execution.AdaptiveAttemptDispatched,
 			Status:                    input.Execution.Status,
 			CommittedSHA:              input.Execution.CommittedSHA,
@@ -288,42 +288,42 @@ const (
 	workflowPackageAuthorityLayerSharedDesign = "shared_design"
 )
 
-func embeddedArtifactFromLayer(layer workflowpackages.ApprovedAuthorityLayer) (WorkflowPackageAuditEmbeddedArtifactV3, error) {
+func embeddedArtifactFromLayer(layer workflowpackages.ApprovedAuthorityLayer) (WorkflowPackageAuditEmbeddedArtifact, error) {
 	filename := filepath.Base(layer.RelativePath)
 	if filename == "" || !workflowPackageSafeFilename(filename) {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("filename %q is unsafe", filename)
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("filename %q is unsafe", filename)
 	}
 	if layer.SHA256 == "" || !workflowPackageValidSHA256(layer.SHA256) {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("SHA-256 is malformed")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("SHA-256 is malformed")
 	}
 	if layer.Bytes == nil {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("content bytes are required")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("content bytes are required")
 	}
 	if layer.SHA256 != workflowPackageSHA256(layer.Bytes) {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("SHA-256 does not match content bytes")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("SHA-256 does not match content bytes")
 	}
 	var content json.RawMessage
 	if strings.EqualFold(layer.MediaType, "application/json") && json.Valid(layer.Bytes) {
 		content = json.RawMessage(layer.Bytes)
 	} else {
 		if !utf8.Valid(layer.Bytes) {
-			return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("content is not valid UTF-8")
+			return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("content is not valid UTF-8")
 		}
 		encoded, err := json.Marshal(string(layer.Bytes))
 		if err != nil {
-			return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("encode text content: %v", err)
+			return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("encode text content: %v", err)
 		}
 		content = json.RawMessage(encoded)
 	}
-	return WorkflowPackageAuditEmbeddedArtifactV3{
+	return WorkflowPackageAuditEmbeddedArtifact{
 		Filename: filename,
 		SHA256:   layer.SHA256,
 		Content:  content,
 	}, nil
 }
 
-func embeddedArtifactFromApprovedDocument(doc workflowpackages.ApprovedDocument) (WorkflowPackageAuditEmbeddedArtifactV3, error) {
-	artifactInput := WorkflowPackageAuditEmbeddedArtifactV3Input{
+func embeddedArtifactFromApprovedDocument(doc workflowpackages.ApprovedDocument) (WorkflowPackageAuditEmbeddedArtifact, error) {
+	artifactInput := WorkflowPackageAuditEmbeddedArtifactInput{
 		Filename:  filepath.Base(doc.RelativePath),
 		MediaType: doc.MediaType,
 		SHA256:    doc.SHA256,
@@ -332,33 +332,33 @@ func embeddedArtifactFromApprovedDocument(doc workflowpackages.ApprovedDocument)
 	return embeddedArtifactFromInput(artifactInput)
 }
 
-func embeddedArtifactFromInput(input WorkflowPackageAuditEmbeddedArtifactV3Input) (WorkflowPackageAuditEmbeddedArtifactV3, error) {
+func embeddedArtifactFromInput(input WorkflowPackageAuditEmbeddedArtifactInput) (WorkflowPackageAuditEmbeddedArtifact, error) {
 	if input.Filename == "" {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("filename is required")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("filename is required")
 	}
 	if !workflowPackageSafeFilename(input.Filename) {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("filename %q is unsafe", input.Filename)
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("filename %q is unsafe", input.Filename)
 	}
 	if input.SHA256 == "" {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("SHA-256 is required")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("SHA-256 is required")
 	}
 	if !workflowPackageValidSHA256(input.SHA256) {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("SHA-256 %q is malformed", input.SHA256)
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("SHA-256 %q is malformed", input.SHA256)
 	}
 	if input.Bytes == nil {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("content bytes are required")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("content bytes are required")
 	}
 	if input.SHA256 != workflowPackageSHA256(input.Bytes) {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("SHA-256 does not match content bytes")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("SHA-256 does not match content bytes")
 	}
 	if input.MediaType == "" {
-		return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("media type is required")
+		return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("media type is required")
 	}
 	if strings.EqualFold(input.MediaType, "application/json") {
 		if !json.Valid(input.Bytes) {
-			return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("content is not valid JSON")
+			return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("content is not valid JSON")
 		}
-		return WorkflowPackageAuditEmbeddedArtifactV3{
+		return WorkflowPackageAuditEmbeddedArtifact{
 			Filename: input.Filename,
 			SHA256:   input.SHA256,
 			Content:  json.RawMessage(input.Bytes),
@@ -366,22 +366,22 @@ func embeddedArtifactFromInput(input WorkflowPackageAuditEmbeddedArtifactV3Input
 	}
 	if strings.HasPrefix(input.MediaType, "text/") {
 		if !utf8.Valid(input.Bytes) {
-			return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("content is not valid UTF-8")
+			return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("content is not valid UTF-8")
 		}
 		encoded, err := json.Marshal(string(input.Bytes))
 		if err != nil {
-			return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("encode text content: %v", err)
+			return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("encode text content: %v", err)
 		}
-		return WorkflowPackageAuditEmbeddedArtifactV3{
+		return WorkflowPackageAuditEmbeddedArtifact{
 			Filename: input.Filename,
 			SHA256:   input.SHA256,
 			Content:  json.RawMessage(encoded),
 		}, nil
 	}
-	return WorkflowPackageAuditEmbeddedArtifactV3{}, fmt.Errorf("unsupported media type %q", input.MediaType)
+	return WorkflowPackageAuditEmbeddedArtifact{}, fmt.Errorf("unsupported media type %q", input.MediaType)
 }
 
-func deterministicApplicationV3(outcome executor.DeterministicOutcomeResult) (string, *string, error) {
+func deterministicApplication(outcome executor.DeterministicOutcomeResult) (string, *string, error) {
 	switch outcome.Outcome.Outcome.Status {
 	case string(executor.DeterministicPreflightNotPresent):
 		return "not_present", nil, nil
@@ -402,7 +402,7 @@ func deterministicApplicationV3(outcome executor.DeterministicOutcomeResult) (st
 	}
 }
 
-func validateWorkflowPackageAuditPacketV3Input(input WorkflowPackageAuditPacketV3Input) error {
+func validateWorkflowPackageAuditPacketInput(input WorkflowPackageAuditPacketInput) error {
 	run := input.Evidence.Run
 	authority := input.Evidence.Authority
 
@@ -618,6 +618,9 @@ func validateWorkflowPackageAuditPacketV3Input(input WorkflowPackageAuditPacketV
 	if strings.TrimSpace(input.Execution.CompletionSummary) == "" {
 		return fmt.Errorf("execution completion summary must contain non-whitespace text")
 	}
+	if strings.TrimSpace(input.Execution.CompletionSummary) != input.Execution.CompletionSummary {
+		return fmt.Errorf("execution completion summary must not have leading or trailing whitespace")
+	}
 
 	if len(input.Commit.ChangedFiles) == 0 {
 		return fmt.Errorf("at least one changed file is required")
@@ -697,6 +700,9 @@ func validateWorkflowPackageAuditPacketV3Input(input WorkflowPackageAuditPacketV
 		if strings.TrimSpace(validation.ConciseResult) == "" {
 			return fmt.Errorf("validation entry %d concise_result must contain non-whitespace text", index)
 		}
+		if strings.TrimSpace(validation.ConciseResult) != validation.ConciseResult {
+			return fmt.Errorf("validation entry %d concise_result must not have leading or trailing whitespace", index)
+		}
 	}
 
 	if len(input.Artifacts) == 0 {
@@ -769,7 +775,7 @@ func validateWorkflowPackageAuditPacketV3Input(input WorkflowPackageAuditPacketV
 	return nil
 }
 
-func validateWorkflowPackageDeterministicOperationsArtifactV3(artifact WorkflowPackageAuditEmbeddedArtifactV3, coverage string) error {
+func validateWorkflowPackageDeterministicOperationsArtifact(artifact WorkflowPackageAuditEmbeddedArtifact, coverage string) error {
 	if len(artifact.Content) == 0 {
 		return fmt.Errorf("content is required")
 	}
@@ -791,7 +797,7 @@ func validateWorkflowPackageDeterministicOperationsArtifactV3(artifact WorkflowP
 	return nil
 }
 
-func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) error {
+func validateWorkflowPackageAuditPacket(packet WorkflowPackageAuditPacket) error {
 	if packet.SchemaVersion != WorkflowPackageAuditPacketSchemaVersion {
 		return fmt.Errorf("schema version must be %q", WorkflowPackageAuditPacketSchemaVersion)
 	}
@@ -946,6 +952,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 	if strings.TrimSpace(packet.Execution.CompletionSummary) == "" {
 		return fmt.Errorf("execution completion_summary must contain non-whitespace text")
 	}
+	if strings.TrimSpace(packet.Execution.CompletionSummary) != packet.Execution.CompletionSummary {
+		return fmt.Errorf("execution completion_summary must not have leading or trailing whitespace")
+	}
 
 	if len(packet.ChangedFiles) == 0 {
 		return fmt.Errorf("at least one changed file is required")
@@ -1025,6 +1034,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		if strings.TrimSpace(validation.ConciseResult) == "" {
 			return fmt.Errorf("validation entry concise_result must contain non-whitespace text")
 		}
+		if strings.TrimSpace(validation.ConciseResult) != validation.ConciseResult {
+			return fmt.Errorf("validation entry concise_result must not have leading or trailing whitespace")
+		}
 	}
 
 	if len(packet.Artifacts) == 0 {
@@ -1086,7 +1098,7 @@ func isJSONNullContent(raw json.RawMessage) bool {
 //   - decoded packet validation verifies canonical structure but cannot
 //     reconstruct discarded source JSON whitespace from a JSON value, so it does
 //     not recompute or compare the SHA-256 for JSON content.
-func jsonAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+func jsonAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifact, context string) error {
 	if err := validateWorkflowPackageAuditArtifactBasics(artifact, context); err != nil {
 		return err
 	}
@@ -1110,7 +1122,7 @@ func jsonAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3
 //   - content is a valid JSON string;
 //   - decoded bytes are valid UTF-8;
 //   - the declared digest matches the exact decoded UTF-8 string bytes.
-func textAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+func textAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifact, context string) error {
 	if err := validateWorkflowPackageAuditArtifactBasics(artifact, context); err != nil {
 		return err
 	}
@@ -1146,7 +1158,7 @@ func textAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3
 // bytes. For JSON content, decoded packet validation verifies canonical
 // structure but cannot reconstruct discarded source JSON whitespace from a JSON
 // value, so the SHA-256 is not recomputed or compared here.
-func jsonOrTextAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+func jsonOrTextAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifact, context string) error {
 	if err := validateWorkflowPackageAuditArtifactBasics(artifact, context); err != nil {
 		return err
 	}
@@ -1180,7 +1192,7 @@ func jsonOrTextAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArti
 
 // validateWorkflowPackageAuditArtifactBasics enforces common filename and
 // SHA-256 rules for all embedded artifacts.
-func validateWorkflowPackageAuditArtifactBasics(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+func validateWorkflowPackageAuditArtifactBasics(artifact WorkflowPackageAuditEmbeddedArtifact, context string) error {
 	if artifact.Filename == "" {
 		return fmt.Errorf("filename is required")
 	}
@@ -1196,18 +1208,18 @@ func validateWorkflowPackageAuditArtifactBasics(artifact WorkflowPackageAuditEmb
 	return nil
 }
 
-func validateWorkflowPackageAuditPacketV3Bytes(data []byte) error {
+func validateWorkflowPackageAuditPacketBytes(data []byte) error {
 	if len(data) == 0 || data[len(data)-1] != '\n' {
 		return fmt.Errorf("packet must end with exactly one trailing newline")
 	}
 	if len(data) > 1 && data[len(data)-2] == '\n' {
 		return fmt.Errorf("packet must not have multiple trailing newlines")
 	}
-	var packet WorkflowPackageAuditPacketV3
+	var packet WorkflowPackageAuditPacket
 	if err := json.Unmarshal(data, &packet); err != nil {
 		return fmt.Errorf("decode packet: %v", err)
 	}
-	if err := validateWorkflowPackageAuditPacketV3(packet); err != nil {
+	if err := validateWorkflowPackageAuditPacket(packet); err != nil {
 		return fmt.Errorf("validate decoded packet: %v", err)
 	}
 	canonical, err := json.MarshalIndent(packet, "", "  ")
