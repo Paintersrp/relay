@@ -238,6 +238,45 @@ func TestLaunchPreparedAdaptivePreflightFailureSettlesAttemptAndLease(t *testing
 	}
 }
 
+func TestLaunchPreparedAdaptiveRejectsChangedInvocationIdentity(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*ExecutorInvocation, ExecutorAdapterRequest)
+	}{
+		{name: "adapter", mutate: func(invocation *ExecutorInvocation, _ ExecutorAdapterRequest) { invocation.Adapter = AdapterOpenCodeGo }},
+		{name: "model", mutate: func(invocation *ExecutorInvocation, _ ExecutorAdapterRequest) { invocation.Model = "other-model" }},
+		{name: "brief bytes", mutate: func(invocation *ExecutorInvocation, _ ExecutorAdapterRequest) {
+			invocation.Stdin += "tampered"
+			invocation.StdinBytes = len([]byte(invocation.Stdin))
+		}},
+		{name: "brief path", mutate: func(invocation *ExecutorInvocation, _ ExecutorAdapterRequest) {
+			invocation.StdinSource = "alternate-brief.md"
+		}},
+		{name: "workdir", mutate: func(invocation *ExecutorInvocation, _ ExecutorAdapterRequest) { invocation.WorkDir = "C:/alternate" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture, prepared := prepareLaunchFixture(t, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
+			adapter := &preparedLaunchAdapter{id: AdapterCodex, mutate: tc.mutate}
+			service := newPreparedLaunchService(t, fixture, adapter)
+			preflightCalls, launchCalls := 0, 0
+			service.invocationPreflight = func(ExecutorInvocation) ExecutorPreflightResult {
+				preflightCalls++
+				return ExecutorPreflightResult{OK: true}
+			}
+			service.launch = func(func()) { launchCalls++ }
+			_, err := service.LaunchPreparedAdaptive(context.Background(), PreparedAdaptiveLaunchInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
+			if err == nil || preflightCalls != 0 || launchCalls != 0 {
+				t.Fatalf("err=%v preflight=%d launch=%d", err, preflightCalls, launchCalls)
+			}
+			attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), prepared.Attempt.AttemptID)
+			if err != nil || attempt.Status != workflowstore.AttemptStatusFailed {
+				t.Fatalf("attempt=%#v err=%v", attempt, err)
+			}
+		})
+	}
+}
+
 func TestPreparedAdaptiveProcessStart(t *testing.T) {
 	fixture, prepared := prepareLaunchFixture(t, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
 	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test")
