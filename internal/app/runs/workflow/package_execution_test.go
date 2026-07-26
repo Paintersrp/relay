@@ -3,6 +3,7 @@ package workflowruns
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -342,5 +343,313 @@ func TestAdmitPackageExecutionRequiresAvailableService(t *testing.T) {
 	}
 	if _, err := (&Service{}).AdmitPackageExecution(context.Background(), "run-package-admission"); err == nil {
 		t.Fatal("workflow service without a store was accepted")
+	}
+}
+
+func TestCompletePackageDeterministicExecution(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+
+	completed, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.ID != fixture.packageRun.ID || completed.RunID != fixture.packageRun.RunID || completed.Status != workflowstore.RunStatusValidating {
+		t.Fatalf("completed Run = %#v, before = %#v", completed, fixture.packageRun)
+	}
+	current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
+	if err != nil || !found {
+		t.Fatalf("current cutover activation: found=%v err=%v", found, err)
+	}
+	if current.ExecutionBoundaryStatus != "crossed" || !current.FirstNewExecutionRunRowID.Valid || current.FirstNewExecutionRunRowID.Int64 != fixture.packageRun.ID {
+		t.Fatalf("cutover evidence = %#v", current)
+	}
+	assertPackageAdmissionSideEffects(t, fixture.store, fixture.packageRun)
+}
+
+func TestCompletePackageDeterministicExecutionIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+
+	first, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID || second.RunID != first.RunID || second.Status != workflowstore.RunStatusValidating {
+		t.Fatalf("repeated finalization = %#v, first = %#v", second, first)
+	}
+	assertPackageAdmissionSideEffects(t, fixture.store, fixture.packageRun)
+}
+
+func TestCompletePackageDeterministicExecutionConcurrentIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+	start := make(chan struct{})
+	results := make(chan struct {
+		run workflowstore.Run
+		err error
+	}, 2)
+	for range 2 {
+		go func() {
+			<-start
+			run, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
+			results <- struct {
+				run workflowstore.Run
+				err error
+			}{run: run, err: err}
+		}()
+	}
+	close(start)
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if result.run.ID != fixture.packageRun.ID || result.run.RunID != fixture.packageRun.RunID || result.run.Status != workflowstore.RunStatusValidating {
+			t.Fatalf("concurrent finalization = %#v", result.run)
+		}
+	}
+	assertPackageAdmissionSideEffects(t, fixture.store, fixture.packageRun)
+}
+
+func TestCompletePackageDeterministicExecutionAcceptsValidating(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+	if _, err := fixture.store.DB().Exec("DROP TRIGGER IF EXISTS run_status_transition_guard"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.DB().Exec("UPDATE runs SET status = 'validating' WHERE run_id = ?", fixture.packageRun.RunID); err != nil {
+		t.Fatal(err)
+	}
+
+	completed, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.ID != fixture.packageRun.ID || completed.Status != workflowstore.RunStatusValidating {
+		t.Fatalf("validating readback = %#v", completed)
+	}
+	current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
+	if err != nil || !found || current.ExecutionBoundaryStatus != "crossed" {
+		t.Fatalf("validating cutover evidence: found=%v activation=%#v err=%v", found, current, err)
+	}
+}
+
+func TestCompletePackageDeterministicExecutionRejectsInvalidInputAndStates(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, false)
+	if _, err := fixture.store.DB().Exec("DROP TRIGGER IF EXISTS run_status_transition_guard"); err != nil {
+		t.Fatal(err)
+	}
+	for _, runID := range []string{"", " ", " run-package-admission", "run-package-admission "} {
+		if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, runID); err == nil {
+			t.Fatalf("invalid Run ID %q was accepted", runID)
+		}
+	}
+	if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.plainRun.RunID); err == nil {
+		t.Fatal("non-package Run was accepted")
+	}
+
+	for _, status := range []string{
+		workflowstore.RunStatusCreated,
+		workflowstore.RunStatusExecuting,
+		workflowstore.RunStatusExecutionFailed,
+		workflowstore.RunStatusCancelled,
+		workflowstore.RunStatusValidationFailed,
+		workflowstore.RunStatusNeedsRevision,
+		workflowstore.RunStatusAuditReady,
+		workflowstore.RunStatusCompleted,
+	} {
+		if _, err := fixture.store.DB().Exec("UPDATE runs SET status = ?, completed_at = CASE WHEN ? = 'completed' THEN '2000-01-01T00:00:00Z' ELSE NULL END WHERE run_id = ?", status, status, fixture.packageRun.RunID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
+			t.Fatalf("unsupported status %q was accepted", status)
+		}
+		run, err := fixture.store.GetRunByRunID(ctx, fixture.packageRun.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.Status != status {
+			t.Fatalf("rejected status changed from %q to %q", status, run.Status)
+		}
+	}
+}
+
+func TestCompletePackageDeterministicExecutionRequiresAvailableService(t *testing.T) {
+	if _, err := (*Service)(nil).CompletePackageDeterministicExecution(context.Background(), "run-package-admission"); err == nil {
+		t.Fatal("nil workflow service was accepted")
+	}
+	if _, err := (&Service{}).CompletePackageDeterministicExecution(context.Background(), "run-package-admission"); err == nil {
+		t.Fatal("workflow service without a store was accepted")
+	}
+}
+
+func TestCompletePackageDeterministicExecutionRejectsExecutionAttempts(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		t.Run(map[bool]string{false: "pending", true: "terminal"}[terminal], func(t *testing.T) {
+			ctx := context.Background()
+			fixture := newPackageAdmissionFixture(t, false)
+			createPackageExecutionAttempt(t, ctx, fixture.store, fixture.packageRun, terminal)
+
+			if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
+				t.Fatal("Run with an execution attempt was accepted")
+			}
+			run, err := fixture.store.GetRunByRunID(ctx, fixture.packageRun.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if run.Status != workflowstore.RunStatusSetupReady {
+				t.Fatalf("attempt rejection changed Run status to %q", run.Status)
+			}
+		})
+	}
+}
+
+func TestCompletePackageDeterministicExecutionRejectsActiveLeasesUnchanged(t *testing.T) {
+	for _, certainty := range []string{workflowstore.RepositoryBranchMutationLeaseCertaintyCertain, workflowstore.RepositoryBranchMutationLeaseCertaintyUncertain} {
+		t.Run(certainty, func(t *testing.T) {
+			ctx := context.Background()
+			fixture := newPackageAdmissionFixture(t, false)
+			lease, err := fixture.service.AcquireRunMutationLease(ctx, fixture.packageRun.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if certainty == workflowstore.RepositoryBranchMutationLeaseCertaintyUncertain {
+				lease, err = fixture.service.MarkRunMutationLeaseUncertain(ctx, fixture.packageRun.RunID, lease.LeaseID, "test uncertainty")
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := lease
+
+			if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
+				t.Fatal("Run with an active mutation lease was accepted")
+			}
+			after, err := fixture.store.GetRepositoryBranchMutationLeaseByLeaseID(ctx, lease.LeaseID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("rejected lease changed: before=%#v after=%#v", before, after)
+			}
+			run, err := fixture.store.GetRunByRunID(ctx, fixture.packageRun.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if run.Status != workflowstore.RunStatusSetupReady {
+				t.Fatalf("lease rejection changed Run status to %q", run.Status)
+			}
+		})
+	}
+}
+
+func TestCompletePackageDeterministicExecutionRollsBackCutoverFailure(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_finalization_boundary
+        BEFORE UPDATE OF execution_boundary_status ON cutover_activations
+        BEGIN SELECT RAISE(ABORT, 'forced package finalization boundary failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
+		t.Fatal("cutover failure was ignored")
+	}
+	assertPackageFinalizationRunStatus(t, fixture.store, fixture.packageRun.RunID, workflowstore.RunStatusSetupReady)
+	assertPackageFinalizationCutoverOpen(t, fixture.store)
+}
+
+func TestCompletePackageDeterministicExecutionRollsBackFirstTransitionFailure(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_finalization_first_transition
+        BEFORE UPDATE OF status ON runs WHEN OLD.status = 'setup_ready' AND NEW.status = 'executing'
+        BEGIN SELECT RAISE(ABORT, 'forced package finalization first transition failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
+		t.Fatal("first transition failure was ignored")
+	}
+	assertPackageFinalizationRunStatus(t, fixture.store, fixture.packageRun.RunID, workflowstore.RunStatusSetupReady)
+	assertPackageFinalizationCutoverOpen(t, fixture.store)
+}
+
+func TestCompletePackageDeterministicExecutionRollsBackSecondTransitionFailure(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t, true)
+	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_finalization_second_transition
+        BEFORE UPDATE OF status ON runs WHEN OLD.status = 'executing' AND NEW.status = 'validating'
+        BEGIN SELECT RAISE(ABORT, 'forced package finalization second transition failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
+		t.Fatal("second transition failure was ignored")
+	}
+	assertPackageFinalizationRunStatus(t, fixture.store, fixture.packageRun.RunID, workflowstore.RunStatusSetupReady)
+	assertPackageFinalizationCutoverOpen(t, fixture.store)
+}
+
+func createPackageExecutionAttempt(t *testing.T, ctx context.Context, store *workflowstore.Store, run workflowstore.Run, terminal bool) {
+	t.Helper()
+	if _, err := store.DB().Exec("DROP TRIGGER IF EXISTS run_status_transition_guard"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec("UPDATE runs SET status = 'executing' WHERE run_id = ?", run.RunID); err != nil {
+		t.Fatal(err)
+	}
+	err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		attempt, err := tx.CreateExecutionAttempt(ctx, workflowstore.CreateExecutionAttemptParams{
+			AttemptID:     "attempt-package-finalization",
+			RunRowID:      run.ID,
+			AttemptNumber: 1,
+			Adapter:       "test",
+			Model:         "test",
+		})
+		if err != nil {
+			return err
+		}
+		if !terminal {
+			return nil
+		}
+		if _, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusPending, workflowstore.AttemptStatusRunning, "{}"); err != nil {
+			return err
+		}
+		_, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusRunning, workflowstore.AttemptStatusSucceeded, "{}")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec("UPDATE runs SET status = 'setup_ready' WHERE run_id = ?", run.RunID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertPackageFinalizationRunStatus(t *testing.T, store *workflowstore.Store, runID, want string) {
+	t.Helper()
+	run, err := store.GetRunByRunID(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != want {
+		t.Fatalf("Run status = %q, want %q", run.Status, want)
+	}
+}
+
+func assertPackageFinalizationCutoverOpen(t *testing.T, store *workflowstore.Store) {
+	t.Helper()
+	current, found, err := store.GetCurrentCutoverActivation(context.Background())
+	if err != nil || !found {
+		t.Fatalf("current cutover activation: found=%v err=%v", found, err)
+	}
+	if current.ExecutionBoundaryStatus != "open" || current.FirstNewExecutionRunRowID.Valid {
+		t.Fatalf("cutover changed after rollback: %#v", current)
 	}
 }
