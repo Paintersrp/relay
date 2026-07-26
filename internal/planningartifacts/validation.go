@@ -16,6 +16,11 @@ type heading struct {
 	Text  string
 }
 
+type ticketHeadingOccurrence struct {
+	heading
+	line int
+}
+
 var requiredHeadings = map[speccompiler.ArtifactKind][]heading{
 	speccompiler.ArtifactRequirements: {
 		{Level: 1, Text: "Requirements"},
@@ -59,6 +64,12 @@ var requiredHeadings = map[speccompiler.ArtifactKind][]heading{
 
 var validationFieldPattern = regexp.MustCompile(`(?i)(working directory|command|expected(?: successful result| result)?|proof purpose)\s*:`)
 var unresolvedValidationPlaceholderPattern = regexp.MustCompile(`(?i)<[a-z][^>]*>|\b(?:TODO|TBD)\b`)
+
+type ValidationCommand struct {
+	WorkingDirectory string
+	Command          string
+	Expected         string
+}
 
 // Validate returns concrete, deterministic diagnostics for the required
 // headings of an authored Markdown artifact. Callers must establish the
@@ -119,11 +130,7 @@ func validateTicketDesignBrief(raw []byte, required []heading) []speccompiler.Di
 		}}
 	}
 
-	type occurrence struct {
-		heading
-		line int
-	}
-	occurrences := make([]occurrence, 0, len(required))
+	occurrences := make([]ticketHeadingOccurrence, 0, len(required))
 	inFence := false
 	for lineNumber, line := range lines {
 		if fence, closing := markdownFence(line); fence {
@@ -139,7 +146,7 @@ func validateTicketDesignBrief(raw []byte, required []heading) []speccompiler.Di
 		}
 		value, ok := markdownHeading(line)
 		if ok && value.Level <= 2 {
-			occurrences = append(occurrences, occurrence{heading: value, line: lineNumber})
+			occurrences = append(occurrences, ticketHeadingOccurrence{heading: value, line: lineNumber})
 		}
 	}
 
@@ -197,23 +204,9 @@ func validateTicketDesignBrief(raw []byte, required []heading) []speccompiler.Di
 		}
 	}
 
-	validationHeading := heading{Level: 2, Text: "Validation Commands"}
-	validationIndex := -1
-	for index, value := range occurrences {
-		if value.heading == validationHeading {
-			validationIndex = index
-			break
-		}
-	}
-	if validationIndex >= 0 {
-		endLine := len(lines)
-		for index := validationIndex + 1; index < len(occurrences); index++ {
-			if occurrences[index].line > occurrences[validationIndex].line {
-				endLine = occurrences[index].line
-				break
-			}
-		}
-		diagnostics = append(diagnostics, validateValidationCommands(lines[occurrences[validationIndex].line+1:endLine])...)
+	if validationLines, ok := ticketValidationCommandLines(lines, occurrences); ok {
+		_, validationDiagnostics := parseValidationCommands(validationLines)
+		diagnostics = append(diagnostics, validationDiagnostics...)
 	}
 	return diagnostics
 }
@@ -231,9 +224,12 @@ func hasFrontmatter(lines []string) bool {
 }
 
 func validateValidationCommands(lines []string) []speccompiler.Diagnostic {
-	type validationEntry struct {
-		lines []string
-	}
+	_, diagnostics := parseValidationCommands(lines)
+	return diagnostics
+}
+
+func parseValidationCommands(lines []string) ([]ValidationCommand, []speccompiler.Diagnostic) {
+	type validationEntry struct{ lines []string }
 	entries := make([]validationEntry, 0)
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -254,7 +250,7 @@ func validateValidationCommands(lines []string) []speccompiler.Diagnostic {
 		entries[len(entries)-1].lines = append(entries[len(entries)-1].lines, trimmed)
 	}
 	if len(entries) == 0 {
-		return []speccompiler.Diagnostic{{
+		return nil, []speccompiler.Diagnostic{{
 			Code:    "missing_validation_command",
 			Path:    "/validation_commands",
 			Message: "At least one validation command entry is required.",
@@ -262,6 +258,7 @@ func validateValidationCommands(lines []string) []speccompiler.Diagnostic {
 	}
 
 	diagnostics := make([]speccompiler.Diagnostic, 0)
+	commands := make([]ValidationCommand, 0, len(entries))
 	for index, entry := range entries {
 		fields := validationEntryFields(entry.lines)
 		path := fmt.Sprintf("/validation_commands/%d", index)
@@ -277,8 +274,75 @@ func validateValidationCommands(lines []string) []speccompiler.Diagnostic {
 		if strings.TrimSpace(fields["expected"]) == "" {
 			diagnostics = append(diagnostics, speccompiler.Diagnostic{Code: "missing_validation_expected", Path: path + "/expected", Message: "Validation entry must identify an expected result or proof purpose."})
 		}
+		commands = append(commands, ValidationCommand{
+			WorkingDirectory: strings.TrimSpace(fields["working directory"]),
+			Command:          command,
+			Expected:         strings.TrimSpace(fields["expected"]),
+		})
 	}
-	return diagnostics
+	return commands, diagnostics
+}
+
+func ticketValidationCommandLines(lines []string, occurrences []ticketHeadingOccurrence) ([]string, bool) {
+	validationHeading := heading{Level: 2, Text: "Validation Commands"}
+	validationIndex := -1
+	for index, value := range occurrences {
+		if value.heading == validationHeading {
+			validationIndex = index
+			break
+		}
+	}
+	if validationIndex < 0 {
+		return nil, false
+	}
+	endLine := len(lines)
+	for index := validationIndex + 1; index < len(occurrences); index++ {
+		if occurrences[index].line > occurrences[validationIndex].line {
+			endLine = occurrences[index].line
+			break
+		}
+	}
+	return lines[occurrences[validationIndex].line+1 : endLine], true
+}
+
+func ProjectTicketDesignBrief(raw []byte) (TicketDesignBriefProjection, []speccompiler.Diagnostic) {
+	diagnostics := Validate(speccompiler.ArtifactTicketDesignBrief, raw)
+	if len(diagnostics) != 0 {
+		return TicketDesignBriefProjection{}, diagnostics
+	}
+	lines := strings.Split(strings.TrimPrefix(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\ufeff"), "\n")
+	occurrences := make([]ticketHeadingOccurrence, 0)
+	inFence := false
+	for lineNumber, line := range lines {
+		if fence, closing := markdownFence(line); fence {
+			if !inFence {
+				inFence = true
+			} else if closing {
+				inFence = false
+			}
+			continue
+		}
+		if inFence {
+			continue
+		}
+		value, ok := markdownHeading(line)
+		if ok && value.Level <= 2 {
+			occurrences = append(occurrences, ticketHeadingOccurrence{heading: value, line: lineNumber})
+		}
+	}
+	validationLines, ok := ticketValidationCommandLines(lines, occurrences)
+	if !ok {
+		return TicketDesignBriefProjection{}, []speccompiler.Diagnostic{{Code: "missing_validation_command", Path: "/validation_commands", Message: "At least one validation command entry is required."}}
+	}
+	commands, diagnostics := parseValidationCommands(validationLines)
+	if len(diagnostics) != 0 {
+		return TicketDesignBriefProjection{}, diagnostics
+	}
+	return TicketDesignBriefProjection{ValidationCommands: commands}, nil
+}
+
+type TicketDesignBriefProjection struct {
+	ValidationCommands []ValidationCommand
 }
 
 func isValidationFieldLine(line string) bool {

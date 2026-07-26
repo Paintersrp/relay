@@ -22,13 +22,17 @@ import (
 )
 
 var (
-	ErrInvalidPackageInput = errors.New("invalid execution package input")
-	ErrSelectionNotFound   = errors.New("delivery ticket selection not found")
-	ErrSelectionNotActive  = errors.New("delivery ticket selection is not active")
-	ErrSelectionInvalid    = errors.New("delivery ticket selection cardinality is invalid")
-	ErrPackageNotFound     = errors.New("execution package not found")
-	ErrPackageAlreadyRun   = errors.New("execution package already has a Run")
-	ErrPackageBasisChanged = errors.New("execution package basis changed")
+	ErrInvalidPackageInput      = errors.New("invalid execution package input")
+	ErrSelectionNotFound        = errors.New("delivery ticket selection not found")
+	ErrSelectionNotActive       = errors.New("delivery ticket selection is not active")
+	ErrSelectionInvalid         = errors.New("delivery ticket selection cardinality is invalid")
+	ErrPackageNotFound          = errors.New("execution package not found")
+	ErrPackageAlreadyRun        = errors.New("execution package already has a Run")
+	ErrPackageBasisChanged      = errors.New("execution package basis changed")
+	ErrRunNotFound              = errors.New("package Run not found")
+	ErrRunNotPackage            = errors.New("Run is not package-linked")
+	ErrPackageApprovalMissing   = errors.New("package approval is missing")
+	ErrApprovedAuthorityInvalid = errors.New("approved package authority is invalid")
 )
 
 var packageSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -125,7 +129,7 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 
 	result := PrepareResult{}
 	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
-		basis, basisErr := s.validateBasis(ctx, tx, input, validated, nil)
+		basis, basisErr := s.validateBasis(ctx, tx, input, validated, nil, "active")
 		if basisErr != nil {
 			return basisErr
 		}
@@ -239,7 +243,7 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 			if !samePackageInput(prepareInput, freshInput) {
 				return fmt.Errorf("%w: package bytes changed during approval", ErrPackageBasisChanged)
 			}
-			basis, basisErr := s.validateBasis(ctx, tx, freshInput, freshValidated, &packageRow)
+			basis, basisErr := s.validateBasis(ctx, tx, freshInput, freshValidated, &packageRow, "active")
 			if basisErr != nil {
 				return basisErr
 			}
@@ -434,7 +438,7 @@ func validateInput(input PrepareInput) (validatedInput, error) {
 	return validated, nil
 }
 
-func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input PrepareInput, validated validatedInput, packageRow *workflowstore.ExecutionPackage) (packageBasis, error) {
+func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input PrepareInput, validated validatedInput, packageRow *workflowstore.ExecutionPackage, expectedSelectionState string) (packageBasis, error) {
 	selection, err := tx.GetDeliveryTicketSelectionBySelectionID(ctx, input.SelectionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return packageBasis{}, fmt.Errorf("%w: %s", ErrSelectionNotFound, input.SelectionID)
@@ -442,8 +446,11 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if err != nil {
 		return packageBasis{}, err
 	}
-	if selection.State != "active" {
-		return packageBasis{}, fmt.Errorf("%w: %s is %s", ErrSelectionNotActive, input.SelectionID, selection.State)
+	if selection.State != expectedSelectionState {
+		if expectedSelectionState == "active" {
+			return packageBasis{}, fmt.Errorf("%w: %s is %s", ErrSelectionNotActive, input.SelectionID, selection.State)
+		}
+		return packageBasis{}, fmt.Errorf("%w: selection %s must be %s, found %s", ErrApprovedAuthorityInvalid, input.SelectionID, expectedSelectionState, selection.State)
 	}
 	if !selection.SourceClosureRowID.Valid {
 		return packageBasis{}, fmt.Errorf("%w: selection has no source closure", ErrPackageBasisChanged)

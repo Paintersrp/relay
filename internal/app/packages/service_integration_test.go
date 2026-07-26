@@ -231,6 +231,54 @@ func TestServiceApproveAtomicallyConsumesSelectionAndCreatesLinkedSetupReadyRun(
 	assertCount(t, fixture.store.DB(), "runs", 1)
 }
 
+func TestServiceLoadApprovedAuthorityForRunBriefOnly(t *testing.T) {
+	fixture := newPackageServiceFixture(t)
+	prepared := preparePackage(t, fixture, false)
+	approved, err := fixture.service.Approve(context.Background(), ApproveInput{
+		PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve package",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := fixture.service.LoadApprovedAuthorityForRun(context.Background(), approved.Run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Run.ID != approved.Run.ID || loaded.Package.ID != prepared.Package.ID || loaded.PackageApproval.ID != approved.PackageApproval.ID {
+		t.Fatalf("loaded package linkage = %#v", loaded)
+	}
+	if loaded.TicketRevision.ID == 0 || len(loaded.TicketMembers) != 1 || loaded.TicketMembers[0].Sequence != 1 || loaded.TicketApproval.ApprovalID != "approval-package-1" {
+		t.Fatalf("loaded Ticket projection = %#v", loaded)
+	}
+	if len(loaded.AuthorityLayers) != 1 || string(loaded.AuthorityLayers[0].Bytes) != "authority" || loaded.AuthorityLayers[0].Kind != "requirements" {
+		t.Fatalf("loaded authority layers = %#v", loaded.AuthorityLayers)
+	}
+	if loaded.TicketDesignBrief.DisplayName != fixture.brief.DisplayName || len(loaded.BriefProjection.ValidationCommands) != 1 || loaded.DeterministicOperations != nil {
+		t.Fatalf("loaded Brief projection = %#v", loaded)
+	}
+}
+
+func TestServiceLoadApprovedAuthorityForRunWithOperations(t *testing.T) {
+	fixture := newPackageServiceFixture(t)
+	prepared := preparePackage(t, fixture, true)
+	approved, err := fixture.service.Approve(context.Background(), ApproveInput{
+		PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve package",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := fixture.service.LoadApprovedAuthorityForRun(context.Background(), approved.Run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DeterministicOperations == nil || loaded.DeterministicOperations.SHA256 != fixture.operations.ExpectedSHA256 || loaded.DeterministicOperations.Coverage != "complete" || loaded.DeterministicOperations.Document == nil {
+		t.Fatalf("loaded operations = %#v", loaded.DeterministicOperations)
+	}
+	if string(loaded.DeterministicOperations.Bytes) != string(fixture.operations.Bytes) || loaded.TicketDesignBrief.SHA256 != fixture.brief.ExpectedSHA256 {
+		t.Fatal("loader did not preserve exact package bytes")
+	}
+}
+
 func TestServiceApproveWrongPackageSHAIsAtomic(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
 	prepared := preparePackage(t, fixture, false)
@@ -269,6 +317,15 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	ctx := context.Background()
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)
+	authorityBytes := []byte("authority")
+	authoritySHA := sha256Hex(authorityBytes)
+	authorityPath := filepath.Join(store.ArtifactStore().Root(), "plans", "checkout", "requirements.json")
+	if err := os.MkdirAll(filepath.Dir(authorityPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authorityPath, authorityBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	briefName := "checkout.ticket-P2-T2.r1.design-brief.md"
 	operationsName := "checkout.ticket-P2-T2.r1.deterministic-operations.json"
 	briefBytes := []byte(testfixtures.TicketDesignBrief)
@@ -293,13 +350,13 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	if err := db.QueryRowContext(ctx, `INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256) VALUES (?, 'plan-package', 'checkout', ?) RETURNING id`, projectID, strings.Repeat("c", 64)).Scan(&planID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO artifacts (artifact_id, owner_type, plan_row_id, kind, relative_path, media_type, sha256, size_bytes) VALUES ('artifact-package-authority', 'plan', ?, 'requirements', 'plans/checkout/requirements.json', 'application/json', ?, 1)`, planID, strings.Repeat("d", 64)); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO artifacts (artifact_id, owner_type, plan_row_id, kind, relative_path, media_type, sha256, size_bytes) VALUES ('artifact-package-authority', 'plan', ?, 'requirements', 'plans/checkout/requirements.json', 'application/json', ?, ?)`, planID, authoritySHA, len(authorityBytes)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, `INSERT INTO feature_workspace_authority_revisions (authority_revision_id, workspace_row_id, revision_number, source_closure_row_id) VALUES ('authority-package-1', ?, 1, ?) RETURNING id`, workspaceID, closureID).Scan(&authorityID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO feature_workspace_authority_layers (authority_revision_row_id, layer_kind, sequence, artifact_row_id, artifact_sha256, source_closure_row_id) VALUES (?, 'requirements', 1, (SELECT id FROM artifacts WHERE artifact_id = 'artifact-package-authority'), ?, ?)`, authorityID, strings.Repeat("d", 64), closureID); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO feature_workspace_authority_layers (authority_revision_row_id, layer_kind, sequence, artifact_row_id, artifact_sha256, source_closure_row_id) VALUES (?, 'requirements', 1, (SELECT id FROM artifacts WHERE artifact_id = 'artifact-package-authority'), ?, ?)`, authorityID, authoritySHA, closureID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE feature_workspaces SET current_authority_revision_row_id = ?, version = 2 WHERE id = ? AND version = 1`, authorityID, workspaceID); err != nil {

@@ -63,6 +63,23 @@ func TestValidateTicketDesignBriefAcceptsValidationFieldsSplitAcrossBullets(t *t
 	}
 }
 
+func TestProjectTicketDesignBriefPreservesValidationCommands(t *testing.T) {
+	body := strings.Replace(testfixtures.TicketDesignBrief,
+		"- Working directory: .\n  Command: go test ./internal/planningartifacts/...\n  Expected: all tests pass.",
+		"- Working directory: internal/planningartifacts\n- Command: go test ./internal/planningartifacts/...\n- Proof purpose: the planning grammar remains valid.\n- Working directory: internal/app/packages\n- Command: go test ./internal/app/packages/...\n- Expected result: package authority loads.", 1)
+	projection, diagnostics := ProjectTicketDesignBrief([]byte(body))
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+	want := []ValidationCommand{
+		{WorkingDirectory: "internal/planningartifacts", Command: "go test ./internal/planningartifacts/...", Expected: "the planning grammar remains valid."},
+		{WorkingDirectory: "internal/app/packages", Command: "go test ./internal/app/packages/...", Expected: "package authority loads."},
+	}
+	if !reflect.DeepEqual(projection.ValidationCommands, want) {
+		t.Fatalf("validation commands = %#v, want %#v", projection.ValidationCommands, want)
+	}
+}
+
 func TestValidateTicketDesignBriefRejectsInvalidStructure(t *testing.T) {
 	tests := []struct {
 		name string

@@ -1,6 +1,10 @@
 package packages
 
-import workflowstore "relay/internal/store/workflow"
+import (
+	"relay/internal/planningartifacts"
+	"relay/internal/speccompiler"
+	workflowstore "relay/internal/store/workflow"
+)
 
 // ArtifactInput carries exact caller-supplied bytes. The caller must provide
 // the canonical filename and digest alongside the bytes; package preparation
@@ -54,4 +58,52 @@ type Detail struct {
 	DeterministicOperations *PackageArtifact
 	Run                     *workflowstore.Run
 	PackageApprovalID       string
+}
+
+type ApprovedDocument struct {
+	DisplayName  string
+	RelativePath string
+	MediaType    string
+	SHA256       string
+	Bytes        []byte
+}
+
+type ApprovedAuthorityLayer struct {
+	Layer        workflowstore.FeatureWorkspaceAuthorityLayer
+	Kind         string
+	Sequence     int64
+	RelativePath string
+	MediaType    string
+	SHA256       string
+	SizeBytes    int64
+	Bytes        []byte
+}
+
+type ApprovedDeterministicOperations struct {
+	ApprovedDocument
+	Coverage string
+	Document *speccompiler.DeterministicOperationsDocument
+}
+
+type ApprovedAuthority struct {
+	Run             workflowstore.Run
+	Package         workflowstore.ExecutionPackage
+	PackageApproval workflowstore.ExecutionPackageApproval
+
+	Workspace workflowstore.FeatureWorkspace
+	Authority workflowstore.FeatureWorkspaceAuthorityRevision
+	Source    workflowstore.SourceVaultClosure
+
+	Ticket             workflowstore.DeliveryTicket
+	TicketRevision     workflowstore.DeliveryTicketRevision
+	TicketMembers      []workflowstore.DeliveryTicketRevisionMember
+	TicketDependencies []workflowstore.DeliveryTicketRevisionDependency
+	TicketApproval     workflowstore.DeliveryTicketRevisionApproval
+
+	AuthorityLayers []ApprovedAuthorityLayer
+
+	TicketDesignBrief ApprovedDocument
+	BriefProjection   planningartifacts.TicketDesignBriefProjection
+
+	DeterministicOperations *ApprovedDeterministicOperations
 }

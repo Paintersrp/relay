@@ -160,8 +160,16 @@ func (tx *Tx) GetOperationPacketPublication(ctx context.Context, publicationID s
 	return getOperationPacketPublication(ctx, tx.tx, publicationID)
 }
 
+func (tx *Tx) GetOperationPacketRetainedArtifactByRowID(ctx context.Context, rowID int64) (OperationPacketRetainedArtifact, error) {
+	return getOperationPacketRetainedArtifactByRowID(ctx, tx.tx, rowID)
+}
+
 func (s *Store) GetOperationPacketPublication(ctx context.Context, publicationID string) (OperationPacketPublication, error) {
 	return getOperationPacketPublication(ctx, s.db, publicationID)
+}
+
+func (s *Store) GetOperationPacketRetainedArtifactByRowID(ctx context.Context, rowID int64) (OperationPacketRetainedArtifact, error) {
+	return getOperationPacketRetainedArtifactByRowID(ctx, s.db, rowID)
 }
 
 func (s *Store) GetOperationPacketPublicationByPacketID(ctx context.Context, packetID string) (OperationPacketPublication, error) {
@@ -263,6 +271,13 @@ func getOperationPacketPublication(ctx context.Context, query rowQueryer, public
 SELECT `+operationPacketPublicationColumns+`
 FROM operation_packet_publications
 WHERE publication_id = ?`, publicationID))
+}
+
+func getOperationPacketRetainedArtifactByRowID(ctx context.Context, query rowQueryer, rowID int64) (OperationPacketRetainedArtifact, error) {
+	return scanOperationPacketRetainedArtifact(query.QueryRowContext(ctx, `
+SELECT `+operationPacketRetainedArtifactColumns+`
+FROM operation_packet_retained_artifacts
+WHERE id = ?`, rowID))
 }
 
 func listOperationPacketRetainedArtifacts(ctx context.Context, query rowsQueryer, publicationID string) ([]OperationPacketRetainedArtifact, error) {
