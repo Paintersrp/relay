@@ -63,6 +63,21 @@ func TestPrepareExecutionAssignmentPersistsBriefOnlyArtifact(t *testing.T) {
 	}
 }
 
+func TestLoadExecutionAssignmentRequiresAndVerifiesExistingArtifact(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, false, "")
+	if _, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID); err == nil {
+		t.Fatal("missing assignment was accepted")
+	}
+	prepared := prepareExecutionAssignment(t, fixture)
+	loaded, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Artifact.ID != prepared.Artifact.ID || !reflect.DeepEqual(loaded.Bytes, prepared.Bytes) {
+		t.Fatalf("loaded assignment = %#v, want %#v", loaded, prepared)
+	}
+}
+
 func TestPrepareExecutionAssignmentPersistsOperationsIdentity(t *testing.T) {
 	for _, coverage := range []string{"partial", "complete"} {
 		t.Run(coverage, func(t *testing.T) {

@@ -176,7 +176,7 @@ func (s *ExecutionAssignmentService) PrepareExecutionAssignment(ctx context.Cont
 		existing = &candidate
 	}
 	if existing != nil {
-		return s.resolveExistingAssignment(*existing, assignment, content)
+		return s.resolveExistingAssignment(*existing, assignment, content, authority.Run.RunID, filename)
 	}
 	if authority.Run.Status != workflowstore.RunStatusSetupReady {
 		return ExecutionAssignmentResult{}, fmt.Errorf("execution assignment requires a setup_ready Run")
@@ -217,15 +217,52 @@ func (s *ExecutionAssignmentService) PrepareExecutionAssignment(ctx context.Cont
 	if artifacts, listErr := s.store.ListArtifactsByRun(ctx, authority.Run.ID); listErr == nil {
 		for index := range artifacts {
 			if artifacts[index].Kind == executionAssignmentKind {
-				return s.resolveExistingAssignment(artifacts[index], assignment, content)
+				return s.resolveExistingAssignment(artifacts[index], assignment, content, authority.Run.RunID, filename)
 			}
 		}
 	}
 	return ExecutionAssignmentResult{}, err
 }
 
-func (s *ExecutionAssignmentService) resolveExistingAssignment(artifact workflowstore.Artifact, assignment ExecutionAssignment, expected []byte) (ExecutionAssignmentResult, error) {
-	if artifact.OwnerType != workflowstore.ArtifactOwnerRun || !artifact.RunRowID.Valid || artifact.Kind != executionAssignmentKind || artifact.MediaType != executionAssignmentMediaType {
+// LoadExecutionAssignment resolves an existing verified assignment without
+// creating one. It keeps outcome recording bound to the same approved
+// authority and byte-verification path as assignment preparation.
+func (s *ExecutionAssignmentService) LoadExecutionAssignment(ctx context.Context, runID string) (ExecutionAssignmentResult, error) {
+	if s == nil || s.store == nil || s.packages == nil {
+		return ExecutionAssignmentResult{}, fmt.Errorf("execution assignment service is unavailable")
+	}
+	authority, err := s.packages.LoadApprovedAuthorityForRun(ctx, runID)
+	if err != nil {
+		return ExecutionAssignmentResult{}, err
+	}
+	assignment, content, filename, err := buildExecutionAssignment(authority)
+	if err != nil {
+		return ExecutionAssignmentResult{}, err
+	}
+	artifacts, err := s.store.ListArtifactsByRun(ctx, authority.Run.ID)
+	if err != nil {
+		return ExecutionAssignmentResult{}, err
+	}
+	var existing *workflowstore.Artifact
+	for index := range artifacts {
+		if artifacts[index].Kind != executionAssignmentKind {
+			continue
+		}
+		if existing != nil || artifacts[index].OwnerType != workflowstore.ArtifactOwnerRun || !artifacts[index].RunRowID.Valid || artifacts[index].RunRowID.Int64 != authority.Run.ID {
+			return ExecutionAssignmentResult{}, ErrExecutionAssignmentConflict
+		}
+		candidate := artifacts[index]
+		existing = &candidate
+	}
+	if existing == nil {
+		return ExecutionAssignmentResult{}, fmt.Errorf("Run execution_assignment artifact is missing")
+	}
+	return s.resolveExistingAssignment(*existing, assignment, content, authority.Run.RunID, filename)
+}
+
+func (s *ExecutionAssignmentService) resolveExistingAssignment(artifact workflowstore.Artifact, assignment ExecutionAssignment, expected []byte, runID, filename string) (ExecutionAssignmentResult, error) {
+	wantPath := filepath.ToSlash(filepath.Join("runs", runID, filename))
+	if artifact.OwnerType != workflowstore.ArtifactOwnerRun || !artifact.RunRowID.Valid || artifact.Kind != executionAssignmentKind || artifact.MediaType != executionAssignmentMediaType || artifact.RelativePath != wantPath {
 		return ExecutionAssignmentResult{}, ErrExecutionAssignmentConflict
 	}
 	verified, content, err := s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{
