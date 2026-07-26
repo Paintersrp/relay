@@ -801,12 +801,21 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 	if strings.TrimSpace(packet.Run.UserIntent) == "" {
 		return fmt.Errorf("run user_intent is required")
 	}
+	if strings.TrimSpace(packet.Run.UserIntent) != packet.Run.UserIntent {
+		return fmt.Errorf("run user_intent must not have leading or trailing whitespace")
+	}
 
-	if packet.Repository.RepoTarget == "" {
+	if strings.TrimSpace(packet.Repository.RepoTarget) == "" {
 		return fmt.Errorf("repository repo_target is required")
 	}
-	if packet.Repository.Branch == "" {
+	if strings.TrimSpace(packet.Repository.RepoTarget) != packet.Repository.RepoTarget {
+		return fmt.Errorf("repository repo_target must not have leading or trailing whitespace")
+	}
+	if strings.TrimSpace(packet.Repository.Branch) == "" {
 		return fmt.Errorf("repository branch is required")
+	}
+	if strings.TrimSpace(packet.Repository.Branch) != packet.Repository.Branch {
+		return fmt.Errorf("repository branch must not have leading or trailing whitespace")
 	}
 	if !workflowPackageValidSHA40(packet.Repository.BaseCommit) {
 		return fmt.Errorf("repository base_commit must be a lowercase 40-character SHA")
@@ -818,29 +827,40 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		return fmt.Errorf("repository audited_commit must differ from base_commit")
 	}
 
-	if err := validateWorkflowPackageAuditEmbeddedArtifactV3(packet.Authority.DeliveryTicket, "delivery_ticket"); err != nil {
+	if err := jsonAuthoredContentArtifact(packet.Authority.DeliveryTicket, "delivery_ticket"); err != nil {
 		return fmt.Errorf("authority delivery_ticket: %v", err)
 	}
 	if len(packet.Authority.Requirements) == 0 {
 		return fmt.Errorf("authority requirements must have at least one layer")
 	}
 	for index, artifact := range packet.Authority.Requirements {
-		if err := validateWorkflowPackageAuditEmbeddedArtifactV3(artifact, "requirements"); err != nil {
+		if err := jsonAuthoredContentArtifact(artifact, "requirements"); err != nil {
 			return fmt.Errorf("authority requirements %d: %v", index, err)
 		}
 	}
 	for index, artifact := range packet.Authority.SharedDesign {
-		if err := validateWorkflowPackageAuditEmbeddedArtifactV3(artifact, "shared_design"); err != nil {
+		if err := jsonAuthoredContentArtifact(artifact, "shared_design"); err != nil {
 			return fmt.Errorf("authority shared_design %d: %v", index, err)
 		}
 	}
-	if err := validateWorkflowPackageAuditEmbeddedArtifactV3(packet.Authority.TicketDesignBrief, "ticket_design_brief"); err != nil {
+	if err := textAuthoredContentArtifact(packet.Authority.TicketDesignBrief, "ticket_design_brief"); err != nil {
 		return fmt.Errorf("authority ticket_design_brief: %v", err)
 	}
+	var deterministicOpsCoverage string
 	if packet.Authority.DeterministicOperations != nil {
-		if err := validateWorkflowPackageAuditEmbeddedArtifactV3(*packet.Authority.DeterministicOperations, "deterministic_operations"); err != nil {
+		if err := jsonAuthoredContentArtifact(*packet.Authority.DeterministicOperations, "deterministic_operations"); err != nil {
 			return fmt.Errorf("authority deterministic_operations: %v", err)
 		}
+		var document struct {
+			Coverage string `json:"coverage"`
+		}
+		if err := json.Unmarshal(packet.Authority.DeterministicOperations.Content, &document); err != nil {
+			return fmt.Errorf("authority deterministic_operations: parse coverage: %v", err)
+		}
+		if document.Coverage != "partial" && document.Coverage != "complete" {
+			return fmt.Errorf("authority deterministic_operations coverage must be partial or complete")
+		}
+		deterministicOpsCoverage = document.Coverage
 	}
 	if packet.Authority.ExecutionAssignment.ArtifactReference == "" {
 		return fmt.Errorf("authority execution_assignment artifact_reference is required")
@@ -882,6 +902,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		if packet.Authority.DeterministicOperations == nil {
 			return fmt.Errorf("preflight_failed outcome requires deterministic_operations")
 		}
+		if deterministicOpsCoverage != *packet.DeterministicApplication.Coverage {
+			return fmt.Errorf("deterministic_operations coverage %q does not match deterministic_application coverage %q", deterministicOpsCoverage, *packet.DeterministicApplication.Coverage)
+		}
 		if !packet.Execution.AdaptiveAttemptDispatched {
 			return fmt.Errorf("preflight_failed outcome requires adaptive_attempt_dispatched true")
 		}
@@ -894,6 +917,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		}
 		if packet.Authority.DeterministicOperations == nil {
 			return fmt.Errorf("applied outcome requires deterministic_operations")
+		}
+		if deterministicOpsCoverage != *packet.DeterministicApplication.Coverage {
+			return fmt.Errorf("deterministic_operations coverage %q does not match deterministic_application coverage %q", deterministicOpsCoverage, *packet.DeterministicApplication.Coverage)
 		}
 		if *packet.DeterministicApplication.Coverage == "complete" {
 			if packet.Execution.AdaptiveAttemptDispatched {
@@ -911,11 +937,14 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 	if packet.Execution.CommittedSHA != packet.Repository.AuditedCommit {
 		return fmt.Errorf("execution committed_sha must equal repository audited_commit")
 	}
-	if packet.Execution.Status == "" {
+	if strings.TrimSpace(packet.Execution.Status) == "" {
 		return fmt.Errorf("execution status is required")
 	}
-	if packet.Execution.CompletionSummary == "" {
-		return fmt.Errorf("execution completion_summary is required")
+	if strings.TrimSpace(packet.Execution.Status) != packet.Execution.Status {
+		return fmt.Errorf("execution status must not have leading or trailing whitespace")
+	}
+	if strings.TrimSpace(packet.Execution.CompletionSummary) == "" {
+		return fmt.Errorf("execution completion_summary must contain non-whitespace text")
 	}
 
 	if len(packet.ChangedFiles) == 0 {
@@ -926,6 +955,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		if file.Path == "" {
 			return fmt.Errorf("changed file path is required")
 		}
+		if !workflowPackageSafePath(file.Path) {
+			return fmt.Errorf("changed file path %q is unsafe", file.Path)
+		}
 		if _, duplicate := seenPath[file.Path]; duplicate {
 			return fmt.Errorf("duplicate changed file path %q", file.Path)
 		}
@@ -935,6 +967,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		}
 		if (file.ChangeType == "renamed" || file.ChangeType == "copied") && file.PreviousPath == "" {
 			return fmt.Errorf("previous_path is required for %s files", file.ChangeType)
+		}
+		if file.PreviousPath != "" && !workflowPackageSafePath(file.PreviousPath) {
+			return fmt.Errorf("changed file previous_path %q is unsafe", file.PreviousPath)
 		}
 		switch file.ChangeType {
 		case "added", "modified", "deleted", "renamed", "copied", "type_changed":
@@ -954,6 +989,9 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		if path == "" {
 			return fmt.Errorf("relevant source path is required")
 		}
+		if !workflowPackageSafePath(path) {
+			return fmt.Errorf("relevant source path %q is unsafe", path)
+		}
 		if _, duplicate := seenRelevant[path]; duplicate {
 			return fmt.Errorf("duplicate relevant source path %q", path)
 		}
@@ -964,13 +1002,28 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		return fmt.Errorf("at least one validation entry is required")
 	}
 	for _, validation := range packet.Validation {
-		if validation.Command == "" || validation.Expected == "" || validation.Status == "" || validation.ConciseResult == "" {
-			return fmt.Errorf("validation entry fields are required")
+		if strings.TrimSpace(validation.Command) == "" {
+			return fmt.Errorf("validation entry command is required")
+		}
+		if strings.TrimSpace(validation.Command) != validation.Command {
+			return fmt.Errorf("validation entry command must not have leading or trailing whitespace")
+		}
+		if strings.TrimSpace(validation.Expected) == "" {
+			return fmt.Errorf("validation entry expected is required")
+		}
+		if strings.TrimSpace(validation.Expected) != validation.Expected {
+			return fmt.Errorf("validation entry expected must not have leading or trailing whitespace")
+		}
+		if strings.TrimSpace(validation.Status) == "" {
+			return fmt.Errorf("validation entry status is required")
 		}
 		switch validation.Status {
 		case "passed", "failed", "not_run":
 		default:
 			return fmt.Errorf("invalid validation status %q", validation.Status)
+		}
+		if strings.TrimSpace(validation.ConciseResult) == "" {
+			return fmt.Errorf("validation entry concise_result must contain non-whitespace text")
 		}
 	}
 
@@ -982,11 +1035,14 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 		if artifact.Filename == "" {
 			return fmt.Errorf("artifact filename is required")
 		}
+		if !workflowPackageSafeFilename(artifact.Filename) {
+			return fmt.Errorf("artifact filename %q is unsafe", artifact.Filename)
+		}
 		if _, duplicate := seenArtifact[artifact.Filename]; duplicate {
 			return fmt.Errorf("duplicate artifact filename %q", artifact.Filename)
 		}
 		seenArtifact[artifact.Filename] = struct{}{}
-		if err := validateWorkflowPackageAuditEmbeddedArtifactV3(artifact, "artifact"); err != nil {
+		if err := jsonOrTextAuthoredContentArtifact(artifact, "artifact"); err != nil {
 			return fmt.Errorf("artifact %q: %v", artifact.Filename, err)
 		}
 	}
@@ -994,18 +1050,148 @@ func validateWorkflowPackageAuditPacketV3(packet WorkflowPackageAuditPacketV3) e
 	return nil
 }
 
-func validateWorkflowPackageAuditEmbeddedArtifactV3(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+// firstNonSpaceByte returns the first byte in raw that is not a JSON whitespace
+// character, or 0 if the slice contains only whitespace.
+func firstNonSpaceByte(raw []byte) byte {
+	for _, b := range raw {
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			return b
+		}
+	}
+	return 0
+}
+
+// isJSONStringContent reports whether raw is a JSON string literal. Callers
+// must already have confirmed that raw is valid JSON.
+func isJSONStringContent(raw json.RawMessage) bool {
+	return firstNonSpaceByte(raw) == '"'
+}
+
+// isJSONNullContent reports whether raw is the JSON null literal. Callers
+// must already have confirmed that raw is valid JSON.
+func isJSONNullContent(raw json.RawMessage) bool {
+	return firstNonSpaceByte(raw) == 'n'
+}
+
+// jsonAuthoredContentArtifact validates an embedded artifact whose content is
+// authored as JSON.
+//
+// Requirements:
+//   - filename and SHA-256 are well-formed;
+//   - content is nonempty, valid JSON;
+//   - content is not a JSON string representation of text.
+//
+// Digest distinction:
+//   - builder validation binds the declared digest to exact source JSON bytes;
+//   - decoded packet validation verifies canonical structure but cannot
+//     reconstruct discarded source JSON whitespace from a JSON value, so it does
+//     not recompute or compare the SHA-256 for JSON content.
+func jsonAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+	if err := validateWorkflowPackageAuditArtifactBasics(artifact, context); err != nil {
+		return err
+	}
+	if len(artifact.Content) == 0 {
+		return fmt.Errorf("content is required")
+	}
+	if !json.Valid(artifact.Content) {
+		return fmt.Errorf("content must be valid JSON")
+	}
+	if isJSONStringContent(artifact.Content) {
+		return fmt.Errorf("JSON-authored content must not be a JSON string representation of text")
+	}
+	return nil
+}
+
+// textAuthoredContentArtifact validates an embedded artifact whose content is
+// authored as text and carried as a JSON string.
+//
+// Requirements:
+//   - filename and SHA-256 are well-formed;
+//   - content is a valid JSON string;
+//   - decoded bytes are valid UTF-8;
+//   - the declared digest matches the exact decoded UTF-8 string bytes.
+func textAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+	if err := validateWorkflowPackageAuditArtifactBasics(artifact, context); err != nil {
+		return err
+	}
+	if len(artifact.Content) == 0 {
+		return fmt.Errorf("content is required")
+	}
+	if !json.Valid(artifact.Content) {
+		return fmt.Errorf("content must be valid JSON")
+	}
+	if !isJSONStringContent(artifact.Content) {
+		return fmt.Errorf("text-authored content must be a JSON string")
+	}
+	var text string
+	if err := json.Unmarshal(artifact.Content, &text); err != nil {
+		return fmt.Errorf("content must decode as a JSON string: %v", err)
+	}
+	if !utf8.ValidString(text) {
+		return fmt.Errorf("decoded text content must be valid UTF-8")
+	}
+	if artifact.SHA256 != workflowPackageSHA256([]byte(text)) {
+		return fmt.Errorf("SHA-256 does not match decoded text content")
+	}
+	return nil
+}
+
+// jsonOrTextAuthoredContentArtifact validates a top-level embedded artifact
+// that may carry either JSON-authored content or text-authored content. The
+// packet does not carry a media type, so the content shape is used to decide:
+// a JSON string literal is treated as text; any other valid JSON value is
+// treated as JSON-authored content.
+//
+// For text content, the digest is recomputed from the decoded UTF-8 string
+// bytes. For JSON content, decoded packet validation verifies canonical
+// structure but cannot reconstruct discarded source JSON whitespace from a JSON
+// value, so the SHA-256 is not recomputed or compared here.
+func jsonOrTextAuthoredContentArtifact(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
+	if err := validateWorkflowPackageAuditArtifactBasics(artifact, context); err != nil {
+		return err
+	}
+	if len(artifact.Content) == 0 {
+		return fmt.Errorf("content is required")
+	}
+	if !json.Valid(artifact.Content) {
+		return fmt.Errorf("content must be valid JSON")
+	}
+	if isJSONNullContent(artifact.Content) {
+		return fmt.Errorf("content must not be null")
+	}
+	if isJSONStringContent(artifact.Content) {
+		var text string
+		if err := json.Unmarshal(artifact.Content, &text); err != nil {
+			return fmt.Errorf("content must decode as a JSON string: %v", err)
+		}
+		if !utf8.ValidString(text) {
+			return fmt.Errorf("decoded text content must be valid UTF-8")
+		}
+		if artifact.SHA256 != workflowPackageSHA256([]byte(text)) {
+			return fmt.Errorf("SHA-256 does not match decoded text content")
+		}
+		return nil
+	}
+	// JSON-authored content: decoded packet validation verifies canonical
+	// structure but cannot reconstruct discarded source JSON whitespace, so the
+	// digest is not recomputed here.
+	return nil
+}
+
+// validateWorkflowPackageAuditArtifactBasics enforces common filename and
+// SHA-256 rules for all embedded artifacts.
+func validateWorkflowPackageAuditArtifactBasics(artifact WorkflowPackageAuditEmbeddedArtifactV3, context string) error {
 	if artifact.Filename == "" {
 		return fmt.Errorf("filename is required")
 	}
 	if !workflowPackageSafeFilename(artifact.Filename) {
 		return fmt.Errorf("filename %q is unsafe", artifact.Filename)
 	}
+	if artifact.SHA256 == "" {
+		return fmt.Errorf("SHA-256 is required")
+	}
 	if !workflowPackageValidSHA256(artifact.SHA256) {
 		return fmt.Errorf("SHA-256 is malformed")
-	}
-	if artifact.Content == nil {
-		return fmt.Errorf("content is required")
 	}
 	return nil
 }

@@ -83,10 +83,26 @@ func testPackageAuditV3Execution(adaptive bool, status, committedSHA, summary st
 	}
 }
 
+func testPackageAuditV3FixRequirementsJSON(evidence *WorkflowPackageExecutionEvidence) {
+	for i := range evidence.Authority.AuthorityLayers {
+		if evidence.Authority.AuthorityLayers[i].Kind == "requirements" {
+			jsonBytes := []byte(`{"requirement":true}`)
+			evidence.Authority.AuthorityLayers[i].Bytes = jsonBytes
+			evidence.Authority.AuthorityLayers[i].SHA256 = testPackageAuditV3SHA256(jsonBytes)
+			evidence.Authority.AuthorityLayers[i].MediaType = "application/json"
+		}
+	}
+}
+
 func testPackageAuditV3Input(t *testing.T, mode executor.EffectiveExecutorBriefMode, auditedCommit string) WorkflowPackageAuditPacketV3Input {
 	t.Helper()
 	_, evidence := testPackageAuditV3Evidence(t, mode)
 	adaptive := mode != executor.EffectiveExecutorBriefDeterministicComplete
+	// The package evidence fixture stores the requirements layer as opaque text,
+	// but the v3 packet requires JSON-authored requirements. Replace it with
+	// valid JSON bytes and a matching digest so the builder and decoded
+	// validators agree on the content type.
+	testPackageAuditV3FixRequirementsJSON(&evidence)
 	return WorkflowPackageAuditPacketV3Input{
 		Evidence:            evidence,
 		UserIntent:          "Implement the package ticket.",
@@ -187,6 +203,7 @@ func TestWorkflowPackageAuditPacketV3AppliedPartial(t *testing.T) {
 	_, evidence := testPackageAuditV3Evidence(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication)
 	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication, strings.Repeat("c", 40))
 	input.Evidence = evidence
+	testPackageAuditV3FixRequirementsJSON(&input.Evidence)
 	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -292,11 +309,11 @@ func TestWorkflowPackageAuditPacketV3RequirementsInAuthoritySequence(t *testing.
 		if req.SHA256 != want.SHA256 {
 			t.Fatalf("requirements[%d].sha256 mismatch", index)
 		}
-		var decoded string
+		var decoded map[string]any
 		if err := json.Unmarshal(req.Content, &decoded); err != nil {
-			t.Fatalf("requirements[%d].content is not decodable: %v", index, err)
+			t.Fatalf("requirements[%d].content is not JSON: %v", index, err)
 		}
-		if decoded != string(want.Bytes) {
+		if decoded["requirement"] != true {
 			t.Fatalf("requirements[%d].content mismatch", index)
 		}
 	}
@@ -319,6 +336,7 @@ func TestWorkflowPackageAuditPacketV3SharedDesignInAuthoritySequence(t *testing.
 	authority.AuthorityLayers = append(authority.AuthorityLayers, sharedLayer)
 	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
 	input.Evidence.Authority = authority
+	testPackageAuditV3FixRequirementsJSON(&input.Evidence)
 	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -780,5 +798,325 @@ func TestWorkflowPackageAuditPacketV3InvalidUserIntentRejected(t *testing.T) {
 	_, _, err := buildWorkflowPackageAuditPacketV3(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketV3Invalid) {
 		t.Fatalf("expected invalid error, got %v", err)
+	}
+}
+
+func testPackageAuditV3MarshalCanonical(p WorkflowPackageAuditPacketV3) []byte {
+	data, _ := json.MarshalIndent(p, "", "  ")
+	return append(data, '\n')
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedRejectsUnsafeChangedFilePath(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.ChangedFiles[0].Path = "../escape.go"
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected unsafe changed file path to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedRejectsUnsafePreviousPath(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input.Commit.ChangedFiles = []WorkflowPackageAuditChangedFileV3{
+		{Path: "a/b.go", PreviousPath: "old/b.go", ChangeType: "renamed", Additions: 1, Deletions: 0},
+	}
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.ChangedFiles[0].PreviousPath = "../old.go"
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected unsafe previous_path to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedRejectsUnsafeRelevantSourcePath(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.RelevantSourcePaths[0] = "/absolute/path.go"
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected unsafe relevant source path to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedRejectsUnsafeArtifactFilename(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.Artifacts[0].Filename = "../escape.json"
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected unsafe artifact filename to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedRejectsWhitespaceStrings(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*WorkflowPackageAuditPacketV3)
+	}{
+		{"user_intent whitespace", func(p *WorkflowPackageAuditPacketV3) { p.Run.UserIntent = "   " }},
+		{"user_intent outer", func(p *WorkflowPackageAuditPacketV3) { p.Run.UserIntent = " intent " }},
+		{"repo_target outer", func(p *WorkflowPackageAuditPacketV3) { p.Repository.RepoTarget = " relay " }},
+		{"branch outer", func(p *WorkflowPackageAuditPacketV3) { p.Repository.Branch = " main " }},
+		{"execution status whitespace", func(p *WorkflowPackageAuditPacketV3) { p.Execution.Status = "   " }},
+		{"execution status outer", func(p *WorkflowPackageAuditPacketV3) { p.Execution.Status = " status " }},
+		{"completion summary whitespace", func(p *WorkflowPackageAuditPacketV3) { p.Execution.CompletionSummary = "   " }},
+		{"validation command whitespace", func(p *WorkflowPackageAuditPacketV3) { p.Validation[0].Command = "   " }},
+		{"validation command outer", func(p *WorkflowPackageAuditPacketV3) { p.Validation[0].Command = " cmd " }},
+		{"validation expected whitespace", func(p *WorkflowPackageAuditPacketV3) { p.Validation[0].Expected = "   " }},
+		{"validation expected outer", func(p *WorkflowPackageAuditPacketV3) { p.Validation[0].Expected = " exp " }},
+		{"validation concise whitespace", func(p *WorkflowPackageAuditPacketV3) { p.Validation[0].ConciseResult = "   " }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := packet
+			tc.mutate(&p)
+			if err := validateWorkflowPackageAuditPacketV3(p); err == nil {
+				t.Fatal("expected whitespace/blank string to be rejected")
+			}
+		})
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedDeliveryTicketRejectsTextString(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	encoded, _ := json.Marshal("text content")
+	packet.Authority.DeliveryTicket.Content = json.RawMessage(encoded)
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected text-string delivery ticket to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedRequirementsRejectTextString(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	encoded, _ := json.Marshal("text content")
+	packet.Authority.Requirements[0].Content = json.RawMessage(encoded)
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected text-string requirements to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedSharedDesignRejectTextString(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	sharedBytes := []byte(`{"shared":true}`)
+	input.Evidence.Authority.AuthorityLayers = append(input.Evidence.Authority.AuthorityLayers, workflowpackages.ApprovedAuthorityLayer{
+		Kind:         "shared_design",
+		Sequence:     2,
+		RelativePath: "plans/checkout/shared-design.json",
+		MediaType:    "application/json",
+		SHA256:       testPackageAuditV3SHA256(sharedBytes),
+		Bytes:        sharedBytes,
+	})
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	encoded, _ := json.Marshal("text content")
+	packet.Authority.SharedDesign[0].Content = json.RawMessage(encoded)
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected text-string shared design to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedBriefRejectsNonStringJSON(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.Authority.TicketDesignBrief.Content = json.RawMessage(`{"not":"text"}`)
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected non-string ticket design brief content to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedTextArtifactRejectsDigestDisagreement(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	textBytes := []byte("artifact text")
+	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactV3Input{
+		{Filename: "note.txt", MediaType: "text/plain", SHA256: testPackageAuditV3SHA256(textBytes), Bytes: textBytes},
+	}
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.Artifacts[0].SHA256 = strings.Repeat("0", 64)
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected text artifact digest disagreement to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedDeterministicOpsCoverageDisagreement(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	partial := "partial"
+	packet.DeterministicApplication.Coverage = &partial
+	packet.Execution.AdaptiveAttemptDispatched = true
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected deterministic operations coverage disagreement to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedNotPresentWithOperationsRejected(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	ops := packet.Authority.DeliveryTicket
+	ops.Content = json.RawMessage(`{"coverage":"complete"}`)
+	packet.Authority.DeterministicOperations = &ops
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected not_present outcome with deterministic operations to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedAppliedWithoutOperationsRejected(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.DeterministicApplication.Outcome = "applied"
+	partial := "partial"
+	packet.DeterministicApplication.Coverage = &partial
+	packet.Execution.AdaptiveAttemptDispatched = true
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected applied outcome without deterministic operations to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3DecodedPreflightFailedWithoutOperationsRejected(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.DeterministicApplication.Outcome = "preflight_failed"
+	partial := "partial"
+	packet.DeterministicApplication.Coverage = &partial
+	packet.Execution.AdaptiveAttemptDispatched = true
+	if err := validateWorkflowPackageAuditPacketV3(packet); err == nil {
+		t.Fatal("expected preflight_failed outcome without deterministic operations to be rejected")
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3BytesRejectInvalidShapes(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	sharedBytes := []byte(`{"shared":true}`)
+	input.Evidence.Authority.AuthorityLayers = append(input.Evidence.Authority.AuthorityLayers, workflowpackages.ApprovedAuthorityLayer{
+		Kind:         "shared_design",
+		Sequence:     2,
+		RelativePath: "plans/checkout/shared-design.json",
+		MediaType:    "application/json",
+		SHA256:       testPackageAuditV3SHA256(sharedBytes),
+		Bytes:        sharedBytes,
+	})
+	textBytes := []byte("artifact text")
+	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactV3Input{
+		{Filename: "note.txt", MediaType: "text/plain", SHA256: testPackageAuditV3SHA256(textBytes), Bytes: textBytes},
+	}
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(*WorkflowPackageAuditPacketV3)
+	}{
+		{"unsafe changed file path", func(p *WorkflowPackageAuditPacketV3) { p.ChangedFiles[0].Path = "../escape.go" }},
+		{"unsafe renamed previous_path", func(p *WorkflowPackageAuditPacketV3) { p.ChangedFiles[0].PreviousPath = "../old.go" }},
+		{"unsafe relevant source path", func(p *WorkflowPackageAuditPacketV3) { p.RelevantSourcePaths[0] = "/absolute/path.go" }},
+		{"unsafe artifact filename", func(p *WorkflowPackageAuditPacketV3) { p.Artifacts[0].Filename = "../escape.json" }},
+		{"whitespace user_intent", func(p *WorkflowPackageAuditPacketV3) { p.Run.UserIntent = "   " }},
+		{"text delivery ticket", func(p *WorkflowPackageAuditPacketV3) {
+			encoded, _ := json.Marshal("text")
+			p.Authority.DeliveryTicket.Content = json.RawMessage(encoded)
+		}},
+		{"text requirements", func(p *WorkflowPackageAuditPacketV3) {
+			encoded, _ := json.Marshal("text")
+			p.Authority.Requirements[0].Content = json.RawMessage(encoded)
+		}},
+		{"text shared design", func(p *WorkflowPackageAuditPacketV3) {
+			encoded, _ := json.Marshal("text")
+			p.Authority.SharedDesign[0].Content = json.RawMessage(encoded)
+		}},
+		{"non-string brief", func(p *WorkflowPackageAuditPacketV3) {
+			p.Authority.TicketDesignBrief.Content = json.RawMessage(`{"not":"text"}`)
+		}},
+		{"text artifact digest disagreement", func(p *WorkflowPackageAuditPacketV3) {
+			p.Artifacts[0].SHA256 = strings.Repeat("0", 64)
+		}},
+		{"not_present with operations", func(p *WorkflowPackageAuditPacketV3) {
+			ops := p.Authority.DeliveryTicket
+			ops.Content = json.RawMessage(`{"coverage":"complete"}`)
+			p.Authority.DeterministicOperations = &ops
+		}},
+		{"applied without operations", func(p *WorkflowPackageAuditPacketV3) {
+			p.DeterministicApplication.Outcome = "applied"
+			partial := "partial"
+			p.DeterministicApplication.Coverage = &partial
+			p.Execution.AdaptiveAttemptDispatched = true
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := packet
+			tc.mutate(&p)
+			if err := validateWorkflowPackageAuditPacketV3Bytes(testPackageAuditV3MarshalCanonical(p)); err == nil {
+				t.Fatal("expected byte validator to reject invalid shape")
+			}
+		})
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3JSONArtifactWithWhitespaceBuilds(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	whitespaceJSON := []byte("{\n  \"key\": \"value\"\n}")
+	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactV3Input{
+		{Filename: "formatted.json", MediaType: "application/json", SHA256: testPackageAuditV3SHA256(whitespaceJSON), Bytes: whitespaceJSON},
+	}
+	if _, _, err := buildWorkflowPackageAuditPacketV3(input); err != nil {
+		t.Fatalf("build with whitespace JSON artifact: %v", err)
+	}
+}
+
+func TestWorkflowPackageAuditPacketV3TextArtifactVerifiesDigest(t *testing.T) {
+	input := testPackageAuditV3Input(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	textBytes := []byte("hello, text artifact")
+	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactV3Input{
+		{Filename: "note.txt", MediaType: "text/plain", SHA256: testPackageAuditV3SHA256(textBytes), Bytes: textBytes},
+	}
+	packet, _, err := buildWorkflowPackageAuditPacketV3(input)
+	if err != nil {
+		t.Fatalf("build with text artifact: %v", err)
+	}
+	if err := validateWorkflowPackageAuditPacketV3(packet); err != nil {
+		t.Fatalf("decoded text artifact validation: %v", err)
 	}
 }
