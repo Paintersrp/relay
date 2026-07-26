@@ -17,6 +17,7 @@ import (
 const (
 	adaptiveExecutionInputKind      = "adaptive_execution_input"
 	adaptiveExecutionInputMediaType = "application/json"
+	adaptiveExecutionInputReadLimit = 64 << 20
 )
 
 var ErrAdaptiveExecutionAttemptConflict = errors.New("adaptive execution attempt conflicts with recorded preparation")
@@ -147,6 +148,59 @@ func (s *AdaptiveExecutionAttemptService) Prepare(ctx context.Context, input Ada
 		}
 	}
 	return AdaptiveExecutionAttemptResult{}, err
+}
+
+// Load resolves exactly one already-prepared adaptive attempt. It is strictly
+// read-only and accepts attempts that have advanced from pending to running.
+func (s *AdaptiveExecutionAttemptService) Load(ctx context.Context, runID string) (AdaptiveExecutionAttemptResult, error) {
+	if s == nil || s.store == nil || s.briefs == nil {
+		return AdaptiveExecutionAttemptResult{}, fmt.Errorf("adaptive execution attempt service is unavailable")
+	}
+	if strings.TrimSpace(runID) == "" {
+		return AdaptiveExecutionAttemptResult{}, fmt.Errorf("Run ID is required")
+	}
+	brief, err := s.briefs.Load(ctx, runID)
+	if err != nil {
+		return AdaptiveExecutionAttemptResult{}, err
+	}
+	run, err := s.store.GetRunByRunID(ctx, runID)
+	if err != nil {
+		return AdaptiveExecutionAttemptResult{}, err
+	}
+	if brief.Mode == EffectiveExecutorBriefDeterministicComplete {
+		return s.resolveComplete(ctx, run, brief.Mode)
+	}
+	if !brief.AdaptiveDispatchRequired || brief.Artifact == nil || len(brief.Bytes) == 0 {
+		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
+	}
+	attempts, err := s.store.ListExecutionAttemptsByRun(ctx, run.ID)
+	if err != nil {
+		return AdaptiveExecutionAttemptResult{}, err
+	}
+	if len(attempts) != 1 {
+		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
+	}
+	attempt := attempts[0]
+	if attempt.AttemptNumber != 1 || (attempt.Status != workflowstore.AttemptStatusPending && attempt.Status != workflowstore.AttemptStatusRunning) {
+		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
+	}
+	artifacts, err := s.store.ListArtifactsByExecutionAttempt(ctx, attempt.ID)
+	if err != nil {
+		return AdaptiveExecutionAttemptResult{}, err
+	}
+	artifact, err := findAdaptiveExecutionInputArtifact(artifacts, attempt)
+	if err != nil {
+		return AdaptiveExecutionAttemptResult{}, err
+	}
+	verified, content, err := s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{Kind: artifact.Kind, RelativePath: artifact.RelativePath, MediaType: artifact.MediaType, SHA256: artifact.SHA256, SizeBytes: artifact.SizeBytes}, adaptiveExecutionInputReadLimit)
+	if err != nil || verified.RelativePath != artifact.RelativePath {
+		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
+	}
+	var document adaptiveExecutionInputDocument
+	if err := json.Unmarshal(content, &document); err != nil || document.SchemaVersion != "1.0" || document.Executor.Adapter != attempt.Adapter || document.Executor.Model != attempt.Model {
+		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
+	}
+	return s.resolveExisting(ctx, run, brief, attempt.Adapter, attempt.Model, attempts)
 }
 
 func (s *AdaptiveExecutionAttemptService) resolveComplete(ctx context.Context, run workflowstore.Run, mode EffectiveExecutorBriefMode) (AdaptiveExecutionAttemptResult, error) {

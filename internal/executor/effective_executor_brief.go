@@ -72,65 +72,34 @@ func NewEffectiveExecutorBriefService(store *workflowstore.Store) (*EffectiveExe
 }
 
 func (s *EffectiveExecutorBriefService) Prepare(ctx context.Context, runID string) (EffectiveExecutorBriefResult, error) {
-	if s == nil || s.store == nil || s.packages == nil || s.assignments == nil || s.outcomes == nil {
-		return EffectiveExecutorBriefResult{}, fmt.Errorf("effective Executor Brief service is unavailable")
-	}
-	authority, err := s.packages.LoadApprovedAuthorityForRun(ctx, runID)
+	prepared, err := s.loadPreparedEffectiveExecutorBrief(ctx, runID)
 	if err != nil {
 		return EffectiveExecutorBriefResult{}, err
 	}
-	assignment, err := s.assignments.LoadExecutionAssignment(ctx, runID)
-	if err != nil {
-		return EffectiveExecutorBriefResult{}, err
-	}
-	outcome, err := s.outcomes.Load(ctx, runID)
-	if err != nil {
-		return EffectiveExecutorBriefResult{}, err
-	}
-	if !effectiveBriefInputsAgree(authority, assignment, outcome) {
-		return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
-	}
-	mode, err := effectiveBriefMode(outcome.Outcome)
-	if err != nil {
-		return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
-	}
-	artifacts, err := s.store.ListArtifactsByRun(ctx, authority.Run.ID)
-	if err != nil {
-		return EffectiveExecutorBriefResult{}, err
-	}
-	existing, err := findEffectiveExecutorBrief(artifacts, authority.Run)
-	if err != nil {
-		return EffectiveExecutorBriefResult{}, err
-	}
-	if mode == EffectiveExecutorBriefDeterministicComplete {
-		if existing != nil {
+	if prepared.mode == EffectiveExecutorBriefDeterministicComplete {
+		if prepared.existing != nil {
 			return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
 		}
-		return EffectiveExecutorBriefResult{Mode: mode}, nil
+		return EffectiveExecutorBriefResult{Mode: prepared.mode}, nil
 	}
-
-	content, filename, err := renderEffectiveExecutorBrief(authority, assignment, outcome, mode)
-	if err != nil {
-		return EffectiveExecutorBriefResult{}, err
+	if prepared.existing != nil {
+		return s.resolveExistingEffectiveExecutorBrief(*prepared.existing, prepared.authority.Run, prepared.filename, prepared.mode, prepared.content)
 	}
-	if existing != nil {
-		return s.resolveExistingEffectiveExecutorBrief(*existing, authority.Run, filename, mode, content)
-	}
-	if authority.Run.Status != workflowstore.RunStatusSetupReady {
+	if prepared.authority.Run.Status != workflowstore.RunStatusSetupReady {
 		return EffectiveExecutorBriefResult{}, fmt.Errorf("effective Executor Brief requires a setup_ready Run")
 	}
-	batch, err := s.store.ArtifactStore().Begin(filepath.ToSlash(filepath.Join("runs", authority.Run.RunID)))
+	batch, err := s.store.ArtifactStore().Begin(filepath.ToSlash(filepath.Join("runs", prepared.authority.Run.RunID)))
 	if err != nil {
 		return EffectiveExecutorBriefResult{}, err
 	}
-	staged, err := batch.Stage(effectiveExecutorBriefKind, filename, effectiveExecutorBriefMediaType, content)
+	staged, err := batch.Stage(effectiveExecutorBriefKind, prepared.filename, effectiveExecutorBriefMediaType, prepared.content)
 	if err != nil {
 		_ = batch.Rollback()
 		return EffectiveExecutorBriefResult{}, err
 	}
 	var created workflowstore.Artifact
 	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
-		artifact, createErr := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: authority.Run.ID, Valid: true}, Kind: staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes})
+		artifact, createErr := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: prepared.authority.Run.ID, Valid: true}, Kind: staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes})
 		if createErr != nil {
 			return createErr
 		}
@@ -138,14 +107,83 @@ func (s *EffectiveExecutorBriefService) Prepare(ctx context.Context, runID strin
 		return nil
 	})
 	if err == nil {
-		return effectiveExecutorBriefResult(mode, created, content), nil
+		return effectiveExecutorBriefResult(prepared.mode, created, prepared.content), nil
 	}
-	if current, listErr := s.store.ListArtifactsByRun(ctx, authority.Run.ID); listErr == nil {
-		if candidate, findErr := findEffectiveExecutorBrief(current, authority.Run); findErr == nil && candidate != nil {
-			return s.resolveExistingEffectiveExecutorBrief(*candidate, authority.Run, filename, mode, content)
+	if current, listErr := s.store.ListArtifactsByRun(ctx, prepared.authority.Run.ID); listErr == nil {
+		if candidate, findErr := findEffectiveExecutorBrief(current, prepared.authority.Run); findErr == nil && candidate != nil {
+			return s.resolveExistingEffectiveExecutorBrief(*candidate, prepared.authority.Run, prepared.filename, prepared.mode, prepared.content)
 		}
 	}
 	return EffectiveExecutorBriefResult{}, err
+}
+
+// Load resolves the already-prepared effective Brief without creating an
+// artifact. It regenerates the expected decision and uses the same integrity
+// verification as Prepare so dispatch can consume only durable preparation.
+func (s *EffectiveExecutorBriefService) Load(ctx context.Context, runID string) (EffectiveExecutorBriefResult, error) {
+	prepared, err := s.loadPreparedEffectiveExecutorBrief(ctx, runID)
+	if err != nil {
+		return EffectiveExecutorBriefResult{}, err
+	}
+	if prepared.mode == EffectiveExecutorBriefDeterministicComplete {
+		if prepared.existing != nil {
+			return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
+		}
+		return EffectiveExecutorBriefResult{Mode: prepared.mode}, nil
+	}
+	if prepared.existing == nil {
+		return EffectiveExecutorBriefResult{}, ErrEffectiveExecutorBriefConflict
+	}
+	return s.resolveExistingEffectiveExecutorBrief(*prepared.existing, prepared.authority.Run, prepared.filename, prepared.mode, prepared.content)
+}
+
+type preparedEffectiveExecutorBrief struct {
+	authority executionpackages.ApprovedAuthority
+	mode      EffectiveExecutorBriefMode
+	existing  *workflowstore.Artifact
+	content   []byte
+	filename  string
+}
+
+func (s *EffectiveExecutorBriefService) loadPreparedEffectiveExecutorBrief(ctx context.Context, runID string) (preparedEffectiveExecutorBrief, error) {
+	if s == nil || s.store == nil || s.packages == nil || s.assignments == nil || s.outcomes == nil {
+		return preparedEffectiveExecutorBrief{}, fmt.Errorf("effective Executor Brief service is unavailable")
+	}
+	authority, err := s.packages.LoadApprovedAuthorityForRun(ctx, runID)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, err
+	}
+	assignment, err := s.assignments.LoadExecutionAssignment(ctx, runID)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, err
+	}
+	outcome, err := s.outcomes.Load(ctx, runID)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, err
+	}
+	if !effectiveBriefInputsAgree(authority, assignment, outcome) {
+		return preparedEffectiveExecutorBrief{}, ErrEffectiveExecutorBriefConflict
+	}
+	mode, err := effectiveBriefMode(outcome.Outcome)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, ErrEffectiveExecutorBriefConflict
+	}
+	artifacts, err := s.store.ListArtifactsByRun(ctx, authority.Run.ID)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, err
+	}
+	existing, err := findEffectiveExecutorBrief(artifacts, authority.Run)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, err
+	}
+	if mode == EffectiveExecutorBriefDeterministicComplete {
+		return preparedEffectiveExecutorBrief{authority: authority, mode: mode, existing: existing}, nil
+	}
+	content, filename, err := renderEffectiveExecutorBrief(authority, assignment, outcome, mode)
+	if err != nil {
+		return preparedEffectiveExecutorBrief{}, err
+	}
+	return preparedEffectiveExecutorBrief{authority: authority, mode: mode, existing: existing, content: content, filename: filename}, nil
 }
 
 func effectiveExecutorBriefResult(mode EffectiveExecutorBriefMode, artifact workflowstore.Artifact, content []byte) EffectiveExecutorBriefResult {
