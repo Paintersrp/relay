@@ -319,6 +319,9 @@ func validApplicationEvidence(value *DeterministicApplicationEvidence, document 
 		if operation.Index != index+1 || operation.Operation != expected.Operation || operation.SourcePath != expected.Path || operation.DestinationPath != expected.DestinationPath || !validDeterministicPath(operation.SourcePath) || (operation.DestinationPath != "" && !validDeterministicPath(operation.DestinationPath)) || !validOutcomeFileState(operation.SourceBefore) || !validOutcomeFileState(operation.SourceAfter) || !validOutcomeFileState(operation.DestinationBefore) || !validOutcomeFileState(operation.DestinationAfter) || !validApplicationOperationShape(operation, expected) {
 			return false
 		}
+		if operation.Operation == "rename" && (isStrictPathAncestor(operation.SourcePath, operation.DestinationPath) || isStrictPathAncestor(operation.DestinationPath, operation.SourcePath)) {
+			return false
+		}
 		if !validEvidencePathPosition(operation.SourcePath, virtual, virtualDescendants) || (operation.Operation == "rename" && !validEvidencePathPosition(operation.DestinationPath, virtual, virtualDescendants)) {
 			return false
 		}
@@ -406,6 +409,20 @@ func validEvidencePathPosition(path string, virtual map[string]DeterministicOutc
 	parts := strings.Split(path, "/")
 	for index := 1; index < len(parts); index++ {
 		if state, exists := virtual[strings.Join(parts[:index], "/")]; exists && state.Exists {
+			return false
+		}
+	}
+	return true
+}
+
+func isStrictPathAncestor(ancestor, descendant string) bool {
+	ancestorParts := strings.Split(ancestor, "/")
+	descendantParts := strings.Split(descendant, "/")
+	if len(ancestorParts) >= len(descendantParts) {
+		return false
+	}
+	for index, part := range ancestorParts {
+		if part != descendantParts[index] {
 			return false
 		}
 	}

@@ -147,9 +147,73 @@ func TestLoadDeterministicOutcomeReadbackAcceptsValidOperationsAndCoverage(t *te
 		{name: "delete", document: deterministicOutcomeDocument("complete", operation("a.txt", "delete", implExpected("a\n"))), plan: deterministicOutcomePlan("complete", preparedDelete("a.txt", "a\n"))},
 		{name: "preserving rename", document: deterministicOutcomeDocument("complete", rename("a.txt", "b.txt", "a\n", true, "")), plan: deterministicOutcomePlan("complete", preparedRename("a.txt", "b.txt", "a\n", "a\n"))},
 		{name: "replacing rename", document: deterministicOutcomeDocument("complete", renameWithReplacement("a.txt", "b.txt", "a\n", "b\n")), plan: deterministicOutcomePlan("complete", preparedRename("a.txt", "b.txt", "a\n", "b\n"))},
+		{name: "sibling rename", document: deterministicOutcomeDocument("complete", rename("a/one.txt", "a/two.txt", "one\n", true, "")), plan: deterministicOutcomePlan("complete", preparedRename("a/one.txt", "a/two.txt", "one\n", "one\n"))},
+		{name: "cross-directory rename", document: deterministicOutcomeDocument("complete", rename("a/one.txt", "b/two.txt", "one\n", true, "")), plan: deterministicOutcomePlan("complete", preparedRename("a/one.txt", "b/two.txt", "one\n", "one\n"))},
+		{name: "textual-prefix rename", document: deterministicOutcomeDocument("complete", rename("a.txt", "a.txt.backup", "a\n", true, "")), plan: deterministicOutcomePlan("complete", preparedRename("a.txt", "a.txt.backup", "a\n", "a\n"))},
 		{name: "rename chain", document: deterministicOutcomeDocument("complete", rename("a.txt", "b.txt", "a\n", true, ""), renameWithReplacement("b.txt", "c.txt", "a\n", "c\n")), plan: deterministicOutcomePlan("complete", preparedRename("a.txt", "b.txt", "a\n", "a\n"), preparedRename("b.txt", "c.txt", "a\n", "c\n"))},
 	} {
 		t.Run(test.name, func(t *testing.T) { assertValidOutcomeReadback(t, test.document, test.plan, "complete") })
+	}
+}
+
+func TestLoadDeterministicOutcomeRejectsRenameAncestorRelationships(t *testing.T) {
+	tests := []struct {
+		name     string
+		document *speccompiler.DeterministicOperationsDocument
+		plan     *DeterministicMutationPlan
+	}{
+		{
+			name:     "first ancestor to child",
+			document: deterministicOutcomeDocument("complete", rename("a", "a/child.txt", "source\n", true, "")),
+			plan:     deterministicOutcomePlan("complete", preparedRename("a", "a/child.txt", "source\n", "source\n")),
+		},
+		{
+			name:     "first descendant to ancestor",
+			document: deterministicOutcomeDocument("complete", rename("a/child.txt", "a", "source\n", true, "")),
+			plan:     deterministicOutcomePlan("complete", preparedRename("a/child.txt", "a", "source\n", "source\n")),
+		},
+		{
+			name:     "deeper ancestor to descendant",
+			document: deterministicOutcomeDocument("complete", rename("a/b", "a/b/c.txt", "source\n", true, "")),
+			plan:     deterministicOutcomePlan("complete", preparedRename("a/b", "a/b/c.txt", "source\n", "source\n")),
+		},
+		{
+			name:     "deeper descendant to ancestor",
+			document: deterministicOutcomeDocument("complete", rename("a/b/c.txt", "a/b", "source\n", true, "")),
+			plan:     deterministicOutcomePlan("complete", preparedRename("a/b/c.txt", "a/b", "source\n", "source\n")),
+		},
+		{
+			name: "ancestor to child after unrelated operation",
+			document: deterministicOutcomeDocument("complete",
+				operation("unrelated.txt", "create", implContent("unrelated\n")),
+				rename("a", "a/child.txt", "source\n", true, ""),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("unrelated.txt", "unrelated\n"),
+				preparedRename("a", "a/child.txt", "source\n", "source\n"),
+			),
+		},
+		{
+			name: "descendant to ancestor after unrelated operation",
+			document: deterministicOutcomeDocument("complete",
+				operation("unrelated.txt", "create", implContent("unrelated\n")),
+				rename("a/child.txt", "a", "source\n", true, ""),
+			),
+			plan: deterministicOutcomePlan("complete",
+				preparedCreate("unrelated.txt", "unrelated\n"),
+				preparedRename("a/child.txt", "a", "source\n", "source\n"),
+			),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newOutcomeLoadFixture(t, test.document)
+			result := persistOutcome(t, fixture, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightReady, Coverage: "complete", Plan: test.plan}, Application: applicationForPlan(t, test.plan)})
+			if result.Bytes == nil {
+				t.Fatal("persisted outcome bytes are nil")
+			}
+			loadOutcomeConflict(t, fixture)
+		})
 	}
 }
 
