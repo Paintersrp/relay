@@ -265,38 +265,136 @@ func validLoadedDeterministicOutcome(outcome DeterministicOutcome, run workflows
 	case string(DeterministicPreflightNotPresent):
 		return approvedOperations == nil && outcome.DeterministicOperations.Presence == "absent" && outcome.Outcome.Coverage == "" && outcome.PreflightFailure == nil && outcome.Application == nil
 	case string(DeterministicPreflightFailed):
-		if approvedOperations == nil || outcome.DeterministicOperations.Presence != "present" || outcome.Outcome.Coverage != outcome.DeterministicOperations.Coverage || outcome.PreflightFailure == nil || outcome.Application != nil {
+		if approvedOperations == nil || outcome.DeterministicOperations.Presence != "present" || !validOutcomeCoverage(outcome.Outcome.Coverage, outcome.DeterministicOperations.Coverage, approvedOperations.Coverage, approvedOperations.Document) || outcome.PreflightFailure == nil || outcome.Application != nil {
 			return false
 		}
 		_, err := verifiedPreflightFailure(DeterministicPreflightFailure{Code: outcome.PreflightFailure.Code, OperationIndex: outcome.PreflightFailure.OperationIndex, DirectiveIndex: outcome.PreflightFailure.DirectiveIndex, Path: outcome.PreflightFailure.Path, Destination: outcome.PreflightFailure.Destination, Expected: outcome.PreflightFailure.Expected, Observed: outcome.PreflightFailure.Observed})
 		return err == nil && validFailureAgainstDocument(*outcome.PreflightFailure, approvedOperations.Document)
 	case "applied":
-		return approvedOperations != nil && outcome.DeterministicOperations.Presence == "present" && outcome.Outcome.Coverage == outcome.DeterministicOperations.Coverage && outcome.PreflightFailure == nil && validApplicationEvidence(outcome.Application, approvedOperations.Document)
+		return approvedOperations != nil && outcome.DeterministicOperations.Presence == "present" && validOutcomeCoverage(outcome.Outcome.Coverage, outcome.DeterministicOperations.Coverage, approvedOperations.Coverage, approvedOperations.Document) && outcome.PreflightFailure == nil && validApplicationEvidence(outcome.Application, approvedOperations.Document)
 	default:
 		return false
 	}
 }
 
+func validOutcomeCoverage(outcome, assignment, approved string, document *speccompiler.DeterministicOperationsDocument) bool {
+	return document != nil && outcome != "" && outcome == assignment && outcome == approved && outcome == document.Coverage
+}
+
 func validFailureAgainstDocument(value DeterministicOutcomePreflightFailure, document *speccompiler.DeterministicOperationsDocument) bool {
-	return document != nil && value.OperationIndex >= 1 && value.OperationIndex <= len(document.Operations) && (value.DirectiveIndex == 0 || (document.Operations[value.OperationIndex-1].Operation == "modify" && value.DirectiveIndex <= len(document.Operations[value.OperationIndex-1].Implementation.Changes)))
+	if document == nil || value.OperationIndex < 1 || value.OperationIndex > len(document.Operations) {
+		return false
+	}
+	operation := document.Operations[value.OperationIndex-1]
+	if value.DirectiveIndex != 0 && (operation.Operation != "modify" || value.DirectiveIndex > len(operation.Implementation.Changes)) {
+		return false
+	}
+	if value.Path != "" && value.Path != operation.Path && (operation.Operation != "rename" || value.Path != operation.DestinationPath) {
+		return false
+	}
+	if value.Destination != "" {
+		return operation.Operation == "rename" && value.Destination == operation.DestinationPath
+	}
+	return true
 }
 
 func validApplicationEvidence(value *DeterministicApplicationEvidence, document *speccompiler.DeterministicOperationsDocument) bool {
 	if document == nil || value == nil || len(value.Operations) != len(document.Operations) || len(value.Operations) == 0 {
 		return false
 	}
-	for index, operation := range value.Operations {
-		expected := document.Operations[index]
-		if operation.Index != index+1 || operation.Operation != expected.Operation || operation.SourcePath != expected.Path || operation.DestinationPath != expected.DestinationPath || !validDeterministicPath(operation.SourcePath) || (operation.DestinationPath != "" && !validDeterministicPath(operation.DestinationPath)) || !validOutcomeFileState(operation.SourceBefore) || !validOutcomeFileState(operation.SourceAfter) || !validOutcomeFileState(operation.DestinationBefore) || !validOutcomeFileState(operation.DestinationAfter) {
-			return false
+	virtual := make(map[string]DeterministicOutcomeFileState, len(value.Operations)*2)
+	virtualDirectories := make(map[string]bool, len(value.Operations)*2)
+	changedPaths := make([]string, 0, len(value.Operations)*2)
+	changed := make(map[string]bool, len(value.Operations)*2)
+	addChangedPath := func(path string) {
+		if !changed[path] {
+			changed[path] = true
+			changedPaths = append(changedPaths, path)
 		}
 	}
-	for _, path := range value.ChangedPaths {
-		if !validDeterministicPath(path) {
+	for index, operation := range value.Operations {
+		expected := document.Operations[index]
+		if operation.Index != index+1 || operation.Operation != expected.Operation || operation.SourcePath != expected.Path || operation.DestinationPath != expected.DestinationPath || !validDeterministicPath(operation.SourcePath) || (operation.DestinationPath != "" && !validDeterministicPath(operation.DestinationPath)) || !validOutcomeFileState(operation.SourceBefore) || !validOutcomeFileState(operation.SourceAfter) || !validOutcomeFileState(operation.DestinationBefore) || !validOutcomeFileState(operation.DestinationAfter) || !validApplicationOperationShape(operation, expected) {
+			return false
+		}
+		if !validEvidencePathPosition(operation.SourcePath, virtual, virtualDirectories) || (operation.Operation == "rename" && !validEvidencePathPosition(operation.DestinationPath, virtual, virtualDirectories)) {
+			return false
+		}
+		if current, exists := virtual[operation.SourcePath]; exists {
+			if !equalOutcomeFileState(current, operation.SourceBefore) {
+				return false
+			}
+		}
+		addChangedPath(operation.SourcePath)
+		if operation.Operation == "rename" {
+			if current, exists := virtual[operation.DestinationPath]; exists {
+				if !equalOutcomeFileState(current, operation.DestinationBefore) {
+					return false
+				}
+			}
+			addChangedPath(operation.DestinationPath)
+		}
+		virtual[operation.SourcePath] = operation.SourceAfter
+		addVirtualEvidenceParents(operation.SourcePath, virtualDirectories)
+		if operation.Operation == "rename" {
+			virtual[operation.DestinationPath] = operation.DestinationAfter
+			addVirtualEvidenceParents(operation.DestinationPath, virtualDirectories)
+		}
+	}
+	if len(value.ChangedPaths) != len(changedPaths) {
+		return false
+	}
+	for index, path := range value.ChangedPaths {
+		if path != changedPaths[index] || !validDeterministicPath(path) {
 			return false
 		}
 	}
 	return true
+}
+
+func validApplicationOperationShape(actual AppliedDeterministicOperationEvidence, expected speccompiler.DeterministicOperation) bool {
+	emptyDestination := actual.DestinationPath == "" && !actual.DestinationBefore.Exists && !actual.DestinationAfter.Exists
+	switch expected.Operation {
+	case "modify":
+		return actual.SourceBefore.Exists && actual.SourceAfter.Exists && emptyDestination
+	case "create":
+		return !actual.SourceBefore.Exists && actual.SourceAfter.Exists && emptyDestination
+	case "delete":
+		return actual.SourceBefore.Exists && !actual.SourceAfter.Exists && emptyDestination
+	case "rename":
+		return actual.SourceBefore.Exists && !actual.SourceAfter.Exists && actual.DestinationPath == expected.DestinationPath && !actual.DestinationBefore.Exists && actual.DestinationAfter.Exists && actual.SourcePath != actual.DestinationPath
+	default:
+		return false
+	}
+}
+
+func validEvidencePathPosition(path string, virtual map[string]DeterministicOutcomeFileState, virtualDirectories map[string]bool) bool {
+	if virtualDirectories[path] {
+		return false
+	}
+	parts := strings.Split(path, "/")
+	for index := 1; index < len(parts); index++ {
+		if state, exists := virtual[strings.Join(parts[:index], "/")]; exists && state.Exists {
+			return false
+		}
+	}
+	for other, state := range virtual {
+		if state.Exists && strings.HasPrefix(other, path+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+func addVirtualEvidenceParents(path string, virtualDirectories map[string]bool) {
+	parts := strings.Split(path, "/")
+	for index := 1; index < len(parts); index++ {
+		virtualDirectories[strings.Join(parts[:index], "/")] = true
+	}
+}
+
+func equalOutcomeFileState(left, right DeterministicOutcomeFileState) bool {
+	return left.Exists == right.Exists && left.SHA256 == right.SHA256 && left.Size == right.Size
 }
 
 func validOutcomeFileState(value DeterministicOutcomeFileState) bool {

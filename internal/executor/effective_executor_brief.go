@@ -3,7 +3,10 @@ package executor
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -219,11 +222,11 @@ func effectiveBriefInputsAgree(authority executionpackages.ApprovedAuthority, as
 }
 
 func renderEffectiveExecutorBrief(authority executionpackages.ApprovedAuthority, assignment ExecutionAssignmentResult, outcome DeterministicOutcomeResult, mode EffectiveExecutorBriefMode) ([]byte, string, error) {
-	if !utf8.Valid(authority.TicketDesignBrief.Bytes) || !textualMediaType(authority.TicketDesignBrief.MediaType) {
+	if !validApprovedDocument(authority.TicketDesignBrief.Bytes, authority.TicketDesignBrief.MediaType, authority.TicketDesignBrief.SHA256) {
 		return nil, "", ErrEffectiveExecutorBriefConflict
 	}
 	for _, layer := range authority.AuthorityLayers {
-		if !textualMediaType(layer.MediaType) || !utf8.Valid(layer.Bytes) {
+		if !validApprovedDocument(layer.Bytes, layer.MediaType, layer.SHA256) || layer.SizeBytes != int64(len(layer.Bytes)) {
 			return nil, "", ErrEffectiveExecutorBriefConflict
 		}
 	}
@@ -284,14 +287,25 @@ func textualMediaType(mediaType string) bool {
 	return strings.HasPrefix(mediaType, "text/") || mediaType == "application/json"
 }
 
-func writeFencedContent(b *strings.Builder, mediaType string, content []byte, size int64, digest string) {
-	fence := deterministicFence(content)
-	b.WriteString("- Source byte count: " + fmt.Sprint(size) + "\n- Source SHA-256: " + digest + "\n\n" + fence + mediaType + "\n")
-	b.Write(content)
-	if len(content) == 0 || content[len(content)-1] != '\n' {
-		b.WriteByte('\n')
+func validApprovedDocument(content []byte, mediaType, digest string) bool {
+	if !textualMediaType(mediaType) || !utf8.Valid(content) || len(digest) != sha256.Size*2 {
+		return false
 	}
-	b.WriteString(fence + "\n")
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:]) == digest
+}
+
+func writeFencedContent(b *strings.Builder, mediaType string, content []byte, size int64, digest string) {
+	b.WriteString("- Source byte count: " + fmt.Sprint(size) + "\n- Source SHA-256: " + digest + "\n")
+	if len(content) == 0 || content[len(content)-1] == '\n' {
+		fence := deterministicFence(content)
+		b.WriteString("\n" + fence + mediaType + "\n")
+		b.Write(content)
+		b.WriteString(fence + "\n")
+		return
+	}
+	encoded := base64.StdEncoding.EncodeToString(content)
+	b.WriteString("- Source representation: base64\n\n```text/base64\n" + encoded + "\n```\n")
 }
 
 func deterministicFence(content []byte) string {
