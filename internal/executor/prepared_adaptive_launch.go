@@ -115,12 +115,16 @@ func (s *WorkflowExecutionService) LaunchPreparedAdaptive(ctx context.Context, i
 		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, err)
 	}
 
+	sourceMutationStarted, modeValid := adaptiveSourceMutationStarted(admitted.Mode)
+	if !modeValid {
+		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, ErrAdaptiveDispatchAdmissionConflict)
+	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
 	runtime := &workflowRuntime{cancel: cancel}
 	s.putRuntime(attempt.AttemptID, runtime)
 	s.launch(func() {
 		defer s.deleteRuntime(attempt.AttemptID)
-		s.execute(runtimeCtx, run, attempt, repository, selected, nil, invocation, adapter, runtime, lease, false)
+		s.execute(runtimeCtx, run, attempt, repository, selected, nil, invocation, adapter, runtime, lease, sourceMutationStarted)
 	})
 	result.NewlyLaunched = true
 	return result, nil
@@ -217,7 +221,11 @@ func (s *WorkflowExecutionService) settlePreparedPrelaunchFailure(ctx context.Co
 		}
 	}
 	state.MutationLeaseID = lease.LeaseID
-	state.SourceMutationStarted = false
+	sourceMutationStarted, modeValid := adaptiveSourceMutationStarted(admitted.Mode)
+	if !modeValid {
+		return errors.Join(cause, ErrAdaptiveDispatchAdmissionConflict)
+	}
+	state.SourceMutationStarted = sourceMutationStarted
 	if selected != nil {
 		state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
 		state.EffectiveBriefSHA256 = selected.Artifact.SHA256

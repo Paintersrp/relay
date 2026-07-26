@@ -73,6 +73,9 @@ func prepareLaunchFixture(t *testing.T, outcome DeterministicOutcomeInput) (*exe
 	if err != nil {
 		t.Fatal(err)
 	}
+	if outcome.Application != nil && outcome.Preflight.Coverage == "partial" {
+		seedAdaptivePartialLease(t, fixture, "lease-launch-partial")
+	}
 	return fixture, &prepared
 }
 
@@ -104,7 +107,7 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 			if err := json.Unmarshal([]byte(attempt.ResultJSON), &runtime); err != nil {
 				t.Fatal(err)
 			}
-			if runtime.EffectiveBriefMode != string(tc.mode) || runtime.SourceMutationStarted != true || runtime.EffectiveBriefArtifactID == "" || runtime.EffectiveBriefSHA256 == "" {
+			if runtime.EffectiveBriefMode != string(tc.mode) || !runtime.SourceMutationStarted || runtime.EffectiveBriefArtifactID == "" || runtime.EffectiveBriefSHA256 == "" {
 				t.Fatalf("runtime=%#v", runtime)
 			}
 			brief, err := NewEffectiveExecutorBriefService(fixture.store)
@@ -236,6 +239,46 @@ func TestLaunchPreparedAdaptivePreflightFailureSettlesAttemptAndLease(t *testing
 		if artifact.Kind != adaptiveExecutionInputKind {
 			t.Fatalf("unexpected prelaunch output artifact=%#v", artifact)
 		}
+	}
+}
+
+func TestLaunchPreparedAdaptivePartialPrelaunchFailurePreservesMutationFact(t *testing.T) {
+	fixture, prepared := prepareLaunchFixture(t, appliedOutcomeInput("partial"))
+	sentinelPath := filepath.Join(fixture.store.ArtifactStore().Root(), "deterministic-sentinel.txt")
+	if err := os.WriteFile(sentinelPath, []byte("deterministic result\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &preparedLaunchAdapter{id: AdapterCodex}
+	service := newPreparedLaunchService(t, fixture, adapter)
+	service.invocationPreflight = func(ExecutorInvocation) ExecutorPreflightResult {
+		return ExecutorPreflightResult{BlockerText: "blocked before process start"}
+	}
+	service.launch = func(func()) { t.Fatal("adaptive process launched after prelaunch failure") }
+	result, err := service.LaunchPreparedAdaptive(context.Background(), PreparedAdaptiveLaunchInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
+	if err == nil || result.NewlyLaunched {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), prepared.Attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state workflowAttemptRuntime
+	if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.SourceMutationStarted != true || !state.TerminationVerified || state.EffectiveBriefMode != string(EffectiveExecutorBriefAdaptiveAfterPartialApplication) {
+		t.Fatalf("settled state=%#v", state)
+	}
+	leases, err := fixture.store.ListRepositoryBranchMutationLeases(context.Background(), fixture.run.RepoTarget, fixture.run.Branch)
+	if err != nil || len(leases) != 1 || leases[0].LeaseID != "lease-launch-partial" || leases[0].State != workflowstore.RepositoryBranchMutationLeaseStateReleased {
+		t.Fatalf("leases=%#v err=%v", leases, err)
+	}
+	contents, err := os.ReadFile(sentinelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "deterministic result\n" {
+		t.Fatalf("deterministic sentinel changed: %q", contents)
 	}
 }
 

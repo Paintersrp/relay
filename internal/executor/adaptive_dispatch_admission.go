@@ -123,7 +123,24 @@ func (s *AdaptiveDispatchAdmissionService) Begin(ctx context.Context, input Adap
 	if err != nil {
 		return AdaptiveDispatchAdmissionResult{}, err
 	}
+	sourceMutationStarted, modeValid := adaptiveSourceMutationStarted(brief.Mode)
+	if !modeValid {
+		return AdaptiveDispatchAdmissionResult{}, ErrAdaptiveDispatchAdmissionConflict
+	}
 	leaseID := workflowstore.NewRepositoryBranchMutationLeaseID()
+	if sourceMutationStarted {
+		lease, leaseErr := s.runs.GetActiveRunMutationLease(ctx, run.RunID)
+		if leaseErr != nil {
+			if errors.Is(leaseErr, sql.ErrNoRows) || errors.Is(leaseErr, workflowruns.ErrMutationLeaseOwner) {
+				return AdaptiveDispatchAdmissionResult{}, ErrAdaptiveDispatchAdmissionConflict
+			}
+			return AdaptiveDispatchAdmissionResult{}, leaseErr
+		}
+		if lease.OwnerKind != "run_execution" || lease.OwnerIdentity != run.RunID || lease.RepoTarget != run.RepoTarget || lease.Branch != run.Branch || lease.State != workflowstore.RepositoryBranchMutationLeaseStateActive || lease.UncertaintyState != workflowstore.RepositoryBranchMutationLeaseCertaintyCertain || lease.ReconciliationState != workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired {
+			return AdaptiveDispatchAdmissionResult{}, ErrAdaptiveDispatchAdmissionConflict
+		}
+		leaseID = lease.LeaseID
+	}
 	runtimeJSON, err := marshalAdaptiveDispatchRuntime(leaseID, *brief.Artifact, brief.Mode)
 	if err != nil {
 		return AdaptiveDispatchAdmissionResult{}, err
@@ -143,17 +160,32 @@ func (s *AdaptiveDispatchAdmissionService) Begin(ctx context.Context, input Adap
 }
 
 func marshalAdaptiveDispatchRuntime(leaseID string, brief workflowstore.Artifact, mode EffectiveExecutorBriefMode) ([]byte, error) {
-	state := adaptiveDispatchRuntime{MutationLeaseID: leaseID, SourceMutationStarted: false, EffectiveBriefArtifactID: brief.ArtifactID, EffectiveBriefSHA256: brief.SHA256, EffectiveBriefMode: mode}
+	sourceMutationStarted, modeValid := adaptiveSourceMutationStarted(mode)
+	if !modeValid {
+		return nil, ErrAdaptiveDispatchAdmissionConflict
+	}
+	state := adaptiveDispatchRuntime{MutationLeaseID: leaseID, SourceMutationStarted: sourceMutationStarted, EffectiveBriefArtifactID: brief.ArtifactID, EffectiveBriefSHA256: brief.SHA256, EffectiveBriefMode: mode}
 	content, err := json.Marshal(state)
 	if err != nil {
 		return nil, err
 	}
 	content = append(content, '\n')
 	var verified adaptiveDispatchRuntime
-	if !json.Valid(content) || json.Unmarshal(content, &verified) != nil || verified.MutationLeaseID != leaseID || verified.SourceMutationStarted || verified.EffectiveBriefArtifactID != brief.ArtifactID || verified.EffectiveBriefSHA256 != brief.SHA256 || verified.EffectiveBriefMode != mode {
+	if !json.Valid(content) || json.Unmarshal(content, &verified) != nil || verified.MutationLeaseID != leaseID || verified.SourceMutationStarted != sourceMutationStarted || verified.EffectiveBriefArtifactID != brief.ArtifactID || verified.EffectiveBriefSHA256 != brief.SHA256 || verified.EffectiveBriefMode != mode {
 		return nil, ErrAdaptiveDispatchAdmissionConflict
 	}
 	return content, nil
+}
+
+func adaptiveSourceMutationStarted(mode EffectiveExecutorBriefMode) (bool, bool) {
+	switch mode {
+	case EffectiveExecutorBriefAdaptiveNoOperations, EffectiveExecutorBriefAdaptivePreflightFailed:
+		return false, true
+	case EffectiveExecutorBriefAdaptiveAfterPartialApplication:
+		return true, true
+	default:
+		return false, false
+	}
 }
 
 func adaptiveDispatchAdmissionResult(prepared AdaptiveExecutionAttemptResult, brief EffectiveExecutorBriefResult, admitted workflowruns.BeginPreparedAdaptiveExecutionResult) AdaptiveDispatchAdmissionResult {

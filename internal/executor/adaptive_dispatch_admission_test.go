@@ -74,6 +74,9 @@ func TestBeginAdaptiveDispatchAdmissionModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tc.mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication {
+				seedAdaptivePartialLease(t, fixture, "lease-admission-partial")
+			}
 			result, err := service.Begin(ctx, AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
 			if err != nil {
 				t.Fatal(err)
@@ -88,10 +91,29 @@ func TestBeginAdaptiveDispatchAdmissionModes(t *testing.T) {
 			if err := json.Unmarshal([]byte(result.Attempt.ResultJSON), &runtime); err != nil {
 				t.Fatal(err)
 			}
-			if runtime.MutationLeaseID != result.Lease.LeaseID || runtime.EffectiveBriefArtifactID != result.EffectiveBriefArtifact.ArtifactID || runtime.EffectiveBriefSHA256 != result.EffectiveBriefArtifact.SHA256 || runtime.EffectiveBriefMode != tc.mode || runtime.SourceMutationStarted {
+			expectedMutationStarted, valid := adaptiveSourceMutationStarted(tc.mode)
+			if !valid || runtime.MutationLeaseID != result.Lease.LeaseID || runtime.EffectiveBriefArtifactID != result.EffectiveBriefArtifact.ArtifactID || runtime.EffectiveBriefSHA256 != result.EffectiveBriefArtifact.SHA256 || runtime.EffectiveBriefMode != tc.mode || runtime.SourceMutationStarted != expectedMutationStarted {
 				t.Fatalf("runtime = %#v", runtime)
 			}
+			if tc.mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication && result.Lease.LeaseID != "lease-admission-partial" {
+				t.Fatalf("partial admission replaced lease: %#v", result.Lease)
+			}
 		})
+	}
+}
+
+func seedAdaptivePartialLease(t *testing.T, fixture *executionAssignmentFixture, leaseID string) {
+	t.Helper()
+	if err := fixture.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateRepositoryBranchMutationLease(context.Background(), workflowstore.CreateRepositoryBranchMutationLeaseParams{
+			LeaseID: leaseID, RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch,
+			OwnerKind: "run_execution", OwnerIdentity: fixture.run.RunID,
+			UncertaintyState:    workflowstore.RepositoryBranchMutationLeaseCertaintyCertain,
+			ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

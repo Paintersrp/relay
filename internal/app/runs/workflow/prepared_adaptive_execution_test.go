@@ -64,6 +64,136 @@ func TestBeginPreparedAdaptiveExecutionAdmitsAndReadsExisting(t *testing.T) {
 	}
 }
 
+func TestBeginPreparedAdaptiveExecutionAdoptsPartialLease(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPreparedAdaptiveFixture(t)
+	fixture.input.EffectiveBriefMode = preparedAdaptiveModeAfterPartialApplication
+	fixture.input.ProposedLeaseID = "lease-prepared-partial"
+	fixture.input.RunningResultJSON = preparedRuntimeJSON(t, fixture.input)
+	if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateRepositoryBranchMutationLease(ctx, workflowstore.CreateRepositoryBranchMutationLeaseParams{
+			LeaseID: fixture.input.ProposedLeaseID, RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch,
+			OwnerKind: runMutationLeaseOwnerKind, OwnerIdentity: fixture.run.RunID,
+			UncertaintyState:    workflowstore.RepositoryBranchMutationLeaseCertaintyCertain,
+			ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	existing, err := fixture.store.GetRepositoryBranchMutationLeaseByLeaseID(ctx, fixture.input.ProposedLeaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := fixture.service.BeginPreparedAdaptiveExecution(ctx, fixture.input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.NewlyAdmitted || first.Lease.LeaseID != existing.LeaseID || first.Lease.CreatedAt != existing.CreatedAt {
+		t.Fatalf("admission = %#v, existing = %#v", first, existing)
+	}
+	var runtime preparedAdaptiveRuntime
+	if err := json.Unmarshal([]byte(first.Attempt.ResultJSON), &runtime); err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.SourceMutationStarted || runtime.MutationLeaseID != existing.LeaseID {
+		t.Fatalf("runtime = %#v", runtime)
+	}
+	leases, err := fixture.store.ListRepositoryBranchMutationLeases(ctx, fixture.run.RepoTarget, fixture.run.Branch)
+	if err != nil || len(leases) != 1 {
+		t.Fatalf("leases = %#v, %v", leases, err)
+	}
+
+	repeat := fixture.input
+	repeat.RunningResultJSON = first.Attempt.ResultJSON
+	repeat.ProposedLeaseID = first.Lease.LeaseID
+	second, err := fixture.service.BeginPreparedAdaptiveExecution(ctx, repeat)
+	if err != nil || second.NewlyAdmitted || second.Lease.LeaseID != existing.LeaseID {
+		t.Fatalf("repeat = %#v, %v", second, err)
+	}
+}
+
+func TestBeginPreparedAdaptiveExecutionRejectsInvalidPartialLeaseHandoff(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*testing.T, *preparedAdaptiveFixture)
+		want   error
+	}{
+		{name: "missing active lease", mutate: func(*testing.T, *preparedAdaptiveFixture) {}},
+		{name: "different proposed lease ID", mutate: func(t *testing.T, f *preparedAdaptiveFixture) {
+			seedPreparedPartialLease(t, f)
+			f.input.ProposedLeaseID = "lease-not-the-active-one"
+			f.input.RunningResultJSON = preparedRuntimeJSON(t, f.input)
+		}},
+		{name: "other owner", mutate: func(t *testing.T, f *preparedAdaptiveFixture) {
+			if err := f.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+				_, err := tx.CreateRepositoryBranchMutationLease(context.Background(), workflowstore.CreateRepositoryBranchMutationLeaseParams{
+					LeaseID: "lease-partial-other-owner", RepoTarget: f.run.RepoTarget, Branch: f.run.Branch,
+					OwnerKind: "other", OwnerIdentity: "run-other",
+					UncertaintyState:    workflowstore.RepositoryBranchMutationLeaseCertaintyCertain,
+					ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired,
+				})
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "uncertain lease", mutate: func(t *testing.T, f *preparedAdaptiveFixture) {
+			seedPreparedPartialLease(t, f)
+			markPreparedLeaseUncertain(t, f)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newPreparedAdaptiveFixture(t)
+			fixture.input.EffectiveBriefMode = preparedAdaptiveModeAfterPartialApplication
+			fixture.input.ProposedLeaseID = "lease-prepared-partial"
+			fixture.input.RunningResultJSON = preparedRuntimeJSON(t, fixture.input)
+			tc.mutate(t, fixture)
+			_, err := fixture.service.BeginPreparedAdaptiveExecution(context.Background(), fixture.input)
+			want := tc.want
+			if want == nil {
+				want = ErrPreparedAdaptiveExecutionConflict
+				if tc.name == "other owner" {
+					want = ErrMutationLeaseConflict
+				}
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("error = %v, want %v", err, want)
+			}
+			expectedLeases := 0
+			if tc.name != "missing active lease" {
+				expectedLeases = 1
+			}
+			assertPreparedAdmissionUnchanged(t, fixture, expectedLeases)
+		})
+	}
+}
+
+func TestBeginPreparedAdaptiveExecutionPartialLeaseRollbackPreservesLease(t *testing.T) {
+	fixture := newPreparedAdaptiveFixture(t)
+	fixture.input.EffectiveBriefMode = preparedAdaptiveModeAfterPartialApplication
+	fixture.input.ProposedLeaseID = "lease-prepared-partial"
+	fixture.input.RunningResultJSON = preparedRuntimeJSON(t, fixture.input)
+	seedPreparedPartialLease(t, fixture)
+	before, err := fixture.store.GetRepositoryBranchMutationLeaseByLeaseID(context.Background(), fixture.input.ProposedLeaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createAdmissionFailureTrigger(t, fixture.store, "runs", "BEFORE UPDATE OF status", "NEW.run_id = 'run-prepared-adaptive'", "fail Run transition")
+	if _, err := fixture.service.BeginPreparedAdaptiveExecution(context.Background(), fixture.input); err == nil {
+		t.Fatal("expected transaction failure")
+	}
+	after, err := fixture.store.GetRepositoryBranchMutationLeaseByLeaseID(context.Background(), fixture.input.ProposedLeaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("lease changed across rollback: before=%#v after=%#v", before, after)
+	}
+	assertPreparedAdmissionUnchanged(t, fixture, 1)
+}
+
 func TestBeginPreparedAdaptiveExecutionRollsBackEachStage(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -266,11 +396,30 @@ func preparedDigest(value string) string {
 
 func preparedRuntimeJSON(t *testing.T, input BeginPreparedAdaptiveExecutionInput) string {
 	t.Helper()
-	content, err := json.Marshal(preparedAdaptiveRuntime{MutationLeaseID: input.ProposedLeaseID, EffectiveBriefArtifactID: input.EffectiveBriefArtifactID, EffectiveBriefSHA256: input.EffectiveBriefSHA256, EffectiveBriefMode: input.EffectiveBriefMode})
+	sourceMutationStarted, valid := preparedAdaptiveSourceMutationStarted(input.EffectiveBriefMode)
+	if !valid {
+		t.Fatal("invalid prepared adaptive mode")
+	}
+	content, err := json.Marshal(preparedAdaptiveRuntime{MutationLeaseID: input.ProposedLeaseID, SourceMutationStarted: sourceMutationStarted, EffectiveBriefArtifactID: input.EffectiveBriefArtifactID, EffectiveBriefSHA256: input.EffectiveBriefSHA256, EffectiveBriefMode: input.EffectiveBriefMode})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return string(content)
+}
+
+func seedPreparedPartialLease(t *testing.T, f *preparedAdaptiveFixture) {
+	t.Helper()
+	if err := f.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateRepositoryBranchMutationLease(context.Background(), workflowstore.CreateRepositoryBranchMutationLeaseParams{
+			LeaseID: f.input.ProposedLeaseID, RepoTarget: f.run.RepoTarget, Branch: f.run.Branch,
+			OwnerKind: runMutationLeaseOwnerKind, OwnerIdentity: f.run.RunID,
+			UncertaintyState:    workflowstore.RepositoryBranchMutationLeaseCertaintyCertain,
+			ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertPreparedAdmissionUnchanged(t *testing.T, f *preparedAdaptiveFixture, expectedLeases int) {
