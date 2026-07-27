@@ -349,3 +349,119 @@ func persistOutcome(t *testing.T, fixture *executionAssignmentFixture, input Det
 }
 
 func testfixturesBrief(t *testing.T) string { t.Helper(); return testfixtures.TicketDesignBrief }
+
+func TestEffectiveExecutorBriefValidationCommands(t *testing.T) {
+	modes := []EffectiveExecutorBriefMode{
+		EffectiveExecutorBriefAdaptiveNoOperations,
+		EffectiveExecutorBriefAdaptivePreflightFailed,
+		EffectiveExecutorBriefAdaptiveAfterPartialApplication,
+		EffectiveExecutorBriefDeterministicComplete,
+	}
+
+	for _, mode := range modes {
+		t.Run(string(mode), func(t *testing.T) {
+			withOps := mode != EffectiveExecutorBriefAdaptiveNoOperations
+			coverage := ""
+			if mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication || mode == EffectiveExecutorBriefAdaptivePreflightFailed {
+				coverage = "partial"
+			} else if mode == EffectiveExecutorBriefDeterministicComplete {
+				coverage = "complete"
+			}
+			fixture := newExecutionAssignmentFixture(t, withOps, coverage)
+			assignment := prepareExecutionAssignment(t, fixture)
+			var outcomeInput DeterministicOutcomeInput
+			switch mode {
+			case EffectiveExecutorBriefAdaptiveNoOperations:
+				outcomeInput = DeterministicOutcomeInput{RunID: fixture.run.RunID, Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}}
+			case EffectiveExecutorBriefAdaptivePreflightFailed:
+				outcomeInput = failedOutcomeInput("partial")
+			case EffectiveExecutorBriefAdaptiveAfterPartialApplication:
+				outcomeInput = appliedOutcomeInput("partial")
+			case EffectiveExecutorBriefDeterministicComplete:
+				outcomeInput = appliedOutcomeInput("complete")
+			}
+			outcomeInput.RunID = fixture.run.RunID
+			_ = persistOutcome(t, fixture, outcomeInput)
+
+			service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := service.Prepare(context.Background(), fixture.run.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(result.Bytes, []byte("## Required Validation Commands")) {
+				t.Fatalf("mode %s missing Required Validation Commands section", mode)
+			}
+			for _, cmd := range assignment.Assignment.ValidationCommands {
+				if !bytes.Contains(result.Bytes, []byte(cmd.Command)) {
+					t.Fatalf("mode %s missing command %q", mode, cmd.Command)
+				}
+				if !bytes.Contains(result.Bytes, []byte(cmd.Expected)) {
+					t.Fatalf("mode %s missing expected %q", mode, cmd.Expected)
+				}
+				if cmd.WorkingDirectory != "" && !bytes.Contains(result.Bytes, []byte(cmd.WorkingDirectory)) {
+					t.Fatalf("mode %s missing working directory %q", mode, cmd.WorkingDirectory)
+				}
+			}
+
+			result2, err := service.Load(context.Background(), fixture.run.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(result.Bytes, result2.Bytes) {
+				t.Fatalf("rendering identical inputs produced different bytes")
+			}
+		})
+	}
+
+	t.Run("invalid command metadata and duplicates fail closed", func(t *testing.T) {
+		fixture := newExecutionAssignmentFixture(t, false, "")
+		assignment := prepareExecutionAssignment(t, fixture)
+		outcome := persistOutcome(t, fixture, DeterministicOutcomeInput{RunID: fixture.run.RunID, Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
+		auth, err := fixture.packages.LoadApprovedAuthorityForRun(context.Background(), fixture.run.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		badCases := []struct {
+			name string
+			cmds []ExecutionAssignmentValidationCommand
+		}{
+			{name: "duplicate commands", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: "go test ./...", Expected: "passed"},
+				{Command: "go test ./...", Expected: "passed"},
+			}},
+			{name: "blank command", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: "", Expected: "passed"},
+			}},
+			{name: "command outer whitespace", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: " go test ./... ", Expected: "passed"},
+			}},
+			{name: "blank expected", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: "go test ./...", Expected: ""},
+			}},
+			{name: "expected outer whitespace", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: "go test ./...", Expected: "passed "},
+			}},
+			{name: "working dir outer whitespace", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: "go test ./...", Expected: "passed", WorkingDirectory: " dir "},
+			}},
+			{name: "working dir control chars", cmds: []ExecutionAssignmentValidationCommand{
+				{Command: "go test ./...", Expected: "passed", WorkingDirectory: "dir\nsub"},
+			}},
+		}
+
+		for _, tc := range badCases {
+			t.Run(tc.name, func(t *testing.T) {
+				badAssignment := assignment
+				badAssignment.Assignment.ValidationCommands = tc.cmds
+				_, _, err := renderEffectiveExecutorBrief(auth, badAssignment, outcome, EffectiveExecutorBriefAdaptiveNoOperations)
+				if !errors.Is(err, ErrEffectiveExecutorBriefConflict) {
+					t.Fatalf("case %q returned err=%v, want %v", tc.name, err, ErrEffectiveExecutorBriefConflict)
+				}
+			})
+		}
+	})
+}

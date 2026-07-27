@@ -337,3 +337,40 @@ func TestLoadAdaptiveExecutionAttempt(t *testing.T) {
 		t.Fatalf("reloaded = %#v err=%v", reloaded, err)
 	}
 }
+
+func TestBeginAdaptiveDispatchAdmissionValidationCommands(t *testing.T) {
+	ctx := context.Background()
+	fixture := adaptiveAttemptFixture(t, false, "", DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
+	prepared, err := newAdaptiveAttemptService(t, fixture).Prepare(ctx, AdaptiveExecutionAttemptInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Begin(ctx, AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.ValidationCommands) == 0 {
+		t.Fatalf("expected non-empty validation commands in admission result")
+	}
+
+	result.ValidationCommands[0].Command = "MUTATED"
+	result2, err := service.Begin(ctx, AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result2.ValidationCommands[0].Command == "MUTATED" {
+		t.Fatal("admission result slice is not a defensive copy")
+	}
+
+	if _, err := fixture.store.DB().ExecContext(ctx, `DELETE FROM artifacts WHERE kind = ? AND owner_type = 'run'`, executionAssignmentKind); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Begin(ctx, AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID}); !errors.Is(err, ErrAdaptiveDispatchAdmissionConflict) {
+		t.Fatalf("expected conflict on missing assignment, got %v", err)
+	}
+}

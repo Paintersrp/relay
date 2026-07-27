@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"relay/internal/pipeline"
 	workflowstore "relay/internal/store/workflow"
@@ -494,5 +495,69 @@ func TestLaunchPreparedAdaptiveTerminalizationFailureRetainsLease(t *testing.T) 
 	attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), prepared.Attempt.AttemptID)
 	if err != nil || attempt.Status != workflowstore.AttemptStatusRunning {
 		t.Fatalf("attempt=%#v err=%v", attempt, err)
+	}
+}
+
+func TestLaunchPreparedAdaptiveValidationEvidence(t *testing.T) {
+	fixture, prepared := prepareLaunchFixture(t, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
+	adapter := &preparedLaunchAdapter{id: AdapterCodex}
+	service := newPreparedLaunchService(t, fixture, adapter)
+
+	cmdOutput := "STATUS: DONE\n\n## Validation\n\n- `go test ./internal/planningartifacts/...` - passed\n"
+	service.runner = func(_ context.Context, _ string, _ string, _ []string, _ string, _ time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, _ pipeline.ProcessController) pipeline.AgentCommandRunResult {
+		identity := pipeline.ProcessIdentity{PID: 202, StartedAt: "1", Platform: "linux"}
+		if callbacks.OnProcessStarted != nil {
+			_ = callbacks.OnProcessStarted(identity)
+		}
+		if callbacks.OnStdout != nil {
+			callbacks.OnStdout([]byte(cmdOutput))
+		}
+		return pipeline.AgentCommandRunResult{
+			ExitCode:            0,
+			Stdout:              cmdOutput,
+			StartedAt:           time.Now(),
+			FinishedAt:          time.Now(),
+			LaunchDisposition:   pipeline.AgentLaunchOwned,
+			ProcessIdentity:     identity,
+			IdentityAvailable:   true,
+			TerminationVerified: true,
+		}
+	}
+
+	result, err := service.LaunchPreparedAdaptive(context.Background(), PreparedAdaptiveLaunchInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
+	if err != nil || !result.NewlyLaunched {
+		t.Fatalf("launch failed: result=%#v err=%v", result, err)
+	}
+
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), prepared.Attempt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidenceArtifact *workflowstore.Artifact
+	for i := range artifacts {
+		if artifacts[i].Kind == "execution_evidence" {
+			evidenceArtifact = &artifacts[i]
+			break
+		}
+	}
+	if evidenceArtifact == nil {
+		t.Fatal("execution_evidence artifact missing")
+	}
+
+	content, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(evidenceArtifact.RelativePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var evidence workflowExecutionEvidence
+	if err := json.Unmarshal(content, &evidence); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(evidence.ValidationResults) != 1 {
+		t.Fatalf("ValidationResults len = %d, want 1", len(evidence.ValidationResults))
+	}
+	if evidence.ValidationResults[0].Command != "go test ./internal/planningartifacts/..." || evidence.ValidationResults[0].Status != "passed" {
+		t.Fatalf("ValidationResult = %#v", evidence.ValidationResults[0])
 	}
 }

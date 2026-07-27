@@ -7,10 +7,12 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	executionpackages "relay/internal/app/packages"
@@ -250,7 +252,38 @@ func effectiveBriefInputsAgree(authority executionpackages.ApprovedAuthority, as
 	return outcome.Outcome.Run == (DeterministicOutcomeRun{RunID: authority.Run.RunID, RunRowID: authority.Run.ID}) && outcome.Outcome.ExecutionAssignment.ArtifactID == assignment.Artifact.ArtifactID && outcome.Outcome.ExecutionAssignment.ArtifactRowID == assignment.Artifact.ID && outcome.Outcome.ExecutionAssignment.RelativePath == assignment.Artifact.RelativePath && outcome.Outcome.ExecutionAssignment.MediaType == assignment.Artifact.MediaType && outcome.Outcome.ExecutionAssignment.SHA256 == assignment.Artifact.SHA256 && outcome.Outcome.Repository == a.Repository && outcome.Outcome.DeterministicOperations == operations
 }
 
+func validateAssignmentValidationCommands(cmds []ExecutionAssignmentValidationCommand) error {
+	seen := make(map[string]bool, len(cmds))
+	for _, cmd := range cmds {
+		if cmd.Command == "" || !utf8.ValidString(cmd.Command) || cmd.Command != strings.TrimSpace(cmd.Command) {
+			return ErrEffectiveExecutorBriefConflict
+		}
+		if cmd.Expected == "" || !utf8.ValidString(cmd.Expected) || cmd.Expected != strings.TrimSpace(cmd.Expected) {
+			return ErrEffectiveExecutorBriefConflict
+		}
+		if !utf8.ValidString(cmd.WorkingDirectory) {
+			return ErrEffectiveExecutorBriefConflict
+		}
+		if cmd.WorkingDirectory != "" && cmd.WorkingDirectory != strings.TrimSpace(cmd.WorkingDirectory) {
+			return ErrEffectiveExecutorBriefConflict
+		}
+		for _, r := range cmd.WorkingDirectory {
+			if unicode.IsControl(r) {
+				return ErrEffectiveExecutorBriefConflict
+			}
+		}
+		if seen[cmd.Command] {
+			return ErrEffectiveExecutorBriefConflict
+		}
+		seen[cmd.Command] = true
+	}
+	return nil
+}
+
 func renderEffectiveExecutorBrief(authority executionpackages.ApprovedAuthority, assignment ExecutionAssignmentResult, outcome DeterministicOutcomeResult, mode EffectiveExecutorBriefMode) ([]byte, string, error) {
+	if err := validateAssignmentValidationCommands(assignment.Assignment.ValidationCommands); err != nil {
+		return nil, "", err
+	}
 	if !validApprovedDocument(authority.TicketDesignBrief.Bytes, authority.TicketDesignBrief.MediaType, authority.TicketDesignBrief.SHA256) {
 		return nil, "", ErrEffectiveExecutorBriefConflict
 	}
@@ -291,6 +324,18 @@ func renderEffectiveExecutorBrief(authority executionpackages.ApprovedAuthority,
 	case EffectiveExecutorBriefDeterministicComplete:
 		writeAppliedDeterministicApplicationEvidence(&b, outcome.Outcome.Outcome.Coverage, outcome.Outcome.Application)
 	}
+	b.WriteString("\n## Required Validation Commands\n\n")
+	b.WriteString("- Commands must run in listed order when the environment permits.\n")
+	b.WriteString("- Each command must run from its specified working directory.\n")
+	b.WriteString("- The final `## Validation` response must use the exact command text.\n")
+	b.WriteString("- Additional focused diagnostics do not replace a required command.\n\n")
+	cmdJSON, err := json.MarshalIndent(assignment.Assignment.ValidationCommands, "", "  ")
+	if err != nil {
+		return nil, "", ErrEffectiveExecutorBriefConflict
+	}
+	b.WriteString("```json\n")
+	b.Write(cmdJSON)
+	b.WriteString("\n```\n")
 	b.WriteString("\n## Approved Authority Layers\n")
 	for _, layer := range authority.AuthorityLayers {
 		b.WriteString("\n- Sequence: " + fmt.Sprint(layer.Sequence) + "\n- Kind: " + layer.Kind + "\n- Relative path: " + layer.RelativePath + "\n- Media type: " + layer.MediaType + "\n- SHA-256: " + layer.SHA256 + "\n")

@@ -115,16 +115,26 @@ func (s *Execution) LaunchPreparedAdaptive(ctx context.Context, input PreparedAd
 		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, err)
 	}
 
+	seenCmds := make(map[string]bool, len(admitted.ValidationCommands))
+	for _, cmd := range admitted.ValidationCommands {
+		if seenCmds[cmd.Command] {
+			err := fmt.Errorf("admitted validation commands contain duplicate command: %q", cmd.Command)
+			return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, err)
+		}
+		seenCmds[cmd.Command] = true
+	}
+
 	sourceMutationStarted, modeValid := adaptiveSourceMutationStarted(admitted.Mode)
 	if !modeValid {
 		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, &selected, ErrAdaptiveDispatchAdmissionConflict)
 	}
+	validationCommands := append([]speccompiler.ProjectedValidationCommand(nil), admitted.ValidationCommands...)
 	runtimeCtx, cancel := context.WithCancel(context.Background())
 	runtime := &workflowRuntime{cancel: cancel}
 	s.putRuntime(attempt.AttemptID, runtime)
 	s.launch(func() {
 		defer s.deleteRuntime(attempt.AttemptID)
-		s.execute(runtimeCtx, run, attempt, repository, selected, nil, invocation, adapter, runtime, lease, sourceMutationStarted)
+		s.execute(runtimeCtx, run, attempt, repository, selected, validationCommands, invocation, adapter, runtime, lease, sourceMutationStarted)
 	})
 	result.NewlyLaunched = true
 	return result, nil
