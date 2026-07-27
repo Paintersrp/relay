@@ -1,6 +1,7 @@
 package audits
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -793,11 +794,14 @@ func TestWorkflowPackageExecutionEvidenceRepeatedLoadIsIdentical(t *testing.T) {
 }
 
 func TestWorkflowPackageExecutionEvidenceLoadPerformsNoWrites(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
+	installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+		return append([]byte(nil), data...), nil
+	})
 	tables := []string{
 		"runs", "artifacts", "execution_attempts", "repository_branch_mutation_leases",
 		"execution_packages", "execution_package_approvals", "delivery_ticket_selections",
@@ -823,6 +827,87 @@ func packageEvidenceCounts(t *testing.T, store *workflowstore.Store, tables []st
 		counts[table] = count
 	}
 	return counts
+}
+
+func installExecutionEvidenceMutation(
+	t *testing.T,
+	service *WorkflowPackageExecutionEvidenceService,
+	mutate func([]byte) ([]byte, error),
+) {
+	t.Helper()
+	if service == nil || service.readArtifactBytes == nil || service.loadAttemptArtifacts == nil {
+		t.Fatal("execution evidence mutation requires initialized read seams")
+	}
+	if mutate == nil {
+		t.Fatal("execution evidence mutation function is required")
+	}
+
+	realRead := service.readArtifactBytes
+	realLoad := service.loadAttemptArtifacts
+	var target workflowstore.Artifact
+	var mutatedBytes []byte
+	initialized := false
+
+	service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+		artifacts, err := realLoad(ctx, attemptRowID)
+		if err != nil {
+			return nil, err
+		}
+		artifacts = append([]workflowstore.Artifact(nil), artifacts...)
+
+		targetIndex := -1
+		for index, artifact := range artifacts {
+			if artifact.Kind != "execution_evidence" {
+				continue
+			}
+			if targetIndex != -1 {
+				t.Fatalf("mutation helper found multiple execution_evidence artifacts")
+				return nil, fmt.Errorf("multiple execution_evidence artifacts")
+			}
+			targetIndex = index
+		}
+		if targetIndex == -1 {
+			t.Fatalf("mutation helper found no execution_evidence artifact")
+			return nil, fmt.Errorf("missing execution_evidence artifact")
+		}
+
+		if !initialized {
+			target = artifacts[targetIndex]
+			originalBytes, err := realRead(ctx, target, MaxWorkflowAuditEvidenceBytes)
+			if err != nil {
+				t.Fatalf("read original execution_evidence artifact: %v", err)
+				return nil, err
+			}
+			first, err := mutate(append([]byte(nil), originalBytes...))
+			if err != nil {
+				t.Fatalf("mutate execution_evidence artifact: %v", err)
+				return nil, err
+			}
+			second, err := mutate(append([]byte(nil), originalBytes...))
+			if err != nil {
+				t.Fatalf("repeat mutation of execution_evidence artifact: %v", err)
+				return nil, err
+			}
+			if !bytes.Equal(first, second) {
+				err := fmt.Errorf("mutation of execution_evidence artifact is nondeterministic")
+				t.Fatal(err)
+				return nil, err
+			}
+			mutatedBytes = append([]byte(nil), first...)
+			initialized = true
+		}
+
+		artifacts[targetIndex].SizeBytes = int64(len(mutatedBytes))
+		artifacts[targetIndex].SHA256 = packageEvidenceSHA(mutatedBytes)
+		return artifacts, nil
+	}
+
+	service.readArtifactBytes = func(ctx context.Context, artifact workflowstore.Artifact, max int) ([]byte, error) {
+		if initialized && artifact.ID == target.ID && artifact.ArtifactID == target.ArtifactID && artifact.RelativePath == target.RelativePath {
+			return append([]byte(nil), mutatedBytes...), nil
+		}
+		return realRead(ctx, artifact, max)
+	}
 }
 
 func addTestAttemptAndEvidence(
@@ -1155,19 +1240,16 @@ func TestWorkflowPackageExecutionEvidenceBriefBindingMismatchFails(t *testing.T)
 		if err != nil {
 			t.Fatal(err)
 		}
-		realRead := service.readArtifactBytes
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			m["effective_brief_artifact_id"] = "wrong-id"
 			return json.Marshal(m)
-		}
-		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-			t.Fatalf("error = %v, want conflict", err)
+		})
+		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "execution evidence payload effective brief identity disagrees with brief") {
+			t.Fatalf("error = %v, want effective-Brief identity conflict", err)
 		}
 	})
 
@@ -1177,19 +1259,16 @@ func TestWorkflowPackageExecutionEvidenceBriefBindingMismatchFails(t *testing.T)
 		if err != nil {
 			t.Fatal(err)
 		}
-		realRead := service.readArtifactBytes
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			m["effective_brief_mode"] = "full"
 			return json.Marshal(m)
-		}
-		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-			t.Fatalf("error = %v, want conflict", err)
+		})
+		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "execution evidence payload effective brief identity disagrees with brief") {
+			t.Fatalf("error = %v, want package-mode conflict", err)
 		}
 	})
 }
@@ -1221,17 +1300,14 @@ func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		realRead := service.readArtifactBytes
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			delete(m, "validation_results") // missing results for declared commands
 			return json.Marshal(m)
-		}
+		})
 		evidence, err := service.Load(context.Background(), fixture.run.RunID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1246,6 +1322,9 @@ func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
 			if val.ConciseResult != "No trustworthy structured result was available for this approved validation command." {
 				t.Fatalf("concise_result = %q", val.ConciseResult)
 			}
+		}
+		if evidence.Attempt == nil || evidence.Attempt.Artifact.SizeBytes != int64(len(evidence.Attempt.Bytes)) || evidence.Attempt.Artifact.SHA256 != packageEvidenceSHA(evidence.Attempt.Bytes) {
+			t.Fatalf("mutated artifact metadata = %#v, want size and digest for returned bytes", evidence.Attempt)
 		}
 	})
 
@@ -1280,21 +1359,18 @@ func TestWorkflowPackageExecutionEvidenceValidationMappingRejectsInvalid(t *test
 		if err != nil {
 			t.Fatal(err)
 		}
-		realRead := service.readArtifactBytes
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			m["validation_results"] = []any{
 				map[string]any{"command": "unknown-command", "expected": "pass", "status": "passed", "concise_result": "ok"},
 			}
 			return json.Marshal(m)
-		}
-		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-			t.Fatalf("error = %v, want conflict", err)
+		})
+		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "validation mapping") || !strings.Contains(err.Error(), "unknown validation command") {
+			t.Fatalf("error = %v, want unknown validation command mapping conflict", err)
 		}
 	})
 }
@@ -1319,24 +1395,6 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			asgn.Assignment.ValidationCommands = nil
 			return asgn, nil
 		}
-		realAttemptArtifacts := service.loadAttemptArtifacts
-		service.loadAttemptArtifacts = func(ctx context.Context, attemptID int64) ([]workflowstore.Artifact, error) {
-			arts, err := realAttemptArtifacts(ctx, attemptID)
-			if err != nil {
-				return nil, err
-			}
-			for i, a := range arts {
-				if a.Kind == "execution_evidence" && service.readArtifactBytes != nil {
-					b, err := service.readArtifactBytes(ctx, a, 1048576)
-					if err == nil {
-						sum := sha256.Sum256(b)
-						arts[i].SizeBytes = int64(len(b))
-						arts[i].SHA256 = hex.EncodeToString(sum[:])
-					}
-				}
-			}
-			return arts, nil
-		}
 	}
 
 	t.Run("absent validation_results succeeds", func(t *testing.T) {
@@ -1346,16 +1404,14 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		setupZeroCommands(service)
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), art.RelativePath))
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			delete(m, "validation_results")
 			return json.Marshal(m)
-		}
+		})
 		evidence, err := service.Load(context.Background(), fixture.run.RunID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1372,22 +1428,20 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		setupZeroCommands(service)
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), art.RelativePath))
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			m["validation_results"] = []any{}
 			return json.Marshal(m)
-		}
+		})
 		_, err = service.Load(context.Background(), fixture.run.RunID)
 		if err == nil {
 			t.Fatal("expected error for empty validation_results array")
 		}
-		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-			t.Fatalf("error = %v, want conflict", err)
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "validation_results property but assignment declares no validation commands") {
+			t.Fatalf("error = %v, want property-presence conflict", err)
 		}
 	})
 
@@ -1398,23 +1452,20 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		setupZeroCommands(service)
-		realRead := service.readArtifactBytes
-		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
-			if err != nil {
+		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			var m map[string]any
-			_ = json.Unmarshal(bytes, &m)
 			m["validation_results"] = nil
 			return json.Marshal(m)
-		}
+		})
 		_, err = service.Load(context.Background(), fixture.run.RunID)
 		if err == nil {
 			t.Fatal("expected error for null validation_results")
 		}
-		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-			t.Fatalf("error = %v, want conflict", err)
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "validation_results property but assignment declares no validation commands") {
+			t.Fatalf("error = %v, want property-presence conflict", err)
 		}
 	})
 }
