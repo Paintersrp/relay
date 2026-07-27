@@ -834,9 +834,23 @@ func addTestAttemptAndEvidence(
 
 	if err := db.QueryRowContext(ctx, `
 		INSERT INTO execution_attempts (attempt_id, run_row_id, attempt_number, adapter, model, status, result_json)
-		VALUES (?, ?, 1, 'codex', 'm1', 'succeeded', ?) RETURNING id`,
-		attemptID, fixture.run.ID, string(resultJSON),
+		VALUES (?, ?, 1, 'codex', 'm1', 'pending', '{}') RETURNING id`,
+		attemptID, fixture.run.ID,
 	).Scan(&attemptRowID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.ExecContext(ctx, `
+		UPDATE execution_attempts SET status = 'running', started_at = '2026-07-18T00:00:00.000000000Z' WHERE id = ?`,
+		attemptRowID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.ExecContext(ctx, `
+		UPDATE execution_attempts SET status = 'succeeded', result_json = ?, finished_at = '2026-07-18T00:00:01.000000000Z' WHERE id = ?`,
+		string(resultJSON), attemptRowID,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1200,7 +1214,7 @@ func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
 			}
 			var m map[string]any
 			_ = json.Unmarshal(bytes, &m)
-			m["validation_results"] = []any{} // missing results for declared commands
+			delete(m, "validation_results") // missing results for declared commands
 			return json.Marshal(m)
 		}
 		evidence, err := service.Load(context.Background(), fixture.run.RunID)
@@ -1265,6 +1279,110 @@ func TestWorkflowPackageExecutionEvidenceValidationMappingRejectsInvalid(t *test
 			return json.Marshal(m)
 		}
 		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+}
+
+func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
+	setupZeroCommands := func(service *WorkflowPackageExecutionEvidenceService) {
+		realAuth := service.loadAuthority
+		service.loadAuthority = func(ctx context.Context, runID string) (workflowpackages.ApprovedAuthority, error) {
+			auth, err := realAuth(ctx, runID)
+			if err != nil {
+				return auth, err
+			}
+			auth.BriefProjection.ValidationCommands = nil
+			return auth, nil
+		}
+		realAssign := service.loadAssignment
+		service.loadAssignment = func(ctx context.Context, runID string) (executor.ExecutionAssignmentResult, error) {
+			asgn, err := realAssign(ctx, runID)
+			if err != nil {
+				return asgn, err
+			}
+			asgn.Assignment.ValidationCommands = nil
+			return asgn, nil
+		}
+	}
+
+	t.Run("absent validation_results succeeds", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		setupZeroCommands(service)
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			delete(m, "validation_results")
+			return json.Marshal(m)
+		}
+		evidence, err := service.Load(context.Background(), fixture.run.RunID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(evidence.Validation) != 0 {
+			t.Fatalf("validation count = %d, want 0", len(evidence.Validation))
+		}
+	})
+
+	t.Run("empty validation_results array fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		setupZeroCommands(service)
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			m["validation_results"] = []any{}
+			return json.Marshal(m)
+		}
+		_, err = service.Load(context.Background(), fixture.run.RunID)
+		if err == nil {
+			t.Fatal("expected error for empty validation_results array")
+		}
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("null validation_results fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		setupZeroCommands(service)
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			m["validation_results"] = nil
+			return json.Marshal(m)
+		}
+		_, err = service.Load(context.Background(), fixture.run.RunID)
+		if err == nil {
+			t.Fatal("expected error for null validation_results")
+		}
+		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
 			t.Fatalf("error = %v, want conflict", err)
 		}
 	})

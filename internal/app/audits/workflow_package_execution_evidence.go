@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -259,6 +260,11 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact digest does not match verified bytes")
 		}
 
+		hasValidationResults, err := hasWorkflowExecutionEvidenceValidationResultsProperty(data)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("decode execution_evidence artifact: %w", err)
+		}
+
 		payload, err := decodeWorkflowExecutionEvidence(data)
 		if err != nil {
 			return WorkflowPackageExecutionEvidence{}, evidenceConflict("decode execution_evidence artifact: %w", err)
@@ -277,7 +283,7 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 			return WorkflowPackageExecutionEvidence{}, evidenceConflict("attempt ResultJSON effective brief identity disagrees with brief")
 		}
 
-		valResults, err := mapPackageAdaptiveValidation(assignment.Assignment.ValidationCommands, payload.ValidationResults)
+		valResults, err := mapPackageAdaptiveValidation(assignment.Assignment.ValidationCommands, payload.ValidationResults, hasValidationResults)
 		if err != nil {
 			return WorkflowPackageExecutionEvidence{}, evidenceConflict("validation mapping: %w", err)
 		}
@@ -338,10 +344,11 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 func mapPackageAdaptiveValidation(
 	commands []executor.ExecutionAssignmentValidationCommand,
 	results []workflowAuditValidationEvidence,
+	hasValidationResults bool,
 ) ([]WorkflowPackageAuditValidationResult, error) {
 	if len(commands) == 0 {
-		if len(results) != 0 {
-			return nil, fmt.Errorf("execution evidence contains validation results but assignment declares no validation commands")
+		if hasValidationResults {
+			return nil, fmt.Errorf("execution evidence contains validation_results property but assignment declares no validation commands")
 		}
 		return []WorkflowPackageAuditValidationResult{}, nil
 	}
@@ -634,4 +641,13 @@ func workflowPackageEvidenceReadError(stage string, err error) error {
 		}
 	}
 	return err
+}
+
+func hasWorkflowExecutionEvidenceValidationResultsProperty(data []byte) (bool, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return false, err
+	}
+	_, present := root["validation_results"]
+	return present, nil
 }
