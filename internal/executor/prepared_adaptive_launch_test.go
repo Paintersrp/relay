@@ -58,7 +58,7 @@ func (a *preparedLaunchAdapter) NormalizeResult(raw string) NormalizedExecutorRe
 
 func newPreparedLaunchService(t *testing.T, fixture *executionAssignmentFixture, adapter *preparedLaunchAdapter) *WorkflowExecutionService {
 	t.Helper()
-	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test", fixture.sourceVaultReader)
 	service.adapterFactory = func(string) (ExecutorAdapter, error) { return adapter, nil }
 	service.invocationPreflight = func(ExecutorInvocation) ExecutorPreflightResult { return ExecutorPreflightResult{OK: true} }
 	service.launch = func(fn func()) { fn() }
@@ -110,7 +110,7 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 			if runtime.EffectiveBriefMode != string(tc.mode) || !runtime.SourceMutationStarted || runtime.EffectiveBriefArtifactID == "" || runtime.EffectiveBriefSHA256 == "" {
 				t.Fatalf("runtime=%#v", runtime)
 			}
-			brief, err := NewEffectiveExecutorBriefService(fixture.store)
+			brief, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -138,7 +138,7 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 func TestLaunchPreparedAdaptiveCompleteDoesNoLaunchWork(t *testing.T) {
 	fixture := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
 	adapterCalls, launchCalls := 0, 0
-	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test", fixture.sourceVaultReader)
 	service.adapterFactory = func(string) (ExecutorAdapter, error) {
 		adapterCalls++
 		return &preparedLaunchAdapter{id: AdapterCodex}, nil
@@ -453,7 +453,7 @@ func TestLaunchPreparedAdaptiveResultPaths(t *testing.T) {
 
 func TestPreparedAdaptiveProcessStart(t *testing.T) {
 	fixture, prepared := prepareLaunchFixture(t, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
-	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test", fixture.sourceVaultReader)
 	admission, err := service.adaptiveAdmission.Begin(context.Background(), AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
 	if err != nil {
 		t.Fatal(err)
@@ -470,7 +470,7 @@ func TestLaunchPreparedAdaptiveTerminalizationFailureRetainsLease(t *testing.T) 
 	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_prepared_adaptive_terminalization BEFORE UPDATE OF status ON execution_attempts WHEN NEW.status = 'failed' BEGIN SELECT RAISE(ABORT, 'injected terminalization failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "prepared-launch-test", fixture.sourceVaultReader)
 	service.adapterFactory = func(string) (ExecutorAdapter, error) { return nil, fmt.Errorf("factory failure") }
 	result, err := service.LaunchPreparedAdaptive(context.Background(), PreparedAdaptiveLaunchInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
 	if err == nil || !strings.Contains(err.Error(), "terminalize admitted attempt") || result.NewlyLaunched {

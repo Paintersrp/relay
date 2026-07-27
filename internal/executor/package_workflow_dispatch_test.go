@@ -233,7 +233,7 @@ func syntheticPackageWorkflowDispatch(t *testing.T, mode EffectiveExecutorBriefM
 	} else {
 		prepared.Adaptive.Mode = mode
 	}
-	return NewWorkflowExecutionService(fixture.store, nil, "package-dispatch-test"), prepared
+	return NewWorkflowExecutionService(fixture.store, nil, "package-dispatch-test", fixture.sourceVaultReader), prepared
 }
 
 func validAdaptiveDispatchLaunch(prepared PackageWorkflowPreparationResult, newlyAdmitted bool) PreparedAdaptiveLaunchResult {

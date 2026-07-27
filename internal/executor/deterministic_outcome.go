@@ -107,15 +107,17 @@ type DeterministicOutcomeService struct {
 	assignments *ExecutionAssignmentService
 }
 
-func NewDeterministicOutcomeService(store *workflowstore.Store, sourceVaults ...executionpackages.SourceVaultReader) (*DeterministicOutcomeService, error) {
+func NewDeterministicOutcomeService(
+	store *workflowstore.Store,
+	sourceVaults executionpackages.SourceVaultReader,
+) (*DeterministicOutcomeService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	var reader executionpackages.SourceVaultReader
-	if len(sourceVaults) > 0 {
-		reader = sourceVaults[0]
+	if sourceVaults == nil {
+		return nil, fmt.Errorf("source-vault reader is required")
 	}
-	assignments, err := NewExecutionAssignmentService(store, reader)
+	assignments, err := NewExecutionAssignmentService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

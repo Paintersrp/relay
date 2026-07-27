@@ -45,15 +45,17 @@ type AdaptiveExecutionAttemptService struct {
 	briefs *EffectiveExecutorBriefService
 }
 
-func NewAdaptiveExecutionAttemptService(store *workflowstore.Store, sourceVaults ...executionpackages.SourceVaultReader) (*AdaptiveExecutionAttemptService, error) {
+func NewAdaptiveExecutionAttemptService(
+	store *workflowstore.Store,
+	sourceVaults executionpackages.SourceVaultReader,
+) (*AdaptiveExecutionAttemptService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	var reader executionpackages.SourceVaultReader
-	if len(sourceVaults) > 0 {
-		reader = sourceVaults[0]
+	if sourceVaults == nil {
+		return nil, fmt.Errorf("source-vault reader is required")
 	}
-	briefs, err := NewEffectiveExecutorBriefService(store, reader)
+	briefs, err := NewEffectiveExecutorBriefService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

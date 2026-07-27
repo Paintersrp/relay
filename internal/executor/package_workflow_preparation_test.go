@@ -128,7 +128,7 @@ func TestPackageWorkflowPreparationModeMatrix(t *testing.T) {
 				}
 			}
 
-			service, err := NewPackageWorkflowPreparationService(fixture.store)
+			service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -224,7 +224,7 @@ func TestPackageWorkflowPreparationNoMutationFailureLeavesNoLease(t *testing.T) 
 
 func TestPackageWorkflowPreparationIdempotencyAndCompleteBehavior(t *testing.T) {
 	adaptiveFixture := newExecutionAssignmentFixture(t, false, "")
-	service, err := NewPackageWorkflowPreparationService(adaptiveFixture.store)
+	service, err := NewPackageWorkflowPreparationService(adaptiveFixture.store, adaptiveFixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestPackageWorkflowPreparationIdempotencyAndCompleteBehavior(t *testing.T) 
 		}
 		return applicationResult(model), nil
 	}
-	complete, err := NewPackageWorkflowPreparationService(completeFixture.store)
+	complete, err := NewPackageWorkflowPreparationService(completeFixture.store, completeFixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestPackageWorkflowPreparationFailureShortCircuiting(t *testing.T) {
 		adaptiveCalls++
 		return AdaptiveExecutionAttemptResult{}, nil
 	}
-	service, err := NewPackageWorkflowPreparationService(fixture.store)
+	service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestPackageWorkflowPreparationFailureShortCircuiting(t *testing.T) {
 
 func mustPreparePackageWorkflow(t *testing.T, fixture *executionAssignmentFixture) (PackageWorkflowPreparationResult, error) {
 	t.Helper()
-	service, err := NewPackageWorkflowPreparationService(fixture.store)
+	service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}

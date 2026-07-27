@@ -19,7 +19,7 @@ func TestBeginAdaptiveDispatchAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewAdaptiveDispatchAdmissionService(fixture.store)
+	service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestBeginAdaptiveDispatchAdmissionModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			service, err := NewAdaptiveDispatchAdmissionService(fixture.store)
+			service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -120,7 +120,7 @@ func seedAdaptivePartialLease(t *testing.T, fixture *executionAssignmentFixture,
 func TestBeginAdaptiveDispatchAdmissionCompleteAndConcurrent(t *testing.T) {
 	ctx := context.Background()
 	complete := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
-	service, err := NewAdaptiveDispatchAdmissionService(complete.store)
+	service, err := NewAdaptiveDispatchAdmissionService(complete.store, complete.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestBeginAdaptiveDispatchAdmissionCompleteAndConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parallel, err := NewAdaptiveDispatchAdmissionService(fixture.store)
+	parallel, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestBeginAdaptiveDispatchAdmissionCompleteRejectsDurableDispatchState(t *te
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
 			tc.seed(t, fixture)
-			service, err := NewAdaptiveDispatchAdmissionService(fixture.store)
+			service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -241,7 +241,7 @@ func TestBeginAdaptiveDispatchAdmissionRejectsWrongAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewAdaptiveDispatchAdmissionService(fixture.store)
+	service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestBeginAdaptiveDispatchAdmissionRejectsTamperingAndLeaseConflicts(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			service, err := NewAdaptiveDispatchAdmissionService(fixture.store)
+			service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}

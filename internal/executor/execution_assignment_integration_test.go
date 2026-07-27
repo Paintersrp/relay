@@ -30,6 +30,7 @@ type executionAssignmentFixture struct {
 	brief              executionpackages.ArtifactInput
 	operations         executionpackages.ArtifactInput
 	assignmentFilename string
+	sourceVaultReader  *stubSourceVaultReader
 }
 
 func TestPrepareExecutionAssignmentPersistsBriefOnlyArtifact(t *testing.T) {
@@ -350,17 +351,19 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	packageService, err := executionpackages.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assignmentService, err := NewExecutionAssignmentService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)
+	sourcePath := "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json"
+	reader := newPackageSourceVaultReader(sourcePath, baseCommit)
+	packageService, err := executionpackages.NewServiceWithSourceVaults(store, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignmentService, err := NewExecutionAssignmentService(store, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authorityBytes := []byte("authority")
 	authoritySHA := sha256Hex(authorityBytes)
 	authorityPath := filepath.Join(store.ArtifactStore().Root(), "plans", "checkout", "requirements.json")
@@ -412,7 +415,7 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P2-T2', ?, 10) RETURNING id`, workspaceID).Scan(&ticketID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, 'tickets/p2-t2.delivery-ticket.json', 'Package the selected ticket.', 'Package basis context.', 'not_required') RETURNING id`, ticketID, baseCommit, closureID).Scan(&revisionID); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, ?, 'Package the selected ticket.', 'Package basis context.', 'not_required') RETURNING id`, ticketID, baseCommit, closureID, sourcePath).Scan(&revisionID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, revisionID, ticketID); err != nil {
@@ -436,6 +439,7 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 		brief:              executionpackages.ArtifactInput{DisplayName: briefName, Bytes: briefBytes, ExpectedSHA256: sha256Hex(briefBytes)},
 		operations:         executionpackages.ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: sha256Hex(operationsBytes)},
 		assignmentFilename: "checkout.ticket-P2-T2.r1.execution-assignment.json",
+		sourceVaultReader:  reader,
 	}
 	input := executionpackages.PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: fixture.brief}
 	if withOperations {

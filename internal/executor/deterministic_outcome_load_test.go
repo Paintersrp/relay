@@ -569,7 +569,7 @@ func assertValidOutcomeReadback(t *testing.T, document *speccompiler.Determinist
 	t.Helper()
 	fixture := newOutcomeLoadFixture(t, document)
 	result := persistOutcome(t, fixture, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightReady, Coverage: coverage, Plan: plan}, Application: applicationForPlan(t, plan)})
-	service, err := NewDeterministicOutcomeService(fixture.store)
+	service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +607,7 @@ func replaceManagedOutcome(t *testing.T, fixture *executionAssignmentFixture, re
 
 func loadOutcomeConflict(t *testing.T, fixture *executionAssignmentFixture) {
 	t.Helper()
-	service, err := NewDeterministicOutcomeService(fixture.store)
+	service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}

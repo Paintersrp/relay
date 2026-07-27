@@ -36,7 +36,7 @@ func TestPrepareEffectiveExecutorBriefDecidesEveryOutcome(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newExecutionAssignmentFixture(t, test.operations, test.coverage)
 			prepareExecutionAssignment(t, fixture)
-			outcomes, err := NewDeterministicOutcomeService(fixture.store)
+			outcomes, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -45,7 +45,7 @@ func TestPrepareEffectiveExecutorBriefDecidesEveryOutcome(t *testing.T) {
 			if _, err := outcomes.Persist(context.Background(), input); err != nil {
 				t.Fatal(err)
 			}
-			service, err := NewEffectiveExecutorBriefService(fixture.store)
+			service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,7 +101,7 @@ func TestPrepareEffectiveExecutorBriefIsIdempotentAndRejectsCompleteConflict(t *
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	prepareExecutionAssignment(t, fixture)
 	persistOutcome(t, fixture, DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
-	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestPrepareEffectiveExecutorBriefIsIdempotentAndRejectsCompleteConflict(t *
 	}); err != nil {
 		t.Fatal(err)
 	}
-	completeService, err := NewEffectiveExecutorBriefService(complete.store)
+	completeService, err := NewEffectiveExecutorBriefService(complete.store, complete.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestPrepareEffectiveExecutorBriefCompleteIsIdempotent(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
 	prepareExecutionAssignment(t, fixture)
 	persistOutcome(t, fixture, appliedOutcomeInput("complete"))
-	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestLoadEffectiveExecutorBriefCompleteVerifiesArtifact(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
 	prepareExecutionAssignment(t, fixture)
 	persistOutcome(t, fixture, appliedOutcomeInput("complete"))
-	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestLoadEffectiveExecutorBriefCompleteRejectsMissingDuplicateMalformedAndCh
 			fixture := newExecutionAssignmentFixture(t, true, "complete")
 			prepareExecutionAssignment(t, fixture)
 			persistOutcome(t, fixture, appliedOutcomeInput("complete"))
-			service, err := NewEffectiveExecutorBriefService(fixture.store)
+			service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,7 +223,7 @@ func TestLoadEffectiveExecutorBriefCompleteRejectsDuplicateArtifactRecords(t *te
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
 	prepareExecutionAssignment(t, fixture)
 	persistOutcome(t, fixture, appliedOutcomeInput("complete"))
-	service, err := NewEffectiveExecutorBriefService(fixture.store)
+	service, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestLoadDeterministicOutcomeRejectsChangedBytes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(result.Artifact.RelativePath)), []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewDeterministicOutcomeService(fixture.store)
+	service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func appliedOutcomeInput(coverage string) DeterministicOutcomeInput {
 
 func persistOutcome(t *testing.T, fixture *executionAssignmentFixture, input DeterministicOutcomeInput) DeterministicOutcomeResult {
 	t.Helper()
-	service, err := NewDeterministicOutcomeService(fixture.store)
+	service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}

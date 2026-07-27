@@ -13,7 +13,7 @@ import (
 
 func TestWorkflowStartPackageConstructorInitializesPreparation(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	if service.packagePreparation == nil {
 		t.Fatal("package preparation service is nil")
 	}
@@ -21,7 +21,7 @@ func TestWorkflowStartPackageConstructorInitializesPreparation(t *testing.T) {
 
 func TestWorkflowStartPackageRoutesPackageRun(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
 	withPackageWorkflowStartSeams(t,
 		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
@@ -43,7 +43,7 @@ func TestWorkflowStartPackageRoutesPackageRun(t *testing.T) {
 
 func TestWorkflowStartPackagePassesNormalizedInput(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	var got PackageWorkflowPreparationInput
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
 	withPackageWorkflowStartSeams(t,
@@ -70,7 +70,7 @@ func TestWorkflowStartPackagePassesNormalizedInput(t *testing.T) {
 
 func TestWorkflowStartPackageAdaptiveSuccessDispatchesOnceAndProjectsIdentity(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	attempt := packageStartAttempt(fixture.run, "prepared-attempt")
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	launchRun := fixture.run
@@ -106,7 +106,7 @@ func TestWorkflowStartPackageAdaptiveSuccessDispatchesOnceAndProjectsIdentity(t 
 
 func TestWorkflowStartPackageAdaptiveReadbackRemainsSuccessful(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	attempt := packageStartAttempt(fixture.run, "readback-attempt")
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	readbackRun := fixture.run
@@ -132,7 +132,7 @@ func TestWorkflowStartPackageAdaptiveReadbackRemainsSuccessful(t *testing.T) {
 
 func TestWorkflowStartPackageDeterministicCompleteProjectsFinalizedRunWithoutAttempt(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
 	finalized := fixture.run
 	finalized.Status = workflowstore.RunStatusValidating
@@ -154,7 +154,7 @@ func TestWorkflowStartPackageDeterministicCompleteProjectsFinalizedRunWithoutAtt
 
 func TestWorkflowStartPackagePreparationFailurePreservesEvidenceAndPreventsDispatch(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	attempt := packageStartAttempt(fixture.run, "preparation-failure-attempt")
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	prepareErr := errors.New("preparation failed")
@@ -177,7 +177,7 @@ func TestWorkflowStartPackagePreparationFailurePreservesEvidenceAndPreventsDispa
 
 func TestWorkflowStartPackageDispatchFailurePreservesEvidence(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	attempt := packageStartAttempt(fixture.run, "dispatch-failure-attempt")
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	launchRun := fixture.run
@@ -202,7 +202,7 @@ func TestWorkflowStartPackageDispatchFailurePreservesEvidence(t *testing.T) {
 
 func TestWorkflowStartPackageNeverEntersLegacyExecution(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		t.Fatal("package Start called legacy repository preflight")
@@ -228,7 +228,7 @@ func TestWorkflowStartPackageNeverEntersLegacyExecution(t *testing.T) {
 
 func TestWorkflowStartPackageUnavailableFailsClosed(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test")
+	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
 	service.packagePreparation = nil
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		t.Fatal("unavailable package preparation entered legacy execution")

@@ -52,29 +52,25 @@ type EffectiveExecutorBriefService struct {
 	outcomes    *DeterministicOutcomeService
 }
 
-func NewEffectiveExecutorBriefService(store *workflowstore.Store, sourceVaults ...executionpackages.SourceVaultReader) (*EffectiveExecutorBriefService, error) {
+func NewEffectiveExecutorBriefService(
+	store *workflowstore.Store,
+	sourceVaults executionpackages.SourceVaultReader,
+) (*EffectiveExecutorBriefService, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	var reader executionpackages.SourceVaultReader
-	if len(sourceVaults) > 0 {
-		reader = sourceVaults[0]
+	if sourceVaults == nil {
+		return nil, fmt.Errorf("source-vault reader is required")
 	}
-	var packages *executionpackages.Service
-	var err error
-	if reader != nil {
-		packages, err = executionpackages.NewServiceWithSourceVaults(store, reader)
-	} else {
-		packages, err = executionpackages.NewService(store)
-	}
+	packages, err := executionpackages.NewServiceWithSourceVaults(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	assignments, err := NewExecutionAssignmentService(store, reader)
+	assignments, err := NewExecutionAssignmentService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	outcomes, err := NewDeterministicOutcomeService(store, reader)
+	outcomes, err := NewDeterministicOutcomeService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}

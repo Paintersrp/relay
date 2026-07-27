@@ -36,7 +36,7 @@ func TestPrepareAdaptiveExecutionAttemptModes(t *testing.T) {
 			prepareExecutionAssignment(t, fixture)
 			input := test.outcome()
 			input.RunID = fixture.run.RunID
-			if _, err := NewDeterministicOutcomeService(fixture.store); err != nil {
+			if _, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader); err != nil {
 				t.Fatal(err)
 			}
 			persistOutcome(t, fixture, input)
@@ -261,7 +261,7 @@ func adaptiveAttemptFixture(t *testing.T, operations bool, coverage string, outc
 
 func newAdaptiveAttemptService(t *testing.T, fixture *executionAssignmentFixture) *AdaptiveExecutionAttemptService {
 	t.Helper()
-	service, err := NewAdaptiveExecutionAttemptService(fixture.store)
+	service, err := NewAdaptiveExecutionAttemptService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -145,7 +145,7 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 		t.Fatal(err)
 	}
 	adapter := &captureAdapter{id: AdapterOpenCodeGo}
-	service := NewWorkflowExecutionService(store, nil, "relay-test")
+	service := NewWorkflowExecutionService(store, nil, "relay-test", newUnavailableSourceVaultReader())
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		return workflowrepos.ExecutionPreflightResult{OK: true}
 	}

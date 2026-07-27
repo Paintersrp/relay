@@ -159,14 +159,15 @@ var (
 	}
 )
 
-func NewWorkflowExecutionService(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults ...executionpackages.SourceVaultReader) *WorkflowExecutionService {
-	var reader executionpackages.SourceVaultReader
-	if len(sourceVaults) > 0 {
-		reader = sourceVaults[0]
-	}
+func NewWorkflowExecutionService(
+	store *workflowstore.Store,
+	log *slog.Logger,
+	ownerInstanceID string,
+	sourceVaults executionpackages.SourceVaultReader,
+) *WorkflowExecutionService {
 	runService, _ := workflowruns.NewService(store)
-	packagePreparation, _ := NewPackageWorkflowPreparationService(store, reader)
-	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store, reader)
+	packagePreparation, _ := NewPackageWorkflowPreparationService(store, sourceVaults)
+	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store, sourceVaults)
 	return &WorkflowExecutionService{
 		store:               store,
 		runs:                runService,

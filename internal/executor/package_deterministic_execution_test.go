@@ -15,7 +15,7 @@ import (
 
 func TestPackageDeterministicExecutionNoOperations(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestPackageDeterministicExecutionNoOperations(t *testing.T) {
 
 func TestPackageDeterministicExecutionPreflightFailureIsDurableAndIdempotent(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
-	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestPackageDeterministicExecutionRetainsPartialAndReleasesComplete(t *testi
 	for _, coverage := range []string{"partial", "complete"} {
 		t.Run(coverage, func(t *testing.T) {
 			fixture := newExecutionAssignmentFixture(t, true, coverage)
-			service, err := NewPackageDeterministicExecutionService(fixture.store)
+			service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,7 +168,7 @@ func TestPackageDeterministicExecutionRetainsPartialAndReleasesComplete(t *testi
 func TestPackageDeterministicExecutionFailureSettlement(t *testing.T) {
 	t.Run("application rollback releases", func(t *testing.T) {
 		fixture := newExecutionAssignmentFixture(t, true, "complete")
-		service, err := NewPackageDeterministicExecutionService(fixture.store)
+		service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +191,7 @@ func TestPackageDeterministicExecutionFailureSettlement(t *testing.T) {
 
 	t.Run("uncertain application retains lease", func(t *testing.T) {
 		fixture := newExecutionAssignmentFixture(t, true, "complete")
-		service, err := NewPackageDeterministicExecutionService(fixture.store)
+		service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -214,7 +214,7 @@ func TestPackageDeterministicExecutionFailureSettlement(t *testing.T) {
 
 	t.Run("outcome persistence failure retains lease", func(t *testing.T) {
 		fixture := newExecutionAssignmentFixture(t, true, "complete")
-		service, err := NewPackageDeterministicExecutionService(fixture.store)
+		service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -245,7 +245,7 @@ func TestPackageDeterministicExecutionFailureSettlement(t *testing.T) {
 
 	t.Run("release failure preserves durable outcome for readback", func(t *testing.T) {
 		fixture := newExecutionAssignmentFixture(t, true, "complete")
-		service, err := NewPackageDeterministicExecutionService(fixture.store)
+		service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -296,7 +296,7 @@ const packageDeterministicExecutionCallerKey packageDeterministicExecutionContex
 
 func TestPackageDeterministicExecutionPostAcquisitionOutcomeWindow(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
-	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestPackageDeterministicExecutionPostAcquisitionOutcomeWindow(t *testing.T)
 
 func TestPackageDeterministicExecutionPostAcquisitionPartialOutcomeConflicts(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "partial")
-	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestPackageDeterministicExecutionPostAcquisitionPartialOutcomeConflicts(t *
 
 func TestPackageDeterministicExecutionPostAcquisitionLoadFailureReleasesLease(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
-	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestPackageDeterministicExecutionPostAcquisitionLoadFailureReleasesLease(t 
 
 func TestPackageDeterministicExecutionPostAcquisitionReleaseFailureRetainsLease(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
-	service, err := NewPackageDeterministicExecutionService(fixture.store)
+	service, err := NewPackageDeterministicExecutionService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}

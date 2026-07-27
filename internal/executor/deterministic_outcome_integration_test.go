@@ -38,7 +38,7 @@ func TestPersistDeterministicOutcomePersistsAllRuntimeModes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newExecutionAssignmentFixture(t, test.operations, test.coverage)
 			prepareExecutionAssignment(t, fixture)
-			service, err := NewDeterministicOutcomeService(fixture.store)
+			service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -67,7 +67,7 @@ func TestPersistDeterministicOutcomePersistsVerifiedApplicationAndIsIdempotent(t
 		t.Run(coverage, func(t *testing.T) {
 			fixture := newExecutionAssignmentFixture(t, true, coverage)
 			prepareExecutionAssignment(t, fixture)
-			service, err := NewDeterministicOutcomeService(fixture.store)
+			service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,7 +106,7 @@ func TestPersistDeterministicOutcomePersistsVerifiedApplicationAndIsIdempotent(t
 
 func TestPersistDeterministicOutcomeRejectsInvalidInputWithoutArtifact(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, true, "complete")
-	service, err := NewDeterministicOutcomeService(fixture.store)
+	service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestPersistDeterministicOutcomeRejectsInvalidInputWithoutArtifact(t *testin
 func TestPersistDeterministicOutcomeRejectsConflictingRecordedOutcome(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	prepareExecutionAssignment(t, fixture)
-	service, err := NewDeterministicOutcomeService(fixture.store)
+	service, err := NewDeterministicOutcomeService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
