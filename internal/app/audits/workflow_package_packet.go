@@ -112,7 +112,6 @@ type WorkflowPackageAuditPacketInput struct {
 	Execution WorkflowPackageAuditExecutionInput
 
 	RelevantSourcePaths []string
-	Validation          []WorkflowPackageAuditValidationResult
 	Artifacts           []WorkflowPackageAuditEmbeddedArtifactInput
 }
 
@@ -132,10 +131,9 @@ type WorkflowPackageAuditCommitInput struct {
 }
 
 type WorkflowPackageAuditExecutionInput struct {
-	AdaptiveAttemptDispatched bool
-	Status                    string
-	CommittedSHA              string
-	CompletionSummary         string
+	Status            string
+	CommittedSHA      string
+	CompletionSummary string
 }
 
 func buildWorkflowPackageAuditPacket(
@@ -228,8 +226,8 @@ func constructWorkflowPackageAuditPacket(input WorkflowPackageAuditPacketInput) 
 	changedFiles := make([]WorkflowPackageAuditChangedFile, len(input.Commit.ChangedFiles))
 	copy(changedFiles, input.Commit.ChangedFiles)
 
-	validation := make([]WorkflowPackageAuditValidationResult, len(input.Validation))
-	copy(validation, input.Validation)
+	validation := make([]WorkflowPackageAuditValidationResult, len(input.Evidence.Validation))
+	copy(validation, input.Evidence.Validation)
 
 	relevant := make([]string, len(input.RelevantSourcePaths))
 	copy(relevant, input.RelevantSourcePaths)
@@ -270,7 +268,7 @@ func constructWorkflowPackageAuditPacket(input WorkflowPackageAuditPacketInput) 
 			},
 		},
 		Execution: WorkflowPackageAuditExecution{
-			AdaptiveAttemptDispatched: input.Execution.AdaptiveAttemptDispatched,
+			AdaptiveAttemptDispatched: input.Evidence.Attempt != nil,
 			Status:                    input.Execution.Status,
 			CommittedSHA:              input.Execution.CommittedSHA,
 			CompletionSummary:         input.Execution.CompletionSummary,
@@ -670,21 +668,17 @@ func validateWorkflowPackageAuditPacketInput(input WorkflowPackageAuditPacketInp
 		seenRelevant[path] = struct{}{}
 	}
 
-	if len(input.Validation) == 0 {
-		return fmt.Errorf("at least one validation entry is required")
+	assignmentCmds := input.Evidence.Assignment.Assignment.ValidationCommands
+	if len(input.Evidence.Validation) != len(assignmentCmds) {
+		return fmt.Errorf("validation count %d does not match assignment command count %d", len(input.Evidence.Validation), len(assignmentCmds))
 	}
-	for index, validation := range input.Validation {
-		if validation.Command == "" {
-			return fmt.Errorf("validation entry %d command is required", index)
+	for index, validation := range input.Evidence.Validation {
+		cmd := assignmentCmds[index]
+		if validation.Command != cmd.Command {
+			return fmt.Errorf("validation entry %d command %q does not match assignment %q", index, validation.Command, cmd.Command)
 		}
-		if strings.TrimSpace(validation.Command) != validation.Command || validation.Command == "" {
-			return fmt.Errorf("validation entry %d command is invalid", index)
-		}
-		if validation.Expected == "" {
-			return fmt.Errorf("validation entry %d expected is required", index)
-		}
-		if strings.TrimSpace(validation.Expected) != validation.Expected || validation.Expected == "" {
-			return fmt.Errorf("validation entry %d expected is invalid", index)
+		if validation.Expected != cmd.Expected {
+			return fmt.Errorf("validation entry %d expected %q does not match assignment %q", index, validation.Expected, cmd.Expected)
 		}
 		if validation.Status == "" {
 			return fmt.Errorf("validation entry %d status is required", index)
@@ -755,13 +749,17 @@ func validateWorkflowPackageAuditPacketInput(input WorkflowPackageAuditPacketInp
 	if input.Evidence.EffectiveBrief.Mode != mode {
 		return fmt.Errorf("effective brief mode %q does not match deterministic outcome", input.Evidence.EffectiveBrief.Mode)
 	}
+	dispatched := input.Evidence.Attempt != nil
+	if input.Execution.Status == "" {
+		return fmt.Errorf("execution status is required")
+	}
 	if input.Evidence.EffectiveBrief.AdaptiveDispatchRequired != adaptive {
 		return fmt.Errorf("effective brief adaptive dispatch does not match mode")
 	}
-	if input.Execution.AdaptiveAttemptDispatched != adaptive {
-		return fmt.Errorf("execution adaptive_attempt_dispatched %v does not match effective mode %q", input.Execution.AdaptiveAttemptDispatched, mode)
+	if dispatched != adaptive {
+		return fmt.Errorf("execution adaptive_attempt_dispatched %v does not match effective mode %q", dispatched, mode)
 	}
-	if mode == executor.EffectiveExecutorBriefDeterministicComplete && input.Execution.AdaptiveAttemptDispatched {
+	if mode == executor.EffectiveExecutorBriefDeterministicComplete && dispatched {
 		return fmt.Errorf("deterministic-complete requires adaptive_attempt_dispatched false")
 	}
 
@@ -1007,9 +1005,6 @@ func validateWorkflowPackageAuditPacket(packet WorkflowPackageAuditPacket) error
 		seenRelevant[path] = struct{}{}
 	}
 
-	if len(packet.Validation) == 0 {
-		return fmt.Errorf("at least one validation entry is required")
-	}
 	for _, validation := range packet.Validation {
 		if strings.TrimSpace(validation.Command) == "" {
 			return fmt.Errorf("validation entry command is required")

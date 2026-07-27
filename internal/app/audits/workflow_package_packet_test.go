@@ -74,12 +74,11 @@ func testPackageAuditCommit(baseCommit, auditedCommit string) WorkflowPackageAud
 	}
 }
 
-func testPackageAuditExecution(adaptive bool, status, committedSHA, summary string) WorkflowPackageAuditExecutionInput {
+func testPackageAuditExecution(status, committedSHA, summary string) WorkflowPackageAuditExecutionInput {
 	return WorkflowPackageAuditExecutionInput{
-		AdaptiveAttemptDispatched: adaptive,
-		Status:                    status,
-		CommittedSHA:              committedSHA,
-		CompletionSummary:         summary,
+		Status:            status,
+		CommittedSHA:      committedSHA,
+		CompletionSummary: summary,
 	}
 }
 
@@ -97,7 +96,6 @@ func testPackageAuditFixRequirementsJSON(evidence *WorkflowPackageExecutionEvide
 func testPackageAuditInput(t *testing.T, mode executor.EffectiveExecutorBriefMode, auditedCommit string) WorkflowPackageAuditPacketInput {
 	t.Helper()
 	_, evidence := testPackageAuditEvidence(t, mode)
-	adaptive := mode != executor.EffectiveExecutorBriefDeterministicComplete
 	// The package evidence fixture stores the requirements layer as opaque text,
 	// but the packet requires JSON-authored requirements. Replace it with
 	// valid JSON bytes and a matching digest so the builder and decoded
@@ -108,12 +106,9 @@ func testPackageAuditInput(t *testing.T, mode executor.EffectiveExecutorBriefMod
 		UserIntent:          "Implement the package ticket.",
 		DeliveryTicket:      testPackageAuditDeliveryTicket(),
 		Commit:              testPackageAuditCommit(evidence.Run.BaseCommit, auditedCommit),
-		Execution:           testPackageAuditExecution(adaptive, "completed", auditedCommit, "Implementation completed successfully."),
+		Execution:           testPackageAuditExecution("completed", auditedCommit, "Implementation completed successfully."),
 		RelevantSourcePaths: []string{"internal/example.go"},
-		Validation: []WorkflowPackageAuditValidationResult{
-			{Command: "go test ./internal/example", Expected: "pass", Status: "passed", ConciseResult: "ok"},
-		},
-		Artifacts: testPackageAuditArtifacts(),
+		Artifacts:           testPackageAuditArtifacts(),
 	}
 }
 
@@ -480,7 +475,12 @@ func TestWorkflowPackageAuditPacketChangedFileFieldsPreserved(t *testing.T) {
 
 func TestWorkflowPackageAuditPacketValidationOrderPreserved(t *testing.T) {
 	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	input.Validation = []WorkflowPackageAuditValidationResult{
+	input.Evidence.Assignment.Assignment.ValidationCommands = []executor.ExecutionAssignmentValidationCommand{
+		{Command: "first", Expected: "pass"},
+		{Command: "second", Expected: "fail"},
+		{Command: "third", Expected: "skip"},
+	}
+	input.Evidence.Validation = []WorkflowPackageAuditValidationResult{
 		{Command: "first", Expected: "pass", Status: "passed", ConciseResult: "ok"},
 		{Command: "second", Expected: "fail", Status: "failed", ConciseResult: "not ok"},
 		{Command: "third", Expected: "skip", Status: "not_run", ConciseResult: "skipped"},
@@ -492,7 +492,7 @@ func TestWorkflowPackageAuditPacketValidationOrderPreserved(t *testing.T) {
 	if len(packet.Validation) != 3 {
 		t.Fatalf("validation count = %d", len(packet.Validation))
 	}
-	for index, want := range input.Validation {
+	for index, want := range input.Evidence.Validation {
 		if packet.Validation[index] != want {
 			t.Fatalf("validation[%d] not preserved", index)
 		}
@@ -649,7 +649,7 @@ func TestWorkflowPackageAuditPacketInvalidOutcomeCoverageRejected(t *testing.T) 
 
 func TestWorkflowPackageAuditPacketModeDispatchDisagreementRejected(t *testing.T) {
 	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	input.Execution.AdaptiveAttemptDispatched = false
+	input.Evidence.Attempt = nil
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
 		t.Fatalf("expected invalid error for mode/dispatch disagreement, got %v", err)
@@ -658,7 +658,6 @@ func TestWorkflowPackageAuditPacketModeDispatchDisagreementRejected(t *testing.T
 
 func TestWorkflowPackageAuditPacketCommittedAuditedShaDisagreementRejected(t *testing.T) {
 	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	input.Execution.AdaptiveAttemptDispatched = true
 	input.Execution.CommittedSHA = strings.Repeat("d", 40)
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -670,7 +669,9 @@ func TestWorkflowPackageAuditPacketEmptyRequiredCollectionsRejected(t *testing.T
 	cases := []func(*WorkflowPackageAuditPacketInput){
 		func(i *WorkflowPackageAuditPacketInput) { i.Commit.ChangedFiles = nil },
 		func(i *WorkflowPackageAuditPacketInput) { i.RelevantSourcePaths = nil },
-		func(i *WorkflowPackageAuditPacketInput) { i.Validation = nil },
+		func(i *WorkflowPackageAuditPacketInput) {
+			i.Evidence.Validation = []WorkflowPackageAuditValidationResult{{Command: "invalid"}}
+		},
 		func(i *WorkflowPackageAuditPacketInput) { i.Artifacts = nil },
 	}
 	for index, mutate := range cases {
@@ -742,7 +743,7 @@ func TestWorkflowPackageAuditPacketInvalidChangedFileTypeRejected(t *testing.T) 
 
 func TestWorkflowPackageAuditPacketValidationStatusRejected(t *testing.T) {
 	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	input.Validation[0].Status = "unknown"
+	input.Evidence.Validation[0].Status = "unknown"
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
 		t.Fatalf("expected invalid error, got %v", err)
@@ -1132,7 +1133,7 @@ func TestWorkflowPackageAuditPacketBuilderRejectsCompletionSummaryOuterWhitespac
 
 func TestWorkflowPackageAuditPacketBuilderRejectsConciseResultOuterWhitespace(t *testing.T) {
 	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	input.Validation[0].ConciseResult = " result "
+	input.Evidence.Validation[0].ConciseResult = " result "
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
 		t.Fatalf("expected invalid error for concise_result outer whitespace, got %v", err)
@@ -1190,7 +1191,7 @@ func TestWorkflowPackageAuditPacketBytesRejectOuterWhitespaceFields(t *testing.T
 func TestWorkflowPackageAuditPacketValidCompletionSummaryAndConciseResultUnchanged(t *testing.T) {
 	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
 	input.Execution.CompletionSummary = "Implementation completed successfully."
-	input.Validation[0].ConciseResult = "ok"
+	input.Evidence.Validation[0].ConciseResult = "ok"
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)

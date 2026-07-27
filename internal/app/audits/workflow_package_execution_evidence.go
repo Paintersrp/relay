@@ -28,16 +28,25 @@ var ErrWorkflowPackageExecutionEvidenceConflict = errors.New(
 	"package execution evidence conflicts with approved audit authority",
 )
 
+// PackageAttemptEvidence contains the exact execution attempt and verified
+// execution_evidence artifact for an adaptive package execution.
+type PackageAttemptEvidence struct {
+	Attempt  workflowstore.ExecutionAttempt
+	Artifact workflowstore.Artifact
+	Bytes    []byte
+}
+
 // WorkflowPackageExecutionEvidence is the verified, read-only view of the exact
-// approved package authority and the three immutable runtime evidence
-// artifacts for one committed package-linked Run. It never contains newly
-// created rows or artifacts.
+// approved package authority and the runtime evidence for one committed
+// package-linked Run. It never contains newly created rows or artifacts.
 type WorkflowPackageExecutionEvidence struct {
 	Run            workflowstore.Run
 	Authority      workflowpackages.ApprovedAuthority
 	Assignment     executor.ExecutionAssignmentResult
 	Deterministic  executor.DeterministicOutcomeResult
 	EffectiveBrief executor.EffectiveExecutorBriefResult
+	Attempt        *PackageAttemptEvidence
+	Validation     []WorkflowPackageAuditValidationResult
 }
 
 // WorkflowPackageExecutionEvidenceService resolves and cross-verifies package
@@ -53,11 +62,14 @@ type WorkflowPackageExecutionEvidenceService struct {
 	// Narrow package-private read seams. Production defaults call the real
 	// existing services; tests override them to inject cross-service return
 	// shapes that valid storage constraints cannot produce.
-	loadRun        func(context.Context, string) (workflowstore.Run, error)
-	loadAuthority  func(context.Context, string) (workflowpackages.ApprovedAuthority, error)
-	loadAssignment func(context.Context, string) (executor.ExecutionAssignmentResult, error)
-	loadOutcome    func(context.Context, string) (executor.DeterministicOutcomeResult, error)
-	loadBrief      func(context.Context, string) (executor.EffectiveExecutorBriefResult, error)
+	loadRun              func(context.Context, string) (workflowstore.Run, error)
+	loadAuthority        func(context.Context, string) (workflowpackages.ApprovedAuthority, error)
+	loadAssignment       func(context.Context, string) (executor.ExecutionAssignmentResult, error)
+	loadOutcome          func(context.Context, string) (executor.DeterministicOutcomeResult, error)
+	loadBrief            func(context.Context, string) (executor.EffectiveExecutorBriefResult, error)
+	loadAttempts         func(context.Context, int64) ([]workflowstore.ExecutionAttempt, error)
+	loadAttemptArtifacts func(context.Context, int64) ([]workflowstore.Artifact, error)
+	readArtifactBytes    func(context.Context, workflowstore.Artifact, int) ([]byte, error)
 }
 
 func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sourceVaults workflowpackages.SourceVaultReader) (*WorkflowPackageExecutionEvidenceService, error) {
@@ -98,12 +110,21 @@ func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sour
 	service.loadBrief = func(ctx context.Context, runID string) (executor.EffectiveExecutorBriefResult, error) {
 		return service.briefs.Load(ctx, runID)
 	}
+	service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+		return service.store.ListExecutionAttemptsByRun(ctx, runRowID)
+	}
+	service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+		return service.store.ListArtifactsByExecutionAttempt(ctx, attemptRowID)
+	}
+	service.readArtifactBytes = func(ctx context.Context, artifact workflowstore.Artifact, maxBytes int) ([]byte, error) {
+		return readWorkflowArtifact(service.store, artifact, maxBytes)
+	}
 	return service, nil
 }
 
 // Load resolves and cross-verifies the exact approved package authority and the
-// three immutable runtime evidence artifacts for a committed package-linked
-// Run. It performs no writes or lifecycle changes and returns only existing,
+// immutable runtime evidence artifacts for a committed package-linked Run.
+// It performs no writes or lifecycle changes and returns only existing,
 // verified evidence.
 func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runID string) (WorkflowPackageExecutionEvidence, error) {
 	if s == nil || s.store == nil || s.packages == nil || s.assignments == nil || s.outcomes == nil || s.briefs == nil {
@@ -166,13 +187,213 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 		return WorkflowPackageExecutionEvidence{}, err
 	}
 
+	var pkgAttempt *PackageAttemptEvidence
+	var validation []WorkflowPackageAuditValidationResult
+
+	switch brief.Mode {
+	case executor.EffectiveExecutorBriefAdaptiveNoOperations,
+		executor.EffectiveExecutorBriefAdaptivePreflightFailed,
+		executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication:
+		attempts, err := s.loadAttempts(ctx, run.ID)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, err
+		}
+		if len(attempts) != 1 {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("adaptive package execution requires exactly one execution attempt, found %d", len(attempts))
+		}
+		attempt := attempts[0]
+		if attempt.RunRowID != run.ID {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution attempt Run row ID does not match Run")
+		}
+		if attempt.AttemptNumber != 1 {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution attempt number must be 1, got %d", attempt.AttemptNumber)
+		}
+		if attempt.Status != string(workflowstore.AttemptStatusSucceeded) {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution attempt status must be succeeded, got %q", attempt.Status)
+		}
+		if attempt.AttemptID == "" || strings.TrimSpace(attempt.AttemptID) != attempt.AttemptID {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution attempt ID is noncanonical or blank")
+		}
+
+		artifacts, err := s.loadAttemptArtifacts(ctx, attempt.ID)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, err
+		}
+
+		var evidenceArtifact workflowstore.Artifact
+		evidenceCount := 0
+		for _, art := range artifacts {
+			if art.Kind == "execution_evidence" {
+				evidenceArtifact = art
+				evidenceCount++
+			}
+		}
+		if evidenceCount != 1 {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("expected exactly one execution_evidence artifact for attempt, found %d", evidenceCount)
+		}
+		if evidenceArtifact.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt || !evidenceArtifact.ExecutionAttemptRowID.Valid || evidenceArtifact.ExecutionAttemptRowID.Int64 != attempt.ID {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact is not owned by the attempt")
+		}
+		if evidenceArtifact.MediaType != "application/json" {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact media type must be application/json")
+		}
+		wantPath := fmt.Sprintf("attempts/%s/execution-evidence.json", attempt.AttemptID)
+		if evidenceArtifact.RelativePath != wantPath {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact relative path %q does not match expected %q", evidenceArtifact.RelativePath, wantPath)
+		}
+		if evidenceArtifact.ID <= 0 || strings.TrimSpace(evidenceArtifact.ArtifactID) == "" {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact identity is incomplete")
+		}
+		if !validWorkflowPackageSHA256(evidenceArtifact.SHA256) {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact digest is malformed")
+		}
+
+		data, err := s.readArtifactBytes(ctx, evidenceArtifact, MaxWorkflowAuditEvidenceBytes)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("read execution_evidence artifact: %w", err)
+		}
+		if evidenceArtifact.SizeBytes < 0 || evidenceArtifact.SizeBytes != int64(len(data)) {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact size does not match verified bytes")
+		}
+		if hex.EncodeToString(hashWorkflowPackageBytes(data)) != evidenceArtifact.SHA256 {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution_evidence artifact digest does not match verified bytes")
+		}
+
+		payload, err := decodeWorkflowExecutionEvidence(data)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("decode execution_evidence artifact: %w", err)
+		}
+
+		attemptResult := workflowAuditAttemptResult(attempt.ResultJSON)
+
+		if payload.EffectiveBriefArtifactID != brief.Artifact.ArtifactID ||
+			payload.EffectiveBriefSHA256 != brief.Artifact.SHA256 ||
+			payload.EffectiveBriefMode != string(brief.Mode) {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution evidence payload effective brief identity disagrees with brief")
+		}
+		if attemptResult.EffectiveBriefArtifactID != brief.Artifact.ArtifactID ||
+			attemptResult.EffectiveBriefSHA256 != brief.Artifact.SHA256 ||
+			attemptResult.EffectiveBriefMode != string(brief.Mode) {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("attempt ResultJSON effective brief identity disagrees with brief")
+		}
+
+		valResults, err := mapPackageAdaptiveValidation(assignment.Assignment.ValidationCommands, payload.ValidationResults)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("validation mapping: %w", err)
+		}
+		validation = valResults
+
+		pkgAttempt = &PackageAttemptEvidence{
+			Attempt:  attempt,
+			Artifact: evidenceArtifact,
+			Bytes:    append([]byte(nil), data...),
+		}
+
+	case executor.EffectiveExecutorBriefDeterministicComplete:
+		attempts, err := s.loadAttempts(ctx, run.ID)
+		if err != nil {
+			return WorkflowPackageExecutionEvidence{}, err
+		}
+		if len(attempts) != 0 {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("deterministic-complete execution requires zero execution attempts, found %d", len(attempts))
+		}
+		pkgAttempt = nil
+		valResults := make([]WorkflowPackageAuditValidationResult, 0, len(assignment.Assignment.ValidationCommands))
+		for _, cmd := range assignment.Assignment.ValidationCommands {
+			valResults = append(valResults, WorkflowPackageAuditValidationResult{
+				Command:       cmd.Command,
+				Expected:      cmd.Expected,
+				Status:        "not_run",
+				ConciseResult: "No adaptive Executor attempt was dispatched for deterministic-complete execution.",
+			})
+		}
+		validation = valResults
+
+	default:
+		return WorkflowPackageExecutionEvidence{}, evidenceConflict("unsupported effective brief mode %q for package execution", brief.Mode)
+	}
+
+	var attemptCopy *PackageAttemptEvidence
+	if pkgAttempt != nil {
+		attemptCopy = &PackageAttemptEvidence{
+			Attempt:  pkgAttempt.Attempt,
+			Artifact: pkgAttempt.Artifact,
+			Bytes:    append([]byte(nil), pkgAttempt.Bytes...),
+		}
+	}
+	valCopy := make([]WorkflowPackageAuditValidationResult, len(validation))
+	copy(valCopy, validation)
+
 	return WorkflowPackageExecutionEvidence{
 		Run:            run,
 		Authority:      authority,
 		Assignment:     assignment,
 		Deterministic:  outcome,
 		EffectiveBrief: brief,
+		Attempt:        attemptCopy,
+		Validation:     valCopy,
 	}, nil
+}
+
+func mapPackageAdaptiveValidation(
+	commands []executor.ExecutionAssignmentValidationCommand,
+	results []workflowAuditValidationEvidence,
+) ([]WorkflowPackageAuditValidationResult, error) {
+	if len(commands) == 0 {
+		if len(results) != 0 {
+			return nil, fmt.Errorf("execution evidence contains validation results but assignment declares no validation commands")
+		}
+		return []WorkflowPackageAuditValidationResult{}, nil
+	}
+
+	type cmdMeta struct {
+		cmd   executor.ExecutionAssignmentValidationCommand
+		index int
+	}
+	cmdMap := make(map[string]cmdMeta, len(commands))
+	for idx, cmd := range commands {
+		cmdMap[cmd.Command] = cmdMeta{cmd: cmd, index: idx}
+	}
+
+	matchedMap := make(map[string]workflowAuditValidationEvidence, len(results))
+	lastIndex := -1
+	for _, res := range results {
+		meta, ok := cmdMap[res.Command]
+		if !ok {
+			return nil, fmt.Errorf("execution evidence reports unknown validation command %q", res.Command)
+		}
+		if meta.index <= lastIndex {
+			return nil, fmt.Errorf("execution evidence validation results are not in canonical order")
+		}
+		lastIndex = meta.index
+		if res.WorkingDirectory != meta.cmd.WorkingDirectory {
+			return nil, fmt.Errorf("execution evidence validation working directory %q does not match canonical %q", res.WorkingDirectory, meta.cmd.WorkingDirectory)
+		}
+		if res.Expected != meta.cmd.Expected {
+			return nil, fmt.Errorf("execution evidence validation expected %q does not match canonical %q", res.Expected, meta.cmd.Expected)
+		}
+		matchedMap[res.Command] = res
+	}
+
+	out := make([]WorkflowPackageAuditValidationResult, 0, len(commands))
+	for _, cmd := range commands {
+		if res, ok := matchedMap[cmd.Command]; ok {
+			out = append(out, WorkflowPackageAuditValidationResult{
+				Command:       cmd.Command,
+				Expected:      cmd.Expected,
+				Status:        res.Status,
+				ConciseResult: res.ConciseResult,
+			})
+		} else {
+			out = append(out, WorkflowPackageAuditValidationResult{
+				Command:       cmd.Command,
+				Expected:      cmd.Expected,
+				Status:        "not_run",
+				ConciseResult: "No trustworthy structured result was available for this approved validation command.",
+			})
+		}
+	}
+	return out, nil
 }
 
 func verifyWorkflowPackageRunAndPackage(run workflowstore.Run, authority workflowpackages.ApprovedAuthority) error {

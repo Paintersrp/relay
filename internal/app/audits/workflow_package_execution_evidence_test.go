@@ -3,6 +3,7 @@ package audits
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -73,10 +74,22 @@ func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode
 	if err != nil {
 		t.Fatal(err)
 	}
-	if brief.Mode != mode {
-		t.Fatalf("prepared mode = %q, want %q", brief.Mode, mode)
-	}
 	fixture.brief = brief
+
+	if mode != executor.EffectiveExecutorBriefDeterministicComplete {
+		valResults := make([]workflowAuditValidationEvidence, 0, len(assignment.Assignment.ValidationCommands))
+		for _, cmd := range assignment.Assignment.ValidationCommands {
+			valResults = append(valResults, workflowAuditValidationEvidence{
+				Command:          cmd.Command,
+				WorkingDirectory: cmd.WorkingDirectory,
+				Expected:         cmd.Expected,
+				Status:           "passed",
+				ConciseResult:    "ok",
+			})
+		}
+		addTestAttemptAndEvidence(t, fixture, valResults)
+	}
+
 	return fixture
 }
 
@@ -795,4 +808,464 @@ func packageEvidenceCounts(t *testing.T, store *workflowstore.Store, tables []st
 		counts[table] = count
 	}
 	return counts
+}
+
+func addTestAttemptAndEvidence(
+	t *testing.T,
+	fixture *packageEvidenceFixture,
+	validationResults []workflowAuditValidationEvidence,
+) (workflowstore.ExecutionAttempt, workflowstore.Artifact, []byte) {
+	t.Helper()
+	ctx := context.Background()
+	db := fixture.store.DB()
+
+	var attemptRowID int64
+	attemptID := workflowstore.NewExecutionAttemptID()
+	resultStruct := map[string]any{
+		"exit_code":                   0,
+		"effective_brief_artifact_id": fixture.brief.Artifact.ArtifactID,
+		"effective_brief_sha256":      fixture.brief.Artifact.SHA256,
+		"effective_brief_mode":        string(fixture.brief.Mode),
+	}
+	resultJSON, err := json.Marshal(resultStruct)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.QueryRowContext(ctx, `
+		INSERT INTO execution_attempts (attempt_id, run_row_id, attempt_number, adapter, model, status, result_json)
+		VALUES (?, ?, 1, 'codex', 'm1', 'succeeded', ?) RETURNING id`,
+		attemptID, fixture.run.ID, string(resultJSON),
+	).Scan(&attemptRowID); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := map[string]any{
+		"effective_brief_artifact_id": fixture.brief.Artifact.ArtifactID,
+		"effective_brief_sha256":      fixture.brief.Artifact.SHA256,
+		"effective_brief_mode":        string(fixture.brief.Mode),
+	}
+	if validationResults != nil {
+		payload["validation_results"] = validationResults
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256(payloadBytes)
+	sha := hex.EncodeToString(sum[:])
+	relPath := fmt.Sprintf("attempts/%s/execution-evidence.json", attemptID)
+
+	var artifactRowID int64
+	artifactID := workflowstore.NewArtifactID()
+	if err := db.QueryRowContext(ctx, `
+		INSERT INTO artifacts (artifact_id, owner_type, execution_attempt_row_id, kind, relative_path, media_type, sha256, size_bytes)
+		VALUES (?, 'execution_attempt', ?, 'execution_evidence', ?, 'application/json', ?, ?) RETURNING id`,
+		artifactID, attemptRowID, relPath, sha, len(payloadBytes),
+	).Scan(&artifactRowID); err != nil {
+		t.Fatal(err)
+	}
+
+	fullPath := filepath.Join(fixture.store.ArtifactStore().Root(), relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fullPath, payloadBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	attempt := workflowstore.ExecutionAttempt{
+		ID:            attemptRowID,
+		RunRowID:      fixture.run.ID,
+		AttemptID:     attemptID,
+		AttemptNumber: 1,
+		Status:        string(workflowstore.AttemptStatusSucceeded),
+		ResultJSON:    string(resultJSON),
+	}
+	art := workflowstore.Artifact{
+		ID:                    artifactRowID,
+		ArtifactID:            artifactID,
+		OwnerType:             workflowstore.ArtifactOwnerExecutionAttempt,
+		ExecutionAttemptRowID: sql.NullInt64{Int64: attemptRowID, Valid: true},
+		Kind:                  "execution_evidence",
+		RelativePath:          relPath,
+		MediaType:             "application/json",
+		SHA256:                sha,
+		SizeBytes:             int64(len(payloadBytes)),
+	}
+
+	return attempt, art, payloadBytes
+}
+
+func TestWorkflowPackageExecutionEvidenceDeterministicCompleteWithAttemptFails(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	addTestAttemptAndEvidence(t, fixture, nil)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("error = %v, want conflict", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *testing.T) {
+	t.Run("zero attempts fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+			return nil, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("multiple attempts fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realAttempts := service.loadAttempts
+		service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+			attempts, err := realAttempts(ctx, runRowID)
+			if err != nil {
+				return nil, err
+			}
+			return append(attempts, attempts[0]), nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("nonsucceeded attempt status fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realAttempts := service.loadAttempts
+		service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+			attempts, err := realAttempts(ctx, runRowID)
+			if err != nil {
+				return nil, err
+			}
+			attempts[0].Status = "failed"
+			return attempts, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("attempt number not 1 fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realAttempts := service.loadAttempts
+		service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+			attempts, err := realAttempts(ctx, runRowID)
+			if err != nil {
+				return nil, err
+			}
+			attempts[0].AttemptNumber = 2
+			return attempts, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("noncanonical attempt ID fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realAttempts := service.loadAttempts
+		service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+			attempts, err := realAttempts(ctx, runRowID)
+			if err != nil {
+				return nil, err
+			}
+			attempts[0].AttemptID = "   "
+			return attempts, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+}
+
+func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
+	t.Run("missing execution_evidence artifact fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+			return nil, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("duplicate execution_evidence artifact fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realArtifacts := service.loadAttemptArtifacts
+		service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+			arts, err := realArtifacts(ctx, attemptRowID)
+			if err != nil {
+				return nil, err
+			}
+			return append(arts, arts[0]), nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("wrongly owned artifact fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realArtifacts := service.loadAttemptArtifacts
+		service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+			arts, err := realArtifacts(ctx, attemptRowID)
+			if err != nil {
+				return nil, err
+			}
+			arts[0].OwnerType = workflowstore.ArtifactOwnerRun
+			return arts, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("wrongly typed artifact fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realArtifacts := service.loadAttemptArtifacts
+		service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+			arts, err := realArtifacts(ctx, attemptRowID)
+			if err != nil {
+				return nil, err
+			}
+			arts[0].MediaType = "text/plain"
+			return arts, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("wrongly pathed artifact fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realArtifacts := service.loadAttemptArtifacts
+		service.loadAttemptArtifacts = func(ctx context.Context, attemptRowID int64) ([]workflowstore.Artifact, error) {
+			arts, err := realArtifacts(ctx, attemptRowID)
+			if err != nil {
+				return nil, err
+			}
+			arts[0].RelativePath = "attempts/wrong/execution-evidence.json"
+			return arts, nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("tampered artifact digest fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			return append(bytes, []byte("tampered")...), nil
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+}
+
+func TestWorkflowPackageExecutionEvidenceBriefBindingMismatchFails(t *testing.T) {
+	t.Run("effective brief artifact ID mismatch fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			m["effective_brief_artifact_id"] = "wrong-id"
+			return json.Marshal(m)
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+
+	t.Run("legacy mode full fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			m["effective_brief_mode"] = "full"
+			return json.Marshal(m)
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
+}
+
+func TestWorkflowPackageExecutionEvidenceResultJSONBindingMismatchFails(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	realAttempts := service.loadAttempts
+	service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+		attempts, err := realAttempts(ctx, runRowID)
+		if err != nil {
+			return nil, err
+		}
+		attempts[0].ResultJSON = `{"effective_brief_artifact_id":"wrong-id"}`
+		return attempts, nil
+	}
+	if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("error = %v, want conflict", err)
+	}
+}
+
+func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
+	t.Run("missing declared results become not_run", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			m["validation_results"] = []any{} // missing results for declared commands
+			return json.Marshal(m)
+		}
+		evidence, err := service.Load(context.Background(), fixture.run.RunID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(evidence.Validation) != len(fixture.assignment.Assignment.ValidationCommands) {
+			t.Fatalf("validation count = %d, want %d", len(evidence.Validation), len(fixture.assignment.Assignment.ValidationCommands))
+		}
+		for _, val := range evidence.Validation {
+			if val.Status != "not_run" {
+				t.Fatalf("status = %q, want not_run", val.Status)
+			}
+			if val.ConciseResult != "No trustworthy structured result was available for this approved validation command." {
+				t.Fatalf("concise_result = %q", val.ConciseResult)
+			}
+		}
+	})
+
+	t.Run("deterministic-complete commands become not_run", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidence, err := service.Load(context.Background(), fixture.run.RunID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(evidence.Validation) != len(fixture.assignment.Assignment.ValidationCommands) {
+			t.Fatalf("validation count = %d, want %d", len(evidence.Validation), len(fixture.assignment.Assignment.ValidationCommands))
+		}
+		for _, val := range evidence.Validation {
+			if val.Status != "not_run" {
+				t.Fatalf("status = %q, want not_run", val.Status)
+			}
+			if val.ConciseResult != "No adaptive Executor attempt was dispatched for deterministic-complete execution." {
+				t.Fatalf("concise_result = %q", val.ConciseResult)
+			}
+		}
+	})
+}
+
+func TestWorkflowPackageExecutionEvidenceValidationMappingRejectsInvalid(t *testing.T) {
+	t.Run("unknown command fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		realRead := service.readArtifactBytes
+		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
+			bytes, err := realRead(ctx, art, max)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]any
+			_ = json.Unmarshal(bytes, &m)
+			m["validation_results"] = []any{
+				map[string]any{"command": "unknown-command", "expected": "pass", "status": "passed", "concise_result": "ok"},
+			}
+			return json.Marshal(m)
+		}
+		if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			t.Fatalf("error = %v, want conflict", err)
+		}
+	})
 }
