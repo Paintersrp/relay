@@ -10,7 +10,9 @@ import (
 
 	workflowpackages "relay/internal/app/packages"
 	"relay/internal/executor"
+	"relay/internal/planningartifacts"
 	workflowrepos "relay/internal/repos/workflow"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -262,6 +264,12 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		copy(dst.Authority.TicketDependencies, src.Authority.TicketDependencies)
 	}
 
+	if src.Authority.BriefProjection.ValidationCommands != nil {
+		cmds := make([]planningartifacts.ValidationCommand, len(src.Authority.BriefProjection.ValidationCommands))
+		copy(cmds, src.Authority.BriefProjection.ValidationCommands)
+		dst.Authority.BriefProjection.ValidationCommands = cmds
+	}
+
 	if src.Authority.DeliveryTicket.Bytes != nil {
 		dst.Authority.DeliveryTicket.Bytes = append([]byte(nil), src.Authority.DeliveryTicket.Bytes...)
 	}
@@ -275,15 +283,16 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		if ops.Bytes != nil {
 			ops.Bytes = append([]byte(nil), ops.Bytes...)
 		}
+		if ops.Document != nil {
+			ops.Document = cloneDeterministicOperationsDocument(ops.Document)
+		}
 		dst.Authority.DeterministicOperations = &ops
 	}
 
-	if src.Attempt != nil {
-		att := *src.Attempt
-		if att.Bytes != nil {
-			att.Bytes = append([]byte(nil), att.Bytes...)
-		}
-		dst.Attempt = &att
+	if src.Assignment.Assignment.AuthorityLayers != nil {
+		layers := make([]executor.ExecutionAssignmentLayer, len(src.Assignment.Assignment.AuthorityLayers))
+		copy(layers, src.Assignment.Assignment.AuthorityLayers)
+		dst.Assignment.Assignment.AuthorityLayers = layers
 	}
 
 	if src.Assignment.Assignment.ValidationCommands != nil {
@@ -295,12 +304,96 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 	if src.Assignment.Bytes != nil {
 		dst.Assignment.Bytes = append([]byte(nil), src.Assignment.Bytes...)
 	}
+
 	if src.Deterministic.Bytes != nil {
 		dst.Deterministic.Bytes = append([]byte(nil), src.Deterministic.Bytes...)
 	}
+
+	if src.Deterministic.Outcome.PreflightFailure != nil {
+		pf := *src.Deterministic.Outcome.PreflightFailure
+		dst.Deterministic.Outcome.PreflightFailure = &pf
+	}
+
+	if src.Deterministic.Outcome.Application != nil {
+		app := *src.Deterministic.Outcome.Application
+		if app.Operations != nil {
+			ops := make([]executor.AppliedDeterministicOperationEvidence, len(src.Deterministic.Outcome.Application.Operations))
+			copy(ops, src.Deterministic.Outcome.Application.Operations)
+			app.Operations = ops
+		}
+		if app.ChangedPaths != nil {
+			paths := make([]string, len(src.Deterministic.Outcome.Application.ChangedPaths))
+			copy(paths, src.Deterministic.Outcome.Application.ChangedPaths)
+			app.ChangedPaths = paths
+		}
+		dst.Deterministic.Outcome.Application = &app
+	}
+
+	if src.EffectiveBrief.Artifact != nil {
+		art := *src.EffectiveBrief.Artifact
+		dst.EffectiveBrief.Artifact = &art
+	}
+
 	if src.EffectiveBrief.Bytes != nil {
 		dst.EffectiveBrief.Bytes = append([]byte(nil), src.EffectiveBrief.Bytes...)
 	}
 
+	if src.Attempt != nil {
+		att := *src.Attempt
+		if att.Bytes != nil {
+			att.Bytes = append([]byte(nil), att.Bytes...)
+		}
+		dst.Attempt = &att
+	}
+
 	return dst
+}
+
+func cloneDeterministicOperationsDocument(doc *speccompiler.DeterministicOperationsDocument) *speccompiler.DeterministicOperationsDocument {
+	if doc == nil {
+		return nil
+	}
+	dst := *doc
+	dst.SchemaVersion = cloneAny(doc.SchemaVersion)
+	if doc.Operations != nil {
+		dst.Operations = make([]speccompiler.DeterministicOperation, len(doc.Operations))
+		for i, op := range doc.Operations {
+			opCopy := op
+			if op.Implementation.Changes != nil {
+				changes := make([]speccompiler.DeterministicChange, len(op.Implementation.Changes))
+				copy(changes, op.Implementation.Changes)
+				opCopy.Implementation.Changes = changes
+			}
+			if op.Implementation.PreserveContent != nil {
+				val := *op.Implementation.PreserveContent
+				opCopy.Implementation.PreserveContent = &val
+			}
+			dst.Operations[i] = opCopy
+		}
+	}
+	return &dst
+}
+
+func cloneAny(v any) any {
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case []byte:
+		return append([]byte(nil), val...)
+	case []any:
+		out := make([]any, len(val))
+		for i, elem := range val {
+			out[i] = cloneAny(elem)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, elem := range val {
+			out[k] = cloneAny(elem)
+		}
+		return out
+	default:
+		return val
+	}
 }

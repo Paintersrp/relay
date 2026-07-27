@@ -294,8 +294,23 @@ func TestWorkflowPackageExecutionEvidenceConstructorInitializesDependencies(t *t
 	if service.loadRun == nil || service.loadAuthority == nil || service.loadAssignment == nil || service.loadOutcome == nil || service.loadBrief == nil {
 		t.Fatal("service read seams are not initialized")
 	}
-	if _, err := NewWorkflowPackageExecutionEvidenceService(nil, nil); err == nil {
+	if _, err := NewWorkflowPackageExecutionEvidenceService(nil, fixture.sourceVaultReader); err == nil {
 		t.Fatal("nil store was accepted")
+	}
+	if _, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, nil); err == nil {
+		t.Fatal("nil source-vault reader was accepted, expected error")
+	}
+}
+
+func TestWorkflowExecutionEvidencePlaceholderFilesAbsent(t *testing.T) {
+	files := []string{
+		"workflow_execution_evidence.go",
+		"workflow_execution_evidence_test.go",
+	}
+	for _, f := range files {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Fatalf("placeholder file %s should be absent, but stat returned: %v", f, err)
+		}
 	}
 }
 
