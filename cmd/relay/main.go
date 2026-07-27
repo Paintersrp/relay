@@ -28,6 +28,16 @@ type runtimeReady struct {
 	MCPIngress server.MCPIngressSummary
 }
 
+var newWorkflowServer = server.NewWorkflow
+
+func constructRelayServer(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []server.MCPHandler) (*server.Server, error) {
+	relayServer, err := newWorkflowServer(store, log, ownerInstanceID, sourceVaults, mcpHandlers)
+	if err != nil {
+		return nil, fmt.Errorf("construct Relay server: %w", err)
+	}
+	return relayServer, nil
+}
+
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -77,7 +87,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 		return fmt.Errorf("compose published MCP handlers: %w", err)
 	}
 	ownerInstanceID := executor.NewOwnerInstanceID()
-	relayServer := server.NewWorkflow(workflowStore, log, ownerInstanceID, sourceVaults, mcpHandlers)
+	relayServer, err := constructRelayServer(workflowStore, log, ownerInstanceID, sourceVaults, mcpHandlers)
 	port := environmentOrDefault("PORT", "8080")
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {

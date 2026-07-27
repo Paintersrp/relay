@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -40,14 +41,17 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager) http.Handler {
-	handler, _ := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, sourceVaults, nil)
-	return handler
+func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager) (http.Handler, error) {
+	handler, _, err := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, sourceVaults, nil)
+	if err != nil {
+		return nil, err
+	}
+	return handler, nil
 }
 
-func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor) {
+func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor, error) {
 	if workflowStore == nil {
-		panic("workflow store is required")
+		return nil, nil, fmt.Errorf("construct workflow runtime: workflow store is required")
 	}
 	if log == nil {
 		log = slog.Default()
@@ -55,59 +59,63 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 
 	readService, err := workflowapp.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct workflow read service: %w", err)
 	}
 	projectService, err := workflowprojects.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct project service: %w", err)
 	}
 	planMutationService, err := workflowplans.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct plan mutation service: %w", err)
 	}
 	submissionService, err := workflowsubmissions.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct submission service: %w", err)
 	}
 	auditService, err := appaudits.NewWorkflowAuditService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct audit service: %w", err)
 	}
 	wayfinderService, err := appwayfinder.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct wayfinder service: %w", err)
 	}
 	featureAuthorityService, err := appfeatures.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct feature authority service: %w", err)
 	}
-	executionService, err := executor.NewExecution(workflowStore, log, ownerInstanceID, sourceVaults)
+	var sourceVaultReader apppackages.SourceVaultReader
+	if sourceVaults != nil {
+		sourceVaultReader = sourceVaults
+	}
+	executionService, err := executor.NewExecution(workflowStore, log, ownerInstanceID, sourceVaultReader)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct execution: %w", err)
 	}
 	ticketService, err := apptickets.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct ticket service: %w", err)
 	}
 	packetService, err := appoperations.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct packet service: %w", err)
 	}
 	ticketWorkflowService, err := appoperations.NewTicketWorkflowService(packetService, ticketService)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct ticket workflow service: %w", err)
 	}
 	featureCompletionWorkflowService, err := appoperations.NewFeatureCompletionWorkflowService(packetService, featureAuthorityService)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct feature completion workflow service: %w", err)
 	}
 	packageService, err := apppackages.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct package service: %w", err)
 	}
 	packageWorkflowService, err := appoperations.NewPackageWorkflowService(packetService, packageService, executionService, workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct package workflow service: %w", err)
 	}
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
@@ -123,11 +131,11 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
 	cutoverService, err := appcutover.NewService(workflowStore)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct cutover service: %w", err)
 	}
 	cutoverWorkflowService, err := appoperations.NewCutoverWorkflowService(packetService, cutoverService)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct cutover workflow service: %w", err)
 	}
 	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService)
 
@@ -137,11 +145,11 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	router.Use(middleware.RealIP)
 
 	if err := mcp.ValidateCompiledSurfaceCatalog(); err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("validate MCP surface catalog: %w", err)
 	}
 	mcpRoutes, err := mcpRouteDescriptors(mcpHandlers)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("construct MCP route descriptors: %w", err)
 	}
 
 	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
@@ -190,7 +198,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 		)
 	})
 
-	return router, mcpRoutes
+	return router, mcpRoutes, nil
 }
 
 type ticketReadService struct {
