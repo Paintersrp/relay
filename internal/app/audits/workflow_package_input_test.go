@@ -417,164 +417,274 @@ func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication)
 	commit := testAuditCommitEvidence(evidence.Run.BaseCommit, auditedCommit)
 
-	// Populate all 18 evidence/commit components with non-empty/non-nil data
-	evidence.Authority.AuthorityLayers = []workflowpackages.ApprovedAuthorityLayer{
-		{Kind: "requirements", Sequence: 1, Bytes: []byte("auth-layer-bytes")},
+	if len(evidence.Authority.DeliveryTicket.Bytes) == 0 {
+		t.Fatal("verified Delivery Ticket bytes must be nonempty")
 	}
-	evidence.Authority.TicketDesignBrief.Bytes = []byte("design-brief-bytes")
-	evidence.Authority.DeliveryTicket.Bytes = []byte("delivery-ticket-bytes")
-	evidence.Authority.BriefProjection.ValidationCommands = []planningartifacts.ValidationCommand{
-		{Command: "cmd1", WorkingDirectory: ".", Expected: "pass"},
+	if len(evidence.Authority.TicketDesignBrief.Bytes) == 0 {
+		t.Fatal("verified Ticket Design Brief bytes must be nonempty")
 	}
-	evidence.Authority.TicketMembers = []workflowstore.DeliveryTicketRevisionMember{
-		{MemberPath: sql.NullString{String: "path1", Valid: true}},
+	if len(evidence.Authority.AuthorityLayers) == 0 || len(evidence.Authority.AuthorityLayers[0].Bytes) == 0 {
+		t.Fatal("verified authority-layer bytes must be nonempty")
 	}
-	evidence.Authority.TicketDependencies = []workflowstore.DeliveryTicketRevisionDependency{
-		{DependsOnRevisionRowID: 100},
+	if len(evidence.Assignment.Bytes) == 0 {
+		t.Fatal("verified assignment bytes must be nonempty")
 	}
-	preserveBool := true
-	evidence.Authority.DeterministicOperations = &workflowpackages.ApprovedDeterministicOperations{
-		ApprovedDocument: workflowpackages.ApprovedDocument{Bytes: []byte("det-ops-bytes")},
-		Document: &speccompiler.DeterministicOperationsDocument{
-			SchemaVersion: map[string]any{"version": "1.0"},
-			FeatureSlug:   "slug1",
-			Operations: []speccompiler.DeterministicOperation{
-				{
-					Path: "op-path1",
-					Implementation: speccompiler.DeterministicImplementation{
-						Changes: []speccompiler.DeterministicChange{
-							{OldText: "old1", NewText: "new1"},
-						},
-						PreserveContent: &preserveBool,
-					},
-				},
-			},
-		},
+	if len(evidence.Deterministic.Bytes) == 0 {
+		t.Fatal("verified deterministic-outcome bytes must be nonempty")
 	}
-	evidence.Assignment.Assignment.AuthorityLayers = []executor.ExecutionAssignmentLayer{
-		{LayerKind: "requirements", Sequence: 1, RelativePath: "rel1"},
+	if len(evidence.EffectiveBrief.Bytes) == 0 {
+		t.Fatal("verified effective-Brief bytes must be nonempty")
 	}
-	evidence.Assignment.Assignment.ValidationCommands = []executor.ExecutionAssignmentValidationCommand{
-		{Command: "cmd1", WorkingDirectory: ".", Expected: "pass"},
+	if evidence.Attempt == nil || len(evidence.Attempt.Bytes) == 0 {
+		t.Fatal("verified attempt evidence bytes must be nonempty")
 	}
-	evidence.Assignment.Bytes = []byte("assignment-bytes")
-	evidence.Deterministic.Bytes = []byte("outcome-bytes")
-	evidence.EffectiveBrief.Bytes = []byte("brief-bytes")
-	if evidence.Attempt == nil {
-		evidence.Attempt = &PackageAttemptEvidence{Bytes: []byte("attempt-bytes")}
-	} else {
-		evidence.Attempt.Bytes = []byte("attempt-bytes")
+	if len(evidence.Validation) == 0 {
+		t.Fatal("verified validation evidence must be nonempty")
 	}
-	evidence.Validation = []WorkflowPackageAuditValidationResult{
-		{Command: "cmd1", Status: "passed", ConciseResult: "ok"},
+	if len(commit.ChangedFiles) == 0 || len(commit.FileChanges) == 0 || commit.Diff == "" {
+		t.Fatal("commit fixture must contain changed files, file changes, and a diff")
 	}
+
+	originalAuthorityLayerBytes := append([]byte(nil), evidence.Authority.AuthorityLayers[0].Bytes...)
+	originalDeliveryTicketBytes := append([]byte(nil), evidence.Authority.DeliveryTicket.Bytes...)
+	originalTicketDesignBriefBytes := append([]byte(nil), evidence.Authority.TicketDesignBrief.Bytes...)
+	originalAssignmentBytes := append([]byte(nil), evidence.Assignment.Bytes...)
+	originalDeterministicBytes := append([]byte(nil), evidence.Deterministic.Bytes...)
+	originalEffectiveBriefBytes := append([]byte(nil), evidence.EffectiveBrief.Bytes...)
+	originalAttemptBytes := append([]byte(nil), evidence.Attempt.Bytes...)
+	originalValidation := evidence.Validation[0]
+	originalChangedFiles := append([]string(nil), commit.ChangedFiles...)
+	originalFileChanges := append([]workflowrepos.AuditFileChange(nil), commit.FileChanges...)
+	originalDiff := commit.Diff
 
 	input, err := assemblePackageAuditInput(evidence, commit)
 	if err != nil {
 		t.Fatalf("assemble failed: %v", err)
 	}
 
-	// Mutate all 18 items on returned input
-	// 1. authority-layer bytes
+	// Mutate every mutable surface exposed by the assembled input.
 	input.Evidence.Authority.AuthorityLayers[0].Bytes[0] ^= 0xff
-	// 2. Ticket Design Brief bytes
 	input.Evidence.Authority.TicketDesignBrief.Bytes[0] ^= 0xff
-	// 3. Delivery Ticket bytes
 	input.Evidence.Authority.DeliveryTicket.Bytes[0] ^= 0xff
-	// 4. Brief projection validation commands
-	input.Evidence.Authority.BriefProjection.ValidationCommands[0].Command = "mutated-proj-cmd"
-	// 5. Ticket members
-	input.Evidence.Authority.TicketMembers[0].MemberPath = sql.NullString{String: "mutated-member-path", Valid: true}
-	// 6. Ticket dependencies
-	input.Evidence.Authority.TicketDependencies[0].DependsOnRevisionRowID = 999
-	// 7. Deterministic Operations bytes
-	input.Evidence.Authority.DeterministicOperations.Bytes[0] ^= 0xff
-	// 8. Deterministic Operations document and its nested operations/change data
-	input.Evidence.Authority.DeterministicOperations.Document.FeatureSlug = "mutated-slug"
-	input.Evidence.Authority.DeterministicOperations.Document.SchemaVersion.(map[string]any)["version"] = "mutated-ver"
-	input.Evidence.Authority.DeterministicOperations.Document.Operations[0].Path = "mutated-op-path"
-	input.Evidence.Authority.DeterministicOperations.Document.Operations[0].Implementation.Changes[0].OldText = "mutated-old"
-	*input.Evidence.Authority.DeterministicOperations.Document.Operations[0].Implementation.PreserveContent = false
-	// 9. assignment authority layers
-	input.Evidence.Assignment.Assignment.AuthorityLayers[0].RelativePath = "mutated-layer"
-	// 10. assignment validation commands
-	input.Evidence.Assignment.Assignment.ValidationCommands[0].Command = "mutated-assign-cmd"
-	// 11. assignment bytes
 	input.Evidence.Assignment.Bytes[0] ^= 0xff
-	// 12. deterministic-outcome bytes
 	input.Evidence.Deterministic.Bytes[0] ^= 0xff
-	// 13. effective-Brief bytes
 	input.Evidence.EffectiveBrief.Bytes[0] ^= 0xff
-	// 14. package-attempt evidence bytes
 	input.Evidence.Attempt.Bytes[0] ^= 0xff
-	// 15. mapped validation entries
 	input.Evidence.Validation[0].Status = "failed"
-	// 16. changed files
 	input.Commit.ChangedFiles[0].Path = "mutated-changed.go"
-	// 17. relevant source paths
 	input.RelevantSourcePaths[0] = "mutated-relevant.go"
-	// 18. committed diff artifact bytes
 	input.Artifacts[0].Bytes[0] ^= 0xff
 
-	// Assert supplied evidence and commit remain unmutated across all 18 items
-	if bytes.Equal(evidence.Authority.AuthorityLayers[0].Bytes, input.Evidence.Authority.AuthorityLayers[0].Bytes) {
-		t.Fatal("1. authority-layer bytes aliased supplied evidence")
+	if !bytes.Equal(evidence.Authority.AuthorityLayers[0].Bytes, originalAuthorityLayerBytes) {
+		t.Fatal("authority-layer bytes aliased supplied evidence")
 	}
-	if bytes.Equal(evidence.Authority.TicketDesignBrief.Bytes, input.Evidence.Authority.TicketDesignBrief.Bytes) {
-		t.Fatal("2. Ticket Design Brief bytes aliased supplied evidence")
+	if !bytes.Equal(evidence.Authority.TicketDesignBrief.Bytes, originalTicketDesignBriefBytes) {
+		t.Fatal("Ticket Design Brief bytes aliased supplied evidence")
 	}
-	if bytes.Equal(evidence.Authority.DeliveryTicket.Bytes, input.Evidence.Authority.DeliveryTicket.Bytes) {
-		t.Fatal("3. Delivery Ticket bytes aliased supplied evidence")
+	if !bytes.Equal(evidence.Authority.DeliveryTicket.Bytes, originalDeliveryTicketBytes) {
+		t.Fatal("Delivery Ticket bytes aliased supplied evidence")
 	}
-	if evidence.Authority.BriefProjection.ValidationCommands[0].Command == "mutated-proj-cmd" {
-		t.Fatal("4. Brief projection validation commands aliased supplied evidence")
+	if !bytes.Equal(evidence.Assignment.Bytes, originalAssignmentBytes) {
+		t.Fatal("assignment bytes aliased supplied evidence")
 	}
-	if evidence.Authority.TicketMembers[0].MemberPath.String == "mutated-member-path" {
-		t.Fatal("5. Ticket members aliased supplied evidence")
+	if !bytes.Equal(evidence.Deterministic.Bytes, originalDeterministicBytes) {
+		t.Fatal("deterministic-outcome bytes aliased supplied evidence")
 	}
-	if evidence.Authority.TicketDependencies[0].DependsOnRevisionRowID == 999 {
-		t.Fatal("6. Ticket dependencies aliased supplied evidence")
+	if !bytes.Equal(evidence.EffectiveBrief.Bytes, originalEffectiveBriefBytes) {
+		t.Fatal("effective-Brief bytes aliased supplied evidence")
 	}
-	if bytes.Equal(evidence.Authority.DeterministicOperations.Bytes, input.Evidence.Authority.DeterministicOperations.Bytes) {
-		t.Fatal("7. Deterministic Operations bytes aliased supplied evidence")
+	if !bytes.Equal(evidence.Attempt.Bytes, originalAttemptBytes) {
+		t.Fatal("attempt evidence bytes aliased supplied evidence")
 	}
-	doc := evidence.Authority.DeterministicOperations.Document
-	if doc.FeatureSlug == "mutated-slug" ||
-		doc.SchemaVersion.(map[string]any)["version"] == "mutated-ver" ||
-		doc.Operations[0].Path == "mutated-op-path" ||
-		doc.Operations[0].Implementation.Changes[0].OldText == "mutated-old" ||
-		*doc.Operations[0].Implementation.PreserveContent == false {
-		t.Fatal("8. Deterministic Operations document or nested operations/change data aliased supplied evidence")
+	if evidence.Validation[0] != originalValidation {
+		t.Fatal("validation evidence aliased supplied evidence")
 	}
-	if evidence.Assignment.Assignment.AuthorityLayers[0].RelativePath == "mutated-layer" {
-		t.Fatal("9. assignment authority layers aliased supplied evidence")
+	if !reflect.DeepEqual(commit.ChangedFiles, originalChangedFiles) {
+		t.Fatal("changed files aliased supplied commit")
 	}
-	if evidence.Assignment.Assignment.ValidationCommands[0].Command == "mutated-assign-cmd" {
-		t.Fatal("10. assignment validation commands aliased supplied evidence")
+	if !reflect.DeepEqual(commit.FileChanges, originalFileChanges) {
+		t.Fatal("file changes aliased supplied commit")
 	}
-	if bytes.Equal(evidence.Assignment.Bytes, input.Evidence.Assignment.Bytes) {
-		t.Fatal("11. assignment bytes aliased supplied evidence")
+	if commit.Diff != originalDiff {
+		t.Fatal("committed diff aliased supplied commit")
 	}
-	if bytes.Equal(evidence.Deterministic.Bytes, input.Evidence.Deterministic.Bytes) {
-		t.Fatal("12. deterministic-outcome bytes aliased supplied evidence")
+}
+
+func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
+	preserveContent := true
+	source := WorkflowPackageExecutionEvidence{
+		Authority: workflowpackages.ApprovedAuthority{
+			AuthorityLayers:    []workflowpackages.ApprovedAuthorityLayer{{Bytes: []byte("authority-layer")}},
+			TicketMembers:      []workflowstore.DeliveryTicketRevisionMember{{MemberPath: sql.NullString{String: "member", Valid: true}}},
+			TicketDependencies: []workflowstore.DeliveryTicketRevisionDependency{{DependsOnRevisionRowID: 7}},
+			BriefProjection: planningartifacts.TicketDesignBriefProjection{
+				ValidationCommands: []planningartifacts.ValidationCommand{{Command: "brief-command"}},
+			},
+			DeliveryTicket:    workflowpackages.ApprovedSourceDocument{Bytes: []byte("delivery-ticket")},
+			TicketDesignBrief: workflowpackages.ApprovedDocument{Bytes: []byte("ticket-design-brief")},
+			DeterministicOperations: &workflowpackages.ApprovedDeterministicOperations{
+				ApprovedDocument: workflowpackages.ApprovedDocument{Bytes: []byte("deterministic-operations")},
+				Coverage:         "partial",
+				Document: &speccompiler.DeterministicOperationsDocument{
+					SchemaVersion: map[string]any{
+						"root": "original",
+						"nested": map[string]any{
+							"collection": []any{map[string]any{"value": "original"}, []byte("schema-bytes")},
+						},
+					},
+					FeatureSlug: "original-feature",
+					Operations: []speccompiler.DeterministicOperation{{
+						Path: "original-path",
+						Implementation: speccompiler.DeterministicImplementation{
+							Changes:         []speccompiler.DeterministicChange{{OldText: "original-old"}},
+							PreserveContent: &preserveContent,
+						},
+					}},
+				},
+			},
+		},
+		Assignment: executor.ExecutionAssignmentResult{
+			Bytes: []byte("assignment"),
+			Assignment: executor.ExecutionAssignment{
+				AuthorityLayers:    []executor.ExecutionAssignmentLayer{{RelativePath: "original-layer"}},
+				ValidationCommands: []executor.ExecutionAssignmentValidationCommand{{Command: "assignment-command"}},
+			},
+		},
+		Deterministic: executor.DeterministicOutcomeResult{
+			Bytes: []byte("deterministic-outcome"),
+			Outcome: executor.DeterministicOutcome{
+				PreflightFailure: &executor.DeterministicOutcomePreflightFailure{Code: "original-failure"},
+				Application: &executor.DeterministicApplicationEvidence{
+					Operations:   []executor.AppliedDeterministicOperationEvidence{{Operation: "original-operation"}},
+					ChangedPaths: []string{"original-changed-path"},
+				},
+			},
+		},
+		EffectiveBrief: executor.EffectiveExecutorBriefResult{
+			Artifact: &workflowstore.Artifact{Kind: "original-brief-artifact"},
+			Bytes:    []byte("effective-brief"),
+		},
+		Attempt: &PackageAttemptEvidence{
+			Attempt: workflowstore.ExecutionAttempt{Status: "original-attempt"},
+			Bytes:   []byte("attempt"),
+		},
+		Validation: []WorkflowPackageAuditValidationResult{{Status: "original-validation"}},
 	}
-	if bytes.Equal(evidence.EffectiveBrief.Bytes, input.Evidence.EffectiveBrief.Bytes) {
-		t.Fatal("13. effective-Brief bytes aliased supplied evidence")
+
+	copied := copyWorkflowPackageExecutionEvidence(source)
+	copied.Authority.AuthorityLayers[0].Bytes[0] ^= 0xff
+	copied.Authority.TicketMembers[0].MemberPath.String = "mutated-member"
+	copied.Authority.TicketDependencies[0].DependsOnRevisionRowID = 99
+	copied.Authority.BriefProjection.ValidationCommands[0].Command = "mutated-brief-command"
+	copied.Authority.DeliveryTicket.Bytes[0] ^= 0xff
+	copied.Authority.TicketDesignBrief.Bytes[0] ^= 0xff
+	copied.Authority.DeterministicOperations.Bytes[0] ^= 0xff
+	copied.Authority.DeterministicOperations.Coverage = "mutated-coverage"
+	copied.Authority.DeterministicOperations.Document.FeatureSlug = "mutated-feature"
+	copied.Authority.DeterministicOperations.Document.Operations[0].Path = "mutated-path"
+	copied.Authority.DeterministicOperations.Document.Operations[0].Implementation.Changes[0].OldText = "mutated-old"
+	*copied.Authority.DeterministicOperations.Document.Operations[0].Implementation.PreserveContent = false
+	schema := copied.Authority.DeterministicOperations.Document.SchemaVersion.(map[string]any)
+	schema["root"] = "mutated-root"
+	nested := schema["nested"].(map[string]any)
+	collection := nested["collection"].([]any)
+	collection[0].(map[string]any)["value"] = "mutated-value"
+	collection[1].([]byte)[0] ^= 0xff
+	copied.Assignment.Bytes[0] ^= 0xff
+	copied.Assignment.Assignment.AuthorityLayers[0].RelativePath = "mutated-layer"
+	copied.Assignment.Assignment.ValidationCommands[0].Command = "mutated-assignment-command"
+	copied.Deterministic.Bytes[0] ^= 0xff
+	copied.Deterministic.Outcome.PreflightFailure.Code = "mutated-failure"
+	copied.Deterministic.Outcome.Application.Operations[0].Operation = "mutated-operation"
+	copied.Deterministic.Outcome.Application.ChangedPaths[0] = "mutated-changed-path"
+	copied.EffectiveBrief.Bytes[0] ^= 0xff
+	copied.EffectiveBrief.Artifact.Kind = "mutated-brief-artifact"
+	copied.Attempt.Bytes[0] ^= 0xff
+	copied.Attempt.Attempt.Status = "mutated-attempt"
+	copied.Validation[0].Status = "mutated-validation"
+
+	if string(source.Authority.AuthorityLayers[0].Bytes) != "authority-layer" ||
+		source.Authority.TicketMembers[0].MemberPath.String != "member" ||
+		source.Authority.TicketDependencies[0].DependsOnRevisionRowID != 7 ||
+		source.Authority.BriefProjection.ValidationCommands[0].Command != "brief-command" ||
+		string(source.Authority.DeliveryTicket.Bytes) != "delivery-ticket" ||
+		string(source.Authority.TicketDesignBrief.Bytes) != "ticket-design-brief" ||
+		string(source.Authority.DeterministicOperations.Bytes) != "deterministic-operations" ||
+		source.Authority.DeterministicOperations.Coverage != "partial" {
+		t.Fatal("authority data aliased original evidence")
 	}
-	if bytes.Equal(evidence.Attempt.Bytes, input.Evidence.Attempt.Bytes) {
-		t.Fatal("14. package-attempt evidence bytes aliased supplied evidence")
+	if source.Authority.DeterministicOperations.Document.FeatureSlug != "original-feature" ||
+		source.Authority.DeterministicOperations.Document.Operations[0].Path != "original-path" ||
+		source.Authority.DeterministicOperations.Document.Operations[0].Implementation.Changes[0].OldText != "original-old" ||
+		!(*source.Authority.DeterministicOperations.Document.Operations[0].Implementation.PreserveContent) {
+		t.Fatal("deterministic operations document aliased original evidence")
 	}
-	if evidence.Validation[0].Status == "failed" {
-		t.Fatal("15. mapped validation entries aliased supplied evidence")
+	sourceSchema := source.Authority.DeterministicOperations.Document.SchemaVersion.(map[string]any)
+	sourceNested := sourceSchema["nested"].(map[string]any)
+	sourceCollection := sourceNested["collection"].([]any)
+	if sourceSchema["root"] != "original" || sourceCollection[0].(map[string]any)["value"] != "original" || string(sourceCollection[1].([]byte)) != "schema-bytes" {
+		t.Fatal("deterministic operations SchemaVersion aliased original evidence")
 	}
-	if commit.FileChanges[0].Path == "mutated-changed.go" {
-		t.Fatal("16. changed files aliased supplied commit")
+	if string(source.Assignment.Bytes) != "assignment" ||
+		source.Assignment.Assignment.AuthorityLayers[0].RelativePath != "original-layer" ||
+		source.Assignment.Assignment.ValidationCommands[0].Command != "assignment-command" {
+		t.Fatal("assignment evidence aliased original evidence")
 	}
-	if commit.FileChanges[0].Path == "mutated-relevant.go" {
-		t.Fatal("17. relevant source paths aliased supplied commit")
+	if string(source.Deterministic.Bytes) != "deterministic-outcome" ||
+		source.Deterministic.Outcome.PreflightFailure.Code != "original-failure" ||
+		source.Deterministic.Outcome.Application.Operations[0].Operation != "original-operation" ||
+		source.Deterministic.Outcome.Application.ChangedPaths[0] != "original-changed-path" {
+		t.Fatal("deterministic outcome aliased original evidence")
 	}
-	if commit.Diff[0] == input.Artifacts[0].Bytes[0] {
-		t.Fatal("18. committed diff artifact bytes aliased supplied commit")
+	if string(source.EffectiveBrief.Bytes) != "effective-brief" || source.EffectiveBrief.Artifact.Kind != "original-brief-artifact" {
+		t.Fatal("effective Brief aliased original evidence")
+	}
+	if string(source.Attempt.Bytes) != "attempt" || source.Attempt.Attempt.Status != "original-attempt" {
+		t.Fatal("attempt evidence aliased original evidence")
+	}
+	if source.Validation[0].Status != "original-validation" {
+		t.Fatal("validation evidence aliased original evidence")
+	}
+
+	empty := WorkflowPackageExecutionEvidence{
+		Authority: workflowpackages.ApprovedAuthority{
+			AuthorityLayers:    nil,
+			TicketMembers:      []workflowstore.DeliveryTicketRevisionMember{},
+			TicketDependencies: nil,
+			BriefProjection: planningartifacts.TicketDesignBriefProjection{
+				ValidationCommands: []planningartifacts.ValidationCommand{},
+			},
+			DeliveryTicket:    workflowpackages.ApprovedSourceDocument{Bytes: []byte{}},
+			TicketDesignBrief: workflowpackages.ApprovedDocument{Bytes: nil},
+			DeterministicOperations: &workflowpackages.ApprovedDeterministicOperations{
+				ApprovedDocument: workflowpackages.ApprovedDocument{Bytes: []byte{}},
+				Document:         &speccompiler.DeterministicOperationsDocument{Operations: []speccompiler.DeterministicOperation{}},
+			},
+		},
+		Assignment: executor.ExecutionAssignmentResult{
+			Bytes: nil,
+			Assignment: executor.ExecutionAssignment{
+				AuthorityLayers:    nil,
+				ValidationCommands: []executor.ExecutionAssignmentValidationCommand{},
+			},
+		},
+		Deterministic: executor.DeterministicOutcomeResult{
+			Bytes: []byte{},
+			Outcome: executor.DeterministicOutcome{Application: &executor.DeterministicApplicationEvidence{
+				Operations: nil, ChangedPaths: []string{},
+			}},
+		},
+		EffectiveBrief: executor.EffectiveExecutorBriefResult{Bytes: nil},
+	}
+	emptyCopy := copyWorkflowPackageExecutionEvidence(empty)
+	if emptyCopy.Authority.AuthorityLayers != nil || emptyCopy.Authority.TicketMembers == nil || emptyCopy.Authority.TicketDependencies != nil || emptyCopy.Authority.BriefProjection.ValidationCommands == nil ||
+		emptyCopy.Authority.DeterministicOperations.Document.Operations == nil || emptyCopy.Assignment.Assignment.AuthorityLayers != nil || emptyCopy.Assignment.Assignment.ValidationCommands == nil ||
+		emptyCopy.Deterministic.Outcome.Application.Operations != nil || emptyCopy.Deterministic.Outcome.Application.ChangedPaths == nil {
+		t.Fatal("copier did not preserve nil versus nonnil empty slices")
+	}
+	if emptyCopy.Authority.DeliveryTicket.Bytes == nil || emptyCopy.Authority.TicketDesignBrief.Bytes != nil || emptyCopy.Authority.DeterministicOperations.Bytes == nil ||
+		emptyCopy.Assignment.Bytes != nil || emptyCopy.Deterministic.Bytes == nil || emptyCopy.EffectiveBrief.Bytes != nil {
+		t.Fatal("copier did not preserve nil versus nonnil empty byte slices")
 	}
 }
 

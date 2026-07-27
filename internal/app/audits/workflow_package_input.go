@@ -248,7 +248,7 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		for i, layer := range src.Authority.AuthorityLayers {
 			layerCopy := layer
 			if layer.Bytes != nil {
-				layerCopy.Bytes = append([]byte(nil), layer.Bytes...)
+				layerCopy.Bytes = cloneWorkflowPackageBytes(layer.Bytes)
 			}
 			dst.Authority.AuthorityLayers[i] = layerCopy
 		}
@@ -271,17 +271,17 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 	}
 
 	if src.Authority.DeliveryTicket.Bytes != nil {
-		dst.Authority.DeliveryTicket.Bytes = append([]byte(nil), src.Authority.DeliveryTicket.Bytes...)
+		dst.Authority.DeliveryTicket.Bytes = cloneWorkflowPackageBytes(src.Authority.DeliveryTicket.Bytes)
 	}
 
 	if src.Authority.TicketDesignBrief.Bytes != nil {
-		dst.Authority.TicketDesignBrief.Bytes = append([]byte(nil), src.Authority.TicketDesignBrief.Bytes...)
+		dst.Authority.TicketDesignBrief.Bytes = cloneWorkflowPackageBytes(src.Authority.TicketDesignBrief.Bytes)
 	}
 
 	if src.Authority.DeterministicOperations != nil {
 		ops := *src.Authority.DeterministicOperations
 		if ops.Bytes != nil {
-			ops.Bytes = append([]byte(nil), ops.Bytes...)
+			ops.Bytes = cloneWorkflowPackageBytes(ops.Bytes)
 		}
 		if ops.Document != nil {
 			ops.Document = cloneDeterministicOperationsDocument(ops.Document)
@@ -302,11 +302,11 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 	}
 
 	if src.Assignment.Bytes != nil {
-		dst.Assignment.Bytes = append([]byte(nil), src.Assignment.Bytes...)
+		dst.Assignment.Bytes = cloneWorkflowPackageBytes(src.Assignment.Bytes)
 	}
 
 	if src.Deterministic.Bytes != nil {
-		dst.Deterministic.Bytes = append([]byte(nil), src.Deterministic.Bytes...)
+		dst.Deterministic.Bytes = cloneWorkflowPackageBytes(src.Deterministic.Bytes)
 	}
 
 	if src.Deterministic.Outcome.PreflightFailure != nil {
@@ -335,18 +335,25 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 	}
 
 	if src.EffectiveBrief.Bytes != nil {
-		dst.EffectiveBrief.Bytes = append([]byte(nil), src.EffectiveBrief.Bytes...)
+		dst.EffectiveBrief.Bytes = cloneWorkflowPackageBytes(src.EffectiveBrief.Bytes)
 	}
 
 	if src.Attempt != nil {
 		att := *src.Attempt
 		if att.Bytes != nil {
-			att.Bytes = append([]byte(nil), att.Bytes...)
+			att.Bytes = cloneWorkflowPackageBytes(att.Bytes)
 		}
 		dst.Attempt = &att
 	}
 
 	return dst
+}
+
+func cloneWorkflowPackageBytes(src []byte) []byte {
+	if src == nil {
+		return nil
+	}
+	return append(make([]byte, 0, len(src)), src...)
 }
 
 func cloneDeterministicOperationsDocument(doc *speccompiler.DeterministicOperationsDocument) *speccompiler.DeterministicOperationsDocument {
@@ -380,7 +387,7 @@ func cloneAny(v any) any {
 	}
 	switch val := v.(type) {
 	case []byte:
-		return append([]byte(nil), val...)
+		return cloneWorkflowPackageBytes(val)
 	case []any:
 		out := make([]any, len(val))
 		for i, elem := range val {
