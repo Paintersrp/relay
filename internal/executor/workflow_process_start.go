@@ -9,7 +9,7 @@ import (
 
 // recordProcessStart supports both the legacy pending attempt and a prepared
 // package attempt that was already marked running during admission.
-func (s *WorkflowExecutionService) recordProcessStart(ctx context.Context, attemptID, resultJSON string) (workflowstore.ExecutionAttempt, error) {
+func (s *Execution) recordProcessStart(ctx context.Context, attemptID, resultJSON string) (workflowstore.ExecutionAttempt, error) {
 	attempt, err := s.store.GetExecutionAttemptByAttemptID(ctx, attemptID)
 	if err != nil {
 		return workflowstore.ExecutionAttempt{}, fmt.Errorf("load execution attempt for process start: %w", err)

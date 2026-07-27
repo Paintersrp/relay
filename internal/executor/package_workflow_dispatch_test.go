@@ -19,7 +19,7 @@ func TestPackageWorkflowDispatchAdaptiveModesUsePreparedAttemptID(t *testing.T) 
 		t.Run(string(mode), func(t *testing.T) {
 			service, prepared := syntheticPackageWorkflowDispatch(t, mode)
 			var input PreparedAdaptiveLaunchInput
-			withPackageWorkflowDispatchSeams(t, func(_ context.Context, _ *WorkflowExecutionService, got PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+			withPackageWorkflowDispatchSeams(t, func(_ context.Context, _ *Execution, got PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 				input = got
 				return validAdaptiveDispatchLaunch(prepared, true), nil
 			}, nil)
@@ -36,7 +36,7 @@ func TestPackageWorkflowDispatchAdaptiveModesUsePreparedAttemptID(t *testing.T) 
 
 func TestPackageWorkflowDispatchPartialRequiresRetainedLease(t *testing.T) {
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveAfterPartialApplication)
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, true), nil
 	}, nil)
 	result, err := service.DispatchPreparedPackageWorkflow(context.Background(), prepared)
@@ -50,7 +50,7 @@ func TestPackageWorkflowDispatchPartialRequiresRetainedLease(t *testing.T) {
 	replacement := validAdaptiveDispatchLaunch(prepared, true)
 	replacement.Lease = cloneLease(*prepared.Deterministic.ActiveLease)
 	replacement.Lease.LeaseID = "replacement-lease"
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return replacement, nil
 	}, nil)
 	_, err = service.DispatchPreparedPackageWorkflow(context.Background(), prepared)
@@ -61,7 +61,7 @@ func TestPackageWorkflowDispatchPartialRequiresRetainedLease(t *testing.T) {
 
 func TestPackageWorkflowDispatchAdaptiveReadbackAndIdentity(t *testing.T) {
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveNoOperations)
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, false), nil
 	}, nil)
 	result, err := service.DispatchPreparedPackageWorkflow(context.Background(), prepared)
@@ -72,7 +72,7 @@ func TestPackageWorkflowDispatchAdaptiveReadbackAndIdentity(t *testing.T) {
 	mismatch := validAdaptiveDispatchLaunch(prepared, true)
 	mismatch.Attempt = cloneAttempt(*prepared.Adaptive.Attempt)
 	mismatch.Attempt.AttemptID = "other-attempt"
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return mismatch, nil
 	}, nil)
 	_, err = service.DispatchPreparedPackageWorkflow(context.Background(), prepared)
@@ -85,7 +85,7 @@ func TestPackageWorkflowDispatchAdaptiveLaunchErrorDoesNotFinalize(t *testing.T)
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveNoOperations)
 	launchErr := errors.New("launch failed")
 	finalizeCalls := 0
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, true), launchErr
 	}, func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error) {
 		finalizeCalls++
@@ -101,7 +101,7 @@ func TestPackageWorkflowDispatchDeterministicCompleteOrderingAndResult(t *testin
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
 	var launchInput PreparedAdaptiveLaunchInput
 	finalizeCalls := 0
-	withPackageWorkflowDispatchSeams(t, func(_ context.Context, _ *WorkflowExecutionService, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(_ context.Context, _ *Execution, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		launchInput = input
 		if finalizeCalls != 0 {
 			return PreparedAdaptiveLaunchResult{}, errors.New("finalized too early")
@@ -122,7 +122,7 @@ func TestPackageWorkflowDispatchDeterministicCompleteOrderingAndResult(t *testin
 func TestPackageWorkflowDispatchCompleteRejectsMalformedLaunchBeforeFinalization(t *testing.T) {
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
 	finalizeCalls := 0
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete, NewlyAdmitted: true}, nil
 	}, func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error) {
 		finalizeCalls++
@@ -138,7 +138,7 @@ func TestPackageWorkflowDispatchCompleteFinalizationFailurePreservesLaunch(t *te
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
 	finalizeErr := errors.New("finalization failed")
 	launch := PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete}
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return launch, nil
 	}, func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error) {
 		return workflowstore.Run{}, finalizeErr
@@ -151,7 +151,7 @@ func TestPackageWorkflowDispatchCompleteFinalizationFailurePreservesLaunch(t *te
 
 func TestPackageWorkflowDispatchCompleteIsIdempotent(t *testing.T) {
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete}, nil
 	}, nil)
 	first, err := service.DispatchPreparedPackageWorkflow(context.Background(), prepared)
@@ -168,7 +168,7 @@ func TestPackageWorkflowDispatchMalformedPreparationRejectedBeforeLaunch(t *test
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveNoOperations)
 	prepared.Run.ExecutionPackageRowID.Valid = false
 	launchCalls := 0
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		launchCalls++
 		return PreparedAdaptiveLaunchResult{}, nil
 	}, nil)
@@ -180,7 +180,7 @@ func TestPackageWorkflowDispatchMalformedPreparationRejectedBeforeLaunch(t *test
 
 func TestPackageWorkflowDispatchDoesNotModifyAttemptOrLease(t *testing.T) {
 	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveAfterPartialApplication)
-	withPackageWorkflowDispatchSeams(t, func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, true), nil
 	}, nil)
 	beforeAttempts, err := service.store.ListExecutionAttemptsByRun(context.Background(), prepared.Run.ID)
@@ -207,10 +207,10 @@ func TestPackageWorkflowDispatchDoesNotModifyAttemptOrLease(t *testing.T) {
 	}
 }
 
-func syntheticPackageWorkflowDispatch(t *testing.T, mode EffectiveExecutorBriefMode) (*WorkflowExecutionService, PackageWorkflowPreparationResult) {
+func syntheticPackageWorkflowDispatch(t *testing.T, mode EffectiveExecutorBriefMode) (*Execution, PackagePreparationResult) {
 	t.Helper()
 	fixture := newExecutionAssignmentFixture(t, mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication, "partial")
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
+	prepared := PackagePreparationResult{Run: fixture.run}
 	prepared.Deterministic.Outcome.Outcome.Outcome.Status = "applied"
 	prepared.Deterministic.Outcome.Outcome.Outcome.Coverage = "complete"
 	if mode == EffectiveExecutorBriefAdaptiveNoOperations {
@@ -233,10 +233,14 @@ func syntheticPackageWorkflowDispatch(t *testing.T, mode EffectiveExecutorBriefM
 	} else {
 		prepared.Adaptive.Mode = mode
 	}
-	return NewWorkflowExecutionService(fixture.store, nil, "package-dispatch-test", fixture.sourceVaultReader), prepared
+	exec, err := NewExecution(fixture.store, nil, "package-dispatch-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return exec, prepared
 }
 
-func validAdaptiveDispatchLaunch(prepared PackageWorkflowPreparationResult, newlyAdmitted bool) PreparedAdaptiveLaunchResult {
+func validAdaptiveDispatchLaunch(prepared PackagePreparationResult, newlyAdmitted bool) PreparedAdaptiveLaunchResult {
 	run := prepared.Run
 	attempt := *prepared.Adaptive.Attempt
 	lease := workflowstore.RepositoryBranchMutationLease{ID: 51, LeaseID: "fresh-lease", RepoTarget: run.RepoTarget, Branch: run.Branch, OwnerIdentity: run.RunID, State: workflowstore.RepositoryBranchMutationLeaseStateActive, UncertaintyState: workflowstore.RepositoryBranchMutationLeaseCertaintyCertain, ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired}
@@ -246,7 +250,7 @@ func validAdaptiveDispatchLaunch(prepared PackageWorkflowPreparationResult, newl
 	return PreparedAdaptiveLaunchResult{Mode: prepared.Adaptive.Mode, AdaptiveDispatchRequired: true, NewlyAdmitted: newlyAdmitted, NewlyLaunched: newlyAdmitted, Run: &run, Attempt: &attempt, Lease: &lease}
 }
 
-func withPackageWorkflowDispatchSeams(t *testing.T, launch func(context.Context, *WorkflowExecutionService, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error), finalize func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error)) {
+func withPackageWorkflowDispatchSeams(t *testing.T, launch func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error), finalize func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error)) {
 	t.Helper()
 	previousLaunch, previousFinalize := packageWorkflowDispatchLaunch, packageWorkflowDispatchFinalize
 	if launch != nil {

@@ -19,7 +19,7 @@ type WorkflowMutationLeaseReconcileResult struct {
 	Preflight workflowrepos.ExecutionPreflightResult
 }
 
-func (s *WorkflowExecutionService) acquireRunMutationLease(ctx context.Context, run workflowstore.Run) (workflowstore.RepositoryBranchMutationLease, error) {
+func (s *Execution) acquireRunMutationLease(ctx context.Context, run workflowstore.Run) (workflowstore.RepositoryBranchMutationLease, error) {
 	lease, err := s.runs.AcquireRunMutationLease(ctx, run.RunID)
 	if err != nil {
 		return workflowstore.RepositoryBranchMutationLease{}, fmt.Errorf("acquire repository and branch mutation lease: %w", err)
@@ -27,7 +27,7 @@ func (s *WorkflowExecutionService) acquireRunMutationLease(ctx context.Context, 
 	return lease, nil
 }
 
-func (s *WorkflowExecutionService) releaseRunMutationLease(ctx context.Context, run workflowstore.Run, leaseID string) error {
+func (s *Execution) releaseRunMutationLease(ctx context.Context, run workflowstore.Run, leaseID string) error {
 	if strings.TrimSpace(leaseID) == "" {
 		return nil
 	}
@@ -37,7 +37,7 @@ func (s *WorkflowExecutionService) releaseRunMutationLease(ctx context.Context, 
 	return nil
 }
 
-func (s *WorkflowExecutionService) retainRunMutationLease(ctx context.Context, run workflowstore.Run, leaseID, reason string) error {
+func (s *Execution) retainRunMutationLease(ctx context.Context, run workflowstore.Run, leaseID, reason string) error {
 	if strings.TrimSpace(leaseID) == "" {
 		return nil
 	}
@@ -47,7 +47,7 @@ func (s *WorkflowExecutionService) retainRunMutationLease(ctx context.Context, r
 	return nil
 }
 
-func (s *WorkflowExecutionService) reconcileRunMutationLease(
+func (s *Execution) reconcileRunMutationLease(
 	ctx context.Context,
 	run workflowstore.Run,
 	repository workflowstore.RepositoryTarget,
@@ -83,7 +83,7 @@ func (s *WorkflowExecutionService) reconcileRunMutationLease(
 	return true, preflight, nil
 }
 
-func (s *WorkflowExecutionService) settleRunMutationLeaseAfterTerminalAttempt(
+func (s *Execution) settleRunMutationLeaseAfterTerminalAttempt(
 	ctx context.Context,
 	run workflowstore.Run,
 	repository workflowstore.RepositoryTarget,
@@ -136,7 +136,7 @@ func deterministicSourceMutationStarted(result *WorkflowApplierResult) bool {
 		len(result.ImplementationResult.UncertainPaths) != 0)
 }
 
-func (s *WorkflowExecutionService) settleRunMutationLeaseAfterDeterministicResult(
+func (s *Execution) settleRunMutationLeaseAfterDeterministicResult(
 	ctx context.Context,
 	run workflowstore.Run,
 	repository workflowstore.RepositoryTarget,
@@ -156,7 +156,7 @@ func (s *WorkflowExecutionService) settleRunMutationLeaseAfterDeterministicResul
 	return s.releaseRunMutationLease(ctx, run, lease.LeaseID)
 }
 
-func (s *WorkflowExecutionService) settleRunMutationLeaseAfterPrelaunchFailure(
+func (s *Execution) settleRunMutationLeaseAfterPrelaunchFailure(
 	ctx context.Context,
 	run workflowstore.Run,
 	repository workflowstore.RepositoryTarget,
@@ -176,7 +176,7 @@ func (s *WorkflowExecutionService) settleRunMutationLeaseAfterPrelaunchFailure(
 	return err
 }
 
-func (s *WorkflowExecutionService) recordMutationLeaseIdentity(
+func (s *Execution) recordMutationLeaseIdentity(
 	ctx context.Context,
 	attempt workflowstore.ExecutionAttempt,
 	leaseID string,
@@ -204,7 +204,7 @@ func (s *WorkflowExecutionService) recordMutationLeaseIdentity(
 	return nil
 }
 
-func (s *WorkflowExecutionService) failPrelaunchAttemptWithMutationLease(
+func (s *Execution) failPrelaunchAttemptWithMutationLease(
 	ctx context.Context,
 	begun workflowruns.BeginExecutionAttemptResult,
 	preflight workflowrepos.ExecutionPreflightResult,
@@ -227,7 +227,7 @@ func (s *WorkflowExecutionService) failPrelaunchAttemptWithMutationLease(
 // mutation lease survived a process failure or service restart. It preserves an
 // active lease until process and repository evidence together prove release is
 // safe.
-func (s *WorkflowExecutionService) ReconcileMutationLease(ctx context.Context, runID string) (WorkflowMutationLeaseReconcileResult, error) {
+func (s *Execution) ReconcileMutationLease(ctx context.Context, runID string) (WorkflowMutationLeaseReconcileResult, error) {
 	run, err := s.store.GetRunByRunID(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return WorkflowMutationLeaseReconcileResult{}, err

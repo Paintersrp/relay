@@ -128,11 +128,11 @@ func TestPackageWorkflowPreparationModeMatrix(t *testing.T) {
 				}
 			}
 
-			service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
+			service, err := NewPackagePreparation(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
+			result, err := service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -224,11 +224,11 @@ func TestPackageWorkflowPreparationNoMutationFailureLeavesNoLease(t *testing.T) 
 
 func TestPackageWorkflowPreparationIdempotencyAndCompleteBehavior(t *testing.T) {
 	adaptiveFixture := newExecutionAssignmentFixture(t, false, "")
-	service, err := NewPackageWorkflowPreparationService(adaptiveFixture.store, adaptiveFixture.sourceVaultReader)
+	service, err := NewPackagePreparation(adaptiveFixture.store, adaptiveFixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := PackageWorkflowPreparationInput{RunID: adaptiveFixture.run.RunID, Adapter: "codex", Model: "model"}
+	input := PackagePreparationInput{RunID: adaptiveFixture.run.RunID, Adapter: "codex", Model: "model"}
 	first, err := service.Prepare(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -265,11 +265,11 @@ func TestPackageWorkflowPreparationIdempotencyAndCompleteBehavior(t *testing.T) 
 		}
 		return applicationResult(model), nil
 	}
-	complete, err := NewPackageWorkflowPreparationService(completeFixture.store, completeFixture.sourceVaultReader)
+	complete, err := NewPackagePreparation(completeFixture.store, completeFixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	completeResult, err := complete.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: completeFixture.run.RunID, Adapter: "codex", Model: "model"})
+	completeResult, err := complete.Prepare(context.Background(), PackagePreparationInput{RunID: completeFixture.run.RunID, Adapter: "codex", Model: "model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,11 +303,11 @@ func TestPackageWorkflowPreparationFailureShortCircuiting(t *testing.T) {
 		adaptiveCalls++
 		return AdaptiveExecutionAttemptResult{}, nil
 	}
-	service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
+	service, err := NewPackagePreparation(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"}); !errors.Is(err, admissionErr) {
+	if _, err := service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"}); !errors.Is(err, admissionErr) {
 		t.Fatalf("admission error = %v", err)
 	}
 	if deterministicCalls != 0 || adaptiveCalls != 0 {
@@ -322,7 +322,7 @@ func TestPackageWorkflowPreparationFailureShortCircuiting(t *testing.T) {
 		deterministicCalls++
 		return PackageDeterministicExecutionResult{}, deterministicErr
 	}
-	if _, err := service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"}); !errors.Is(err, deterministicErr) {
+	if _, err := service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"}); !errors.Is(err, deterministicErr) {
 		t.Fatalf("deterministic error = %v", err)
 	}
 	if adaptiveCalls != 0 {
@@ -332,16 +332,16 @@ func TestPackageWorkflowPreparationFailureShortCircuiting(t *testing.T) {
 	packageWorkflowExecuteDeterministic = func(context.Context, *PackageDeterministicExecutionService, string) (PackageDeterministicExecutionResult, error) {
 		return PackageDeterministicExecutionResult{Outcome: DeterministicOutcomeResult{Outcome: DeterministicOutcome{Outcome: DeterministicOutcomeSummary{Status: "unsupported"}}}}, nil
 	}
-	if _, err := service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"}); !errors.Is(err, ErrPackageWorkflowPreparationConflict) {
+	if _, err := service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"}); !errors.Is(err, ErrPackagePreparationConflict) {
 		t.Fatalf("mode disagreement error = %v", err)
 	}
 }
 
-func mustPreparePackageWorkflow(t *testing.T, fixture *executionAssignmentFixture) (PackageWorkflowPreparationResult, error) {
+func mustPreparePackageWorkflow(t *testing.T, fixture *executionAssignmentFixture) (PackagePreparationResult, error) {
 	t.Helper()
-	service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
+	service, err := NewPackagePreparation(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
+	return service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
 }

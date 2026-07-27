@@ -53,7 +53,7 @@ func (a *captureAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
 type workflowFixture struct {
 	store   *workflowstore.Store
 	runs    *workflowruns.Service
-	service *WorkflowExecutionService
+	service *Execution
 	run     workflowstore.Run
 	brief   []byte
 	adapter *captureAdapter
@@ -145,7 +145,10 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 		t.Fatal(err)
 	}
 	adapter := &captureAdapter{id: AdapterOpenCodeGo}
-	service := NewWorkflowExecutionService(store, nil, "relay-test", newUnavailableSourceVaultReader())
+	service, err := NewExecution(store, nil, "relay-test", newUnavailableSourceVaultReader())
+	if err != nil {
+		t.Fatal(err)
+	}
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		return workflowrepos.ExecutionPreflightResult{OK: true}
 	}

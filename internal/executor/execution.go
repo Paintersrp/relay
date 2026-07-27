@@ -131,10 +131,10 @@ func (r *workflowRuntime) closeOutputs() (workflowOutputSnapshot, workflowOutput
 	return stdoutSnapshot, stderrSnapshot, joined
 }
 
-type WorkflowExecutionService struct {
+type Execution struct {
 	store               *workflowstore.Store
 	runs                *workflowruns.Service
-	packagePreparation  *PackageWorkflowPreparationService
+	packagePreparation  *PackagePreparation
 	adaptiveAdmission   *AdaptiveDispatchAdmissionService
 	log                 *slog.Logger
 	ownerInstanceID     string
@@ -151,24 +151,39 @@ type WorkflowExecutionService struct {
 }
 
 var (
-	packageWorkflowStartPrepare = func(ctx context.Context, service *PackageWorkflowPreparationService, input PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+	packageWorkflowStartPrepare = func(ctx context.Context, service *PackagePreparation, input PackagePreparationInput) (PackagePreparationResult, error) {
 		return service.Prepare(ctx, input)
 	}
-	packageWorkflowStartDispatch = func(ctx context.Context, service *WorkflowExecutionService, prepared PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+	packageWorkflowStartDispatch = func(ctx context.Context, service *Execution, prepared PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 		return service.DispatchPreparedPackageWorkflow(ctx, prepared)
 	}
 )
 
-func NewWorkflowExecutionService(
+func NewExecution(
 	store *workflowstore.Store,
 	log *slog.Logger,
 	ownerInstanceID string,
 	sourceVaults executionpackages.SourceVaultReader,
-) *WorkflowExecutionService {
-	runService, _ := workflowruns.NewService(store)
-	packagePreparation, _ := NewPackageWorkflowPreparationService(store, sourceVaults)
-	adaptiveAdmission, _ := NewAdaptiveDispatchAdmissionService(store, sourceVaults)
-	return &WorkflowExecutionService{
+) (*Execution, error) {
+	if store == nil {
+		return nil, fmt.Errorf("workflow store is required")
+	}
+	if sourceVaults == nil {
+		return nil, fmt.Errorf("source-vault reader is required")
+	}
+	runService, err := workflowruns.NewService(store)
+	if err != nil {
+		return nil, err
+	}
+	packagePreparation, err := NewPackagePreparation(store, sourceVaults)
+	if err != nil {
+		return nil, err
+	}
+	adaptiveAdmission, err := NewAdaptiveDispatchAdmissionService(store, sourceVaults)
+	if err != nil {
+		return nil, err
+	}
+	return &Execution{
 		store:               store,
 		runs:                runService,
 		packagePreparation:  packagePreparation,
@@ -186,10 +201,10 @@ func NewWorkflowExecutionService(
 		},
 		launch: func(fn func()) { go fn() },
 		active: map[string]*workflowRuntime{},
-	}
+	}, nil
 }
 
-func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStartInput) (WorkflowStartResult, error) {
+func (s *Execution) Start(ctx context.Context, input WorkflowStartInput) (WorkflowStartResult, error) {
 	if s == nil || s.store == nil || s.runs == nil {
 		return WorkflowStartResult{}, fmt.Errorf("workflow execution service is unavailable")
 	}
@@ -212,7 +227,7 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 		if s.packagePreparation == nil {
 			return WorkflowStartResult{Run: run}, fmt.Errorf("package workflow preparation service is unavailable")
 		}
-		prepared, err := packageWorkflowStartPrepare(ctx, s.packagePreparation, PackageWorkflowPreparationInput{
+		prepared, err := packageWorkflowStartPrepare(ctx, s.packagePreparation, PackagePreparationInput{
 			RunID:   input.RunID,
 			Adapter: normalizedAdapter,
 			Model:   input.Model,
@@ -470,7 +485,7 @@ func workflowStartResultFromPackage(packageResult PackageWorkflowDispatchResult)
 	return result
 }
 
-func (s *WorkflowExecutionService) Cancel(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
+func (s *Execution) Cancel(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
 	attempt, err := s.runs.RequestExecutionAttemptCancellation(ctx, strings.TrimSpace(runID), strings.TrimSpace(attemptID))
 	if err != nil {
 		return WorkflowCancelResult{}, err
@@ -491,7 +506,7 @@ func (s *WorkflowExecutionService) Cancel(ctx context.Context, runID, attemptID 
 	return s.reconcileAttempt(ctx, runID, attempt, true)
 }
 
-func (s *WorkflowExecutionService) Reconcile(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
+func (s *Execution) Reconcile(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
 	run, attempt, err := s.loadAttemptForRun(ctx, strings.TrimSpace(runID), strings.TrimSpace(attemptID))
 	if err != nil {
 		return WorkflowCancelResult{}, err
@@ -502,7 +517,7 @@ func (s *WorkflowExecutionService) Reconcile(ctx context.Context, runID, attempt
 	return s.reconcileAttempt(ctx, run.RunID, attempt, false)
 }
 
-func (s *WorkflowExecutionService) reconcileAttempt(ctx context.Context, runID string, attempt workflowstore.ExecutionAttempt, forceCancel bool) (WorkflowCancelResult, error) {
+func (s *Execution) reconcileAttempt(ctx context.Context, runID string, attempt workflowstore.ExecutionAttempt, forceCancel bool) (WorkflowCancelResult, error) {
 	var state workflowAttemptRuntime
 	if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
 		return WorkflowCancelResult{}, fmt.Errorf("decode execution attempt runtime: %w", err)
@@ -562,7 +577,7 @@ func (s *WorkflowExecutionService) reconcileAttempt(ctx context.Context, runID s
 	return s.finishReconciledAttempt(ctx, attempt, state, reconciledTerminalStatus(attempt, state, forceCancel))
 }
 
-func (s *WorkflowExecutionService) finishReconciledAttempt(ctx context.Context, attempt workflowstore.ExecutionAttempt, state workflowAttemptRuntime, status string) (WorkflowCancelResult, error) {
+func (s *Execution) finishReconciledAttempt(ctx context.Context, attempt workflowstore.ExecutionAttempt, state workflowAttemptRuntime, status string) (WorkflowCancelResult, error) {
 	state.CleanupPending = false
 	state.PendingTerminalStatus = ""
 	state.TerminationVerified = true
@@ -603,7 +618,7 @@ func reconciledTerminalStatus(attempt workflowstore.ExecutionAttempt, state work
 	}
 }
 
-func (s *WorkflowExecutionService) loadAttemptForRun(ctx context.Context, runID, attemptID string) (workflowstore.Run, workflowstore.ExecutionAttempt, error) {
+func (s *Execution) loadAttemptForRun(ctx context.Context, runID, attemptID string) (workflowstore.Run, workflowstore.ExecutionAttempt, error) {
 	run, err := s.store.GetRunByRunID(ctx, runID)
 	if err != nil {
 		return workflowstore.Run{}, workflowstore.ExecutionAttempt{}, err
@@ -618,7 +633,7 @@ func (s *WorkflowExecutionService) loadAttemptForRun(ctx context.Context, runID,
 	return run, attempt, nil
 }
 
-func (s *WorkflowExecutionService) ListAttempts(ctx context.Context, runID string) ([]WorkflowAttemptView, error) {
+func (s *Execution) ListAttempts(ctx context.Context, runID string) ([]WorkflowAttemptView, error) {
 	run, err := s.store.GetRunByRunID(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return nil, err
@@ -642,7 +657,7 @@ func (s *WorkflowExecutionService) ListAttempts(ctx context.Context, runID strin
 	return views, nil
 }
 
-func (s *WorkflowExecutionService) GetAttempt(ctx context.Context, runID, attemptID string) (WorkflowAttemptView, error) {
+func (s *Execution) GetAttempt(ctx context.Context, runID, attemptID string) (WorkflowAttemptView, error) {
 	run, err := s.store.GetRunByRunID(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return WorkflowAttemptView{}, err
@@ -657,7 +672,7 @@ func (s *WorkflowExecutionService) GetAttempt(ctx context.Context, runID, attemp
 	return s.attemptView(ctx, attempt)
 }
 
-func (s *WorkflowExecutionService) attemptView(ctx context.Context, attempt workflowstore.ExecutionAttempt) (WorkflowAttemptView, error) {
+func (s *Execution) attemptView(ctx context.Context, attempt workflowstore.ExecutionAttempt) (WorkflowAttemptView, error) {
 	artifacts, err := s.store.ListArtifactsByExecutionAttempt(ctx, attempt.ID)
 	if err != nil {
 		return WorkflowAttemptView{}, err
@@ -759,7 +774,7 @@ func buildWorkflowExecutionEvidence(state workflowAttemptRuntime, parsed workflo
 	}
 }
 
-func (s *WorkflowExecutionService) recordEffectiveBriefIdentity(ctx context.Context, attempt workflowstore.ExecutionAttempt, selected effectiveBriefInput) error {
+func (s *Execution) recordEffectiveBriefIdentity(ctx context.Context, attempt workflowstore.ExecutionAttempt, selected effectiveBriefInput) error {
 	state := workflowAttemptRuntime{}
 	current, err := s.store.GetExecutionAttemptByAttemptID(ctx, attempt.AttemptID)
 	if err != nil {
@@ -783,7 +798,7 @@ func (s *WorkflowExecutionService) recordEffectiveBriefIdentity(ctx context.Cont
 	return nil
 }
 
-func (s *WorkflowExecutionService) execute(
+func (s *Execution) execute(
 	ctx context.Context,
 	run workflowstore.Run,
 	attempt workflowstore.ExecutionAttempt,
@@ -1005,7 +1020,7 @@ func (s *WorkflowExecutionService) execute(
 	}
 }
 
-func (s *WorkflowExecutionService) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, selected *effectiveBriefInput, message string) {
+func (s *Execution) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, selected *effectiveBriefInput, message string) {
 	state := workflowAttemptRuntime{}
 	if current, err := s.store.GetExecutionAttemptByAttemptID(context.Background(), attempt.AttemptID); err == nil && strings.TrimSpace(current.ResultJSON) != "" {
 		_ = json.Unmarshal([]byte(current.ResultJSON), &state)
@@ -1027,7 +1042,7 @@ func (s *WorkflowExecutionService) finishPrelaunchFailure(attempt workflowstore.
 	}
 }
 
-func (s *WorkflowExecutionService) persistAttemptEvidence(
+func (s *Execution) persistAttemptEvidence(
 	attempt workflowstore.ExecutionAttempt,
 	invocation ExecutorInvocation,
 	stdoutPath, stderrPath, normalized, resultFilePath string,
@@ -1121,7 +1136,7 @@ func (s *WorkflowExecutionService) persistAttemptEvidence(
 	})
 }
 
-func (s *WorkflowExecutionService) loadVerifiedBrief(ctx context.Context, run workflowstore.Run) ([]byte, workflowstore.Artifact, string, error) {
+func (s *Execution) loadVerifiedBrief(ctx context.Context, run workflowstore.Run) ([]byte, workflowstore.Artifact, string, error) {
 	artifacts, err := s.store.ListArtifactsByRun(ctx, run.ID)
 	if err != nil {
 		return nil, workflowstore.Artifact{}, "", err
@@ -1196,19 +1211,19 @@ func appendWorkflowError(base, extra string) string {
 	return base + "; " + extra
 }
 
-func (s *WorkflowExecutionService) putRuntime(attemptID string, runtime *workflowRuntime) {
+func (s *Execution) putRuntime(attemptID string, runtime *workflowRuntime) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.active[attemptID] = runtime
 }
 
-func (s *WorkflowExecutionService) getRuntime(attemptID string) *workflowRuntime {
+func (s *Execution) getRuntime(attemptID string) *workflowRuntime {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.active[attemptID]
 }
 
-func (s *WorkflowExecutionService) deleteRuntime(attemptID string) {
+func (s *Execution) deleteRuntime(attemptID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.active, attemptID)

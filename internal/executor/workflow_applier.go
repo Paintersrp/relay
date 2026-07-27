@@ -44,7 +44,7 @@ func defaultWorkflowApplier() workflowApplierFunc {
 	return service.Apply
 }
 
-func (s *WorkflowExecutionService) applyDeterministicFirst(
+func (s *Execution) applyDeterministicFirst(
 	ctx context.Context,
 	run workflowstore.Run,
 	repoPath string,
@@ -153,11 +153,11 @@ func writeJSONEvidence(ctx context.Context, writer workflowRunEvidenceWriter, ki
 	return nil
 }
 
-func (s *WorkflowExecutionService) loadVerifiedExecutionSpec(ctx context.Context, run workflowstore.Run) ([]byte, workflowstore.Artifact, error) {
+func (s *Execution) loadVerifiedExecutionSpec(ctx context.Context, run workflowstore.Run) ([]byte, workflowstore.Artifact, error) {
 	return s.loadVerifiedRunArtifact(ctx, run, "execution_spec")
 }
 
-func (s *WorkflowExecutionService) loadVerifiedRunArtifact(ctx context.Context, run workflowstore.Run, kind string) ([]byte, workflowstore.Artifact, error) {
+func (s *Execution) loadVerifiedRunArtifact(ctx context.Context, run workflowstore.Run, kind string) ([]byte, workflowstore.Artifact, error) {
 	artifacts, err := s.store.ListArtifactsByRun(ctx, run.ID)
 	if err != nil {
 		return nil, workflowstore.Artifact{}, err

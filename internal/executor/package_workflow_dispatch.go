@@ -13,7 +13,7 @@ import (
 var ErrPackageWorkflowDispatchConflict = errors.New("package workflow dispatch conflicts with prepared execution state")
 
 type PackageWorkflowDispatchResult struct {
-	Preparation  PackageWorkflowPreparationResult
+	Preparation  PackagePreparationResult
 	Launch       PreparedAdaptiveLaunchResult
 	FinalizedRun *workflowstore.Run
 }
@@ -21,7 +21,7 @@ type PackageWorkflowDispatchResult struct {
 // These seams keep coordinator ordering and failure tests focused on this
 // service while the production path remains owned by the existing services.
 var (
-	packageWorkflowDispatchLaunch = func(ctx context.Context, service *WorkflowExecutionService, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+	packageWorkflowDispatchLaunch = func(ctx context.Context, service *Execution, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return service.LaunchPreparedAdaptive(ctx, input)
 	}
 	packageWorkflowDispatchFinalize = func(ctx context.Context, service *workflowruns.Service, runID string) (workflowstore.Run, error) {
@@ -29,7 +29,7 @@ var (
 	}
 )
 
-func (s *WorkflowExecutionService) DispatchPreparedPackageWorkflow(ctx context.Context, prepared PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+func (s *Execution) DispatchPreparedPackageWorkflow(ctx context.Context, prepared PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 	result := PackageWorkflowDispatchResult{Preparation: prepared}
 	mode, err := verifyPackageWorkflowDispatchPreparation(s, prepared)
 	if err != nil {
@@ -71,7 +71,7 @@ func (s *WorkflowExecutionService) DispatchPreparedPackageWorkflow(ctx context.C
 	return result, nil
 }
 
-func verifyPackageWorkflowDispatchPreparation(s *WorkflowExecutionService, prepared PackageWorkflowPreparationResult) (EffectiveExecutorBriefMode, error) {
+func verifyPackageWorkflowDispatchPreparation(s *Execution, prepared PackagePreparationResult) (EffectiveExecutorBriefMode, error) {
 	if s == nil || s.store == nil || s.runs == nil {
 		return "", packageWorkflowDispatchConflict("execution service is unavailable")
 	}
@@ -86,24 +86,24 @@ func verifyPackageWorkflowDispatchPreparation(s *WorkflowExecutionService, prepa
 	if err != nil {
 		return "", packageWorkflowDispatchConflict(err.Error())
 	}
-	input := PackageWorkflowPreparationInput{RunID: prepared.Run.RunID}
+	input := PackagePreparationInput{RunID: prepared.Run.RunID}
 	if mode != EffectiveExecutorBriefDeterministicComplete {
 		if prepared.Adaptive.Attempt == nil {
 			return "", packageWorkflowDispatchConflict("adaptive preparation has no attempt")
 		}
 		input.Adapter = prepared.Adaptive.Attempt.Adapter
 		input.Model = prepared.Adaptive.Attempt.Model
-		if err := validatePackageWorkflowPreparationInput(input); err != nil {
+		if err := validatePackagePreparationInput(input); err != nil {
 			return "", packageWorkflowDispatchConflict(err.Error())
 		}
 	}
-	if err := verifyPackageWorkflowPreparation(prepared.Run, prepared.Deterministic, prepared.Adaptive, input); err != nil {
+	if err := verifyPackagePreparation(prepared.Run, prepared.Deterministic, prepared.Adaptive, input); err != nil {
 		return "", packageWorkflowDispatchConflict(err.Error())
 	}
 	return mode, nil
 }
 
-func verifyPackageWorkflowAdaptiveLaunch(prepared PackageWorkflowPreparationResult, launch PreparedAdaptiveLaunchResult) error {
+func verifyPackageWorkflowAdaptiveLaunch(prepared PackagePreparationResult, launch PreparedAdaptiveLaunchResult) error {
 	if launch.Mode != prepared.Adaptive.Mode || !launch.AdaptiveDispatchRequired || launch.Run == nil || launch.Attempt == nil || launch.Lease == nil {
 		return packageWorkflowDispatchConflict("adaptive launch result shape")
 	}

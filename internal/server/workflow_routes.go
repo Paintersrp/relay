@@ -81,7 +81,10 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		panic(err)
 	}
-	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID, sourceVaults)
+	executionService, err := executor.NewExecution(workflowStore, log, ownerInstanceID, sourceVaults)
+	if err != nil {
+		panic(err)
+	}
 	ticketService, err := apptickets.NewService(workflowStore)
 	if err != nil {
 		panic(err)

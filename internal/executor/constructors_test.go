@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"testing"
 
@@ -22,8 +23,8 @@ var executorConstructors = []struct {
 	{"NewAdaptiveExecutionAttemptService", NewAdaptiveExecutionAttemptService, true},
 	{"NewAdaptiveDispatchAdmissionService", NewAdaptiveDispatchAdmissionService, true},
 	{"NewPackageDeterministicExecutionService", NewPackageDeterministicExecutionService, true},
-	{"NewPackageWorkflowPreparationService", NewPackageWorkflowPreparationService, true},
-	{"NewWorkflowExecutionService", NewWorkflowExecutionService, false},
+	{"NewPackagePreparation", NewPackagePreparation, true},
+	{"NewExecution", NewExecution, true},
 }
 
 func TestExecutorConstructorsAreNotVariadic(t *testing.T) {
@@ -48,12 +49,26 @@ func TestErrorReturningConstructorsRejectNilReader(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = store.Close() })
 			fn := reflect.ValueOf(c.value)
-			result := fn.Call([]reflect.Value{
-				reflect.ValueOf(store),
-				reflect.Zero(readerType),
-			})
+			var args []reflect.Value
+			if fn.Type().NumIn() == 4 {
+				args = []reflect.Value{
+					reflect.ValueOf(store),
+					reflect.Zero(reflect.TypeOf((*slog.Logger)(nil))),
+					reflect.ValueOf("test-owner"),
+					reflect.Zero(readerType),
+				}
+			} else {
+				args = []reflect.Value{
+					reflect.ValueOf(store),
+					reflect.Zero(readerType),
+				}
+			}
+			result := fn.Call(args)
 			if err := result[1].Interface(); err == nil {
 				t.Fatal("nil reader was accepted")
+			}
+			if !result[0].IsNil() {
+				t.Fatal("constructor returned non-nil object on failure")
 			}
 		})
 	}
@@ -74,10 +89,21 @@ func TestErrorReturningConstructorsSucceedWithNonNilReader(t *testing.T) {
 			t.Cleanup(func() { _ = store.Close() })
 			fn := reflect.ValueOf(c.value)
 			reader := newUnavailableSourceVaultReader()
-			result := fn.Call([]reflect.Value{
-				reflect.ValueOf(store),
-				reflect.ValueOf(reader).Convert(readerType),
-			})
+			var args []reflect.Value
+			if fn.Type().NumIn() == 4 {
+				args = []reflect.Value{
+					reflect.ValueOf(store),
+					reflect.Zero(reflect.TypeOf((*slog.Logger)(nil))),
+					reflect.ValueOf("test-owner"),
+					reflect.ValueOf(reader).Convert(readerType),
+				}
+			} else {
+				args = []reflect.Value{
+					reflect.ValueOf(store),
+					reflect.ValueOf(reader).Convert(readerType),
+				}
+			}
+			result := fn.Call(args)
 			if err := result[1].Interface(); err != nil {
 				t.Fatalf("constructor failed: %v", err)
 			}
@@ -88,10 +114,13 @@ func TestErrorReturningConstructorsSucceedWithNonNilReader(t *testing.T) {
 	}
 }
 
-func TestWorkflowExecutionServicePassesReaderToNestedPackageServices(t *testing.T) {
+func TestExecutionPassesReaderToNestedPackageServices(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	reader := fixture.sourceVaultReader
-	service := NewWorkflowExecutionService(fixture.store, nil, "reader-test", reader)
+	service, err := NewExecution(fixture.store, nil, "reader-test", reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if service.packagePreparation == nil {
 		t.Fatal("packagePreparation was not initialized")
 	}
@@ -99,33 +128,33 @@ func TestWorkflowExecutionServicePassesReaderToNestedPackageServices(t *testing.
 		t.Fatal("adaptiveAdmission was not initialized")
 	}
 	prepareExecutionAssignment(t, fixture)
-	if _, err := service.packagePreparation.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "opencode_go", Model: "model"}); err != nil {
+	if _, err := service.packagePreparation.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "opencode_go", Model: "model"}); err != nil {
 		t.Fatalf("packagePreparation cannot use the reader: %v", err)
 	}
 }
 
-func TestPackageWorkflowPreparationSucceedsWithValidRetainedTicket(t *testing.T) {
+func TestPackagePreparationSucceedsWithValidRetainedTicket(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	prepareExecutionAssignment(t, fixture)
-	service, err := NewPackageWorkflowPreparationService(fixture.store, fixture.sourceVaultReader)
+	service, err := NewPackagePreparation(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
+	_, err = service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
 	if err != nil {
 		t.Fatalf("preparation failed with valid retained ticket: %v", err)
 	}
 }
 
-func TestPackageWorkflowPreparationFailsClosedWithMissingRetainedTicket(t *testing.T) {
+func TestPackagePreparationFailsClosedWithMissingRetainedTicket(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	prepareExecutionAssignment(t, fixture)
 	reader := newUnavailableSourceVaultReader()
-	service, err := NewPackageWorkflowPreparationService(fixture.store, reader)
+	service, err := NewPackagePreparation(fixture.store, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.Prepare(context.Background(), PackageWorkflowPreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
+	_, err = service.Prepare(context.Background(), PackagePreparationInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "model"})
 	if err == nil {
 		t.Fatal("missing retained ticket was accepted")
 	}
@@ -134,16 +163,16 @@ func TestPackageWorkflowPreparationFailsClosedWithMissingRetainedTicket(t *testi
 	}
 }
 
-func TestWorkflowExecutionServiceLegacyNonPackageStartAvoidsPackagePath(t *testing.T) {
+func TestExecutionLegacyNonPackageStartAvoidsPackagePath(t *testing.T) {
 	fixture := newWorkflowFixture(t)
 	fixture.service.runner = successfulRunner
 	packagePathTaken := false
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			packagePathTaken = true
-			return PackageWorkflowPreparationResult{}, errors.New("package path should not be taken")
+			return PackagePreparationResult{}, errors.New("package path should not be taken")
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			packagePathTaken = true
 			return PackageWorkflowDispatchResult{}, errors.New("package path should not be taken")
 		},
@@ -161,10 +190,13 @@ func TestWorkflowExecutionServiceLegacyNonPackageStartAvoidsPackagePath(t *testi
 	}
 }
 
-func TestWorkflowExecutionServiceValidReaderInitializesPackageServices(t *testing.T) {
+func TestExecutionValidReaderInitializesPackageServices(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	prepareExecutionAssignment(t, fixture)
-	service := NewWorkflowExecutionService(fixture.store, nil, "reader-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "reader-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if service.packagePreparation == nil {
 		t.Fatal("packagePreparation is nil with a valid reader")
 	}
@@ -173,15 +205,23 @@ func TestWorkflowExecutionServiceValidReaderInitializesPackageServices(t *testin
 	}
 }
 
-func TestWorkflowExecutionServiceNilReaderLeavesPackageServicesNil(t *testing.T) {
+func TestNewExecutionRejectsNilStoreAndReader(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	prepareExecutionAssignment(t, fixture)
-	service := NewWorkflowExecutionService(fixture.store, nil, "reader-test", nil)
-	if service.packagePreparation != nil {
-		t.Fatal("packagePreparation must be nil when reader is nil")
+
+	if exec, err := NewExecution(nil, nil, "owner", fixture.sourceVaultReader); err == nil || exec != nil {
+		t.Fatal("NewExecution accepted nil store or returned non-nil object")
 	}
-	if service.adaptiveAdmission != nil {
-		t.Fatal("adaptiveAdmission must be nil when reader is nil")
+
+	if exec, err := NewExecution(fixture.store, nil, "owner", nil); err == nil || exec != nil {
+		t.Fatal("NewExecution accepted nil source-vault reader or returned non-nil object")
+	}
+}
+
+func TestNewPackagePreparationRejectsNilReader(t *testing.T) {
+	fixture := newExecutionAssignmentFixture(t, false, "")
+
+	if prep, err := NewPackagePreparation(fixture.store, nil); err == nil || prep != nil {
+		t.Fatal("NewPackagePreparation accepted nil reader or returned non-nil object")
 	}
 }
 
@@ -194,12 +234,26 @@ func TestConstructorsRejectNilStore(t *testing.T) {
 		}
 		t.Run(c.name, func(t *testing.T) {
 			fn := reflect.ValueOf(c.value)
-			result := fn.Call([]reflect.Value{
-				reflect.ValueOf((*workflowstore.Store)(nil)),
-				reflect.ValueOf(reader).Convert(readerType),
-			})
+			var args []reflect.Value
+			if fn.Type().NumIn() == 4 {
+				args = []reflect.Value{
+					reflect.ValueOf((*workflowstore.Store)(nil)),
+					reflect.Zero(reflect.TypeOf((*slog.Logger)(nil))),
+					reflect.ValueOf("test-owner"),
+					reflect.ValueOf(reader).Convert(readerType),
+				}
+			} else {
+				args = []reflect.Value{
+					reflect.ValueOf((*workflowstore.Store)(nil)),
+					reflect.ValueOf(reader).Convert(readerType),
+				}
+			}
+			result := fn.Call(args)
 			if err := result[1].Interface(); err == nil {
 				t.Fatal("nil store was accepted")
+			}
+			if !result[0].IsNil() {
+				t.Fatal("constructor returned non-nil object on failure")
 			}
 		})
 	}
@@ -215,10 +269,21 @@ func TestSourceVaultReaderErrorPropagatesToErrorReturningConstructors(t *testing
 		}
 		t.Run(c.name, func(t *testing.T) {
 			fn := reflect.ValueOf(c.value)
-			result := fn.Call([]reflect.Value{
-				reflect.ValueOf(fixture.store),
-				reflect.ValueOf(reader).Convert(readerType),
-			})
+			var args []reflect.Value
+			if fn.Type().NumIn() == 4 {
+				args = []reflect.Value{
+					reflect.ValueOf(fixture.store),
+					reflect.Zero(reflect.TypeOf((*slog.Logger)(nil))),
+					reflect.ValueOf("test-owner"),
+					reflect.ValueOf(reader).Convert(readerType),
+				}
+			} else {
+				args = []reflect.Value{
+					reflect.ValueOf(fixture.store),
+					reflect.ValueOf(reader).Convert(readerType),
+				}
+			}
+			result := fn.Call(args)
 			if err := result[1].Interface(); err != nil {
 				t.Fatalf("constructor failed because of reader error: %v", err)
 			}

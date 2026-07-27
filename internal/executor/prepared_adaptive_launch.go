@@ -33,7 +33,7 @@ type PreparedAdaptiveLaunchResult struct {
 
 // LaunchPreparedAdaptive admits exactly one prepared package attempt and
 // launches only when that admission newly crossed the durable cutover.
-func (s *WorkflowExecutionService) LaunchPreparedAdaptive(ctx context.Context, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
+func (s *Execution) LaunchPreparedAdaptive(ctx context.Context, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 	if s == nil || s.store == nil || s.runs == nil || s.adaptiveAdmission == nil {
 		return PreparedAdaptiveLaunchResult{}, fmt.Errorf("prepared adaptive launch service is unavailable")
 	}
@@ -200,7 +200,7 @@ func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAda
 	return nil
 }
 
-func (s *WorkflowExecutionService) settlePreparedPrelaunchFailure(ctx context.Context, admitted AdaptiveDispatchAdmissionResult, selected *effectiveBriefInput, cause error) error {
+func (s *Execution) settlePreparedPrelaunchFailure(ctx context.Context, admitted AdaptiveDispatchAdmissionResult, selected *effectiveBriefInput, cause error) error {
 	if cause == nil {
 		cause = errors.New("prepared adaptive launch failed before process start")
 	}

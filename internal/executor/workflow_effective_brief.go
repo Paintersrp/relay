@@ -41,7 +41,7 @@ func fullEffectiveBriefInput(content []byte, artifact workflowstore.Artifact, pa
 	}
 }
 
-func (s *WorkflowExecutionService) prepareResidualEffectiveBrief(
+func (s *Execution) prepareResidualEffectiveBrief(
 	ctx context.Context,
 	attempt workflowstore.ExecutionAttempt,
 	applierResult *WorkflowApplierResult,
@@ -75,7 +75,7 @@ func (s *WorkflowExecutionService) prepareResidualEffectiveBrief(
 	}, nil
 }
 
-func (s *WorkflowExecutionService) persistResidualBrief(ctx context.Context, attempt workflowstore.ExecutionAttempt, content []byte) (workflowstore.Artifact, error) {
+func (s *Execution) persistResidualBrief(ctx context.Context, attempt workflowstore.ExecutionAttempt, content []byte) (workflowstore.Artifact, error) {
 	if len(content) == 0 {
 		return workflowstore.Artifact{}, fmt.Errorf("residual effective brief is empty")
 	}
@@ -112,7 +112,7 @@ func (s *WorkflowExecutionService) persistResidualBrief(ctx context.Context, att
 	return created, nil
 }
 
-func (s *WorkflowExecutionService) loadVerifiedAttemptArtifact(
+func (s *Execution) loadVerifiedAttemptArtifact(
 	ctx context.Context,
 	attempt workflowstore.ExecutionAttempt,
 	artifactID, kind, mediaType string,
@@ -202,7 +202,7 @@ func neutralStdinSource(source string) bool {
 	return source == "" || source == "/dev/null" || strings.EqualFold(source, "NUL") || source == os.DevNull
 }
 
-func (s *WorkflowExecutionService) failPrelaunchAttempt(
+func (s *Execution) failPrelaunchAttempt(
 	ctx context.Context,
 	begun workflowruns.BeginExecutionAttemptResult,
 	preflight workflowrepos.ExecutionPreflightResult,

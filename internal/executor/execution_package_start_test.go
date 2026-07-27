@@ -13,7 +13,10 @@ import (
 
 func TestWorkflowStartPackageConstructorInitializesPreparation(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if service.packagePreparation == nil {
 		t.Fatal("package preparation service is nil")
 	}
@@ -21,13 +24,16 @@ func TestWorkflowStartPackageConstructorInitializesPreparation(t *testing.T) {
 
 func TestWorkflowStartPackageRoutesPackageRun(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := PackagePreparationResult{Run: fixture.run}
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			return PackageWorkflowDispatchResult{Preparation: prepared}, nil
 		},
 	)
@@ -43,15 +49,18 @@ func TestWorkflowStartPackageRoutesPackageRun(t *testing.T) {
 
 func TestWorkflowStartPackagePassesNormalizedInput(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
-	var got PackageWorkflowPreparationInput
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got PackagePreparationInput
+	prepared := PackagePreparationResult{Run: fixture.run}
 	withPackageWorkflowStartSeams(t,
-		func(_ context.Context, _ *PackageWorkflowPreparationService, input PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(_ context.Context, _ *PackagePreparation, input PackagePreparationInput) (PackagePreparationResult, error) {
 			got = input
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			return PackageWorkflowDispatchResult{Preparation: prepared}, nil
 		},
 	)
@@ -70,9 +79,12 @@ func TestWorkflowStartPackagePassesNormalizedInput(t *testing.T) {
 
 func TestWorkflowStartPackageAdaptiveSuccessDispatchesOnceAndProjectsIdentity(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	attempt := packageStartAttempt(fixture.run, "prepared-attempt")
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
+	prepared := PackagePreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	launchRun := fixture.run
 	launchRun.Status = workflowstore.RunStatusExecuting
 	launchAttempt := attempt
@@ -83,10 +95,10 @@ func TestWorkflowStartPackageAdaptiveSuccessDispatchesOnceAndProjectsIdentity(t 
 	}
 	dispatchCalls := 0
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			dispatchCalls++
 			return dispatched, nil
 		},
@@ -106,9 +118,12 @@ func TestWorkflowStartPackageAdaptiveSuccessDispatchesOnceAndProjectsIdentity(t 
 
 func TestWorkflowStartPackageAdaptiveReadbackRemainsSuccessful(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	attempt := packageStartAttempt(fixture.run, "readback-attempt")
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
+	prepared := PackagePreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	readbackRun := fixture.run
 	readbackRun.Status = workflowstore.RunStatusExecuting
 	dispatched := PackageWorkflowDispatchResult{
@@ -116,10 +131,10 @@ func TestWorkflowStartPackageAdaptiveReadbackRemainsSuccessful(t *testing.T) {
 		Launch:      PreparedAdaptiveLaunchResult{Run: &readbackRun, Attempt: &attempt, NewlyAdmitted: false, NewlyLaunched: false},
 	}
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			return dispatched, nil
 		},
 	)
@@ -132,16 +147,19 @@ func TestWorkflowStartPackageAdaptiveReadbackRemainsSuccessful(t *testing.T) {
 
 func TestWorkflowStartPackageDeterministicCompleteProjectsFinalizedRunWithoutAttempt(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := PackagePreparationResult{Run: fixture.run}
 	finalized := fixture.run
 	finalized.Status = workflowstore.RunStatusValidating
 	dispatched := PackageWorkflowDispatchResult{Preparation: prepared, FinalizedRun: &finalized}
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			return dispatched, nil
 		},
 	)
@@ -154,16 +172,19 @@ func TestWorkflowStartPackageDeterministicCompleteProjectsFinalizedRunWithoutAtt
 
 func TestWorkflowStartPackagePreparationFailurePreservesEvidenceAndPreventsDispatch(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	attempt := packageStartAttempt(fixture.run, "preparation-failure-attempt")
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
+	prepared := PackagePreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	prepareErr := errors.New("preparation failed")
 	dispatchCalls := 0
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, prepareErr
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			dispatchCalls++
 			return PackageWorkflowDispatchResult{}, nil
 		},
@@ -177,19 +198,22 @@ func TestWorkflowStartPackagePreparationFailurePreservesEvidenceAndPreventsDispa
 
 func TestWorkflowStartPackageDispatchFailurePreservesEvidence(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	attempt := packageStartAttempt(fixture.run, "dispatch-failure-attempt")
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
+	prepared := PackagePreparationResult{Run: fixture.run, Adaptive: AdaptiveExecutionAttemptResult{Attempt: &attempt}}
 	launchRun := fixture.run
 	launchRun.Status = workflowstore.RunStatusExecuting
 	launch := PreparedAdaptiveLaunchResult{Run: &launchRun}
 	dispatched := PackageWorkflowDispatchResult{Preparation: prepared, Launch: launch}
 	dispatchErr := errors.New("dispatch failed")
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			return dispatched, dispatchErr
 		},
 	)
@@ -202,8 +226,11 @@ func TestWorkflowStartPackageDispatchFailurePreservesEvidence(t *testing.T) {
 
 func TestWorkflowStartPackageNeverEntersLegacyExecution(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
-	prepared := PackageWorkflowPreparationResult{Run: fixture.run}
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := PackagePreparationResult{Run: fixture.run}
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		t.Fatal("package Start called legacy repository preflight")
 		return workflowrepos.ExecutionPreflightResult{}
@@ -213,10 +240,10 @@ func TestWorkflowStartPackageNeverEntersLegacyExecution(t *testing.T) {
 		return applier.Result{}, nil
 	}
 	withPackageWorkflowStartSeams(t,
-		func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error) {
+		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
 		},
-		func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error) {
+		func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error) {
 			return PackageWorkflowDispatchResult{Preparation: prepared}, nil
 		},
 	)
@@ -228,7 +255,10 @@ func TestWorkflowStartPackageNeverEntersLegacyExecution(t *testing.T) {
 
 func TestWorkflowStartPackageUnavailableFailsClosed(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	service := NewWorkflowExecutionService(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	service, err := NewExecution(fixture.store, nil, "package-start-test", fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	service.packagePreparation = nil
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		t.Fatal("unavailable package preparation entered legacy execution")
@@ -268,8 +298,8 @@ func packageStartAttempt(run workflowstore.Run, attemptID string) workflowstore.
 
 func withPackageWorkflowStartSeams(
 	t *testing.T,
-	prepare func(context.Context, *PackageWorkflowPreparationService, PackageWorkflowPreparationInput) (PackageWorkflowPreparationResult, error),
-	dispatch func(context.Context, *WorkflowExecutionService, PackageWorkflowPreparationResult) (PackageWorkflowDispatchResult, error),
+	prepare func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error),
+	dispatch func(context.Context, *Execution, PackagePreparationResult) (PackageWorkflowDispatchResult, error),
 ) {
 	t.Helper()
 	previousPrepare, previousDispatch := packageWorkflowStartPrepare, packageWorkflowStartDispatch
