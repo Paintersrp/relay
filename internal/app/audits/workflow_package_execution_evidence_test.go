@@ -1331,9 +1331,8 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		setupZeroCommands(service)
-		realRead := service.readArtifactBytes
 		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
+			bytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), art.RelativePath))
 			if err != nil {
 				return nil, err
 			}
@@ -1358,9 +1357,8 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		setupZeroCommands(service)
-		realRead := service.readArtifactBytes
 		service.readArtifactBytes = func(ctx context.Context, art workflowstore.Artifact, max int) ([]byte, error) {
-			bytes, err := realRead(ctx, art, max)
+			bytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), art.RelativePath))
 			if err != nil {
 				return nil, err
 			}

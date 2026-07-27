@@ -17,20 +17,13 @@ import (
 func testPackageAuditEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode) (*packageEvidenceFixture, WorkflowPackageExecutionEvidence) {
 	t.Helper()
 	fixture := buildPackageEvidence(t, mode)
-	packages, err := workflowpackages.NewService(fixture.store)
+	loader, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority, err := packages.LoadApprovedAuthorityForRun(context.Background(), fixture.run.RunID)
+	evidence, err := loader.Load(context.Background(), fixture.run.RunID)
 	if err != nil {
 		t.Fatal(err)
-	}
-	evidence := WorkflowPackageExecutionEvidence{
-		Run:            fixture.run,
-		Authority:      authority,
-		Assignment:     fixture.assignment,
-		Deterministic:  fixture.outcome,
-		EffectiveBrief: fixture.brief,
 	}
 	return fixture, evidence
 }
