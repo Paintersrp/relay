@@ -77,21 +77,46 @@ func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sour
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	packages, err := workflowpackages.NewServiceWithSourceVaults(store, sourceVaults)
-	if err != nil {
-		return nil, err
-	}
-	assignments, err := executor.NewExecutionAssignmentService(store, sourceVaults)
-	if err != nil {
-		return nil, err
-	}
-	outcomes, err := executor.NewDeterministicOutcomeService(store, sourceVaults)
-	if err != nil {
-		return nil, err
-	}
-	briefs, err := executor.NewEffectiveExecutorBriefService(store, sourceVaults)
-	if err != nil {
-		return nil, err
+	var packages *workflowpackages.Service
+	var assignments *executor.ExecutionAssignmentService
+	var outcomes *executor.DeterministicOutcomeService
+	var briefs *executor.EffectiveExecutorBriefService
+	var err error
+
+	if sourceVaults != nil {
+		packages, err = workflowpackages.NewServiceWithSourceVaults(store, sourceVaults)
+		if err != nil {
+			return nil, err
+		}
+		assignments, err = executor.NewExecutionAssignmentService(store, sourceVaults)
+		if err != nil {
+			return nil, err
+		}
+		outcomes, err = executor.NewDeterministicOutcomeService(store, sourceVaults)
+		if err != nil {
+			return nil, err
+		}
+		briefs, err = executor.NewEffectiveExecutorBriefService(store, sourceVaults)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		packages, err = workflowpackages.NewService(store)
+		if err != nil {
+			return nil, err
+		}
+		assignments, err = executor.NewExecutionAssignmentService(store, nil)
+		if err != nil {
+			return nil, err
+		}
+		outcomes, err = executor.NewDeterministicOutcomeService(store, nil)
+		if err != nil {
+			return nil, err
+		}
+		briefs, err = executor.NewEffectiveExecutorBriefService(store, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 	service := &WorkflowPackageExecutionEvidenceService{
 		store: store, packages: packages, assignments: assignments, outcomes: outcomes, briefs: briefs,

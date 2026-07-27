@@ -137,7 +137,7 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	authorityBytes := []byte("authority")
+	authorityBytes := []byte(`{"requirements":"authority"}`)
 	authoritySHA := packageEvidenceSHA(authorityBytes)
 	authorityPath := filepath.Join(store.ArtifactStore().Root(), "plans", "checkout", "requirements.json")
 	if err := os.MkdirAll(filepath.Dir(authorityPath), 0o755); err != nil {
@@ -1303,6 +1303,24 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			}
 			asgn.Assignment.ValidationCommands = nil
 			return asgn, nil
+		}
+		realAttemptArtifacts := service.loadAttemptArtifacts
+		service.loadAttemptArtifacts = func(ctx context.Context, attemptID int64) ([]workflowstore.Artifact, error) {
+			arts, err := realAttemptArtifacts(ctx, attemptID)
+			if err != nil {
+				return nil, err
+			}
+			for i, a := range arts {
+				if a.Kind == "execution_evidence" && service.readArtifactBytes != nil {
+					b, err := service.readArtifactBytes(ctx, a, 1048576)
+					if err == nil {
+						sum := sha256.Sum256(b)
+						arts[i].SizeBytes = int64(len(b))
+						arts[i].SHA256 = hex.EncodeToString(sum[:])
+					}
+				}
+			}
+			return arts, nil
 		}
 	}
 
