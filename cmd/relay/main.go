@@ -30,6 +30,8 @@ type runtimeReady struct {
 
 var newWorkflowServer = server.NewWorkflow
 
+var listen = net.Listen
+
 func constructRelayServer(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []server.MCPHandler) (*server.Server, error) {
 	relayServer, err := newWorkflowServer(store, log, ownerInstanceID, sourceVaults, mcpHandlers)
 	if err != nil {
@@ -88,8 +90,11 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 	}
 	ownerInstanceID := executor.NewOwnerInstanceID()
 	relayServer, err := constructRelayServer(workflowStore, log, ownerInstanceID, sourceVaults, mcpHandlers)
+	if err != nil {
+		return err
+	}
 	port := environmentOrDefault("PORT", "8080")
-	listener, err := net.Listen("tcp", ":"+port)
+	listener, err := listen("tcp", ":"+port)
 	if err != nil {
 		return fmt.Errorf("bind Relay listener: %w", err)
 	}

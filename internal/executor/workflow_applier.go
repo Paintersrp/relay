@@ -56,7 +56,9 @@ func (s *Execution) applyDeterministicFirst(
 	_ = repoPath
 	_ = executionSpec
 	_ = executionSpecArtifact
-	return nil, nil
+	return nil, fmt.Errorf(
+		"package execution preparation is not implemented",
+	)
 }
 func projectionDiagnosticResult(diagnostics []speccompiler.Diagnostic) *WorkflowApplierResult {
 	summary := "canonical Execution Spec compilation or projection diagnostics blocked deterministic-first execution"
