@@ -47,7 +47,7 @@ var recordAuditDecisionSchema = json.RawMessage(`{
         "additionalProperties": false,
         "required": ["source", "summary", "evidence", "required_remediation"],
         "properties": {
-          "source": {"type": "string", "enum": ["executor_implementation", "execution_spec", "both"]},
+          "source": {"type": "string", "enum": ["executor_implementation", "execution_spec", "implementation", "governing_package", "both"]},
           "summary": {"type": "string", "minLength": 1},
           "evidence": {"type": "string", "minLength": 1},
           "required_remediation": {"type": "string", "minLength": 1}

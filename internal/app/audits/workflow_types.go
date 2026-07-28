@@ -277,6 +277,40 @@ type WorkflowAuditMaterialFinding struct {
 	RequiredRemediation string `json:"required_remediation"`
 }
 
+// workflowPackageDecisionDocument is the immutable package-native audit
+// decision record. Field order is the canonical JSON order.
+type workflowPackageDecisionDocument struct {
+	AuditDecisionID              string                         `json:"audit_decision_id"`
+	RunID                        string                         `json:"run_id"`
+	RunRowID                     int64                          `json:"run_row_id"`
+	Decision                     string                         `json:"decision"`
+	Rationale                    string                         `json:"rationale"`
+	MaterialFindings             []WorkflowAuditMaterialFinding `json:"material_findings"`
+	Observations                 []string                       `json:"observations"`
+	AuditPacketID                string                         `json:"audit_packet_id"`
+	AuditPacketRowID             int64                          `json:"audit_packet_row_id"`
+	AuditPacketArtifactRowID     int64                          `json:"audit_packet_artifact_row_id"`
+	PacketSHA256                 string                         `json:"packet_sha256"`
+	AuditedCommit                string                         `json:"audited_commit"`
+	ExecutionPackageID           string                         `json:"execution_package_id"`
+	ExecutionPackageRowID        int64                          `json:"execution_package_row_id"`
+	PackageSHA256                string                         `json:"package_sha256"`
+	PackageApprovalID            string                         `json:"package_approval_id"`
+	PackageApprovalRowID         int64                          `json:"package_approval_row_id"`
+	ApprovedPackageSHA256        string                         `json:"approved_package_sha256"`
+	DeliveryTicketID             string                         `json:"delivery_ticket_id"`
+	DeliveryTicketRowID          int64                          `json:"delivery_ticket_row_id"`
+	DeliveryTicketRevisionRowID  int64                          `json:"delivery_ticket_revision_row_id"`
+	DeliveryTicketRevisionNumber int64                          `json:"delivery_ticket_revision_number"`
+	DeliveryTicketApprovalID     string                         `json:"delivery_ticket_approval_id"`
+	DeliveryTicketApprovalRowID  int64                          `json:"delivery_ticket_approval_row_id"`
+	AuthorityRevisionID          string                         `json:"authority_revision_id"`
+	AuthorityRevisionRowID       int64                          `json:"authority_revision_row_id"`
+	SourceClosureID              string                         `json:"source_closure_id"`
+	SourceClosureRowID           int64                          `json:"source_closure_row_id"`
+	SourceCommit                 string                         `json:"source_commit"`
+}
+
 type WorkflowAuditRunAuthority struct {
 	RunID           int64  `json:"run_id"`
 	FeatureSlug     string `json:"feature_slug"`

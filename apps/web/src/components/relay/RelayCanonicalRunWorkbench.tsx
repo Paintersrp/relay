@@ -474,6 +474,10 @@ function ExecutePanel({
   );
 }
 
+function isPackageAuditPacket(document: unknown): boolean {
+	return typeof document === "object" && document !== null && "schema_version" in document && (document as { schema_version?: unknown }).schema_version === "3.0";
+}
+
 function AuditPanel({
   runId,
   baseCommit,
@@ -488,7 +492,7 @@ function AuditPanel({
   const [error, setError] = React.useState<string | null>(null);
 	const [decision, setDecision] = React.useState<"accepted" | "needs_revision">("accepted");
 	const [rationale, setRationale] = React.useState("");
-	const [findingSource, setFindingSource] = React.useState<"executor_implementation" | "execution_spec" | "both">("both");
+	const [findingSource, setFindingSource] = React.useState<"executor_implementation" | "execution_spec" | "implementation" | "governing_package" | "both">("both");
 	const [findingSummary, setFindingSummary] = React.useState("");
 	const [findingEvidence, setFindingEvidence] = React.useState("");
 	const [requiredRemediation, setRequiredRemediation] = React.useState("");
@@ -541,6 +545,11 @@ function AuditPanel({
   }
   const status = statusQuery.data;
 	const ticketPackage = packetQuery.data?.ticketPackage;
+	const packagePacket = isPackageAuditPacket(packetQuery.data?.document);
+	React.useEffect(() => {
+		if (packagePacket && (findingSource === "executor_implementation" || findingSource === "execution_spec")) setFindingSource("both");
+		if (!packagePacket && (findingSource === "implementation" || findingSource === "governing_package")) setFindingSource("both");
+	}, [packagePacket, findingSource]);
 	const findingRequired = decision === "needs_revision" && Boolean(ticketPackage);
 	const findingComplete = Boolean(findingSummary.trim() && findingEvidence.trim() && requiredRemediation.trim());
 	const decisionReady = Boolean(packetQuery.data && rationale.trim() && operatorConfirmed && (!findingRequired || findingComplete));
@@ -619,7 +628,7 @@ function AuditPanel({
 			<div><h3 className="text-sm font-medium">Record confirmed decision</h3><p className="mt-1 text-xs text-muted-foreground">This records only the exact packet, commit, rationale, findings, and observations shown above.</p></div>
 			<div><Label htmlFor="audit-decision">Decision</Label><select id="audit-decision" className="mt-1 w-full rounded border bg-background p-2" value={decision} onChange={(event) => setDecision(event.target.value as typeof decision)}><option value="accepted">Accept</option><option value="needs_revision">Request revision</option></select></div>
 			<div><Label htmlFor="audit-rationale">Decision rationale</Label><Textarea id="audit-rationale" value={rationale} onChange={(event) => setRationale(event.target.value)} required /></div>
-			{decision === "needs_revision" ? <div className="grid gap-2 rounded border border-warning/30 p-3"><p className="text-xs text-muted-foreground">{findingRequired ? "Ticket-route revision requests require one complete material finding." : "A material finding is optional for this ordinary Run."}</p><div><Label htmlFor="audit-finding-source">Finding source</Label><select id="audit-finding-source" className="mt-1 w-full rounded border bg-background p-2" value={findingSource} onChange={(event) => setFindingSource(event.target.value as typeof findingSource)}><option value="both">Both</option><option value="executor_implementation">Executor implementation</option><option value="execution_spec">Execution specification</option></select></div><div><Label htmlFor="audit-finding-summary">Finding summary</Label><Input id="audit-finding-summary" value={findingSummary} onChange={(event) => setFindingSummary(event.target.value)} required={findingRequired} /></div><div><Label htmlFor="audit-finding-evidence">Evidence</Label><Textarea id="audit-finding-evidence" value={findingEvidence} onChange={(event) => setFindingEvidence(event.target.value)} required={findingRequired} /></div><div><Label htmlFor="audit-required-remediation">Required remediation</Label><Textarea id="audit-required-remediation" value={requiredRemediation} onChange={(event) => setRequiredRemediation(event.target.value)} required={findingRequired} /></div></div> : null}
+			{decision === "needs_revision" ? <div className="grid gap-2 rounded border border-warning/30 p-3"><p className="text-xs text-muted-foreground">{findingRequired ? "Ticket-route revision requests require one complete material finding." : "A material finding is optional for this ordinary Run."}</p><div><Label htmlFor="audit-finding-source">Finding source</Label><select id="audit-finding-source" className="mt-1 w-full rounded border bg-background p-2" value={findingSource} onChange={(event) => setFindingSource(event.target.value as typeof findingSource)}><option value="both">Both</option>{packagePacket ? <><option value="implementation">Implementation</option><option value="governing_package">Governing package</option></> : <><option value="executor_implementation">Executor implementation</option><option value="execution_spec">Execution specification</option></>}</select></div><div><Label htmlFor="audit-finding-summary">Finding summary</Label><Input id="audit-finding-summary" value={findingSummary} onChange={(event) => setFindingSummary(event.target.value)} required={findingRequired} /></div><div><Label htmlFor="audit-finding-evidence">Evidence</Label><Textarea id="audit-finding-evidence" value={findingEvidence} onChange={(event) => setFindingEvidence(event.target.value)} required={findingRequired} /></div><div><Label htmlFor="audit-required-remediation">Required remediation</Label><Textarea id="audit-required-remediation" value={requiredRemediation} onChange={(event) => setRequiredRemediation(event.target.value)} required={findingRequired} /></div></div> : null}
 			<div><Label htmlFor="audit-observations">Non-blocking observations (one per line)</Label><Textarea id="audit-observations" value={observations} onChange={(event) => setObservations(event.target.value)} /></div>
 			<label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={operatorConfirmed} onChange={(event) => setOperatorConfirmed(event.target.checked)} /><span>I confirm this exact packet, commit, decision, and rationale.</span></label>
 			{decisionError ? <p role="alert" className="text-xs text-destructive">{decisionError}</p> : null}

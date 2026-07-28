@@ -133,7 +133,7 @@ export interface WorkflowAuditDecision {
 }
 
 export interface WorkflowAuditMaterialFinding {
-  source: "executor_implementation" | "execution_spec" | "both";
+  source: "executor_implementation" | "execution_spec" | "implementation" | "governing_package" | "both";
   summary: string;
   evidence: string;
   requiredRemediation: string;

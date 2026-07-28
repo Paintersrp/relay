@@ -813,6 +813,9 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 	}
 	input.MaterialFindings = normalizeWorkflowAuditFindings(input.MaterialFindings)
 	input.Observations = normalizeWorkflowAuditObservations(input.Observations)
+	if current.Run.ExecutionPackageRowID.Valid {
+		return s.recordPackageDecision(ctx, input, current)
+	}
 	if err := validateWorkflowAuditDecisionInput(input, current.Run.ExecutionPackageRowID.Valid); err != nil {
 		return RecordWorkflowAuditDecisionResult{}, err
 	}
@@ -978,6 +981,135 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 			TicketSatisfactions:     satisfactions,
 			RemediationSeeds:        remediationSeeds,
 		}
+		return nil
+	})
+	if err != nil {
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	return result, nil
+}
+
+// recordPackageDecision deliberately has no legacy packet or implementation
+// evidence dependency.  Package packets are a separate canonical contract.
+func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input RecordWorkflowAuditDecisionInput, current GetWorkflowAuditPacketResult) (RecordWorkflowAuditDecisionResult, error) {
+	if s.loadPackageEvidence == nil {
+		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPackageUnavailable
+	}
+	if err := validateWorkflowPackageAuditDecisionInput(input, current.Document); err != nil {
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	var document WorkflowPackageAuditPacket
+	if err := validateWorkflowPackageAuditPacketBytes(current.Document); err != nil || json.Unmarshal(current.Document, &document) != nil {
+		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
+	}
+	evidence, err := s.loadPackageEvidence(ctx, current.Run.RunID)
+	if err != nil || !sameWorkflowPackageRunIdentity(current.Run, evidence.Run) {
+		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
+	}
+	decisionID := workflowstore.NewAuditDecisionID()
+	decisionBody, err := json.MarshalIndent(workflowPackageDecisionDocument{AuditDecisionID: decisionID, RunID: current.Run.RunID, RunRowID: current.Run.ID, Decision: input.Decision, Rationale: input.Rationale, MaterialFindings: input.MaterialFindings, Observations: input.Observations, AuditPacketID: current.Packet.AuditPacketID, AuditPacketRowID: current.Packet.ID, AuditPacketArtifactRowID: current.Packet.ArtifactRowID, PacketSHA256: current.Packet.PacketSHA256, AuditedCommit: current.Packet.AuditedCommit, ExecutionPackageID: evidence.Authority.Package.PackageID, ExecutionPackageRowID: evidence.Authority.Package.ID, PackageSHA256: evidence.Authority.Package.PackageSha256, PackageApprovalID: evidence.Authority.PackageApproval.ApprovalID, PackageApprovalRowID: evidence.Authority.PackageApproval.ID, ApprovedPackageSHA256: evidence.Authority.PackageApproval.PackageSha256, DeliveryTicketID: evidence.Authority.Ticket.TicketID, DeliveryTicketRowID: evidence.Authority.Ticket.ID, DeliveryTicketRevisionRowID: evidence.Authority.TicketRevision.ID, DeliveryTicketRevisionNumber: evidence.Authority.TicketRevision.RevisionNumber, DeliveryTicketApprovalID: evidence.Authority.TicketApproval.ApprovalID, DeliveryTicketApprovalRowID: evidence.Authority.TicketApproval.ID, AuthorityRevisionID: evidence.Authority.Authority.AuthorityRevisionID, AuthorityRevisionRowID: evidence.Authority.Authority.ID, SourceClosureID: evidence.Authority.Source.ClosureID, SourceClosureRowID: evidence.Authority.Source.ID, SourceCommit: evidence.Authority.Source.CommitOID}, "", "  ")
+	if err != nil {
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	decisionBody = append(decisionBody, '\n')
+	batch, err := s.store.ArtifactStore().Begin("audit-decisions/" + decisionID)
+	if err != nil {
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	staged, err := batch.Stage("audit_decision", "audit-decision.json", "application/json", decisionBody)
+	if err != nil {
+		_ = batch.Rollback()
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	result := RecordWorkflowAuditDecisionResult{}
+	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		run, err := tx.GetRunByRunID(ctx, input.RunID)
+		if err != nil {
+			return err
+		}
+		if run.Status != workflowstore.RunStatusAuditReady {
+			return ErrWorkflowAuditDecisionRecorded
+		}
+		if !sameWorkflowPackageRunIdentity(current.Run, run) {
+			return ErrWorkflowAuditPacketStale
+		}
+		packet, err := tx.GetAuditPacketByPacketID(ctx, input.AuditPacketID)
+		if err != nil {
+			return err
+		}
+		if packet.RunRowID != run.ID || packet.Status != workflowstore.AuditPacketStatusCurrent || packet.ArtifactRowID != current.Artifact.ID || packet.PacketSHA256 != input.PacketSHA256 || packet.AuditedCommit != input.AuditedCommit {
+			return ErrWorkflowAuditPacketStale
+		}
+		fresh, err := s.loadPackageEvidence(ctx, run.RunID)
+		if err != nil || !sameWorkflowPackageRunIdentity(run, fresh.Run) ||
+			fresh.Authority.Package.ID != evidence.Authority.Package.ID || fresh.Authority.Package.PackageSha256 != evidence.Authority.Package.PackageSha256 ||
+			fresh.Authority.PackageApproval.ID != evidence.Authority.PackageApproval.ID || fresh.Authority.PackageApproval.PackageSha256 != evidence.Authority.PackageApproval.PackageSha256 ||
+			fresh.Authority.TicketRevision.ID != evidence.Authority.TicketRevision.ID || fresh.Authority.Authority.ID != evidence.Authority.Authority.ID || fresh.Authority.Source.ID != evidence.Authority.Source.ID {
+			return ErrWorkflowAuditPacketStale
+		}
+		actor, attempt, err := packageAuditPersistenceMetadata(fresh)
+		if err != nil || actor != packet.ImplementationActorKind || attempt != packet.ExecutionAttemptRowID {
+			return ErrWorkflowAuditPacketStale
+		}
+		repository, err := tx.GetRepositoryTarget(ctx, run.RepoTarget)
+		if err != nil {
+			return err
+		}
+		commit, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, input.AuditedCommit)
+		if err != nil || commit.Branch != run.Branch || commit.BaseCommit != run.BaseCommit || commit.AuditedCommit != input.AuditedCommit {
+			return ErrWorkflowAuditPacketStale
+		}
+		packetArtifact, err := tx.GetArtifactByRowID(ctx, packet.ArtifactRowID)
+		if err != nil {
+			return ErrWorkflowAuditPacketStale
+		}
+		packetBytes, err := readWorkflowArtifact(s.store, packetArtifact, MaxWorkflowAuditPacketBytes)
+		if err != nil || sha256HexBytes(packetBytes) != packet.PacketSHA256 || !bytes.Equal(packetBytes, current.Document) || validateWorkflowPackageAuditPacketBytes(packetBytes) != nil {
+			return ErrWorkflowAuditPacketStale
+		}
+		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes})
+		if err != nil {
+			return err
+		}
+		decision, err := tx.CreateAuditDecision(ctx, workflowstore.CreateAuditDecisionParams{AuditDecisionID: decisionID, RunRowID: run.ID, AuditPacketArtifactRowID: packet.ArtifactRowID, AuditedCommit: input.AuditedCommit, PacketSHA256: input.PacketSHA256, Decision: input.Decision, Rationale: input.Rationale})
+		if err != nil {
+			return err
+		}
+		decisions, satisfactions, err := applyWorkflowPackageAuditTicketDecisionEffects(ctx, tx, run, packet, decision, document, input)
+		if err != nil {
+			return err
+		}
+		next := workflowstore.RunStatusNeedsRevision
+		if input.Decision == workflowstore.AuditDecisionAccepted {
+			next = workflowstore.RunStatusCompleted
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusAuditReady, next)
+		if err != nil {
+			return err
+		}
+		var pass *workflowstore.PlanPass
+		var plan *workflowstore.Plan
+		if input.Decision == workflowstore.AuditDecisionAccepted && run.PlanPassRowID.Valid && run.PlanRowID.Valid {
+			completedPass, err := tx.GetPlanPassByRowID(ctx, run.PlanPassRowID.Int64)
+			if err != nil {
+				return err
+			}
+			completedPass, err = tx.TransitionPlanPass(ctx, completedPass.PassID, workflowstore.PassStatusInProgress, workflowstore.PassStatusCompleted)
+			if err != nil {
+				return err
+			}
+			pass = &completedPass
+			if n, err := tx.CountIncompletePlanPasses(ctx, run.PlanRowID.Int64); err != nil {
+				return err
+			} else if n == 0 {
+				completedPlan, err := tx.CompletePlan(ctx, run.PlanRowID.Int64)
+				if err != nil {
+					return err
+				}
+				plan = &completedPlan
+			}
+		}
+		result = RecordWorkflowAuditDecisionResult{Run: run, Pass: pass, Plan: plan, Packet: packet, Decision: decision, Artifact: artifact, TicketRevisionDecisions: decisions, TicketSatisfactions: satisfactions, RemediationSeeds: []workflowstore.AuditRemediationSeed{}}
 		return nil
 	})
 	if err != nil {

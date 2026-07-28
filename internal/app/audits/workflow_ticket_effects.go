@@ -3,6 +3,7 @@ package audits
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -112,6 +113,99 @@ func validateWorkflowAuditDecisionInput(input RecordWorkflowAuditDecisionInput, 
 
 func oneOfWorkflowAuditFindingSource(source string) bool {
 	return source == "executor_implementation" || source == "execution_spec" || source == "both"
+}
+
+func validateWorkflowPackageAuditDecisionInput(input RecordWorkflowAuditDecisionInput, packet json.RawMessage) error {
+	if strings.TrimSpace(input.Rationale) == "" || len(input.MaterialFindings) > maxWorkflowAuditMaterialFindings || len(input.Observations) > maxWorkflowAuditObservations {
+		return ErrWorkflowAuditDecisionInput
+	}
+	if input.Decision == workflowstore.AuditDecisionAccepted && len(input.MaterialFindings) != 0 {
+		return ErrWorkflowAuditDecisionInput
+	}
+	if input.Decision == workflowstore.AuditDecisionNeedsRevision && len(input.MaterialFindings) == 0 {
+		return ErrWorkflowAuditDecisionInput
+	}
+	var document WorkflowPackageAuditPacket
+	if validateWorkflowPackageAuditPacketBytes(packet) != nil || json.Unmarshal(packet, &document) != nil {
+		return ErrWorkflowAuditPacketStale
+	}
+	for _, finding := range input.MaterialFindings {
+		if (finding.Source != "implementation" && finding.Source != "governing_package" && finding.Source != "both") || strings.TrimSpace(finding.Summary) == "" || strings.TrimSpace(finding.Evidence) == "" || strings.TrimSpace(finding.RequiredRemediation) == "" {
+			return ErrWorkflowAuditDecisionInput
+		}
+		if (finding.Source == "implementation" || finding.Source == "both") && document.Execution.Status == "" {
+			return ErrWorkflowAuditDecisionInput
+		}
+		if (finding.Source == "governing_package" || finding.Source == "both") && len(document.Authority.DeliveryTicket.Content) == 0 {
+			return ErrWorkflowAuditDecisionInput
+		}
+	}
+	for _, observation := range input.Observations {
+		if strings.TrimSpace(observation) == "" {
+			return ErrWorkflowAuditDecisionInput
+		}
+	}
+	return nil
+}
+
+func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *workflowstore.Tx, run workflowstore.Run, packet workflowstore.AuditPacket, decision workflowstore.AuditDecision, document WorkflowPackageAuditPacket, input RecordWorkflowAuditDecisionInput) ([]workflowstore.AuditTicketRevisionDecision, []workflowstore.DeliveryTicketRevisionSatisfaction, error) {
+	obligations, err := tx.ListAuditPacketTicketObligations(ctx, packet.ID)
+	if err != nil || len(obligations) == 0 {
+		return nil, nil, ErrWorkflowAuditPacketStale
+	}
+	decisions := make([]workflowstore.AuditTicketRevisionDecision, 0, len(obligations))
+	for _, obligation := range obligations {
+		if err := verifyWorkflowAuditTicketDecisionEligibility(ctx, tx, run, packet, obligation); err != nil {
+			return nil, nil, err
+		}
+		d, err := tx.CreateAuditTicketRevisionDecision(ctx, workflowstore.CreateAuditTicketRevisionDecisionParams{AuditDecisionRowID: decision.ID, AuditPacketTicketObligationRowID: obligation.ID, PackageApprovalRowID: obligation.PackageApprovalRowID, ApprovedPackageSha256: obligation.ApprovedPackageSha256})
+		if err != nil {
+			return nil, nil, err
+		}
+		decisions = append(decisions, d)
+	}
+	if input.Decision != workflowstore.AuditDecisionAccepted {
+		return decisions, []workflowstore.DeliveryTicketRevisionSatisfaction{}, nil
+	}
+	satisfactions := make([]workflowstore.DeliveryTicketRevisionSatisfaction, 0, len(obligations))
+	for i, obligation := range obligations {
+		revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, obligation.DeliveryTicketRevisionRowID)
+		if err != nil {
+			return nil, nil, ErrWorkflowAuditTicketIneligible
+		}
+		if revision.TransitionApplicability == "required" && !workflowPackageAuditTransitionProof(document, tx, ctx, obligation.AuthorityRevisionRowID) {
+			return nil, nil, ErrWorkflowAuditTicketIneligible
+		}
+		s, err := tx.CreateDeliveryTicketRevisionSatisfaction(ctx, workflowstore.CreateDeliveryTicketRevisionSatisfactionParams{DeliveryTicketRevisionRowID: obligation.DeliveryTicketRevisionRowID, AuditTicketRevisionDecisionRowID: decisions[i].ID})
+		if err != nil {
+			return nil, nil, err
+		}
+		satisfactions = append(satisfactions, s)
+	}
+	return decisions, satisfactions, nil
+}
+
+func workflowPackageAuditTransitionProof(document WorkflowPackageAuditPacket, tx *workflowstore.Tx, ctx context.Context, authorityRowID int64) bool {
+	layers, err := tx.ListFeatureWorkspaceAuthorityLayers(ctx, authorityRowID)
+	if err != nil || len(document.Validation) == 0 {
+		return false
+	}
+	hasTransition := false
+	for _, layer := range layers {
+		if layer.LayerKind == "plan" || layer.LayerKind == "transition_plan" {
+			hasTransition = true
+			break
+		}
+	}
+	if !hasTransition {
+		return false
+	}
+	for _, validation := range document.Validation {
+		if validation.Status != "passed" {
+			return false
+		}
+	}
+	return true
 }
 
 func applyWorkflowAuditTicketDecisionEffects(
