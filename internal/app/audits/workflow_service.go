@@ -802,7 +802,16 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 	if input.RunID == "" || input.AuditPacketID == "" || len(input.PacketSHA256) != 64 || len(input.AuditedCommit) != 40 {
 		return RecordWorkflowAuditDecisionResult{}, fmt.Errorf("run_id, audit_packet_id, packet_sha256, and audited_commit are required")
 	}
-	current, err := s.GetCurrentPacket(ctx, input.RunID)
+	run, err := s.store.GetRunByRunID(ctx, input.RunID)
+	if err != nil {
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	var current GetWorkflowAuditPacketResult
+	if run.ExecutionPackageRowID.Valid {
+		current, err = s.getCurrentPackagePacketForDecision(ctx, run)
+	} else {
+		current, err = s.GetCurrentPacket(ctx, input.RunID)
+	}
 	if err != nil {
 		return RecordWorkflowAuditDecisionResult{}, err
 	}
@@ -989,6 +998,28 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 	return result, nil
 }
 
+// getCurrentPackagePacketForDecision reads the already-persisted package
+// packet without reloading package evidence. recordPackageDecision performs
+// that evidence load exactly once and binds it to the persistence transaction.
+func (s *WorkflowAuditService) getCurrentPackagePacketForDecision(ctx context.Context, run workflowstore.Run) (GetWorkflowAuditPacketResult, error) {
+	packet, err := s.store.GetCurrentAuditPacketByRun(ctx, run.ID)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, err
+	}
+	artifact, err := s.store.GetArtifactByRowID(ctx, packet.ArtifactRowID)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, err
+	}
+	data, err := readWorkflowArtifact(s.store, artifact, MaxWorkflowAuditPacketBytes)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, err
+	}
+	if packet.RunRowID != run.ID || artifact.ID != packet.ArtifactRowID || artifact.SHA256 != packet.PacketSHA256 || sha256HexBytes(data) != packet.PacketSHA256 || validateWorkflowPackageAuditPacketBytes(data) != nil {
+		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
+	}
+	return GetWorkflowAuditPacketResult{Run: run, Packet: packet, Artifact: artifact, Document: append(json.RawMessage(nil), data...)}, nil
+}
+
 // recordPackageDecision deliberately has no legacy packet or implementation
 // evidence dependency.  Package packets are a separate canonical contract.
 func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input RecordWorkflowAuditDecisionInput, current GetWorkflowAuditPacketResult) (RecordWorkflowAuditDecisionResult, error) {
@@ -1003,7 +1034,13 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
 	}
 	evidence, err := s.loadPackageEvidence(ctx, current.Run.RunID)
-	if err != nil || !sameWorkflowPackageRunIdentity(current.Run, evidence.Run) {
+	if err != nil {
+		if errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+			return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
+		}
+		return RecordWorkflowAuditDecisionResult{}, err
+	}
+	if !sameWorkflowPackageRunIdentity(current.Run, evidence.Run) {
 		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
 	}
 	decisionID := workflowstore.NewAuditDecisionID()
@@ -1040,15 +1077,14 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 		if packet.RunRowID != run.ID || packet.Status != workflowstore.AuditPacketStatusCurrent || packet.ArtifactRowID != current.Artifact.ID || packet.PacketSHA256 != input.PacketSHA256 || packet.AuditedCommit != input.AuditedCommit {
 			return ErrWorkflowAuditPacketStale
 		}
-		fresh, err := s.loadPackageEvidence(ctx, run.RunID)
-		if err != nil || !sameWorkflowPackageRunIdentity(run, fresh.Run) ||
-			fresh.Authority.Package.ID != evidence.Authority.Package.ID || fresh.Authority.Package.PackageSha256 != evidence.Authority.Package.PackageSha256 ||
-			fresh.Authority.PackageApproval.ID != evidence.Authority.PackageApproval.ID || fresh.Authority.PackageApproval.PackageSha256 != evidence.Authority.PackageApproval.PackageSha256 ||
-			fresh.Authority.TicketRevision.ID != evidence.Authority.TicketRevision.ID || fresh.Authority.Authority.ID != evidence.Authority.Authority.ID || fresh.Authority.Source.ID != evidence.Authority.Source.ID {
-			return ErrWorkflowAuditPacketStale
+		if err := verifyWorkflowPackageDecisionAuthority(ctx, tx, run, packet, evidence); err != nil {
+			return err
 		}
-		actor, attempt, err := packageAuditPersistenceMetadata(fresh)
-		if err != nil || actor != packet.ImplementationActorKind || attempt != packet.ExecutionAttemptRowID {
+		actor, attempt, err := packageAuditPersistenceMetadata(evidence)
+		if err != nil {
+			return err
+		}
+		if actor != packet.ImplementationActorKind || attempt != packet.ExecutionAttemptRowID {
 			return ErrWorkflowAuditPacketStale
 		}
 		repository, err := tx.GetRepositoryTarget(ctx, run.RepoTarget)
@@ -1056,15 +1092,21 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 			return err
 		}
 		commit, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, input.AuditedCommit)
-		if err != nil || commit.Branch != run.Branch || commit.BaseCommit != run.BaseCommit || commit.AuditedCommit != input.AuditedCommit {
+		if err != nil {
+			return err
+		}
+		if commit.Branch != run.Branch || commit.BaseCommit != run.BaseCommit || commit.AuditedCommit != input.AuditedCommit {
 			return ErrWorkflowAuditPacketStale
 		}
 		packetArtifact, err := tx.GetArtifactByRowID(ctx, packet.ArtifactRowID)
 		if err != nil {
-			return ErrWorkflowAuditPacketStale
+			return err
 		}
 		packetBytes, err := readWorkflowArtifact(s.store, packetArtifact, MaxWorkflowAuditPacketBytes)
-		if err != nil || sha256HexBytes(packetBytes) != packet.PacketSHA256 || !bytes.Equal(packetBytes, current.Document) || validateWorkflowPackageAuditPacketBytes(packetBytes) != nil {
+		if err != nil {
+			return err
+		}
+		if packetArtifact.ID != current.Artifact.ID || packetArtifact.SHA256 != packet.PacketSHA256 || sha256HexBytes(packetBytes) != packet.PacketSHA256 || !bytes.Equal(packetBytes, current.Document) || validateWorkflowPackageAuditPacketBytes(packetBytes) != nil {
 			return ErrWorkflowAuditPacketStale
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes})

@@ -529,6 +529,15 @@ function AuditPanel({
 		},
 		onError: (value) => setDecisionError(runErrorMessage(value)),
 	});
+	const ticketPackage = packetQuery.data?.ticketPackage;
+	const packagePacket = isPackageAuditPacket(packetQuery.data?.document);
+	React.useEffect(() => {
+		if (packagePacket && (findingSource === "executor_implementation" || findingSource === "execution_spec")) setFindingSource("both");
+		if (!packagePacket && (findingSource === "implementation" || findingSource === "governing_package")) setFindingSource("both");
+	}, [packagePacket, findingSource]);
+	const findingRequired = decision === "needs_revision" && (packagePacket || Boolean(ticketPackage));
+	const findingComplete = Boolean(findingSummary.trim() && findingEvidence.trim() && requiredRemediation.trim());
+	const decisionReady = Boolean(packetQuery.data && rationale.trim() && operatorConfirmed && (!findingRequired || findingComplete));
 
   if (statusQuery.isLoading) {
     return <RelayStateSurface tone="loading" title="Loading audit status" description="Loading current packet and recorded decision metadata." />;
@@ -544,15 +553,6 @@ function AuditPanel({
     );
   }
   const status = statusQuery.data;
-	const ticketPackage = packetQuery.data?.ticketPackage;
-	const packagePacket = isPackageAuditPacket(packetQuery.data?.document);
-	React.useEffect(() => {
-		if (packagePacket && (findingSource === "executor_implementation" || findingSource === "execution_spec")) setFindingSource("both");
-		if (!packagePacket && (findingSource === "implementation" || findingSource === "governing_package")) setFindingSource("both");
-	}, [packagePacket, findingSource]);
-	const findingRequired = decision === "needs_revision" && Boolean(ticketPackage);
-	const findingComplete = Boolean(findingSummary.trim() && findingEvidence.trim() && requiredRemediation.trim());
-	const decisionReady = Boolean(packetQuery.data && rationale.trim() && operatorConfirmed && (!findingRequired || findingComplete));
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]" data-testid="audit-responsive-grid">
       <section className="space-y-4 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
@@ -612,7 +612,7 @@ function AuditPanel({
 				<div className="mt-2 space-y-2">{ticketPackage.tickets.map((ticket) => <div key={ticket.revisionRowId} className="rounded border p-2"><span className="font-medium">{ticket.ticketId} r{ticket.revisionNumber}</span><span className="ml-2 text-muted-foreground">approval {ticket.approvalId}</span><p className="mt-1 break-all font-mono text-[10px]">member {ticket.memberSha256} · approval basis {ticket.approvalBasisSha256}</p></div>)}</div>
 				<p className="mt-2 text-muted-foreground">Bundle {ticketPackage.bundleIntegration.selectionId} is {ticketPackage.bundleIntegration.selectionState}; no frontier state is changed by inspection.</p>
 			</div>
-		) : status.currentPacket && packetQuery.data ? <p className="rounded border border-dashed p-3 text-xs text-muted-foreground">This ordinary Run has no ticket-package obligations. Legacy audit behavior is unchanged.</p> : null}
+		) : status.currentPacket && packetQuery.data && !packagePacket ? <p className="rounded border border-dashed p-3 text-xs text-muted-foreground">This ordinary Run has no ticket-package obligations. Legacy audit behavior is unchanged.</p> : null}
         {status.decision ? (
           <div className="rounded border border-success/30 bg-success/10 p-3">
             <p className="text-sm font-medium">{status.decision.decision}</p>
