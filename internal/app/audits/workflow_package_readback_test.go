@@ -3,7 +3,9 @@ package audits
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -76,6 +78,7 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 			reason: "packet_integrity_failed",
 			configure: func(t *testing.T, fixture *packageEvidenceFixture, _ *WorkflowAuditService) error {
 				t.Helper()
+				allowPackageAuditPacketMutation(t, fixture)
 				_, err := fixture.store.DB().Exec(`UPDATE audit_packets SET base_commit = ? WHERE run_row_id = ?`, strings.Repeat("d", 40), fixture.run.ID)
 				return err
 			},
@@ -149,6 +152,103 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 	}
 }
 
+func TestWorkflowPackageAuditGetCurrentPacketRejectsMalformedAndNoncanonicalDocuments(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason string
+		mutate func([]byte) []byte
+	}{
+		{
+			name:   "malformed_json",
+			reason: "packet_integrity_failed",
+			mutate: func([]byte) []byte { return []byte(`{"schema_version":`) },
+		},
+		{
+			name:   "changed_indentation",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte {
+				return bytes.Replace(data, []byte("  \""), []byte("    \""), 1)
+			},
+		},
+		{
+			name:   "property_reordering",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte {
+				var properties map[string]json.RawMessage
+				if err := json.Unmarshal(data, &properties); err != nil {
+					t.Fatal(err)
+				}
+				reordered, err := json.MarshalIndent(properties, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				return append(reordered, '\n')
+			},
+		},
+		{
+			name:   "wrong_schema_version",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte {
+				return bytes.Replace(data, []byte(`"schema_version": "3.0"`), []byte(`"schema_version": "4.0"`), 1)
+			},
+		},
+		{
+			name:   "unknown_property",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte {
+				return bytes.Replace(data, []byte("{\n"), []byte("{\n  \"unknown\": true,\n"), 1)
+			},
+		},
+		{
+			name:   "duplicate_property",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte {
+				return bytes.Replace(data, []byte("{\n"), []byte("{\n  \"schema_version\": \"3.0\",\n"), 1)
+			},
+		},
+		{
+			name:   "missing_trailing_newline",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte { return bytes.TrimSuffix(data, []byte("\n")) },
+		},
+		{
+			name:   "multiple_trailing_newlines",
+			reason: "packet_schema_readback_failed",
+			mutate: func(data []byte) []byte { return append(append([]byte(nil), data...), '\n') },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture, service := newPackageAuditReadbackFixture(t)
+			data := currentPackagePacketBytes(t, fixture)
+			replaceCurrentPackagePacketBytes(t, fixture, test.mutate(data))
+			_, err := service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+			if !errors.Is(err, ErrWorkflowAuditPacketStale) {
+				t.Fatalf("error = %v, want ErrWorkflowAuditPacketStale", err)
+			}
+			requirePackageAuditPacketStale(t, fixture, test.reason)
+		})
+	}
+}
+
+func TestWorkflowPackageAuditGetCurrentPacketRejectsCoherentlyAlteredCanonicalDocument(t *testing.T) {
+	fixture, service := newPackageAuditReadbackFixture(t)
+	var document WorkflowPackageAuditPacket
+	if err := json.Unmarshal(currentPackagePacketBytes(t, fixture), &document); err != nil {
+		t.Fatal(err)
+	}
+	document.Run.UserIntent = "coherently altered persisted packet"
+	altered, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaceCurrentPackagePacketBytes(t, fixture, append(altered, '\n'))
+	if _, err := service.GetCurrentPacket(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPacketStale) {
+		t.Fatalf("error = %v, want ErrWorkflowAuditPacketStale", err)
+	}
+	requirePackageAuditPacketStale(t, fixture, "canonical_packet_changed")
+}
+
 func TestWorkflowPackageAuditGetCurrentPacketWithoutEvidenceLoaderDoesNotMarkStale(t *testing.T) {
 	fixture, service := newPackageAuditReadbackFixture(t)
 	legacyOnly, err := NewWorkflowAuditServiceWithInspector(fixture.store, service.inspector)
@@ -186,5 +286,56 @@ func requirePackageAuditPacketStale(t *testing.T, fixture *packageEvidenceFixtur
 	}
 	if status != workflowstore.AuditPacketStatusStale || staleReason != reason {
 		t.Fatalf("packet = (%q, %q), want (stale, %q)", status, staleReason, reason)
+	}
+}
+
+func currentPackagePacketBytes(t *testing.T, fixture *packageEvidenceFixture) []byte {
+	t.Helper()
+	packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := fixture.store.GetArtifactByRowID(context.Background(), packet.ArtifactRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := readWorkflowArtifact(fixture.store, artifact, MaxWorkflowAuditPacketBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func replaceCurrentPackagePacketBytes(t *testing.T, fixture *packageEvidenceFixture, data []byte) {
+	t.Helper()
+	allowPackageAuditPacketMutation(t, fixture)
+	packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := fixture.store.GetArtifactByRowID(context.Background(), packet.ArtifactRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := workflowArtifactPath(fixture.store, artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256HexBytes(data)
+	if _, err := fixture.store.DB().Exec(`UPDATE artifacts SET sha256 = ?, size_bytes = ? WHERE id = ?`, digest, len(data), artifact.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.DB().Exec(`UPDATE audit_packets SET packet_sha256 = ? WHERE id = ?`, digest, packet.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func allowPackageAuditPacketMutation(t *testing.T, fixture *packageEvidenceFixture) {
+	t.Helper()
+	if _, err := fixture.store.DB().Exec(`DROP TRIGGER IF EXISTS audit_packet_identity_immutable`); err != nil {
+		t.Fatal(err)
 	}
 }

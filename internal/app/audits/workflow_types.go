@@ -383,11 +383,6 @@ type GetWorkflowAuditPacketResult struct {
 	Packet   workflowstore.AuditPacket
 	Artifact workflowstore.Artifact
 	Document json.RawMessage
-
-	// PacketBytes is retained for existing internal callers while they migrate
-	// to Document. GetCurrentPacket always returns the same exact persisted
-	// bytes in both fields.
-	PacketBytes []byte
 }
 
 type WorkflowAuditStatus struct {

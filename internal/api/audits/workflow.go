@@ -128,9 +128,6 @@ func (h *WorkflowHandler) Packet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	documentBytes := current.Document
-	if len(documentBytes) == 0 {
-		documentBytes = current.PacketBytes
-	}
 	var packetHeader struct {
 		SchemaVersion string `json:"schema_version"`
 	}

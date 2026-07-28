@@ -97,9 +97,9 @@ func TestWorkflowAuditStatusReturnsCurrentAndLatest(t *testing.T) {
 func TestWorkflowAuditPacketReturnsExactTicketObligations(t *testing.T) {
 	service := &fakeWorkflowAuditService{
 		current: appaudits.GetWorkflowAuditPacketResult{
-			Run:         workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusAuditReady},
-			Packet:      workflowstore.AuditPacket{AuditPacketID: "packet-test", Status: workflowstore.AuditPacketStatusCurrent},
-			PacketBytes: []byte(`{"schema_version":"2.0","artifacts":[{"artifact_reference":"artifact-ticket-package","artifact_type":"ticket_package_evidence"}]}`),
+			Run:      workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusAuditReady},
+			Packet:   workflowstore.AuditPacket{AuditPacketID: "packet-test", Status: workflowstore.AuditPacketStatusCurrent},
+			Document: []byte(`{"schema_version":"2.0","artifacts":[{"artifact_reference":"artifact-ticket-package","artifact_type":"ticket_package_evidence"}]}`),
 		},
 		artifact: appaudits.GetWorkflowAuditArtifactResult{Content: []byte(`{
 			"schema_version":"1.0",

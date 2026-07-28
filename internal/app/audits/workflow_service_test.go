@@ -369,7 +369,7 @@ func TestWorkflowAuditApplierOnlyPacketUsesRunEvidenceWithoutExecutorAttempt(t *
 		if err != nil {
 			t.Fatal(err)
 		}
-		return current.PacketBytes
+		return current.Document
 	}(), &packet); err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestWorkflowAuditApplierOnlyPacketExcludesUnrelatedRunArtifacts(t *testing.
 		t.Fatal(err)
 	}
 	var packet WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 	for _, declared := range packet.Artifacts {
@@ -437,7 +437,7 @@ func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	var packetManaged map[string]any
-	if err := json.Unmarshal(currentManaged.PacketBytes, &packetManaged); err != nil {
+	if err := json.Unmarshal(currentManaged.Document, &packetManaged); err != nil {
 		t.Fatal(err)
 	}
 
@@ -454,7 +454,7 @@ func TestWorkflowAuditPacketConformsToSchemaContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	var packetUnassociated map[string]any
-	if err := json.Unmarshal(currentUnassociated.PacketBytes, &packetUnassociated); err != nil {
+	if err := json.Unmarshal(currentUnassociated.Document, &packetUnassociated); err != nil {
 		t.Fatal(err)
 	}
 
@@ -777,7 +777,7 @@ func TestWorkflowAuditRemediationPacketConformsToSchemaContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	var packet map[string]any
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 
@@ -835,7 +835,7 @@ func TestWorkflowAuditHybridPacketConformsToCurrentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	var packet WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 	if packet.SchemaVersion != "2.0" ||
@@ -858,7 +858,7 @@ func TestWorkflowAuditPacketValidatorEnforcesClosedCurrentAuthority(t *testing.T
 		t.Fatal(err)
 	}
 	var packet map[string]any
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 	requireAuditPacketValidity(t, packet, true)
@@ -1161,7 +1161,7 @@ func TestWorkflowAuditPacketExcludesRuntimeAndEvidenceBodies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(current.PacketBytes)
+	text := string(current.Document)
 	for _, forbidden := range []string{
 		"owner-private",
 		"pid-private",
@@ -1318,7 +1318,7 @@ func workflowAuditEvidenceReference(t *testing.T, fixture *auditFixture) (workfl
 		t.Fatal(err)
 	}
 	var packet WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 	if len(packet.Artifacts) == 0 {
@@ -1463,7 +1463,7 @@ func TestWorkflowAuditArtifactReadbackUsesPacketDeclaredArtifacts(t *testing.T) 
 		t.Fatal(err)
 	}
 	var packet WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 	var diffRef string
@@ -1674,7 +1674,7 @@ func TestWorkflowAuditTicketPackageEvidenceIsBoundedAndFresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	var packet WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		t.Fatal(err)
 	}
 	packageEvidence, found, err := workflowAuditTicketPackageArtifact(packet)

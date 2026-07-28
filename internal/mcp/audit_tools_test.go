@@ -67,7 +67,7 @@ func TestGetAuditPacketReturnsAuthoritativeBody(t *testing.T) {
 			PacketSHA256:  strings.Repeat("c", 64),
 			AuditedCommit: strings.Repeat("b", 40),
 		},
-		PacketBytes: []byte(`{"schema_version":"1.0","run":{"run_id":1}}`),
+		Document: []byte(`{"schema_version":"1.0","run":{"run_id":1}}`),
 	}}
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
 	result := server.HandleGetWorkflowAuditPacket(json.RawMessage(`{"run_id":"run-test"}`))

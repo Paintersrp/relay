@@ -119,7 +119,7 @@ func (s *Server) HandleGetWorkflowAuditPacket(rawArgs json.RawMessage) ToolCallR
 		return workflowAuditBlocked("get_audit_packet", err)
 	}
 	var packet any
-	if err := json.Unmarshal(result.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(result.Document, &packet); err != nil {
 		return workflowBlocked("get_audit_packet", submissionBlockerPersistenceFailed, "stored audit packet could not be decoded", false, "audit_packet", nil)
 	}
 	return workflowOK(map[string]any{

@@ -647,7 +647,7 @@ func newAuditReadbackHandler(manifest routecontracts.RouteManifest, name string,
 				return toolErr(err.Error())
 			}
 			var packet any
-			if err := json.Unmarshal(result.PacketBytes, &packet); err != nil {
+			if err := json.Unmarshal(result.Document, &packet); err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"run": result.Run, "audit_packet": result.Packet, "packet": packet})

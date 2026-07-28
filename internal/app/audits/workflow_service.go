@@ -522,8 +522,7 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 	}
 	return GetWorkflowAuditPacketResult{
 		Run: run, Packet: packet, Artifact: artifact,
-		Document:    append(json.RawMessage(nil), data...),
-		PacketBytes: append([]byte(nil), data...),
+		Document: append(json.RawMessage(nil), data...),
 	}, nil
 }
 
@@ -553,11 +552,10 @@ func (s *WorkflowAuditService) getCurrentPackagePacket(
 		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_integrity_failed", err)
 	}
 
-	var document WorkflowPackageAuditPacket
-	if err := json.Unmarshal(data, &document); err != nil || document.SchemaVersion != WorkflowPackageAuditPacketSchemaVersion {
-		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_schema_readback_failed", err)
+	if !json.Valid(data) {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_integrity_failed", nil)
 	}
-	if err := validateWorkflowPackageAuditPacket(document); err != nil {
+	if err := validateWorkflowPackageAuditPacketBytes(data); err != nil {
 		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_schema_readback_failed", err)
 	}
 
@@ -596,8 +594,7 @@ func (s *WorkflowAuditService) getCurrentPackagePacket(
 
 	return GetWorkflowAuditPacketResult{
 		Run: run, Packet: packet, Artifact: artifact,
-		Document:    append(json.RawMessage(nil), data...),
-		PacketBytes: append([]byte(nil), data...),
+		Document: append(json.RawMessage(nil), data...),
 	}, nil
 }
 
@@ -692,7 +689,7 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 		return GetWorkflowAuditArtifactResult{}, err
 	}
 	var packet WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+	if err := json.Unmarshal(current.Document, &packet); err != nil {
 		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditPacketStale
 	}
 	declared, err := resolvePacketArtifact(packet.Artifacts, input.ArtifactReference)
