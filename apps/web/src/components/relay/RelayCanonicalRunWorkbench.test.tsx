@@ -291,6 +291,69 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     expect(screen.queryByText(/ordinary Run has no ticket-package obligations/)).not.toBeInTheDocument();
   });
 
+  it("moves from loading audit data to the decision form without a hook-order error", async () => {
+    mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
+    mocks.getAuditStatus.mockResolvedValue({
+      runId: "run-1", runStatus: "audit_ready",
+      currentPacket: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+    });
+    mocks.getAuditPacket.mockResolvedValue({
+      packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+      document: { schema_version: "3.0" },
+    });
+
+    renderWorkbench("audit");
+
+    expect(await screen.findByText("Record confirmed decision")).toBeInTheDocument();
+  });
+
+  it("requires a complete package revision finding before enabling submission", async () => {
+    const user = userEvent.setup();
+    mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
+    mocks.getAuditStatus.mockResolvedValue({
+      runId: "run-1", runStatus: "audit_ready",
+      currentPacket: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+    });
+    mocks.getAuditPacket.mockResolvedValue({
+      packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+      document: { schema_version: "3.0" },
+    });
+
+    renderWorkbench("audit");
+    await screen.findByText("Record confirmed decision");
+    await user.selectOptions(screen.getByLabelText("Decision"), "needs_revision");
+    await user.type(screen.getByLabelText("Decision rationale"), "revision required");
+    await user.click(screen.getByRole("checkbox"));
+    const submit = screen.getByRole("button", { name: "Record decision" });
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByLabelText("Finding summary"), "missing proof");
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByLabelText("Evidence"), "packet evidence");
+    await user.type(screen.getByLabelText("Required remediation"), "provide proof");
+    expect(submit).toBeEnabled();
+  });
+
+  it.each([
+    ["package", { schema_version: "3.0" }, ["both", "implementation", "governing_package"]],
+    ["legacy", { schema_version: "2.0" }, ["both", "executor_implementation", "execution_spec"]],
+  ])("offers only the %s finding sources", async (_kind, document, expectedSources) => {
+    const user = userEvent.setup();
+    mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
+    mocks.getAuditStatus.mockResolvedValue({
+      runId: "run-1", runStatus: "audit_ready",
+      currentPacket: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+    });
+    mocks.getAuditPacket.mockResolvedValue({
+      packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+      document,
+    });
+
+    renderWorkbench("audit");
+    await screen.findByText("Record confirmed decision");
+    await user.selectOptions(screen.getByLabelText("Decision"), "needs_revision");
+    expect(Array.from((screen.getByLabelText("Finding source") as HTMLSelectElement).options).map((option) => option.value)).toEqual(expectedSources);
+  });
+
   it("disables Start while execution is active", async () => {
     const summary = makeSummary("running");
     mocks.getRun.mockResolvedValue(

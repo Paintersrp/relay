@@ -536,7 +536,7 @@ func (s *WorkflowAuditService) getCurrentPackagePacket(
 	}
 	current, err := s.readCurrentPackagePacket(ctx, run, packet)
 	if err != nil {
-		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_integrity_failed", err)
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, packagePacketReadbackStaleReason(err), err)
 	}
 
 	evidence, err := s.loadPackageEvidence(ctx, run.RunID)
@@ -548,6 +548,19 @@ func (s *WorkflowAuditService) getCurrentPackagePacket(
 	}
 	return current, nil
 }
+
+// packagePacketReadbackStaleReason keeps persisted packet corruption distinct
+// from canonical schema readback failures. The reader retains the underlying
+// error so callers can still use errors.Is to inspect injected infrastructure
+// failures.
+func packagePacketReadbackStaleReason(err error) string {
+	if errors.Is(err, errWorkflowPackagePacketSchemaReadback) {
+		return "packet_schema_readback_failed"
+	}
+	return "packet_integrity_failed"
+}
+
+var errWorkflowPackagePacketSchemaReadback = errors.New("workflow package packet schema readback failed")
 
 // readCurrentPackagePacket is the shared persisted-packet boundary. Evidence
 // freshness is deliberately separate so a decision can load evidence once.
@@ -570,7 +583,7 @@ func (s *WorkflowAuditService) readCurrentPackagePacket(ctx context.Context, run
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
 	if err := validateWorkflowPackageAuditPacketBytes(data); err != nil {
-		return GetWorkflowAuditPacketResult{}, fmt.Errorf("%w: %w", ErrWorkflowAuditPacketStale, err)
+		return GetWorkflowAuditPacketResult{}, fmt.Errorf("%w: %w", errWorkflowPackagePacketSchemaReadback, err)
 	}
 	return GetWorkflowAuditPacketResult{Run: run, Packet: packet, Artifact: artifact, Document: append(json.RawMessage(nil), data...)}, nil
 }
