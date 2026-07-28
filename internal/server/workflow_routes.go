@@ -56,6 +56,10 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if log == nil {
 		log = slog.Default()
 	}
+	var sourceVaultReader apppackages.SourceVaultReader
+	if sourceVaults != nil {
+		sourceVaultReader = sourceVaults
+	}
 
 	readService, err := workflowapp.NewService(workflowStore)
 	if err != nil {
@@ -73,7 +77,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct submission service: %w", err)
 	}
-	auditService, err := appaudits.NewWorkflowAuditService(workflowStore)
+	auditService, err := appaudits.NewWorkflowAuditServiceWithSourceVaults(workflowStore, sourceVaultReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct audit service: %w", err)
 	}
@@ -84,10 +88,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	featureAuthorityService, err := appfeatures.NewService(workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct feature authority service: %w", err)
-	}
-	var sourceVaultReader apppackages.SourceVaultReader
-	if sourceVaults != nil {
-		sourceVaultReader = sourceVaults
 	}
 	executionService, err := executor.NewExecution(workflowStore, log, ownerInstanceID, sourceVaultReader)
 	if err != nil {

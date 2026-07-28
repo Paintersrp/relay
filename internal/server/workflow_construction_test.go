@@ -37,16 +37,16 @@ func TestBuildWorkflowRuntimeReturnsErrorForNilWorkflowStore(t *testing.T) {
 	}
 }
 
-func TestBuildWorkflowRuntimePropagatesExecutionConstructionError(t *testing.T) {
+func TestBuildWorkflowRuntimePropagatesAuditConstructionError(t *testing.T) {
 	store, _ := openWorkflowRouteTestStore(t)
 	handler, routes, err := buildWorkflowRuntime(store, nil, "owner-test", nil, nil)
 	if err == nil {
-		t.Fatal("expected execution construction error")
+		t.Fatal("expected audit construction error")
 	}
 	if handler != nil || routes != nil {
 		t.Fatalf("partial runtime = handler %v, routes %#v", handler, routes)
 	}
-	if !strings.Contains(err.Error(), "construct execution") {
+	if !strings.Contains(err.Error(), "construct audit service") {
 		t.Fatalf("error = %q", err)
 	}
 }

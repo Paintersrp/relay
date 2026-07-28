@@ -26,6 +26,7 @@ const (
 
 var (
 	ErrWorkflowAuditNotReady            = errors.New("workflow Run is not ready to prepare an audit packet")
+	ErrWorkflowAuditPackageUnavailable  = errors.New("workflow package audit preparation is unavailable")
 	ErrWorkflowAuditPacketNotFound      = errors.New("workflow audit packet was not found")
 	ErrWorkflowAuditPacketStale         = errors.New("workflow audit packet is stale")
 	ErrWorkflowAuditDecisionRecorded    = errors.New("workflow audit decision has already been recorded")
@@ -164,31 +165,31 @@ type WorkflowAuditTicketPackageEvidence struct {
 }
 
 type WorkflowAuditPackageApprovalEvidence struct {
-	ApprovalRowID              int64  `json:"approval_row_id"`
-	ApprovalID                 string `json:"approval_id"`
-	PackageRowID               int64  `json:"package_row_id"`
-	ApprovedPackageSha256      string `json:"approved_package_sha256"`
+	ApprovalRowID                int64  `json:"approval_row_id"`
+	ApprovalID                   string `json:"approval_id"`
+	PackageRowID                 int64  `json:"package_row_id"`
+	ApprovedPackageSha256        string `json:"approved_package_sha256"`
 	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
 }
 
 type WorkflowAuditExecutionPackageEvidence struct {
-	PackageRowID        int64                               `json:"package_row_id"`
-	PackageID           string                              `json:"package_id"`
-	PackageSHA256       string                              `json:"package_sha256"`
-	RepoTarget          string                              `json:"repo_target"`
-	Branch              string                              `json:"branch"`
-	BaseCommit          string                              `json:"base_commit"`
-	SelectionRowID      int64                               `json:"selection_row_id"`
-	SelectionID         string                              `json:"selection_id"`
-	SelectionState      string                              `json:"selection_state"`
-	WorkspaceRowID      int64                               `json:"workspace_row_id"`
-	WorkspaceID         string                              `json:"workspace_id"`
-	FeatureSlug         string                              `json:"feature_slug"`
-	Authority           WorkflowAuditAuthorityBasisEvidence `json:"authority"`
-	Source              WorkflowAuditSourceBasisEvidence    `json:"source"`
-	DesignBriefSHA256   string                              `json:"design_brief_sha256"`
-	ExecutionSpecSHA256 string                              `json:"execution_spec_sha256"`
-	ExecutionSpec       WorkflowAuditPacketArtifact         `json:"execution_spec"`
+	PackageRowID        int64                                `json:"package_row_id"`
+	PackageID           string                               `json:"package_id"`
+	PackageSHA256       string                               `json:"package_sha256"`
+	RepoTarget          string                               `json:"repo_target"`
+	Branch              string                               `json:"branch"`
+	BaseCommit          string                               `json:"base_commit"`
+	SelectionRowID      int64                                `json:"selection_row_id"`
+	SelectionID         string                               `json:"selection_id"`
+	SelectionState      string                               `json:"selection_state"`
+	WorkspaceRowID      int64                                `json:"workspace_row_id"`
+	WorkspaceID         string                               `json:"workspace_id"`
+	FeatureSlug         string                               `json:"feature_slug"`
+	Authority           WorkflowAuditAuthorityBasisEvidence  `json:"authority"`
+	Source              WorkflowAuditSourceBasisEvidence     `json:"source"`
+	DesignBriefSHA256   string                               `json:"design_brief_sha256"`
+	ExecutionSpecSHA256 string                               `json:"execution_spec_sha256"`
+	ExecutionSpec       WorkflowAuditPacketArtifact          `json:"execution_spec"`
 	PackageApproval     WorkflowAuditPackageApprovalEvidence `json:"package_approval,omitempty"`
 }
 
