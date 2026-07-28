@@ -143,4 +143,22 @@ func TestWorkflowAuditDecisionRequiresExactConfirmationInput(t *testing.T) {
 	}
 }
 
+func TestWorkflowAuditDecisionForwardsFindingSourcesUnchanged(t *testing.T) {
+	for _, source := range []string{"implementation", "governing_package", "both", "executor_implementation"} {
+		t.Run(source, func(t *testing.T) {
+			service := &fakeWorkflowAuditService{decision: appaudits.RecordWorkflowAuditDecisionResult{Run: workflowstore.Run{RunID: "run-test"}, Packet: workflowstore.AuditPacket{AuditPacketID: "packet-test"}, Decision: workflowstore.AuditDecision{AuditDecisionID: "decision-test"}}}
+			body := `{"auditPacketId":"packet-test","packetSha256":"` + strings.Repeat("c", 64) + `","auditedCommit":"` + strings.Repeat("b", 40) + `","decision":"needs_revision","rationale":"revision required","materialFindings":[{"source":"` + source + `","summary":"missing proof","evidence":"packet evidence","required_remediation":"supply proof"}],"operatorConfirmed":true}`
+			response := httptest.NewRecorder()
+			workflowAuditRouter(service).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/runs/run-test/audit/decision", strings.NewReader(body)))
+			if response.Code != http.StatusCreated {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			want := appaudits.WorkflowAuditMaterialFinding{Source: source, Summary: "missing proof", Evidence: "packet evidence", RequiredRemediation: "supply proof"}
+			if len(service.decisionInput.MaterialFindings) != 1 || service.decisionInput.MaterialFindings[0] != want {
+				t.Fatalf("received findings = %#v, want %#v", service.decisionInput.MaterialFindings, want)
+			}
+		})
+	}
+}
+
 var _ = errors.Is

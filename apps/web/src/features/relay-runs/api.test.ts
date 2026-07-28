@@ -232,6 +232,29 @@ describe("canonical Run attempt transport", () => {
 });
 
 describe("ticket-aware audit transport", () => {
+
+  it("serializes package finding attribution unchanged and accepts empty seeds", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({
+        runId: "run-1", runStatus: "audit_ready",
+        packet: { auditPacketId: "packet-1", implementationActorKind: "executor", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), status: "current", createdAt: "2026-07-19T00:00:00Z" },
+        document: { schema_version: "3.0" },
+      }))
+      .mockResolvedValueOnce(response({
+        runId: "run-1", runStatus: "needs_revision",
+        packet: { auditPacketId: "packet-1", implementationActorKind: "executor", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), status: "current", createdAt: "2026-07-19T00:00:00Z" },
+        decision: { auditDecisionId: "decision-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), decision: "needs_revision", rationale: "missing proof", createdAt: "2026-07-19T00:00:00Z" },
+        effects: { ticketRevisionDecisions: [], ticketSatisfactions: [], remediationSeeds: [] },
+      }));
+    vi.stubGlobal("fetch", fetch);
+
+    const packet = await getWorkflowAuditPacket("run-1");
+    const result = await recordWorkflowAuditDecision("run-1", { auditPacketId: packet.packet.auditPacketId, packetSha256: packet.packet.packetSha256, auditedCommit: packet.packet.auditedCommit, decision: "needs_revision", rationale: "missing proof", materialFindings: [{ source: "governing_package", summary: "missing proof", evidence: "packet", requiredRemediation: "supply proof" }], observations: [], operatorConfirmed: true });
+
+    expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toMatchObject({ materialFindings: [{ source: "governing_package" }] });
+    expect(result.effects.remediationSeeds).toEqual([]);
+  });
+
   it("reads exact ticket obligations and submits only a confirmed packet decision", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(response({

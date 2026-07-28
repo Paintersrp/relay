@@ -15,10 +15,14 @@ const mocks = vi.hoisted(() => ({
   getSpecification: vi.fn(),
   getAttempt: vi.fn(),
   getAuditStatus: vi.fn(),
+
+  getAuditPacket: vi.fn(),
   startAttempt: vi.fn(),
   cancelAttempt: vi.fn(),
   reconcileAttempt: vi.fn(),
   prepareAudit: vi.fn(),
+
+  recordAuditDecision: vi.fn(),
   link: vi.fn(),
   navigate: vi.fn(),
 }));
@@ -68,10 +72,18 @@ vi.mock("@/features/relay-runs", async (importOriginal) => {
       queryFn: mocks.getAuditStatus,
       retry: false,
     }),
+
+    workflowAuditPacketQueryOptions: (runId: string) => ({
+      queryKey: ["workflow-runs", "detail", runId, "audit-packet"],
+      queryFn: mocks.getAuditPacket,
+      retry: false,
+    }),
     startWorkflowAttempt: mocks.startAttempt,
     cancelWorkflowAttempt: mocks.cancelAttempt,
     reconcileWorkflowAttempt: mocks.reconcileAttempt,
     prepareWorkflowAudit: mocks.prepareAudit,
+
+    recordWorkflowAuditDecision: mocks.recordAuditDecision,
     workflowApiUrl: (path: string) => `http://localhost:8080${path}`,
     workflowRunKeys: {
       detail: (runId: string) => ["workflow-runs", "detail", runId],
@@ -214,16 +226,22 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     mocks.getSpecification.mockReset();
     mocks.getAttempt.mockReset();
     mocks.getAuditStatus.mockReset();
+
+    mocks.getAuditPacket.mockReset();
     mocks.startAttempt.mockReset();
     mocks.cancelAttempt.mockReset();
     mocks.reconcileAttempt.mockReset();
     mocks.prepareAudit.mockReset();
+
+    mocks.recordAuditDecision.mockReset();
     mocks.link.mockReset();
     mocks.getRun.mockResolvedValue(makeDetail());
     mocks.getAuditStatus.mockResolvedValue({
       runId: "run-1",
       runStatus: "audit_ready",
     });
+
+    mocks.getAuditPacket.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -240,6 +258,37 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     expect(
       await screen.findByRole("button", { name: "Start attempt" }),
     ).toBeEnabled();
+  });
+
+  it("renders package sources after loading and submits the selected source unchanged", async () => {
+    const user = userEvent.setup();
+    mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
+    mocks.getAuditStatus.mockResolvedValue({
+      runId: "run-1", runStatus: "audit_ready",
+      currentPacket: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+    });
+    mocks.getAuditPacket.mockResolvedValue({
+      packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
+      document: { schema_version: "3.0" },
+    });
+    mocks.recordAuditDecision.mockResolvedValue({ effects: { ticketSatisfactions: [], remediationSeeds: [] } });
+
+    renderWorkbench("audit");
+    await screen.findByText("Record confirmed decision");
+    await user.selectOptions(screen.getByLabelText("Decision"), "needs_revision");
+    const source = screen.getByLabelText("Finding source");
+    expect(within(source).queryByRole("option", { name: "Executor implementation" })).not.toBeInTheDocument();
+    expect(within(source).getByRole("option", { name: "Governing package" })).toBeInTheDocument();
+    await user.selectOptions(source, "governing_package");
+    await user.type(screen.getByLabelText("Decision rationale"), "revision required");
+    await user.type(screen.getByLabelText("Finding summary"), "missing proof");
+    await user.type(screen.getByLabelText("Evidence"), "packet");
+    await user.type(screen.getByLabelText("Required remediation"), "supply proof");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Record decision" }));
+
+    await waitFor(() => expect(mocks.recordAuditDecision).toHaveBeenCalledWith("run-1", expect.objectContaining({ materialFindings: [expect.objectContaining({ source: "governing_package" })] })));
+    expect(screen.queryByText(/ordinary Run has no ticket-package obligations/)).not.toBeInTheDocument();
   });
 
   it("disables Start while execution is active", async () => {

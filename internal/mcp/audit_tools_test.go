@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -109,6 +110,36 @@ func TestRecordAuditDecisionForwardsBoundedMaterialFindings(t *testing.T) {
 	result := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{"run_id":"run-test","audit_packet_id":"packet-test","packet_sha256":"` + strings.Repeat("c", 64) + `","audited_commit":"` + strings.Repeat("b", 40) + `","decision":"needs_revision","rationale":"revision required","material_findings":[{"source":"both","summary":"missing proof","evidence":"packet","required_remediation":"supply proof"}],"operator_confirmed":true}`))
 	if result.IsError || len(service.decisionInput.MaterialFindings) != 1 || service.decisionInput.MaterialFindings[0].RequiredRemediation != "supply proof" {
 		t.Fatalf("result = %+v input = %#v", result, service.decisionInput)
+	}
+}
+
+func TestRecordAuditDecisionSchemaAndFindingSources(t *testing.T) {
+	var schema struct {
+		Properties map[string]struct {
+			Items struct {
+				Properties map[string]struct {
+					Enum []string `json:"enum"`
+				} `json:"properties"`
+			} `json:"items"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(recordAuditDecisionSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	gotSources := schema.Properties["material_findings"].Items.Properties["source"].Enum
+	wantSources := []string{"executor_implementation", "execution_spec", "implementation", "governing_package", "both"}
+	if !reflect.DeepEqual(gotSources, wantSources) {
+		t.Fatalf("finding source enum = %#v, want %#v", gotSources, wantSources)
+	}
+	for _, source := range []string{"implementation", "governing_package", "both"} {
+		t.Run(source, func(t *testing.T) {
+			service := &fakeWorkflowAuditToolService{decision: appaudits.RecordWorkflowAuditDecisionResult{Run: workflowstore.Run{RunID: "run-test"}, Packet: workflowstore.AuditPacket{AuditPacketID: "packet-test"}, Decision: workflowstore.AuditDecision{AuditDecisionID: "audit-test"}}}
+			server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
+			result := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{"run_id":"run-test","audit_packet_id":"packet-test","packet_sha256":"` + strings.Repeat("c", 64) + `","audited_commit":"` + strings.Repeat("b", 40) + `","decision":"needs_revision","rationale":"revision required","material_findings":[{"source":"` + source + `","summary":"missing proof","evidence":"packet","required_remediation":"supply proof"}],"operator_confirmed":true}`))
+			if result.IsError || len(service.decisionInput.MaterialFindings) != 1 || service.decisionInput.MaterialFindings[0].Source != source {
+				t.Fatalf("result = %+v input = %#v", result, service.decisionInput)
+			}
+		})
 	}
 }
 

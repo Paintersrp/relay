@@ -2,6 +2,7 @@ package audits
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -26,6 +27,33 @@ func TestWorkflowPackageAuditRecordDecisionAccepted(t *testing.T) {
 	}
 	if result.Run.Status != workflowstore.RunStatusCompleted || len(result.TicketRevisionDecisions) != 1 || len(result.TicketSatisfactions) != 1 || len(result.RemediationSeeds) != 0 {
 		t.Fatalf("accepted package decision = %#v", result)
+	}
+}
+
+func TestWorkflowPackageAuditRecordDecisionRejectsCoherentlyAlteredPacket(t *testing.T) {
+	fixture, service := newPackageAuditPrepareFixture(t, true)
+	ctx := context.Background()
+	var document WorkflowPackageAuditPacket
+	if err := json.Unmarshal(currentPackagePacketBytes(t, fixture), &document); err != nil {
+		t.Fatal(err)
+	}
+	document.Run.UserIntent = "coherently altered packet"
+	altered, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaceCurrentPackagePacketBytes(t, fixture, append(altered, '\n'))
+	packet, err := fixture.store.GetCurrentAuditPacketByRun(ctx, fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
+		RunID: fixture.run.RunID, AuditPacketID: packet.AuditPacketID, PacketSHA256: packet.PacketSHA256,
+		AuditedCommit: packet.AuditedCommit, Decision: workflowstore.AuditDecisionAccepted,
+		Rationale: "The altered packet must not be decided.", OperatorConfirmed: true,
+	})
+	if !errors.Is(err, ErrWorkflowAuditPacketStale) {
+		t.Fatalf("error = %v, want ErrWorkflowAuditPacketStale", err)
 	}
 }
 
