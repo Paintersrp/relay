@@ -305,7 +305,7 @@ func (s *WorkflowAuditService) preparePackage(
 	freshEvidence, err := s.loadPackageEvidence(ctx, run.RunID)
 	if err != nil {
 		_ = batch.Rollback()
-		return PrepareWorkflowAuditResult{}, err
+		return PrepareWorkflowAuditResult{}, fmt.Errorf("%w: reload package execution evidence: %w", ErrWorkflowAuditPacketStale, err)
 	}
 	if !sameWorkflowPackageRunIdentity(run, freshEvidence.Run) || !reflect.DeepEqual(evidence, freshEvidence) {
 		_ = batch.Rollback()
@@ -314,7 +314,7 @@ func (s *WorkflowAuditService) preparePackage(
 	freshCommit, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, input.AuditedCommit)
 	if err != nil {
 		_ = batch.Rollback()
-		return PrepareWorkflowAuditResult{}, err
+		return PrepareWorkflowAuditResult{}, fmt.Errorf("%w: reinspect audited commit: %w", ErrWorkflowAuditPacketStale, err)
 	}
 	if freshCommit.AuditedCommit != input.AuditedCommit || !reflect.DeepEqual(commit, freshCommit) {
 		_ = batch.Rollback()
@@ -352,7 +352,7 @@ func (s *WorkflowAuditService) preparePackage(
 
 		pkg, err := tx.GetExecutionPackageByRowID(ctx, currentRun.ExecutionPackageRowID.Int64)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: reload execution package: %w", ErrWorkflowAuditPacketStale, err)
 		}
 		approval, err := tx.GetRunExecutionPackageApproval(ctx, currentRun.ID)
 		if err != nil {
