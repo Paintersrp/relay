@@ -82,6 +82,62 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 	}
 }
 
+func TestWorkflowPackageAuditRecordDecisionPersistsImmutableArtifact(t *testing.T) {
+	fixture, service := newPackageAuditPrepareFixture(t, true)
+	ctx := context.Background()
+	packet, err := fixture.store.GetCurrentAuditPacketByRun(ctx, fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := service.loadPackageEvidence(ctx, fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadCount := 0
+	service.loadPackageEvidence = func(context.Context, string) (WorkflowPackageExecutionEvidence, error) {
+		loadCount++
+		return evidence, nil
+	}
+	input := RecordWorkflowAuditDecisionInput{
+		RunID: fixture.run.RunID, AuditPacketID: packet.AuditPacketID, PacketSHA256: packet.PacketSHA256,
+		AuditedCommit: packet.AuditedCommit, Decision: workflowstore.AuditDecisionNeedsRevision,
+		Rationale: "The package needs one precise revision.", OperatorConfirmed: true,
+		MaterialFindings: []WorkflowAuditMaterialFinding{{Source: "governing_package", Summary: "Missing proof", Evidence: "The packet lacks the required proof.", RequiredRemediation: "Add the required proof."}},
+		Observations:     []string{"The persisted packet was reconstructed exactly."},
+	}
+	result, err := service.RecordDecision(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadCount != 1 {
+		t.Fatalf("package evidence load count = %d, want 1", loadCount)
+	}
+
+	data, err := readWorkflowArtifact(fixture.store, result.Artifact, MaxWorkflowAuditPacketBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' || sha256HexBytes(data) != result.Artifact.SHA256 || result.Artifact.SizeBytes != int64(len(data)) {
+		t.Fatalf("decision artifact integrity = size %d digest %q", len(data), result.Artifact.SHA256)
+	}
+	var document workflowPackageDecisionDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.AuditDecisionID != result.Decision.AuditDecisionID || document.RunID != fixture.run.RunID || document.RunRowID != fixture.run.ID ||
+		document.Decision != string(input.Decision) || document.Rationale != input.Rationale || len(document.MaterialFindings) != 1 || document.MaterialFindings[0] != input.MaterialFindings[0] ||
+		len(document.Observations) != 1 || document.Observations[0] != input.Observations[0] || document.AuditPacketID != packet.AuditPacketID || document.AuditPacketRowID != packet.ID ||
+		document.AuditPacketArtifactRowID != packet.ArtifactRowID || document.PacketSHA256 != packet.PacketSHA256 || document.AuditedCommit != packet.AuditedCommit ||
+		document.ExecutionPackageID != evidence.Authority.Package.PackageID || document.ExecutionPackageRowID != evidence.Authority.Package.ID || document.PackageSHA256 != evidence.Authority.Package.PackageSha256 ||
+		document.PackageApprovalID != evidence.Authority.PackageApproval.ApprovalID || document.PackageApprovalRowID != evidence.Authority.PackageApproval.ID || document.ApprovedPackageSHA256 != evidence.Authority.PackageApproval.PackageSha256 ||
+		document.DeliveryTicketID != evidence.Authority.Ticket.TicketID || document.DeliveryTicketRowID != evidence.Authority.Ticket.ID || document.DeliveryTicketRevisionRowID != evidence.Authority.TicketRevision.ID ||
+		document.DeliveryTicketRevisionNumber != evidence.Authority.TicketRevision.RevisionNumber || document.DeliveryTicketApprovalID != evidence.Authority.TicketApproval.ApprovalID || document.DeliveryTicketApprovalRowID != evidence.Authority.TicketApproval.ID ||
+		document.AuthorityRevisionID != evidence.Authority.Authority.AuthorityRevisionID || document.AuthorityRevisionRowID != evidence.Authority.Authority.ID || document.SourceClosureID != evidence.Authority.Source.ClosureID ||
+		document.SourceClosureRowID != evidence.Authority.Source.ID || document.SourceCommit != evidence.Authority.Source.CommitOID {
+		t.Fatalf("immutable package decision document = %#v", document)
+	}
+}
+
 func TestWorkflowPackageAuditRecordDecisionRejectsLegacyFindingSource(t *testing.T) {
 	fixture, service := newPackageAuditPrepareFixture(t, true)
 	ctx := context.Background()

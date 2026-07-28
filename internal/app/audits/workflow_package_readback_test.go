@@ -108,6 +108,68 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 			},
 		},
 		{
+			name:   "run_evidence_identity_disagrees",
+			reason: "package_execution_evidence_changed",
+			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
+				overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
+					evidence.Run.RunID = "run-different"
+				})
+				return nil
+			},
+		},
+		{
+			name:   "repository_target_fails",
+			reason: "repository_state_changed",
+			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
+				overridePackageEvidence(t, fixture, service, func(*WorkflowPackageExecutionEvidence) {})
+				if _, err := fixture.store.DB().Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+					return err
+				}
+				_, err := fixture.store.DB().Exec(`DELETE FROM repository_targets WHERE repo_target = ?`, fixture.run.RepoTarget)
+				return err
+			},
+		},
+		{
+			name:   "repository_branch_disagrees",
+			reason: "repository_state_changed",
+			configure: func(_ *testing.T, _ *packageEvidenceFixture, service *WorkflowAuditService) error {
+				service.inspector = func(_ context.Context, _ string, branch, baseCommit, auditedCommit string) (workflowrepos.AuditCommitEvidence, error) {
+					return workflowrepos.AuditCommitEvidence{Branch: branch + "-changed", BaseCommit: baseCommit, AuditedCommit: auditedCommit}, nil
+				}
+				return nil
+			},
+		},
+		{
+			name:   "repository_base_commit_disagrees",
+			reason: "repository_state_changed",
+			configure: func(_ *testing.T, _ *packageEvidenceFixture, service *WorkflowAuditService) error {
+				service.inspector = func(_ context.Context, _ string, branch, baseCommit, auditedCommit string) (workflowrepos.AuditCommitEvidence, error) {
+					return workflowrepos.AuditCommitEvidence{Branch: branch, BaseCommit: strings.Repeat("d", 40), AuditedCommit: auditedCommit}, nil
+				}
+				return nil
+			},
+		},
+		{
+			name:   "repository_audited_commit_disagrees",
+			reason: "repository_state_changed",
+			configure: func(_ *testing.T, _ *packageEvidenceFixture, service *WorkflowAuditService) error {
+				service.inspector = func(_ context.Context, _ string, branch, baseCommit, auditedCommit string) (workflowrepos.AuditCommitEvidence, error) {
+					return workflowrepos.AuditCommitEvidence{Branch: branch, BaseCommit: baseCommit, AuditedCommit: strings.Repeat("d", 40)}, nil
+				}
+				return nil
+			},
+		},
+		{
+			name:   "input_assembly_fails",
+			reason: "canonical_packet_changed",
+			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
+				overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
+					evidence.Authority.TicketRevision.Goal = ""
+				})
+				return nil
+			},
+		},
+		{
 			name:      "repository_inspection_fails",
 			reason:    "repository_state_changed",
 			preserved: errors.New("inspect repository"),
@@ -149,6 +211,18 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 			}
 			requirePackageAuditPacketStale(t, fixture, test.reason)
 		})
+	}
+}
+
+func overridePackageEvidence(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService, mutate func(*WorkflowPackageExecutionEvidence)) {
+	t.Helper()
+	evidence, err := service.loadPackageEvidence(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutate(&evidence)
+	service.loadPackageEvidence = func(context.Context, string) (WorkflowPackageExecutionEvidence, error) {
+		return evidence, nil
 	}
 }
 
@@ -267,9 +341,56 @@ func TestWorkflowPackageAuditGetCurrentPacketWithoutEvidenceLoaderDoesNotMarkSta
 	}
 }
 
+func TestWorkflowPackageAuditGetCurrentPacketClassifiesActorAndAttemptDisagreements(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*WorkflowPackageExecutionEvidence, int64)
+	}{
+		{
+			name: "actor_kind_disagrees",
+			mutate: func(evidence *WorkflowPackageExecutionEvidence, _ int64) {
+				evidence.EffectiveBrief.Mode = executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication
+			},
+		},
+		{
+			name: "execution_attempt_disagrees",
+			mutate: func(evidence *WorkflowPackageExecutionEvidence, attemptRowID int64) {
+				evidence.Attempt.Attempt.ID = attemptRowID + 1
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture, service := newPackageAuditReadbackFixtureForMode(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+			packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
+				test.mutate(evidence, packet.ExecutionAttemptRowID.Int64)
+			})
+			_, err = service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+			if !errors.Is(err, ErrWorkflowAuditPacketStale) {
+				t.Fatalf("error = %v, want ErrWorkflowAuditPacketStale", err)
+			}
+			requirePackageAuditPacketStale(t, fixture, "package_execution_evidence_changed")
+		})
+	}
+}
+
 func newPackageAuditReadbackFixture(t *testing.T) (*packageEvidenceFixture, *WorkflowAuditService) {
+	return newPackageAuditReadbackFixtureForMode(t, executor.EffectiveExecutorBriefDeterministicComplete)
+}
+
+func newPackageAuditReadbackFixtureForMode(t *testing.T, mode executor.EffectiveExecutorBriefMode) (*packageEvidenceFixture, *WorkflowAuditService) {
 	t.Helper()
-	fixture, service := newPackageAuditPrepareFixture(t, false)
+	fixture := buildPackageEvidence(t, mode)
+	setPackageRunValidating(t, fixture)
+	service, err := NewWorkflowAuditServiceWithSourceVaults(fixture.store, fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.inspector = packagePrepareTestInspector()
 	if _, err := service.Prepare(context.Background(), PrepareWorkflowAuditInput{
 		RunID: fixture.run.RunID, AuditedCommit: strings.Repeat("c", 40),
 	}); err != nil {

@@ -543,8 +543,9 @@ func (s *WorkflowAuditService) getCurrentPackagePacket(
 	if err != nil {
 		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "package_execution_evidence_changed", err)
 	}
-	if err := s.reconstructCurrentPackagePacket(ctx, run, current, evidence); err != nil {
-		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "canonical_packet_changed", err)
+	reason, err := s.reconstructCurrentPackagePacket(ctx, run, current, evidence)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, reason, err)
 	}
 	return current, nil
 }
@@ -588,40 +589,40 @@ func (s *WorkflowAuditService) readCurrentPackagePacket(ctx context.Context, run
 	return GetWorkflowAuditPacketResult{Run: run, Packet: packet, Artifact: artifact, Document: append(json.RawMessage(nil), data...)}, nil
 }
 
-func (s *WorkflowAuditService) reconstructCurrentPackagePacket(ctx context.Context, run workflowstore.Run, current GetWorkflowAuditPacketResult, evidence WorkflowPackageExecutionEvidence) error {
+func (s *WorkflowAuditService) reconstructCurrentPackagePacket(ctx context.Context, run workflowstore.Run, current GetWorkflowAuditPacketResult, evidence WorkflowPackageExecutionEvidence) (string, error) {
 	if !sameWorkflowPackageRunIdentity(run, evidence.Run) {
-		return ErrWorkflowAuditPacketStale
+		return "package_execution_evidence_changed", ErrWorkflowAuditPacketStale
 	}
 	actorKind, attemptRowID, err := packageAuditPersistenceMetadata(evidence)
 	if err != nil {
-		return err
+		return "package_execution_evidence_changed", err
 	}
 	if actorKind != current.Packet.ImplementationActorKind || attemptRowID != current.Packet.ExecutionAttemptRowID {
-		return ErrWorkflowAuditPacketStale
+		return "package_execution_evidence_changed", ErrWorkflowAuditPacketStale
 	}
 	repository, err := s.store.GetRepositoryTarget(ctx, run.RepoTarget)
 	if err != nil {
-		return err
+		return "repository_state_changed", err
 	}
 	commit, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, current.Packet.AuditedCommit)
 	if err != nil {
-		return err
+		return "repository_state_changed", err
 	}
 	if commit.Branch != run.Branch || commit.BaseCommit != run.BaseCommit || commit.AuditedCommit != current.Packet.AuditedCommit {
-		return ErrWorkflowAuditPacketStale
+		return "repository_state_changed", ErrWorkflowAuditPacketStale
 	}
 	input, err := assemblePackageAuditInput(evidence, commit)
 	if err != nil {
-		return err
+		return "canonical_packet_changed", err
 	}
 	_, rebuilt, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
-		return err
+		return "canonical_packet_changed", err
 	}
 	if sha256HexBytes(rebuilt) != current.Packet.PacketSHA256 || sha256HexBytes(rebuilt) != current.Artifact.SHA256 || !bytes.Equal(rebuilt, current.Document) {
-		return ErrWorkflowAuditPacketStale
+		return "canonical_packet_changed", ErrWorkflowAuditPacketStale
 	}
-	return nil
+	return "", nil
 }
 
 func (s *WorkflowAuditService) staleCurrentPackagePacket(ctx context.Context, runRowID int64, reason string, cause error) error {
@@ -1057,8 +1058,13 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 	if !sameWorkflowPackageRunIdentity(current.Run, evidence.Run) {
 		return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
 	}
-	if err := s.reconstructCurrentPackagePacket(ctx, current.Run, current, evidence); err != nil {
-		if errors.Is(err, ErrWorkflowAuditPacketStale) || errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+	reason, err := s.reconstructCurrentPackagePacket(ctx, current.Run, current, evidence)
+	if err != nil {
+		if (reason == "package_execution_evidence_changed" || reason == "canonical_packet_changed") &&
+			(errors.Is(err, ErrWorkflowAuditPacketStale) || errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict)) {
+			return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
+		}
+		if reason == "repository_state_changed" && errors.Is(err, ErrWorkflowAuditPacketStale) {
 			return RecordWorkflowAuditDecisionResult{}, ErrWorkflowAuditPacketStale
 		}
 		return RecordWorkflowAuditDecisionResult{}, err
