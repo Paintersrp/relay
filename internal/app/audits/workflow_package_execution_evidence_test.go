@@ -1440,8 +1440,8 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for empty validation_results array")
 		}
-		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "validation_results property but assignment declares no validation commands") {
-			t.Fatalf("error = %v, want property-presence conflict", err)
+		if err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "decode execution_evidence artifact") || strings.Contains(err.Error(), "artifact size does not match") || strings.Contains(err.Error(), "artifact digest does not match") {
+			t.Fatalf("error = %v, want typed-decoder conflict without artifact integrity mismatch", err)
 		}
 	})
 
@@ -1464,8 +1464,8 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for null validation_results")
 		}
-		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "validation_results property but assignment declares no validation commands") {
-			t.Fatalf("error = %v, want property-presence conflict", err)
+		if err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "decode execution_evidence artifact") || strings.Contains(err.Error(), "artifact size does not match") || strings.Contains(err.Error(), "artifact digest does not match") {
+			t.Fatalf("error = %v, want typed-decoder conflict without artifact integrity mismatch", err)
 		}
 	})
 }
