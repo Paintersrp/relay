@@ -115,6 +115,19 @@ func TestWorkflowAuditPacketReturnsExactTicketObligations(t *testing.T) {
 	}
 }
 
+func TestWorkflowAuditPacketReturnsPackageDocumentObject(t *testing.T) {
+	service := &fakeWorkflowAuditService{current: appaudits.GetWorkflowAuditPacketResult{
+		Run:      workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusAuditReady},
+		Packet:   workflowstore.AuditPacket{AuditPacketID: "packet-test", Status: workflowstore.AuditPacketStatusCurrent},
+		Document: []byte(`{"schema_version":"3.0","run":{"run_id":1}}`),
+	}}
+	response := httptest.NewRecorder()
+	workflowAuditRouter(service).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/run-test/audit/packet", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"document":{"schema_version":"3.0"`) {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestWorkflowAuditDecisionRequiresExactConfirmationInput(t *testing.T) {
 	service := &fakeWorkflowAuditService{decision: appaudits.RecordWorkflowAuditDecisionResult{
 		Run:              workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusNeedsRevision},

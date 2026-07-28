@@ -127,13 +127,14 @@ func (h *WorkflowHandler) Packet(w http.ResponseWriter, r *http.Request) {
 		writeWorkflowAuditError(w, err)
 		return
 	}
-	var document appaudits.WorkflowAuditPacket
-	if err := json.Unmarshal(current.PacketBytes, &document); err != nil {
-		shared.Error(w, http.StatusConflict, "AUDIT_CONFLICT", "Current audit packet could not be decoded")
-		return
+	documentBytes := current.Document
+	if len(documentBytes) == 0 {
+		documentBytes = current.PacketBytes
 	}
-	var rawDocument any
-	if err := json.Unmarshal(current.PacketBytes, &rawDocument); err != nil {
+	var packetHeader struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(documentBytes, &packetHeader); err != nil {
 		shared.Error(w, http.StatusConflict, "AUDIT_CONFLICT", "Current audit packet could not be decoded")
 		return
 	}
@@ -141,7 +142,16 @@ func (h *WorkflowHandler) Packet(w http.ResponseWriter, r *http.Request) {
 		"runId":     current.Run.RunID,
 		"runStatus": current.Run.Status,
 		"packet":    workflowAuditPacketDTO(current.Packet),
-		"document":  rawDocument,
+		"document":  documentBytes,
+	}
+	if packetHeader.SchemaVersion == appaudits.WorkflowPackageAuditPacketSchemaVersion {
+		shared.JSON(w, http.StatusOK, response)
+		return
+	}
+	var document appaudits.WorkflowAuditPacket
+	if err := json.Unmarshal(documentBytes, &document); err != nil {
+		shared.Error(w, http.StatusConflict, "AUDIT_CONFLICT", "Current audit packet could not be decoded")
+		return
 	}
 	for _, artifact := range document.Artifacts {
 		if artifact.ArtifactType != "ticket_package_evidence" {
@@ -272,7 +282,7 @@ func workflowAuditTicketPackageDTO(value appaudits.WorkflowAuditTicketPackageEvi
 			"authoritySha256":     value.Package.Authority.SHA256, "sourceClosureId": value.Package.Source.ClosureID,
 			"sourceCommit": value.Package.Source.CommitOID,
 			"packageApproval": map[string]any{
-				"approvalId":                  value.Package.PackageApproval.ApprovalID,
+				"approvalId":                   value.Package.PackageApproval.ApprovalID,
 				"approvedPackageSha256":        value.Package.PackageApproval.ApprovedPackageSha256,
 				"operatorConfirmationEvidence": value.Package.PackageApproval.OperatorConfirmationEvidence,
 			},

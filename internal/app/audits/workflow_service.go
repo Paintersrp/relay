@@ -482,6 +482,9 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 		}
 		return GetWorkflowAuditPacketResult{}, err
 	}
+	if run.ExecutionPackageRowID.Valid {
+		return s.getCurrentPackagePacket(ctx, run, packet)
+	}
 	implementation, err := resolveWorkflowImplementationEvidence(ctx, s.store, run)
 	if err != nil || implementation.ActorKind != packet.ImplementationActorKind || implementationExecutionAttemptRowID(implementation) != packet.ExecutionAttemptRowID {
 		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "later_execution_attempt")
@@ -494,17 +497,6 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 	if _, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, packet.AuditedCommit); err != nil {
 		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "repository_state_changed")
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
-	}
-	if run.ExecutionPackageRowID.Valid {
-		if !run.PackageApprovalRowID.Valid {
-			_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "package_approval_missing")
-			return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
-		}
-		approval, approvalErr := s.store.GetRunExecutionPackageApproval(ctx, run.ID)
-		if approvalErr != nil || approval.PackageRowID != run.ExecutionPackageRowID.Int64 {
-			_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "package_approval_changed")
-			return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
-		}
 	}
 	artifact, err := s.store.GetArtifactByRowID(ctx, packet.ArtifactRowID)
 	if err != nil {
@@ -529,8 +521,97 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
 	return GetWorkflowAuditPacketResult{
-		Run: run, Packet: packet, Artifact: artifact, PacketBytes: data,
+		Run: run, Packet: packet, Artifact: artifact,
+		Document:    append(json.RawMessage(nil), data...),
+		PacketBytes: append([]byte(nil), data...),
 	}, nil
+}
+
+func (s *WorkflowAuditService) getCurrentPackagePacket(
+	ctx context.Context,
+	run workflowstore.Run,
+	packet workflowstore.AuditPacket,
+) (GetWorkflowAuditPacketResult, error) {
+	if s.loadPackageEvidence == nil {
+		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPackageUnavailable
+	}
+	if packet.RunRowID != run.ID || packet.BaseCommit != run.BaseCommit ||
+		!workflowPackageValidSHA40(packet.AuditedCommit) || !workflowPackageValidSHA256(packet.PacketSHA256) {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_integrity_failed", nil)
+	}
+
+	artifact, err := s.store.GetArtifactByRowID(ctx, packet.ArtifactRowID)
+	if err != nil || artifact.OwnerType != workflowstore.ArtifactOwnerRun || !artifact.RunRowID.Valid || artifact.RunRowID.Int64 != run.ID ||
+		artifact.Kind != "audit_packet" || artifact.RelativePath != "audit-packets/"+packet.AuditPacketID+"/audit-packet.json" ||
+		artifact.MediaType != "application/json" || artifact.SizeBytes < 0 || artifact.SizeBytes > MaxWorkflowAuditPacketBytes ||
+		artifact.SHA256 != packet.PacketSHA256 {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_integrity_failed", err)
+	}
+	data, err := readWorkflowArtifact(s.store, artifact, MaxWorkflowAuditPacketBytes)
+	if err != nil || int64(len(data)) != artifact.SizeBytes || sha256HexBytes(data) != artifact.SHA256 ||
+		sha256HexBytes(data) != packet.PacketSHA256 || !utf8.Valid(data) {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_integrity_failed", err)
+	}
+
+	var document WorkflowPackageAuditPacket
+	if err := json.Unmarshal(data, &document); err != nil || document.SchemaVersion != WorkflowPackageAuditPacketSchemaVersion {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_schema_readback_failed", err)
+	}
+	if err := validateWorkflowPackageAuditPacket(document); err != nil {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "packet_schema_readback_failed", err)
+	}
+
+	evidence, err := s.loadPackageEvidence(ctx, run.RunID)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "package_execution_evidence_changed", err)
+	}
+	if !sameWorkflowPackageRunIdentity(run, evidence.Run) {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "package_execution_evidence_changed", nil)
+	}
+	actorKind, attemptRowID, err := packageAuditPersistenceMetadata(evidence)
+	if err != nil || actorKind != packet.ImplementationActorKind || attemptRowID != packet.ExecutionAttemptRowID {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "package_execution_evidence_changed", err)
+	}
+
+	repository, err := s.store.GetRepositoryTarget(ctx, run.RepoTarget)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "repository_state_changed", err)
+	}
+	commit, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, packet.AuditedCommit)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "repository_state_changed", err)
+	}
+	if commit.Branch != run.Branch || commit.BaseCommit != run.BaseCommit || commit.AuditedCommit != packet.AuditedCommit {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "repository_state_changed", nil)
+	}
+
+	input, err := assemblePackageAuditInput(evidence, commit)
+	if err != nil {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "canonical_packet_changed", err)
+	}
+	_, rebuilt, err := buildWorkflowPackageAuditPacket(input)
+	if err != nil || sha256HexBytes(rebuilt) != packet.PacketSHA256 || sha256HexBytes(rebuilt) != artifact.SHA256 || !bytes.Equal(rebuilt, data) {
+		return GetWorkflowAuditPacketResult{}, s.staleCurrentPackagePacket(ctx, run.ID, "canonical_packet_changed", err)
+	}
+
+	return GetWorkflowAuditPacketResult{
+		Run: run, Packet: packet, Artifact: artifact,
+		Document:    append(json.RawMessage(nil), data...),
+		PacketBytes: append([]byte(nil), data...),
+	}, nil
+}
+
+func (s *WorkflowAuditService) staleCurrentPackagePacket(ctx context.Context, runRowID int64, reason string, cause error) error {
+	if markErr := s.store.MarkCurrentAuditPacketsStale(ctx, runRowID, reason); markErr != nil {
+		if cause != nil {
+			return errors.Join(ErrWorkflowAuditPacketStale, cause, markErr)
+		}
+		return errors.Join(ErrWorkflowAuditPacketStale, markErr)
+	}
+	if cause != nil {
+		return fmt.Errorf("%w: %w", ErrWorkflowAuditPacketStale, cause)
+	}
+	return ErrWorkflowAuditPacketStale
 }
 
 func workflowArtifactSupportsTextReadback(mediaType string) bool {
