@@ -2,7 +2,6 @@ package audits
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	workflowruns "relay/internal/app/runs/workflow"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -246,132 +244,6 @@ func TestWorkflowPackageAuditRecordDecisionRejectsSecondAttemptWithoutEffects(t 
 		t.Fatalf("second decision error = %v, want duplicate decision", err)
 	}
 	assertPackageDecisionState(t, fixture, before)
-}
-
-func TestWorkflowAuditRecordDecisionLegacy(t *testing.T) {
-	fixture, service, prepared := newLegacyDecisionFixture(t)
-	if _, err := service.RecordDecision(context.Background(), RecordWorkflowAuditDecisionInput{RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256, AuditedCommit: prepared.Packet.AuditedCommit, Decision: workflowstore.AuditDecisionAccepted, Rationale: "legacy route remains functional", OperatorConfirmed: true}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestWorkflowAuditRecordDecisionLegacyRejectsPackageNativeFindingSource(t *testing.T) {
-	fixture, service, prepared := newLegacyDecisionFixture(t)
-	_, err := service.RecordDecision(context.Background(), RecordWorkflowAuditDecisionInput{
-		RunID: fixture.run.RunID, AuditPacketID: prepared.Packet.AuditPacketID, PacketSHA256: prepared.Packet.PacketSHA256,
-		AuditedCommit: prepared.Packet.AuditedCommit, Decision: workflowstore.AuditDecisionNeedsRevision,
-		Rationale: "package-native attribution is not valid for a legacy Run", OperatorConfirmed: true,
-		MaterialFindings: []WorkflowAuditMaterialFinding{{Source: "implementation", Summary: "finding", Evidence: "evidence", RequiredRemediation: "remediate"}},
-	})
-	if !errors.Is(err, ErrWorkflowAuditDecisionInput) {
-		t.Fatalf("error = %v, want ErrWorkflowAuditDecisionInput", err)
-	}
-}
-
-func newLegacyDecisionFixture(t *testing.T) (*packageEvidenceFixture, *WorkflowAuditService, PrepareWorkflowAuditResult) {
-	t.Helper()
-	fixture := newPackageEvidenceFixture(t, false, "")
-	runs, err := workflowruns.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
-		FeatureSlug: "checkout", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40),
-		CanonicalJSON:    auditFixtureExecutionSpec("checkout", "main", strings.Repeat("a", 40)),
-		RenderedMarkdown: []byte("# Executor Brief\n\nLegacy audit fixture.\n"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	runArtifacts, err := fixture.store.ListArtifactsByRun(context.Background(), created.Run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var effectiveBrief workflowstore.Artifact
-	for _, artifact := range runArtifacts {
-		if artifact.Kind == "executor_brief" {
-			effectiveBrief = artifact
-			break
-		}
-	}
-	if effectiveBrief.ArtifactID == "" {
-		t.Fatal("legacy effective brief artifact is missing")
-	}
-	runtimeJSON, err := json.Marshal(map[string]any{
-		"normalized_status": "done", "termination_verified": true,
-		"effective_brief_artifact_id": effectiveBrief.ArtifactID, "effective_brief_sha256": effectiveBrief.SHA256,
-		"effective_brief_mode": "full",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	begin, err := runs.BeginExecutionAttempt(context.Background(), workflowruns.BeginExecutionAttemptInput{RunID: created.Run.RunID, Adapter: "codex", Model: "test-model"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := runs.MarkExecutionAttemptRunning(context.Background(), begin.Attempt.AttemptID, string(runtimeJSON)); err != nil {
-		t.Fatal(err)
-	}
-	finished, err := runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{AttemptID: begin.Attempt.AttemptID, Status: workflowstore.AttemptStatusSucceeded, ResultJSON: string(runtimeJSON)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.run = finished.Run
-	stageAttemptEvidence(t, fixture.store, finished.Attempt, effectiveBrief)
-	setPackageRunValidating(t, fixture)
-	if err := fixture.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
-		_, err := tx.TransitionRun(context.Background(), fixture.run.RunID, workflowstore.RunStatusValidating, workflowstore.RunStatusAuditReady)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	fixture.run, err = fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packetID := workflowstore.NewAuditPacketID()
-	packetBytes, err := json.Marshal(WorkflowAuditPacket{
-		SchemaVersion: WorkflowAuditPacketSchemaVersion,
-		Run:           WorkflowAuditRunAuthority{RunID: fixture.run.ID, UserIntent: "Legacy audit fixture."},
-		Repository:    WorkflowAuditRepository{RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch, BaseCommit: fixture.run.BaseCommit, AuditedCommit: strings.Repeat("c", 40)},
-		Execution:     WorkflowAuditExecution{ActorKind: workflowstore.ImplementationActorExecutor, Status: workflowstore.AttemptStatusSucceeded, CommittedSHA: strings.Repeat("c", 40), CompletionSummary: "Legacy audit fixture."},
-		ChangedFiles:  []WorkflowAuditChangedFile{}, RelevantSourcePaths: []string{}, Validation: []WorkflowAuditValidationResult{}, Artifacts: []WorkflowAuditPacketArtifact{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	batch, err := fixture.store.ArtifactStore().Begin("audit-packets/" + packetID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	staged, err := batch.Stage("audit_packet", "audit-packet.json", "application/json", packetBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var packet workflowstore.AuditPacket
-	if err := fixture.store.CommitArtifactBatch(context.Background(), batch, func(tx *workflowstore.Tx) error {
-		artifact, err := tx.CreateArtifact(context.Background(), workflowstore.CreateArtifactParams{
-			ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerRun,
-			RunRowID: sql.NullInt64{Int64: fixture.run.ID, Valid: true}, Kind: staged.Kind,
-			RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes,
-		})
-		if err != nil {
-			return err
-		}
-		packet, err = tx.CreateAuditPacket(context.Background(), workflowstore.CreateAuditPacketParams{
-			AuditPacketID: packetID, RunRowID: fixture.run.ID, ImplementationActorKind: workflowstore.ImplementationActorExecutor,
-			ExecutionAttemptRowID: sql.NullInt64{Int64: finished.Attempt.ID, Valid: true}, ArtifactRowID: artifact.ID,
-			BaseCommit: fixture.run.BaseCommit, AuditedCommit: strings.Repeat("c", 40), PacketSHA256: staged.SHA256,
-		})
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewWorkflowAuditServiceWithInspector(fixture.store, packagePrepareTestInspector())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fixture, service, PrepareWorkflowAuditResult{Run: fixture.run, Packet: packet}
 }
 
 func TestWorkflowPackageAuditRecordDecisionAuthorityDriftRollsBack(t *testing.T) {

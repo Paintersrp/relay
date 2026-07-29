@@ -70,6 +70,7 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 	tests := []struct {
 		name      string
 		reason    string
+		mode      executor.EffectiveExecutorBriefMode
 		configure func(*testing.T, *packageEvidenceFixture, *WorkflowAuditService) error
 		preserved error
 	}{
@@ -113,6 +114,32 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
 				overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
 					evidence.Run.RunID = "run-different"
+				})
+				return nil
+			},
+		},
+		{
+			name:   "actor_kind_disagrees",
+			reason: "package_execution_evidence_changed",
+			mode:   executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
+				overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
+					evidence.EffectiveBrief.Mode = executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication
+				})
+				return nil
+			},
+		},
+		{
+			name:   "execution_attempt_disagrees",
+			reason: "package_execution_evidence_changed",
+			mode:   executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
+				packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
+				if err != nil {
+					return err
+				}
+				overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
+					evidence.Attempt.Attempt.ID = packet.ExecutionAttemptRowID.Int64 + 1
 				})
 				return nil
 			},
@@ -198,7 +225,11 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture, service := newPackageAuditReadbackFixture(t)
+			mode := test.mode
+			if mode == "" {
+				mode = executor.EffectiveExecutorBriefDeterministicComplete
+			}
+			fixture, service := newPackageAuditReadbackFixtureForMode(t, mode)
 			if err := test.configure(t, fixture, service); err != nil {
 				t.Fatal(err)
 			}
@@ -338,43 +369,6 @@ func TestWorkflowPackageAuditGetCurrentPacketWithoutEvidenceLoaderDoesNotMarkSta
 	}
 	if packet.Status != workflowstore.AuditPacketStatusCurrent {
 		t.Fatalf("packet status = %q, want current", packet.Status)
-	}
-}
-
-func TestWorkflowPackageAuditGetCurrentPacketClassifiesActorAndAttemptDisagreements(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(*WorkflowPackageExecutionEvidence, int64)
-	}{
-		{
-			name: "actor_kind_disagrees",
-			mutate: func(evidence *WorkflowPackageExecutionEvidence, _ int64) {
-				evidence.EffectiveBrief.Mode = executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication
-			},
-		},
-		{
-			name: "execution_attempt_disagrees",
-			mutate: func(evidence *WorkflowPackageExecutionEvidence, attemptRowID int64) {
-				evidence.Attempt.Attempt.ID = attemptRowID + 1
-			},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			fixture, service := newPackageAuditReadbackFixtureForMode(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-			packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
-				test.mutate(evidence, packet.ExecutionAttemptRowID.Int64)
-			})
-			_, err = service.GetCurrentPacket(context.Background(), fixture.run.RunID)
-			if !errors.Is(err, ErrWorkflowAuditPacketStale) {
-				t.Fatalf("error = %v, want ErrWorkflowAuditPacketStale", err)
-			}
-			requirePackageAuditPacketStale(t, fixture, "package_execution_evidence_changed")
-		})
 	}
 }
 
