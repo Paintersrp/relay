@@ -140,6 +140,9 @@ func Lookup(id OperationID) (OperationDefinition, bool) {
 	if ok {
 		return cloneOperation(value), true
 	}
+	if published, ok := LookupPublishedOperation(id); ok {
+		return publishedOperationAsLegacy(published), true
+	}
 	for _, operation := range WayfinderOperations() {
 		if operation.OperationID == id {
 			return operation, true

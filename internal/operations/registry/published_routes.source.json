@@ -2,7 +2,7 @@
   "schema_version": "relay.mcp.route-contract.v1",
   "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
   "authority_lock_sha256": "788a6b84e910f8c285f0c77fddc459c226a50dd6b78b358b98bd7816ff5164ab",
-  "operation_contract_sha256": "1c169fb225799f4611fc69776a8920915ac98e70e94ee30824cc62315b3aa2b9",
+  "operation_contract_sha256": "8ef41c1420b31ccc91726f3c9c9b9349416b2bb1fc9d6dcfea29354151b6f9a9",
   "route_order": [
     "/mcp/v1/wayfinder/workspace",
     "/mcp/v1/wayfinder/discovery",

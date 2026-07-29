@@ -207,7 +207,12 @@ func validateWorkflowReferenceRelationships(values []WorkflowReference) error {
 				return invalid("workflow_reference_relationship")
 			}
 		case "audit_packet", "audit_decision":
-			if _, ok := runIDs[value.RunID]; !ok {
+			if len(runIDs) != 0 {
+				if _, ok := runIDs[value.RunID]; !ok {
+					return invalid("workflow_reference_relationship")
+				}
+			}
+			if value.RunID == "" {
 				return invalid("workflow_reference_relationship")
 			}
 		}
@@ -628,6 +633,8 @@ func historicalAnchorPolicy(policy registry.HistoricalAuthorityPolicy) ([]regist
 		return []registry.AnchorPurpose{"reviewed_source_basis"}, []registry.AnchorPurpose{"reviewed_source_basis"}, nil
 	case "candidate_plan_and_dependency_anchors":
 		return []registry.AnchorPurpose{"reviewed_source_basis", "plan_base"}, []registry.AnchorPurpose{"reviewed_source_basis", "plan_base", "completed_dependency"}, nil
+	case "audited_ticket_and_current_authority":
+		return nil, nil, nil
 	case "run_base_and_audited_commit", "audited_and_run_base_anchors":
 		return []registry.AnchorPurpose{"run_base", "audited_commit"}, []registry.AnchorPurpose{"run_base", "audited_commit"}, nil
 	case "candidate_audited_and_run_base_anchors":

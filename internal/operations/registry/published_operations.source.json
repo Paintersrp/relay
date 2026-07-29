@@ -638,7 +638,7 @@
       "operation_id": "planner.delivery_ticket_remediation",
       "role": "planner",
       "surface_contract": "planner-authoring.v1",
-      "manifest_domain": "delivery_ticket_remediation",
+      "manifest_domain": "delivery_ticket",
       "output_kind": "delivery_ticket_json",
       "output_persistence": "chat_unrecorded",
       "required_inputs": [],

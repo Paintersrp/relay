@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	featureapp "relay/internal/app/features"
 	"relay/internal/mcp/fileacquisition"
@@ -844,10 +845,18 @@ func (s *LifecycleService) resolveWorkflowReference(ctx context.Context, request
 		if err != nil || value.RunRowID != run.ID {
 			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
 		}
-		return packet.WorkflowReference{Kind: "audit_decision", RunID: run.RunID, AuditDecisionID: value.AuditDecisionID, Decision: value.Decision, RecordedAt: value.CreatedAt}, nil
+		return packet.WorkflowReference{Kind: "audit_decision", RunID: run.RunID, AuditDecisionID: value.AuditDecisionID, Decision: value.Decision, RecordedAt: canonicalPersistedTime(value.CreatedAt)}, nil
 	default:
 		return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
 	}
+}
+
+func canonicalPersistedTime(value string) string {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	return canonicalTime(parsed)
 }
 
 func (s *LifecycleService) materializeWorkflowRecord(ctx context.Context, source semanticidentity.WorkflowRecordInputReference, workflow workflowPreparation) (packet.WorkflowReference, []byte, error) {
