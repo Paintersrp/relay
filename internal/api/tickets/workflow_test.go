@@ -103,6 +103,8 @@ func TestPublishRouteRejectsPartialRemediationFields(t *testing.T) {
 		`"authoringPacketId":"packet-1"`,
 		`"expectedAuthoringPacketSha256":"` + strings.Repeat("a", 64) + `"`,
 		`"remediationSeedId":"seed-1","authoringPacketId":"packet-1"`,
+		`"remediationSeedId":"seed-1","expectedAuthoringPacketSha256":"` + strings.Repeat("a", 64) + `"`,
+		`"authoringPacketId":"packet-1","expectedAuthoringPacketSha256":"` + strings.Repeat("a", 64) + `"`,
 	} {
 		service := &fakeWorkflow{}
 		body := `{"` + strings.TrimPrefix(extra, `"`) + `,"revision":{"repoTarget":"relay","branch":"main","baseCommit":"abc","sourceClosureRowId":12,"sourcePath":"tickets/ticket-1.json","goal":"Ship ticket","context":"Exact context","transitionApplicability":"not_required","canonicalJson":{"ticket":"ticket-1"},"renderedMarkdown":"# Ticket\\n","members":[],"dependencies":[]}}`
@@ -111,6 +113,16 @@ func TestPublishRouteRejectsPartialRemediationFields(t *testing.T) {
 		if response.Code != http.StatusBadRequest || len(service.publishInput.Publish.TicketID) != 0 {
 			t.Fatalf("extra = %s response = %d %s input = %#v", extra, response.Code, response.Body.String(), service.publishInput)
 		}
+	}
+}
+
+func TestPublishRouteRejectsStrictUnknownFields(t *testing.T) {
+	service := &fakeWorkflow{}
+	body := `{"unknownRemediationField":true,"revision":{"repoTarget":"relay","branch":"main","baseCommit":"abc","sourceClosureRowId":12,"sourcePath":"tickets/ticket-1.json","goal":"Ship ticket","context":"Exact context","transitionApplicability":"not_required","canonicalJson":{"ticket":"ticket-1"},"renderedMarkdown":"# Ticket\\n","members":[],"dependencies":[]}}`
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/ticket-1/revisions", strings.NewReader(body)))
+	if response.Code != http.StatusBadRequest || len(service.publishInput.Publish.TicketID) != 0 {
+		t.Fatalf("response = %d %s input = %#v", response.Code, response.Body.String(), service.publishInput)
 	}
 }
 
