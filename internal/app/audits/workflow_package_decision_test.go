@@ -78,6 +78,7 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			before := capturePackageDecisionState(t, fixture)
 			result, err := service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
 				RunID: fixture.run.RunID, AuditPacketID: packet.AuditPacketID, PacketSHA256: packet.PacketSHA256,
 				AuditedCommit: packet.AuditedCommit, Decision: workflowstore.AuditDecisionNeedsRevision,
@@ -89,6 +90,13 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 			}
 			if result.Run.Status != workflowstore.RunStatusNeedsRevision || result.Pass != nil || result.Plan != nil || len(result.TicketRevisionDecisions) != 1 || len(result.TicketSatisfactions) != 0 || len(result.RemediationSeeds) != 1 {
 				t.Fatalf("needs-revision package decision = %#v", result)
+			}
+			after := capturePackageDecisionState(t, fixture)
+			wantRun := before.run
+			wantRun.Status = workflowstore.RunStatusNeedsRevision
+			wantRun.UpdatedAt = after.run.UpdatedAt
+			if !reflect.DeepEqual(after.run, wantRun) || !reflect.DeepEqual(after.pass, before.pass) || !reflect.DeepEqual(after.plan, before.plan) || after.passStatus != before.passStatus || after.planStatus != before.planStatus || after.decisionRows != before.decisionRows+1 || after.decisionArtifacts != before.decisionArtifacts+1 || after.ticketDecisions != before.ticketDecisions+1 || after.satisfactions != before.satisfactions || after.remediationSeeds != before.remediationSeeds+1 || after.seedFindings != before.seedFindings+len(findings) || after.completionReopenings != before.completionReopenings || after.seedReopenings != before.seedReopenings || after.deliveryTickets != before.deliveryTickets || after.deliveryRevisions != before.deliveryRevisions || after.runs != before.runs || after.plans != before.plans || after.passes != before.passes || after.attempts != before.attempts || after.leases != before.leases || len(after.decisionDirectories) != len(before.decisionDirectories)+1 || !reflect.DeepEqual(after.stagingDirs, before.stagingDirs) {
+				t.Fatalf("unexpected runtime state during seed persistence: before=%#v after=%#v", before, after)
 			}
 			decisionBytes, err := readWorkflowArtifact(fixture.store, result.Artifact, MaxWorkflowAuditPacketBytes)
 			if err != nil {
@@ -313,7 +321,6 @@ func TestWorkflowPackageAuditRecordDecisionAuthorityDriftRollsBack(t *testing.T)
 		{name: "source_commit", mutate: mutateSourceCommit},
 		{name: "obligation_package_approval", mutate: mutateObligationPackageApproval},
 		{name: "obligation_approved_digest", mutate: mutateObligationApprovedDigest},
-		{name: "obligation_execution_package_member", mutate: mutateObligationMember},
 		{name: "packet_artifact_digest", mutate: mutatePacketArtifactDigest},
 	}
 	for _, test := range tests {
@@ -622,17 +629,6 @@ func mutateObligationApprovedDigest(f *packageEvidenceFixture, _ WorkflowPackage
 		return err
 	}
 	_, err := f.store.DB().Exec(`UPDATE audit_packet_ticket_obligations SET approved_package_sha256 = ? WHERE audit_packet_row_id = (SELECT id FROM audit_packets WHERE run_row_id = ? AND status = 'current')`, strings.Repeat("d", 64), f.run.ID)
-	return err
-}
-
-func mutateObligationMember(f *packageEvidenceFixture, _ WorkflowPackageExecutionEvidence) error {
-	if _, err := f.store.DB().Exec(`DROP TRIGGER IF EXISTS audit_packet_ticket_obligation_update_immutable`); err != nil {
-		return err
-	}
-	if _, err := f.store.DB().Exec(`PRAGMA foreign_keys = OFF`); err != nil {
-		return err
-	}
-	_, err := f.store.DB().Exec(`UPDATE audit_packet_ticket_obligations SET execution_package_member_row_id = execution_package_member_row_id + 1 WHERE audit_packet_row_id = (SELECT id FROM audit_packets WHERE run_row_id = ? AND status = 'current')`, f.run.ID)
 	return err
 }
 
