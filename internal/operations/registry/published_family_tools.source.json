@@ -292,45 +292,6 @@
       "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
     },
     {
-      "name": "open_selected_execution_spec",
-      "title": "Selected Execution Spec",
-      "description": "Open the exact active packet-bound context for Planner selected-package Execution Spec authoring.",
-      "semantic_tool_id": "relay.planner.selected-execution-spec.context.v1",
-      "operation_id": "planner.selected_execution_spec",
-      "invoking": "Opening selected Execution Spec context",
-      "invoked": "Selected Execution Spec context ready",
-      "category": "operation_family",
-      "schema_owner": "internal/operations/registry/published_public_contract.json",
-      "input_root": "OpenOperationFamilyContextRequest",
-      "input_required": [
-        "packet_id",
-        "expected_packet_sha256"
-      ],
-      "output_root": "OpenOperationFamilyContextResult",
-      "output_required": [
-        "route_path",
-        "role",
-        "surface_contract",
-        "operation_id",
-        "manifest_domain",
-        "standing_authority",
-        "domain_authority",
-        "packet",
-        "inputs",
-        "repositories",
-        "readiness",
-        "blockers"
-      ],
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "file_params": [],
-      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
-    },
-    {
       "name": "open_requirements_review",
       "title": "Requirements Review",
       "description": "Open the exact active packet-bound context for independent Requirements review.",
@@ -494,45 +455,6 @@
       "operation_id": "auditor.ticket_design_brief_review",
       "invoking": "Opening Ticket Design Brief review context",
       "invoked": "Ticket Design Brief review context ready",
-      "category": "operation_family",
-      "schema_owner": "internal/operations/registry/published_public_contract.json",
-      "input_root": "OpenOperationFamilyContextRequest",
-      "input_required": [
-        "packet_id",
-        "expected_packet_sha256"
-      ],
-      "output_root": "OpenOperationFamilyContextResult",
-      "output_required": [
-        "route_path",
-        "role",
-        "surface_contract",
-        "operation_id",
-        "manifest_domain",
-        "standing_authority",
-        "domain_authority",
-        "packet",
-        "inputs",
-        "repositories",
-        "readiness",
-        "blockers"
-      ],
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "file_params": [],
-      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
-    },
-    {
-      "name": "open_selected_execution_spec_review",
-      "title": "Selected Execution Spec Review",
-      "description": "Open the exact active packet-bound context for independent selected-package Execution Spec review.",
-      "semantic_tool_id": "relay.auditor.selected-execution-spec-review.context.v1",
-      "operation_id": "auditor.selected_execution_spec_review",
-      "invoking": "Opening selected Execution Spec review context",
-      "invoked": "Selected Execution Spec review context ready",
       "category": "operation_family",
       "schema_owner": "internal/operations/registry/published_public_contract.json",
       "input_root": "OpenOperationFamilyContextRequest",

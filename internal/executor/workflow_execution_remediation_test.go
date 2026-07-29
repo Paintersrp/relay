@@ -23,33 +23,6 @@ func (absentProcessController) OpenOwned(pipeline.ProcessIdentity) (pipeline.Own
 	return nil, pipeline.ErrProcessNotRunning
 }
 
-type previewSecretAdapter struct {
-	preview string
-}
-
-func (a previewSecretAdapter) ID() AdapterID { return AdapterOpenCodeGo }
-
-func (a previewSecretAdapter) BuildInvocation(request ExecutorAdapterRequest) (ExecutorInvocation, error) {
-	return ExecutorInvocation{
-		Adapter:     AdapterOpenCodeGo,
-		Binary:      "fake-agent",
-		WorkDir:     request.RepoPath,
-		Stdin:       request.BriefContent,
-		StdinSource: request.BriefPath,
-		StdinBytes:  len([]byte(request.BriefContent)),
-		Model:       request.SelectedModel,
-		Agent:       string(AdapterOpenCodeGo),
-		Preview:     a.preview,
-	}, nil
-}
-
-func (a previewSecretAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
-	if strings.Contains(raw, "STATUS: DONE") {
-		return NormalizedExecutorResult{Status: pipeline.AgentResultDone, ExecutorResultText: raw}
-	}
-	return NormalizedExecutorResult{Status: pipeline.AgentResultBlocked, ExecutorResultText: raw, BlockerText: "blocked"}
-}
-
 func TestWorkflowUnverifiedTerminationBlocksRetryUntilReconciled(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -151,51 +124,6 @@ func TestWorkflowUnverifiedTerminationBlocksRetryUntilReconciled(t *testing.T) {
 				t.Fatalf("reconciled result = %+v", reconciled)
 			}
 		})
-	}
-}
-
-func TestWorkflowExecutionEvidenceRedactsCommandPreviewSecret(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "preview-secret-token")
-	fixture := newWorkflowFixture(t)
-	fixture.service.adapterFactory = func(string) (ExecutorAdapter, error) {
-		return previewSecretAdapter{preview: "fake-agent --token preview-secret-token < brief.md"}, nil
-	}
-	fixture.service.runner = successfulRunner
-
-	started, err := fixture.service.Start(context.Background(), WorkflowStartInput{
-		RunID:   fixture.run.RunID,
-		Adapter: "opencode_go",
-		Model:   "test-model",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempt, err := fixture.store.GetExecutionAttemptByAttemptID(context.Background(), started.Attempt.AttemptID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), attempt.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var evidencePath string
-	for _, artifact := range artifacts {
-		if artifact.Kind == "execution_evidence" {
-			evidencePath = filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath))
-		}
-	}
-	if evidencePath == "" {
-		t.Fatal("execution evidence artifact was not persisted")
-	}
-	data, err := os.ReadFile(evidencePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "preview-secret-token") {
-		t.Fatal("execution evidence leaked configured command preview secret")
-	}
-	if !strings.Contains(string(data), "[REDACTED]") {
-		t.Fatal("execution evidence is missing redaction marker")
 	}
 }
 

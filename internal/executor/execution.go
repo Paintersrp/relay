@@ -42,7 +42,9 @@ type WorkflowStartResult struct {
 
 // ErrLegacyExecutionRetired rejects new execution admission for historical
 // non-package Runs while preserving their read and reconciliation paths.
-var ErrLegacyExecutionRetired = errors.New("legacy non-package execution admission is retired")
+var ErrLegacyExecutionRetired = errors.New(
+	"legacy non-package execution admission is retired",
+)
 
 type WorkflowCancelResult struct {
 	Run     workflowstore.Run
@@ -227,248 +229,22 @@ func (s *Execution) Start(ctx context.Context, input WorkflowStartInput) (Workfl
 	if err != nil {
 		return WorkflowStartResult{}, fmt.Errorf("load Run: %w", err)
 	}
-	if run.ExecutionPackageRowID.Valid {
-		if s.packagePreparation == nil {
-			return WorkflowStartResult{Run: run}, fmt.Errorf("package workflow preparation service is unavailable")
-		}
-		prepared, err := packageWorkflowStartPrepare(ctx, s.packagePreparation, PackagePreparationInput{
-			RunID:   input.RunID,
-			Adapter: normalizedAdapter,
-			Model:   input.Model,
-		})
-		if err != nil {
-			return workflowStartResultFromPackage(PackageWorkflowDispatchResult{Preparation: prepared}), err
-		}
-		dispatched, err := packageWorkflowStartDispatch(ctx, s, prepared)
-		return workflowStartResultFromPackage(dispatched), err
+	if !run.ExecutionPackageRowID.Valid {
+		return WorkflowStartResult{Run: run}, ErrLegacyExecutionRetired
 	}
-	return WorkflowStartResult{Run: run}, ErrLegacyExecutionRetired
-	switch run.Status {
-	case workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusCancelled:
-	default:
-		return WorkflowStartResult{}, fmt.Errorf("Run %q cannot start an execution attempt from status %q", run.RunID, run.Status)
+	if s.packagePreparation == nil {
+		return WorkflowStartResult{Run: run}, fmt.Errorf("package workflow preparation service is unavailable")
 	}
-	repository, err := s.store.GetRepositoryTarget(ctx, run.RepoTarget)
-	if err != nil {
-		return WorkflowStartResult{}, fmt.Errorf("resolve repository target: %w", err)
-	}
-	executionSpec, executionSpecArtifact, err := s.loadVerifiedExecutionSpec(ctx, run)
-	if err != nil {
-		return WorkflowStartResult{}, err
-	}
-	brief, briefArtifact, briefPath, err := s.loadVerifiedBrief(ctx, run)
-	if err != nil {
-		return WorkflowStartResult{}, err
-	}
-	preflight := s.preflight(ctx, repository.LocalPath, run.Branch, run.BaseCommit)
-	if !preflight.OK {
-		return WorkflowStartResult{Run: run, Preflight: preflight}, &WorkflowPreflightError{Result: preflight}
-	}
-
-	lease, err := s.acquireRunMutationLease(ctx, run)
-	if err != nil {
-		return WorkflowStartResult{Run: run, Preflight: preflight}, err
-	}
-	applierResult, err := s.applyDeterministicFirst(ctx, run, repository.LocalPath, executionSpec, executionSpecArtifact)
-	if err != nil {
-		_, _, leaseErr := s.reconcileRunMutationLease(
-			ctx,
-			run,
-			repository,
-			lease.LeaseID,
-			"deterministic source mutation returned an error before its outcome was durable",
-		)
-		if leaseErr != nil {
-			return WorkflowStartResult{Run: run, Preflight: preflight}, errors.Join(err, leaseErr)
-		}
-		return WorkflowStartResult{Run: run, Preflight: preflight}, err
-	}
-	if applierResult != nil {
-		switch applierResult.Outcome {
-		case "completed":
-			updated, err := s.runs.RecordApplierCompleted(ctx, run.RunID)
-			if err != nil {
-				_, _, leaseErr := s.reconcileRunMutationLease(
-					ctx,
-					run,
-					repository,
-					lease.LeaseID,
-					"deterministic source mutation completed but its terminal Run state was not recorded",
-				)
-				if leaseErr != nil {
-					return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, errors.Join(err, leaseErr)
-				}
-				return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, err
-			}
-			if err := s.settleRunMutationLeaseAfterDeterministicResult(ctx, updated, repository, lease, applierResult); err != nil {
-				return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, err
-			}
-			return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, nil
-		case "blocked":
-			updated, err := s.runs.RecordApplierBlocked(ctx, run.RunID)
-			if err != nil {
-				_, _, leaseErr := s.reconcileRunMutationLease(
-					ctx,
-					run,
-					repository,
-					lease.LeaseID,
-					"deterministic source mutation blocked before its terminal Run state was recorded",
-				)
-				if leaseErr != nil {
-					return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, errors.Join(err, leaseErr)
-				}
-				return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, err
-			}
-			if err := s.settleRunMutationLeaseAfterDeterministicResult(ctx, updated, repository, lease, applierResult); err != nil {
-				return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, err
-			}
-			return WorkflowStartResult{Run: updated, Preflight: preflight, Applier: applierResult}, nil
-		case "partial", "not_attempted":
-		default:
-			_, _, leaseErr := s.reconcileRunMutationLease(
-				ctx,
-				run,
-				repository,
-				lease.LeaseID,
-				"deterministic source mutation returned an unsupported outcome",
-			)
-			outcomeErr := fmt.Errorf("unsupported deterministic applier outcome %q", applierResult.Outcome)
-			if leaseErr != nil {
-				return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, errors.Join(outcomeErr, leaseErr)
-			}
-			return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, outcomeErr
-		}
-	}
-
-	var validationCommands []speccompiler.ProjectedValidationCommand
-	if applierResult != nil {
-		validationCommands = append(validationCommands, applierResult.Projection.ValidationCommands...)
-	}
-	sourceMutationStarted := deterministicSourceMutationStarted(applierResult)
-
-	if applierResult != nil && applierResult.Outcome == "partial" {
-		begun, err := s.runs.BeginExecutionAttempt(ctx, workflowruns.BeginExecutionAttemptInput{
-			RunID:   run.RunID,
-			Adapter: normalizedAdapter,
-			Model:   input.Model,
-		})
-		if err != nil {
-			leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, run, repository, lease, sourceMutationStarted)
-			if leaseErr != nil {
-				return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, errors.Join(err, leaseErr)
-			}
-			return WorkflowStartResult{Run: run, Preflight: preflight, Applier: applierResult}, err
-		}
-		if err := s.recordMutationLeaseIdentity(ctx, begun.Attempt, lease.LeaseID, sourceMutationStarted); err != nil {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, nil, err, repository, lease, sourceMutationStarted)
-		}
-		selected, err := s.prepareResidualEffectiveBrief(ctx, begun.Attempt, applierResult)
-		if err != nil {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, nil, err, repository, lease, sourceMutationStarted)
-		}
-		if err := s.recordEffectiveBriefIdentity(ctx, begun.Attempt, selected); err != nil {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, &selected, err, repository, lease, sourceMutationStarted)
-		}
-		adapter, err := s.adapterFactory(normalizedAdapter)
-		if err != nil {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, &selected, err, repository, lease, sourceMutationStarted)
-		}
-		runtimeResultPath := filepath.Join(s.store.ArtifactStore().Root(), ".runtime", run.RunID, "executor-result.tmp")
-		invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
-			RunID:         run.ID,
-			RepoPath:      repository.LocalPath,
-			BriefContent:  string(selected.Content),
-			BriefPath:     selected.Path,
-			ResultPath:    runtimeResultPath,
-			SelectedModel: input.Model,
-			Timeout:       s.timeout,
-		})
-		if err != nil {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, &selected, fmt.Errorf("build executor invocation: %w", err), repository, lease, sourceMutationStarted)
-		}
-		if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, &selected, err, repository, lease, sourceMutationStarted)
-		}
-		invocationPreflight := s.invocationPreflight(invocation)
-		if !invocationPreflight.OK {
-			return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, &selected, fmt.Errorf("adapter preflight failed: %s", invocationPreflight.BlockerText), repository, lease, sourceMutationStarted)
-		}
-		runtimeCtx, cancel := context.WithCancel(context.Background())
-		runtime := &workflowRuntime{cancel: cancel}
-		s.putRuntime(begun.Attempt.AttemptID, runtime)
-		s.launch(func() {
-			defer s.deleteRuntime(begun.Attempt.AttemptID)
-			s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, validationCommands, invocation, adapter, runtime, lease, sourceMutationStarted)
-		})
-		return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
-	}
-
-	selected := fullEffectiveBriefInput(brief, briefArtifact, briefPath)
-	adapter, err := s.adapterFactory(normalizedAdapter)
-	if err != nil {
-		leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, run, repository, lease, false)
-		if leaseErr != nil {
-			return WorkflowStartResult{Run: run, Preflight: preflight}, errors.Join(err, leaseErr)
-		}
-		return WorkflowStartResult{Run: run, Preflight: preflight}, err
-	}
-	runtimeResultPath := filepath.Join(s.store.ArtifactStore().Root(), ".runtime", run.RunID, "executor-result.tmp")
-	invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
-		RunID:         run.ID,
-		RepoPath:      repository.LocalPath,
-		BriefContent:  string(selected.Content),
-		BriefPath:     selected.Path,
-		ResultPath:    runtimeResultPath,
-		SelectedModel: input.Model,
-		Timeout:       s.timeout,
-	})
-	if err != nil {
-		invocationErr := fmt.Errorf("build executor invocation: %w", err)
-		leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, run, repository, lease, false)
-		if leaseErr != nil {
-			return WorkflowStartResult{Run: run, Preflight: preflight}, errors.Join(invocationErr, leaseErr)
-		}
-		return WorkflowStartResult{Run: run, Preflight: preflight}, invocationErr
-	}
-	if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
-		leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, run, repository, lease, false)
-		if leaseErr != nil {
-			return WorkflowStartResult{Run: run, Preflight: preflight}, errors.Join(err, leaseErr)
-		}
-		return WorkflowStartResult{Run: run, Preflight: preflight}, err
-	}
-	invocationPreflight := s.invocationPreflight(invocation)
-	if !invocationPreflight.OK {
-		invocationErr := fmt.Errorf("adapter preflight failed: %s", invocationPreflight.BlockerText)
-		leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, run, repository, lease, false)
-		if leaseErr != nil {
-			return WorkflowStartResult{Run: run, Preflight: preflight}, errors.Join(invocationErr, leaseErr)
-		}
-		return WorkflowStartResult{Run: run, Preflight: preflight}, invocationErr
-	}
-	begun, err := s.runs.BeginExecutionAttempt(ctx, workflowruns.BeginExecutionAttemptInput{
-		RunID:   run.RunID,
+	prepared, err := packageWorkflowStartPrepare(ctx, s.packagePreparation, PackagePreparationInput{
+		RunID:   input.RunID,
 		Adapter: normalizedAdapter,
-		Model:   invocation.Model,
+		Model:   input.Model,
 	})
 	if err != nil {
-		leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, run, repository, lease, false)
-		if leaseErr != nil {
-			return WorkflowStartResult{Run: run, Preflight: preflight}, errors.Join(err, leaseErr)
-		}
-		return WorkflowStartResult{Run: run, Preflight: preflight}, err
+		return workflowStartResultFromPackage(PackageWorkflowDispatchResult{Preparation: prepared}), err
 	}
-	if err := s.recordMutationLeaseIdentity(ctx, begun.Attempt, lease.LeaseID, false); err != nil {
-		return s.failPrelaunchAttemptWithMutationLease(ctx, begun, preflight, applierResult, &selected, err, repository, lease, false)
-	}
-	runtimeCtx, cancel := context.WithCancel(context.Background())
-	runtime := &workflowRuntime{cancel: cancel}
-	s.putRuntime(begun.Attempt.AttemptID, runtime)
-	s.launch(func() {
-		defer s.deleteRuntime(begun.Attempt.AttemptID)
-		s.execute(runtimeCtx, begun.Run, begun.Attempt, repository, selected, validationCommands, invocation, adapter, runtime, lease, false)
-	})
-	return WorkflowStartResult{Run: begun.Run, Attempt: begun.Attempt, Preflight: preflight, Applier: applierResult}, nil
+	dispatched, err := packageWorkflowStartDispatch(ctx, s, prepared)
+	return workflowStartResultFromPackage(dispatched), err
 }
 
 func workflowStartResultFromPackage(packageResult PackageWorkflowDispatchResult) WorkflowStartResult {

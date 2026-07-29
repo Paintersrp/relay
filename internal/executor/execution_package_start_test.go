@@ -5,8 +5,10 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"relay/internal/applier"
+	"relay/internal/pipeline"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -271,16 +273,64 @@ func TestWorkflowStartPackageUnavailableFailsClosed(t *testing.T) {
 	}
 }
 
-func TestWorkflowStartPackageIsNilForLegacyRunAndPreflightBehaviorRemains(t *testing.T) {
+func TestWorkflowStartLegacyRunRetiredBeforeExecutionSideEffects(t *testing.T) {
 	fixture := newWorkflowFixture(t)
+	if _, err := fixture.store.DB().ExecContext(context.Background(), "PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.DB().ExecContext(context.Background(), "DELETE FROM repository_targets WHERE repo_target = ?", fixture.run.RepoTarget); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.DB().ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatal(err)
+	}
+	beforeAttempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeArtifacts, err := fixture.store.ListArtifactsByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeLeases, err := fixture.store.ListRepositoryBranchMutationLeases(context.Background(), fixture.run.RepoTarget, fixture.run.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture.service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
-		return workflowrepos.ExecutionPreflightResult{OK: false, BlockerCode: "blocked"}
+		t.Fatal("legacy Run entered repository preflight")
+		return workflowrepos.ExecutionPreflightResult{}
+	}
+	fixture.service.applier = func(context.Context, applier.Input) (applier.Result, error) {
+		t.Fatal("legacy Run invoked deterministic applier")
+		return applier.Result{}, nil
+	}
+	fixture.service.adapterFactory = func(string) (ExecutorAdapter, error) {
+		t.Fatal("legacy Run built an executor adapter")
+		return nil, nil
+	}
+	fixture.service.runner = func(context.Context, string, string, []string, string, time.Duration, pipeline.AgentCommandStreamCallbacks, pipeline.ProcessController) pipeline.AgentCommandRunResult {
+		t.Fatal("legacy Run launched a model process")
+		return pipeline.AgentCommandRunResult{}
 	}
 
 	result, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: fixture.run.RunID, Adapter: "opencode_go", Model: "model"})
-	var preflightErr *WorkflowPreflightError
-	if !errors.As(err, &preflightErr) || result.Run != fixture.run || result.Package != nil {
+	if !errors.Is(err, ErrLegacyExecutionRetired) || result.Run != fixture.run || result.Package != nil {
 		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	afterAttempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterArtifacts, err := fixture.store.ListArtifactsByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterLeases, err := fixture.store.ListRepositoryBranchMutationLeases(context.Background(), fixture.run.RepoTarget, fixture.run.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterAttempts) != len(beforeAttempts) || len(afterArtifacts) != len(beforeArtifacts) || len(afterLeases) != len(beforeLeases) {
+		t.Fatalf("legacy Run side effects: attempts %d->%d artifacts %d->%d leases %d->%d", len(beforeAttempts), len(afterAttempts), len(beforeArtifacts), len(afterArtifacts), len(beforeLeases), len(afterLeases))
 	}
 }
 

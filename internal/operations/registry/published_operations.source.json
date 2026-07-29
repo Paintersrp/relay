@@ -10,7 +10,6 @@
     "planner.transition_plan",
     "planner.ticket_design_brief",
     "planner.ticket_design_brief_remediation",
-    "planner.selected_execution_spec",
     "planner.delivery_ticket_remediation",
     "planner.ticket_frontier",
     "auditor.requirements_review",
@@ -18,7 +17,6 @@
     "auditor.delivery_ticket_review",
     "auditor.transition_plan_review",
     "auditor.ticket_design_brief_review",
-    "auditor.selected_execution_spec_review",
     "auditor.audit"
   ],
   "operations": {
@@ -562,128 +560,6 @@
       "allowed_non_source_actions": [],
       "packet_semantic_projection": "relay.semantic.operation-packet-request.v1"
     },
-    "planner.selected_execution_spec": {
-      "operation_id": "planner.selected_execution_spec",
-      "role": "planner",
-      "surface_contract": "planner-authoring.v1",
-      "manifest_domain": "selected_execution_spec",
-      "output_kind": "execution_spec_json",
-      "output_persistence": "chat_unrecorded",
-      "required_inputs": [
-        {
-          "input_name": "selected_delivery_ticket",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "approved_ticket_design_brief",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "completed_dependency_outcomes",
-          "input_role": "governing",
-          "attestation_kind": "completed_dependency_outcomes",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "ticket_or_artifact"
-        }
-      ],
-      "optional_inputs": [
-        {
-          "input_name": "approved_requirements",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "approved_shared_design",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "approved_transition_plan",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        }
-      ],
-      "conditional_refresh_inputs": [
-        {
-          "input_name": "reviewed_candidate",
-          "input_role": "candidate",
-          "attestation_kind": "candidate_for_review",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "auditor_review_result",
-          "input_role": "evidence",
-          "attestation_kind": "complete_review_result",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "inline_text"
-          ],
-          "workflow_record_policy": "none"
-        }
-      ],
-      "derived_inputs": [
-        {
-          "input_name": "current_selection_identity",
-          "input_role": "authority",
-          "attestation_kind": "derived_authority",
-          "allowed_source_kinds": [],
-          "workflow_record_policy": "derived"
-        }
-      ],
-      "workflow_reference_kinds": [
-        "feature_workspace",
-        "delivery_ticket"
-      ],
-      "comparison_anchor_purposes": [
-        "reviewed_source_basis"
-      ],
-      "source_policy": "current_clean_project_required_source",
-      "historical_authority": "selected_package_and_completed_dependencies",
-      "allowed_non_source_actions": [],
-      "packet_semantic_projection": "relay.semantic.operation-packet-request.v1"
-    },
     "planner.delivery_ticket_remediation": {
       "operation_id": "planner.delivery_ticket_remediation",
       "role": "planner",
@@ -1070,116 +946,6 @@
       ],
       "source_policy": "exact_review_source_basis",
       "historical_authority": "selected_ticket_and_completed_dependencies",
-      "allowed_non_source_actions": [],
-      "packet_semantic_projection": "relay.semantic.operation-packet-request.v1"
-    },
-    "auditor.selected_execution_spec_review": {
-      "operation_id": "auditor.selected_execution_spec_review",
-      "role": "auditor",
-      "surface_contract": "auditor-review.v1",
-      "manifest_domain": "selected_execution_spec_review",
-      "output_kind": "planning_review_result",
-      "output_persistence": "chat_unrecorded",
-      "required_inputs": [
-        {
-          "input_name": "candidate_execution_spec",
-          "input_role": "candidate",
-          "attestation_kind": "candidate_for_review",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "selected_delivery_ticket",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "approved_ticket_design_brief",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "completed_dependency_outcomes",
-          "input_role": "governing",
-          "attestation_kind": "completed_dependency_outcomes",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "ticket_or_artifact"
-        }
-      ],
-      "optional_inputs": [
-        {
-          "input_name": "approved_requirements",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "approved_shared_design",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        },
-        {
-          "input_name": "approved_transition_plan",
-          "input_role": "governing",
-          "attestation_kind": "approved_artifact",
-          "allowed_source_kinds": [
-            "uploaded_file",
-            "relay_artifact",
-            "workflow_record"
-          ],
-          "workflow_record_policy": "artifact"
-        }
-      ],
-      "conditional_refresh_inputs": [],
-      "derived_inputs": [
-        {
-          "input_name": "current_selection_identity",
-          "input_role": "authority",
-          "attestation_kind": "derived_authority",
-          "allowed_source_kinds": [],
-          "workflow_record_policy": "derived"
-        }
-      ],
-      "workflow_reference_kinds": [
-        "feature_workspace",
-        "delivery_ticket"
-      ],
-      "comparison_anchor_purposes": [
-        "reviewed_source_basis"
-      ],
-      "source_policy": "exact_review_source_basis",
-      "historical_authority": "candidate_base_and_selected_package",
       "allowed_non_source_actions": [],
       "packet_semantic_projection": "relay.semantic.operation-packet-request.v1"
     },

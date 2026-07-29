@@ -1,25 +1,25 @@
 {
   "schema_version": "relay.mcp.authority-lock.v1",
   "repository": "Paintersrp/relay-specs",
-  "commit": "d9b688e9f4040ca6870521172b9a6435f47ee55c",
+  "commit": "7bc0841c9378da372525f3425e4f45c67c5997af",
   "standing_instructions": {
     "wayfinder": {
       "path": "agents/wayfinder.md",
-      "blob_oid": "983114272266d10f80b378b29539ba1e1293f07f"
+      "blob_oid": "2ef05c0acf579835f86dbafb5ddb39bc158d984d"
     },
     "planner": {
       "path": "agents/planner.md",
-      "blob_oid": "2a11a518ad8b65a6af39cba50f34f490701a1e23"
+      "blob_oid": "165f018207d5c703ef082deed4fa36dfa35dbbcb"
     },
     "auditor": {
       "path": "agents/auditor.md",
-      "blob_oid": "c9be52345776ffdbbdafad34ad53bdc30200e257"
+      "blob_oid": "9303cd514c5866b0d59b74315297b34afa4f0ac5"
     }
   },
   "manifests": {
     "planner": {
       "path": "planner-source-manifest.json",
-      "blob_oid": "03eac8552696058b1a4bbc7e953578e773a48b47",
+      "blob_oid": "8ab813549b96fbefd67e1d1f2d5b796bc6465035",
       "manifest_version": "1.0",
       "domains": [
         {
@@ -27,7 +27,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements.md",
@@ -40,7 +44,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -48,7 +56,7 @@
             },
             {
               "path": "contracts/design.md",
-              "blob_oid": "61211c1aa69a85c3283b120d7a12e2bc5ddc673d"
+              "blob_oid": "c6b1900d7f213f6c47b643736e371c09e2df211e"
             }
           ]
         },
@@ -57,7 +65,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -74,7 +86,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -91,7 +107,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -99,7 +119,7 @@
             },
             {
               "path": "contracts/plan.md",
-              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+              "blob_oid": "eef584498ba06f1c6ca65d0a1b5df9d185366816"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -107,16 +127,20 @@
             },
             {
               "path": "contracts/design-brief.md",
-              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+              "blob_oid": "63ad136bf554f5c59bd60ad6d845726d6663a312"
             }
           ]
         },
         {
-          "name": "selected_execution_spec",
+          "name": "deterministic_operations",
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
+            },
+            {
+              "path": "contracts/planning-artifact-review.md",
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -124,7 +148,7 @@
             },
             {
               "path": "contracts/plan.md",
-              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+              "blob_oid": "eef584498ba06f1c6ca65d0a1b5df9d185366816"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -132,11 +156,11 @@
             },
             {
               "path": "contracts/design-brief.md",
-              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+              "blob_oid": "63ad136bf554f5c59bd60ad6d845726d6663a312"
             },
             {
-              "path": "contracts/execution-spec.md",
-              "blob_oid": "62c06272ed4ac3691a156ab31d47ded2d7be4666"
+              "path": "contracts/deterministic-operations.md",
+              "blob_oid": "ef7a6f2b8adf79dd35a70f9dece12c90da534de5"
             }
           ]
         }
@@ -144,7 +168,7 @@
     },
     "auditor": {
       "path": "auditor-source-manifest.json",
-      "blob_oid": "b81a729a507b92b427d2e882f976524e34dde566",
+      "blob_oid": "410e718fe6725af8a281c082b938bfd9c253487f",
       "manifest_version": "1.0",
       "domains": [
         {
@@ -152,11 +176,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/planning-artifact-review.md",
-              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements.md",
@@ -169,11 +193,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/planning-artifact-review.md",
-              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -181,7 +205,7 @@
             },
             {
               "path": "contracts/design.md",
-              "blob_oid": "61211c1aa69a85c3283b120d7a12e2bc5ddc673d"
+              "blob_oid": "c6b1900d7f213f6c47b643736e371c09e2df211e"
             }
           ]
         },
@@ -190,11 +214,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/planning-artifact-review.md",
-              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -211,11 +235,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/planning-artifact-review.md",
-              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -232,11 +256,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/planning-artifact-review.md",
-              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -244,7 +268,7 @@
             },
             {
               "path": "contracts/plan.md",
-              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+              "blob_oid": "eef584498ba06f1c6ca65d0a1b5df9d185366816"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -252,20 +276,20 @@
             },
             {
               "path": "contracts/design-brief.md",
-              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+              "blob_oid": "63ad136bf554f5c59bd60ad6d845726d6663a312"
             }
           ]
         },
         {
-          "name": "selected_execution_spec_review",
+          "name": "deterministic_operations_review",
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/planning-artifact-review.md",
-              "blob_oid": "09ce30a9b5d565cc618abca3668dd7984d46f787"
+              "blob_oid": "9667324b22105f4629276bbf15d9ddef173f4ede"
             },
             {
               "path": "contracts/requirements-to-design.md",
@@ -273,7 +297,7 @@
             },
             {
               "path": "contracts/plan.md",
-              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+              "blob_oid": "eef584498ba06f1c6ca65d0a1b5df9d185366816"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -281,11 +305,11 @@
             },
             {
               "path": "contracts/design-brief.md",
-              "blob_oid": "7cb0595fc9b5047e2f25b403f17a9cf5dd0b7c90"
+              "blob_oid": "63ad136bf554f5c59bd60ad6d845726d6663a312"
             },
             {
-              "path": "contracts/execution-spec.md",
-              "blob_oid": "62c06272ed4ac3691a156ab31d47ded2d7be4666"
+              "path": "contracts/deterministic-operations.md",
+              "blob_oid": "ef7a6f2b8adf79dd35a70f9dece12c90da534de5"
             }
           ]
         },
@@ -294,19 +318,19 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "db27d9cb3df137ecedbc7423eca03df25d9745e4"
+              "blob_oid": "56c98961fabacee8bf67aeb06401e56e0f908c7c"
             },
             {
               "path": "contracts/audit.md",
-              "blob_oid": "661ea7a071a0b3997a705aa5b12759bb66b57019"
+              "blob_oid": "5970139e10c2d7d4b76a3e8f2020609a43da8590"
             },
             {
               "path": "schemas/audit-packet.schema.json",
-              "blob_oid": "b22ab2b6e6f85617b8c5e9f21c17cb020bcf2ae8"
+              "blob_oid": "d1648f76ab6a1a92d23983095db2ac2fb150b717"
             },
             {
               "path": "contracts/plan.md",
-              "blob_oid": "15782bba0a79deb1c5b04de55b1218b637a0efde"
+              "blob_oid": "eef584498ba06f1c6ca65d0a1b5df9d185366816"
             },
             {
               "path": "contracts/delivery-ticket.md",
@@ -317,8 +341,12 @@
               "blob_oid": "c386981ac834d4fcd8a888607e1801c7d9adaa3f"
             },
             {
-              "path": "contracts/execution-spec.md",
-              "blob_oid": "62c06272ed4ac3691a156ab31d47ded2d7be4666"
+              "path": "contracts/design-brief.md",
+              "blob_oid": "63ad136bf554f5c59bd60ad6d845726d6663a312"
+            },
+            {
+              "path": "contracts/deterministic-operations.md",
+              "blob_oid": "ef7a6f2b8adf79dd35a70f9dece12c90da534de5"
             }
           ]
         }

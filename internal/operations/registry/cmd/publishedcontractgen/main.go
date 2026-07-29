@@ -201,31 +201,13 @@ func main() {
 	packetToolSchemas := buildPacketToolSchemas(routes.Routes)
 	familyToolSchemas := buildFamilyToolSchemas(family)
 	publishedExplicitToolSchemas := buildPublishedExplicitToolSchemas()
+	order := orderedTools(routes.Routes)
 	metadataByName := map[string]metadataTool{}
+	if err := validatePublishedToolCardinality(order, metadata.Tools, bindings); err != nil {
+		fatalf("published tool cardinality: %v", err)
+	}
 	for _, item := range metadata.Tools {
 		metadataByName[item.Name] = item
-	}
-	order := orderedTools(routes.Routes)
-	if len(order) == 0 || len(metadataByName) != len(order) || len(bindings.Bindings) != len(order) {
-		fatalf("published tool cardinality differs")
-	}
-	for _, name := range order {
-		if _, ok := metadataByName[name]; !ok {
-			fatalf("metadata %q missing", name)
-		}
-		if _, ok := bindings.Bindings[name]; !ok {
-			fatalf("binding %q missing", name)
-		}
-	}
-	for name := range metadataByName {
-		if !contains(order, name) {
-			fatalf("metadata %q is extra", name)
-		}
-	}
-	for name := range bindings.Bindings {
-		if !contains(order, name) {
-			fatalf("binding %q is extra", name)
-		}
 	}
 
 	publishedContract := generatedDocument{

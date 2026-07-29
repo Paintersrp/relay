@@ -11,18 +11,6 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-func TestLegacyApplierStubReturnsNotImplementedError(t *testing.T) {
-	fixture := newWorkflowFixture(t)
-	run := createRunWithCanonicalProjectionSpec(t, fixture, "applier-stub")
-	_, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: run.RunID, Adapter: "opencode_go", Model: "unused-model"})
-	if err == nil {
-		t.Fatal("legacy deterministic applier stub must return an error")
-	}
-	if !strings.Contains(err.Error(), "package execution preparation is not implemented") {
-		t.Fatalf("error = %v, want not-implemented stub error", err)
-	}
-}
-
 func createRunWithCanonicalProjectionSpec(t *testing.T, fixture *workflowFixture, slug string) workflowstore.Run {
 	t.Helper()
 	repository, err := fixture.store.GetRepositoryTarget(context.Background(), "relay")

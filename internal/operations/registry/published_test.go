@@ -14,7 +14,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(operations) != 19 || len(routes) != 7 {
+	if len(operations) != 17 || len(routes) != 7 {
 		t.Fatalf("operations=%d routes=%d", len(operations), len(routes))
 	}
 	seen := map[string]struct{}{}
@@ -27,7 +27,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 			}
 		}
 	}
-	if len(seen) != 40 {
+	if len(seen) != 38 {
 		t.Fatalf("tools=%d", len(seen))
 	}
 	for _, forbidden := range []OperationID{"planner.plan", "planner.one_shot_execution_spec", "auditor.plan_review", "auditor.remediation_execution_spec", "features.authority", "local_operator.ticket_workflow"} {

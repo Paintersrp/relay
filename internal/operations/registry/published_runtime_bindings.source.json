@@ -8,6 +8,10 @@
     "close_operation_packet",
     "read_operation_input",
     "list_operation_repositories",
+    "create_workspace",
+    "admit_workspace_input",
+    "add_workspace_destination",
+    "route_workspace",
     "list_source_tree",
     "search_source",
     "read_source_text",
@@ -16,31 +20,25 @@
     "list_source_history",
     "compare_source",
     "read_source_diff",
-    "create_workspace",
-    "admit_workspace_input",
-    "add_workspace_destination",
-    "route_workspace",
     "create_discovery_ticket",
     "resolve_discovery_ticket",
     "attach_investigation",
-    "read_ticket_frontier",
-    "get_audit_packet",
-    "get_run_artifact",
-    "record_audit_decision",
-    "get_audit_effects",
-    "get_remediation_seed",
     "open_requirements",
     "open_shared_design",
     "open_delivery_ticket",
     "open_transition_plan",
     "open_ticket_design_brief",
-    "open_selected_execution_spec",
+    "read_ticket_frontier",
     "open_requirements_review",
     "open_shared_design_review",
     "open_delivery_ticket_review",
     "open_transition_plan_review",
     "open_ticket_design_brief_review",
-    "open_selected_execution_spec_review"
+    "get_audit_packet",
+    "get_run_artifact",
+    "record_audit_decision",
+    "get_audit_effects",
+    "get_remediation_seed"
   ],
   "bindings": {
     "list_projects": {
@@ -274,13 +272,6 @@
       "operation_id": "planner.ticket_design_brief",
       "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
     },
-    "open_selected_execution_spec": {
-      "tool_name": "open_selected_execution_spec",
-      "category": "operation_family",
-      "adapter": "operation_family",
-      "operation_id": "planner.selected_execution_spec",
-      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
-    },
     "open_requirements_review": {
       "tool_name": "open_requirements_review",
       "category": "operation_family",
@@ -314,13 +305,6 @@
       "category": "operation_family",
       "adapter": "operation_family",
       "operation_id": "auditor.ticket_design_brief_review",
-      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
-    },
-    "open_selected_execution_spec_review": {
-      "tool_name": "open_selected_execution_spec_review",
-      "category": "operation_family",
-      "adapter": "operation_family",
-      "operation_id": "auditor.selected_execution_spec_review",
       "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
     }
   }

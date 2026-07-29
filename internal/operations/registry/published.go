@@ -194,14 +194,14 @@ func validatePublishedContractsDocument() error {
 	if err := decodeStrict(publishedPublicContractJSON, &publishedPublic); err != nil {
 		return fmt.Errorf("MCP_PUBLIC_CONTRACT_INVALID: %w", err)
 	}
-	if len(publishedOps.OperationOrder) != 19 || len(publishedOps.Operations) != 19 {
-		return fmt.Errorf("published operation cardinality is not 19")
+	if len(publishedOps.OperationOrder) == 0 || len(publishedOps.Operations) != len(publishedOps.OperationOrder) {
+		return fmt.Errorf("published operation cardinality differs")
 	}
 	if len(publishedPublic.RouteOrder) != 7 || len(publishedPublic.Routes) != 7 {
 		return fmt.Errorf("MCP route cardinality is not 7")
 	}
-	if len(publishedPublic.ToolOrder) != 40 || len(publishedPublic.Tools) != 40 {
-		return fmt.Errorf("published tool cardinality is not 40")
+	if len(publishedPublic.ToolOrder) == 0 || len(publishedPublic.Tools) != len(publishedPublic.ToolOrder) {
+		return fmt.Errorf("published tool cardinality differs")
 	}
 	seenOps := map[OperationID]struct{}{}
 	for _, id := range publishedOps.OperationOrder {
@@ -237,8 +237,8 @@ func validatePublishedContractsDocument() error {
 			seenTools[name] = struct{}{}
 		}
 	}
-	if len(seenTools) != 40 {
-		return fmt.Errorf("route membership does not cover 40 tools")
+	if len(seenTools) != len(publishedPublic.ToolOrder) {
+		return fmt.Errorf("route membership does not cover published tools")
 	}
 	return nil
 }

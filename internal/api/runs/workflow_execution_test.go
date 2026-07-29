@@ -66,6 +66,19 @@ func TestWorkflowExecutionStartPreflightBlocker(t *testing.T) {
 	}
 }
 
+func TestWorkflowExecutionStartLegacyAdmissionRetired(t *testing.T) {
+	service := &fakeWorkflowExecutionService{startErr: executor.ErrLegacyExecutionRetired}
+	request := httptest.NewRequest(http.MethodPost, "/runs/run-test/attempts", strings.NewReader(`{"adapter":"codex","model":"model"}`))
+	response := httptest.NewRecorder()
+	workflowExecutionRouter(service).ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"LEGACY_EXECUTION_RETIRED"`) {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "INTERNAL_ERROR") {
+		t.Fatalf("legacy retirement was misclassified: %s", response.Body.String())
+	}
+}
+
 func TestWorkflowExecutionAttemptMonitoringIsBounded(t *testing.T) {
 	attempt := workflowstore.ExecutionAttempt{
 		AttemptID:     "attempt-test",

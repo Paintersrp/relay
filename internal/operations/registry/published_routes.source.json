@@ -1,8 +1,8 @@
 {
   "schema_version": "relay.mcp.route-contract.v1",
   "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
-  "authority_lock_sha256": "788a6b84e910f8c285f0c77fddc459c226a50dd6b78b358b98bd7816ff5164ab",
-  "operation_contract_sha256": "8acab12d41ddeb1eb2e12104f3a5bbbed88f38711b1237b63b21196b731058d6",
+  "authority_lock_sha256": "b5bd25f97e21699f7cc82cc92a0924a6e7115972bf3108a1cbec25015c5f6aa8",
+  "operation_contract_sha256": "59b7c12583e18671507a9e2f20a3d5d964c83a66dc97ffae3d52169a036895eb",
   "route_order": [
     "/mcp/v1/wayfinder/workspace",
     "/mcp/v1/wayfinder/discovery",
@@ -109,7 +109,6 @@
         "planner.transition_plan",
         "planner.ticket_design_brief",
         "planner.ticket_design_brief_remediation",
-        "planner.selected_execution_spec",
         "planner.delivery_ticket_remediation"
       ],
       "tools": [
@@ -118,7 +117,6 @@
         "open_delivery_ticket",
         "open_transition_plan",
         "open_ticket_design_brief",
-        "open_selected_execution_spec",
         "list_projects",
         "get_active_operation_packet",
         "create_operation_packet",
@@ -169,8 +167,7 @@
         "auditor.shared_design_review",
         "auditor.delivery_ticket_review",
         "auditor.transition_plan_review",
-        "auditor.ticket_design_brief_review",
-        "auditor.selected_execution_spec_review"
+        "auditor.ticket_design_brief_review"
       ],
       "tools": [
         "open_requirements_review",
@@ -178,7 +175,6 @@
         "open_delivery_ticket_review",
         "open_transition_plan_review",
         "open_ticket_design_brief_review",
-        "open_selected_execution_spec_review",
         "list_projects",
         "get_active_operation_packet",
         "create_operation_packet",
@@ -805,25 +801,6 @@
       "output_root": "OpenOperationFamilyContextResult",
       "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
     },
-    "open_selected_execution_spec": {
-      "category": "operation_family",
-      "semantic_tool_id": "relay.planner.selected-execution-spec.context.v1",
-      "operation_id": "planner.selected_execution_spec",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "file_params": [],
-      "metadata_source": "published_explicit",
-      "schema_owner": "internal/operations/registry/published_public_contract.json",
-      "input_schema_id": "urn:relay:mcp:planner-authoring.v1:open_selected_execution_spec:input:v1",
-      "output_schema_id": "urn:relay:mcp:planner-authoring.v1:open_selected_execution_spec:output:v1",
-      "input_root": "OpenOperationFamilyContextRequest",
-      "output_root": "OpenOperationFamilyContextResult",
-      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
-    },
     "open_requirements_review": {
       "category": "operation_family",
       "semantic_tool_id": "relay.auditor.requirements-review.context.v1",
@@ -918,28 +895,9 @@
       "input_root": "OpenOperationFamilyContextRequest",
       "output_root": "OpenOperationFamilyContextResult",
       "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
-    },
-    "open_selected_execution_spec_review": {
-      "category": "operation_family",
-      "semantic_tool_id": "relay.auditor.selected-execution-spec-review.context.v1",
-      "operation_id": "auditor.selected_execution_spec_review",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "file_params": [],
-      "metadata_source": "published_explicit",
-      "schema_owner": "internal/operations/registry/published_public_contract.json",
-      "input_schema_id": "urn:relay:mcp:auditor-review.v1:open_selected_execution_spec_review:input:v1",
-      "output_schema_id": "urn:relay:mcp:auditor-review.v1:open_selected_execution_spec_review:output:v1",
-      "input_root": "OpenOperationFamilyContextRequest",
-      "output_root": "OpenOperationFamilyContextResult",
-      "dispatcher_owner": "internal/mcp/current_family_tools.go -> internal/app/operations.Service and internal/mcp/routecontracts authority resolver"
     }
   },
   "source_tool_contract_version": "relay.sourcegateway.mcp.v1",
-  "operation_family_tool_contract_sha256": "b10a04711f9696f5b9b4c3c941a2dc84c3c17ec83757542ab22f2a2009ada755",
-  "all_tool_metadata_contract_sha256": "79c765caa2018682bbd14f30586894a1316301dc1cc018e9f0ffb8f2443f741f"
+  "operation_family_tool_contract_sha256": "19920dcf811770fb7eab86823e4c3a6495f47de98d78766f1b67cac83a9da3ef",
+  "all_tool_metadata_contract_sha256": "7fa47ea57240f0fee5881cdc656e1f3a25c1aa921fa80da8b5e20174313259fe"
 }
