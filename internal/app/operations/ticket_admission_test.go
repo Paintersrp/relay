@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"relay/internal/app/tickets"
@@ -191,5 +192,35 @@ func TestTicketWorkflowDependencyReplacementPublishesWholeRevision(t *testing.T)
 	}
 	if len(owner.calls) != 1 || owner.calls[0] != "publish" {
 		t.Fatalf("dependency replacement did not use publication owner: %#v", owner.calls)
+	}
+}
+
+func TestTicketWorkflowRemediationReferenceRequiresCompleteIdentity(t *testing.T) {
+	base := tickets.PublishInput{WorkspaceID: "workspace-1", TicketID: "TICKET-1", ExternalPriority: 3, Revision: tickets.RevisionInput{SourceClosureRowID: 12}}
+	cases := []TicketPublishOperationInput{
+		{Publish: base, RemediationSeedID: "seed-1"},
+		{Publish: base, RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("a", 64)}},
+		{Publish: base, RemediationSeedID: "seed-1", RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1"}},
+		{Publish: base, RemediationSeedID: "seed-1", RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("A", 64)}},
+	}
+	for index, input := range cases {
+		service, err := NewTicketWorkflowService(&fakeTicketPacketAuthorizer{}, &fakeTicketWorkflowOwner{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.Publish(context.Background(), input); !errors.Is(err, ErrTicketAdmission) {
+			t.Fatalf("case %d error = %v", index, err)
+		}
+	}
+}
+
+func TestTicketWorkflowDependencyReplacementRejectsRemediationReference(t *testing.T) {
+	service, err := NewTicketWorkflowService(&fakeTicketPacketAuthorizer{}, &fakeTicketWorkflowOwner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := TicketPublishOperationInput{RemediationSeedID: "seed-1", RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("a", 64)}}
+	if _, err := service.ReplaceDependencies(context.Background(), input); !errors.Is(err, ErrTicketAdmission) {
+		t.Fatalf("replacement error = %v", err)
 	}
 }

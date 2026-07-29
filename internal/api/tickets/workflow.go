@@ -145,6 +145,16 @@ type revisionRequest struct {
 
 type publishRequest struct {
 	TicketAdmissionRequest
+	ExternalPriority              int64           `json:"externalPriority"`
+	ExpectedRevisionNumber        int64           `json:"expectedRevisionNumber"`
+	Revision                      revisionRequest `json:"revision"`
+	RemediationSeedID             string          `json:"remediationSeedId"`
+	AuthoringPacketID             string          `json:"authoringPacketId"`
+	ExpectedAuthoringPacketSHA256 string          `json:"expectedAuthoringPacketSha256"`
+}
+
+type dependencyReplacementRequest struct {
+	TicketAdmissionRequest
 	ExternalPriority       int64           `json:"externalPriority"`
 	ExpectedRevisionNumber int64           `json:"expectedRevisionNumber"`
 	Revision               revisionRequest `json:"revision"`
@@ -222,7 +232,13 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
-	result, err := h.workflow.Publish(r.Context(), appoperations.TicketPublishOperationInput{Admission: admission, Publish: input})
+	ref := appoperations.RemediationAuthoringReference{PacketID: request.AuthoringPacketID, ExpectedPacketSHA256: request.ExpectedAuthoringPacketSHA256}
+	admission.PayloadSHA256, err = appoperations.TicketPublishPayloadSHA256WithRemediation(input, request.RemediationSeedID, ref)
+	if err != nil {
+		badRequest(w, "Invalid delivery ticket revision request")
+		return
+	}
+	result, err := h.workflow.Publish(r.Context(), appoperations.TicketPublishOperationInput{Admission: admission, Publish: input, RemediationSeedID: request.RemediationSeedID, RemediationAuthoringReference: ref})
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -231,12 +247,12 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WorkflowHandler) ReplaceDependencies(w http.ResponseWriter, r *http.Request) {
-	var request publishRequest
+	var request dependencyReplacementRequest
 	if !decodeStrict(r, &request) {
 		badRequest(w, "Invalid delivery ticket dependency replacement request")
 		return
 	}
-	input, admission, err := publishInput(request, workspaceID(r), ticketID(r), registry.TicketActionReplaceDependencies)
+	input, admission, err := publishInputValues(request.TicketAdmissionRequest, request.ExternalPriority, request.ExpectedRevisionNumber, request.Revision, workspaceID(r), ticketID(r), registry.TicketActionReplaceDependencies)
 	if err != nil {
 		badRequest(w, err.Error())
 		return
@@ -326,27 +342,31 @@ func (h *WorkflowHandler) Select(w http.ResponseWriter, r *http.Request) {
 }
 
 func publishInput(request publishRequest, workspaceID, ticketID string, action registry.AllowedAction) (apptickets.PublishInput, appoperations.TicketOperationRequest, error) {
-	if request.Revision.CanonicalJSON == nil {
+	return publishInputValues(request.TicketAdmissionRequest, request.ExternalPriority, request.ExpectedRevisionNumber, request.Revision, workspaceID, ticketID, action)
+}
+
+func publishInputValues(admissionRequest TicketAdmissionRequest, externalPriority, expectedRevisionNumber int64, revision revisionRequest, workspaceID, ticketID string, action registry.AllowedAction) (apptickets.PublishInput, appoperations.TicketOperationRequest, error) {
+	if revision.CanonicalJSON == nil {
 		return apptickets.PublishInput{}, appoperations.TicketOperationRequest{}, errors.New("canonicalJson is required")
 	}
-	members := make([]apptickets.RevisionMemberInput, 0, len(request.Revision.Members))
-	for _, member := range request.Revision.Members {
+	members := make([]apptickets.RevisionMemberInput, 0, len(revision.Members))
+	for _, member := range revision.Members {
 		members = append(members, apptickets.RevisionMemberInput{Kind: member.Kind, Path: member.Path, Text: member.Text})
 	}
-	dependencies := make([]apptickets.DependencyInput, 0, len(request.Revision.Dependencies))
-	for _, dependency := range request.Revision.Dependencies {
+	dependencies := make([]apptickets.DependencyInput, 0, len(revision.Dependencies))
+	for _, dependency := range revision.Dependencies {
 		dependencies = append(dependencies, apptickets.DependencyInput{RevisionRowID: dependency.RevisionRowID, Outcome: dependency.Outcome})
 	}
-	input := apptickets.PublishInput{WorkspaceID: workspaceID, TicketID: ticketID, ExternalPriority: request.ExternalPriority, ExpectedRevisionNumber: request.ExpectedRevisionNumber, Revision: apptickets.RevisionInput{
-		RepoTarget: request.Revision.RepoTarget, Branch: request.Revision.Branch, BaseCommit: request.Revision.BaseCommit, SourceClosureRowID: request.Revision.SourceClosureRowID,
-		SourcePath: request.Revision.SourcePath, Goal: request.Revision.Goal, Context: request.Revision.Context, TransitionApplicability: request.Revision.TransitionApplicability,
-		CancellationReason: request.Revision.CancellationReason, CanonicalJSON: request.Revision.CanonicalJSON, RenderedMarkdown: []byte(request.Revision.RenderedMarkdown), Members: members, Dependencies: dependencies,
+	input := apptickets.PublishInput{WorkspaceID: workspaceID, TicketID: ticketID, ExternalPriority: externalPriority, ExpectedRevisionNumber: expectedRevisionNumber, Revision: apptickets.RevisionInput{
+		RepoTarget: revision.RepoTarget, Branch: revision.Branch, BaseCommit: revision.BaseCommit, SourceClosureRowID: revision.SourceClosureRowID,
+		SourcePath: revision.SourcePath, Goal: revision.Goal, Context: revision.Context, TransitionApplicability: revision.TransitionApplicability,
+		CancellationReason: revision.CancellationReason, CanonicalJSON: revision.CanonicalJSON, RenderedMarkdown: []byte(revision.RenderedMarkdown), Members: members, Dependencies: dependencies,
 	}}
 	payload, err := appoperations.TicketPublishPayloadSHA256(input)
 	if err != nil {
 		return apptickets.PublishInput{}, appoperations.TicketOperationRequest{}, err
 	}
-	admission, err := admissionFrom(request.TicketAdmissionRequest, workspaceID, ticketID, action, input.Revision.SourceClosureRowID, 0, request.ExpectedRevisionNumber, "", payload)
+	admission, err := admissionFrom(admissionRequest, workspaceID, ticketID, action, input.Revision.SourceClosureRowID, 0, expectedRevisionNumber, "", payload)
 	return input, admission, err
 }
 

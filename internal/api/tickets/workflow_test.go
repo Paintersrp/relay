@@ -93,3 +93,13 @@ func TestSelectionRouteMapsAtomicConflict(t *testing.T) {
 		t.Fatalf("response = %d %s selection = %#v", response.Code, response.Body.String(), service.selectionInput)
 	}
 }
+
+func TestDependencyReplacementRouteRejectsRemediationFields(t *testing.T) {
+	service := &fakeWorkflow{}
+	body := `{"remediationSeedId":"seed-1"}`
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/ticket-1/dependencies", strings.NewReader(body)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
