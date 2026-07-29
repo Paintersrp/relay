@@ -1130,7 +1130,7 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 		}
 		packetBytes, err := readWorkflowArtifact(s.store, packetArtifact, MaxWorkflowAuditPacketBytes)
 		if err != nil {
-			return err
+			return ErrWorkflowAuditPacketStale
 		}
 		if packetArtifact.ID != current.Artifact.ID || packetArtifact.OwnerType != workflowstore.ArtifactOwnerRun || !packetArtifact.RunRowID.Valid || packetArtifact.RunRowID.Int64 != run.ID ||
 			packetArtifact.Kind != "audit_packet" || packetArtifact.RelativePath != "audit-packets/"+packet.AuditPacketID+"/audit-packet.json" || packetArtifact.MediaType != "application/json" ||

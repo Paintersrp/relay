@@ -209,6 +209,9 @@ func verifyWorkflowPackageDecisionAuthority(ctx context.Context, tx *workflowsto
 	}
 	approval, err := tx.GetRunExecutionPackageApproval(ctx, run.ID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrWorkflowAuditPacketStale
+		}
 		return err
 	}
 	if !reflect.DeepEqual(approval, evidence.Authority.PackageApproval) || !run.PackageApprovalRowID.Valid || run.PackageApprovalRowID.Int64 != approval.ID || approval.PackageRowID != pkg.ID || approval.PackageSha256 != pkg.PackageSha256 {
