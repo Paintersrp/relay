@@ -87,7 +87,7 @@ func (s *TicketWorkflowService) verifyRemediationAuthoring(ctx context.Context, 
 		return err
 	}
 	seed, err := decodeRemediationSeed(seedBytes)
-	if err != nil || !validateRemediationSeed(seed, input.RemediationSeedID, document.WorkflowReferences[0].AuditDecisionID) {
+	if err != nil || !validateRemediationSeed(seed, input.Publish.RemediationSeedID, document.WorkflowReferences[0].AuditDecisionID) {
 		return ErrTicketAdmission
 	}
 	authority, err := decodeCurrentApprovedAuthority(authorityBytes)

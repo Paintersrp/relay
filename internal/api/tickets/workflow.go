@@ -233,12 +233,17 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ref := appoperations.RemediationAuthoringReference{PacketID: request.AuthoringPacketID, ExpectedPacketSHA256: request.ExpectedAuthoringPacketSHA256}
-	admission.PayloadSHA256, err = appoperations.TicketPublishPayloadSHA256WithRemediation(input, request.RemediationSeedID, ref)
+	input.RemediationSeedID = request.RemediationSeedID
+	if err := appoperations.ValidateTicketPublicationInput(appoperations.TicketPublishOperationInput{Publish: input, RemediationAuthoringReference: ref}); err != nil {
+		badRequest(w, "Invalid delivery ticket revision request")
+		return
+	}
+	admission.PayloadSHA256, err = appoperations.TicketPublishPayloadSHA256WithRemediation(input, ref)
 	if err != nil {
 		badRequest(w, "Invalid delivery ticket revision request")
 		return
 	}
-	result, err := h.workflow.Publish(r.Context(), appoperations.TicketPublishOperationInput{Admission: admission, Publish: input, RemediationSeedID: request.RemediationSeedID, RemediationAuthoringReference: ref})
+	result, err := h.workflow.Publish(r.Context(), appoperations.TicketPublishOperationInput{Admission: admission, Publish: input, RemediationAuthoringReference: ref})
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -461,6 +466,8 @@ func writeTicketError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Operation packet is stale, unavailable, or does not authorize this ticket action")
 	case errors.Is(err, apptickets.ErrSelectionConflict), errors.Is(err, apptickets.ErrSelectionMemberStale), errors.Is(err, apptickets.ErrSelectionSourceStale), errors.Is(err, apptickets.ErrSelectionAuthorityStale), errors.Is(err, apptickets.ErrSelectionDependenciesInvalid), errors.Is(err, apptickets.ErrRevisionConflict), errors.Is(err, appoperations.ErrTicketAdmission):
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket state is stale or packet admission failed")
+	case errors.Is(err, apptickets.ErrRemediationSeed):
+		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket remediation seed is stale or already consumed")
 	case errors.Is(err, apptickets.ErrInvalidTicket), errors.Is(err, apptickets.ErrInvalidSelection), errors.Is(err, apptickets.ErrSelectionMemberNotReady):
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	default:

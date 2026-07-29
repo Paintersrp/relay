@@ -84,6 +84,46 @@ func TestPublishRouteBuildsExactPacketBoundOwnerInput(t *testing.T) {
 	}
 }
 
+func TestPublishRouteBindsRemediationFieldsToOwnerInput(t *testing.T) {
+	service := &fakeWorkflow{}
+	seedID := "remediation-seed-1"
+	packetID := "planner-packet-1"
+	packetSHA := strings.Repeat("a", 64)
+	body := `{"packetId":"operator-packet","operationId":"local_operator.ticket_workflow","externalPriority":66,"expectedRevisionNumber":0,"remediationSeedId":"` + seedID + `","authoringPacketId":"` + packetID + `","expectedAuthoringPacketSha256":"` + packetSHA + `","revision":{"repoTarget":"relay","branch":"main","baseCommit":"abc","sourceClosureRowId":12,"sourcePath":"tickets/ticket-1.json","goal":"Ship ticket","context":"Exact context","transitionApplicability":"not_required","canonicalJson":{"ticket":"ticket-1"},"renderedMarkdown":"# Ticket\\n","members":[],"dependencies":[]}}`
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/ticket-1/revisions", strings.NewReader(body)))
+	if response.Code != http.StatusCreated || service.publishInput.Publish.RemediationSeedID != seedID || service.publishInput.RemediationAuthoringReference.PacketID != packetID || service.publishInput.RemediationAuthoringReference.ExpectedPacketSHA256 != packetSHA {
+		t.Fatalf("response = %d %s input = %#v", response.Code, response.Body.String(), service.publishInput)
+	}
+}
+
+func TestPublishRouteRejectsPartialRemediationFields(t *testing.T) {
+	for _, extra := range []string{
+		`"remediationSeedId":"seed-1"`,
+		`"authoringPacketId":"packet-1"`,
+		`"expectedAuthoringPacketSha256":"` + strings.Repeat("a", 64) + `"`,
+		`"remediationSeedId":"seed-1","authoringPacketId":"packet-1"`,
+	} {
+		service := &fakeWorkflow{}
+		body := `{"` + strings.TrimPrefix(extra, `"`) + `,"revision":{"repoTarget":"relay","branch":"main","baseCommit":"abc","sourceClosureRowId":12,"sourcePath":"tickets/ticket-1.json","goal":"Ship ticket","context":"Exact context","transitionApplicability":"not_required","canonicalJson":{"ticket":"ticket-1"},"renderedMarkdown":"# Ticket\\n","members":[],"dependencies":[]}}`
+		response := httptest.NewRecorder()
+		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/ticket-1/revisions", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest || len(service.publishInput.Publish.TicketID) != 0 {
+			t.Fatalf("extra = %s response = %d %s input = %#v", extra, response.Code, response.Body.String(), service.publishInput)
+		}
+	}
+}
+
+func TestPublishRouteMapsRemediationSeedConflict(t *testing.T) {
+	service := &fakeWorkflow{err: apptickets.ErrRemediationSeed}
+	body := `{"remediationSeedId":"seed-1","authoringPacketId":"packet-1","expectedAuthoringPacketSha256":"` + strings.Repeat("a", 64) + `","revision":{"repoTarget":"relay","branch":"main","baseCommit":"abc","sourceClosureRowId":12,"sourcePath":"tickets/ticket-1.json","goal":"Ship ticket","context":"Exact context","transitionApplicability":"not_required","canonicalJson":{"ticket":"ticket-1"},"renderedMarkdown":"# Ticket\\n","members":[],"dependencies":[]}}`
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/ticket-1/revisions", strings.NewReader(body)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"CONFLICT"`) {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestSelectionRouteMapsAtomicConflict(t *testing.T) {
 	service := &fakeWorkflow{err: apptickets.ErrSelectionConflict}
 	body := `{"packetId":"operator-packet","operationId":"local_operator.ticket_workflow","ticketId":"ticket-1","revisionRowId":9,"rationale":"reserve"}`

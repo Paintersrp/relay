@@ -145,7 +145,6 @@ type RemediationAuthoringReference struct {
 type TicketPublishOperationInput struct {
 	Admission                     TicketOperationRequest
 	Publish                       tickets.PublishInput
-	RemediationSeedID             string
 	RemediationAuthoringReference RemediationAuthoringReference
 }
 
@@ -153,14 +152,14 @@ func (s *TicketWorkflowService) Publish(ctx context.Context, input TicketPublish
 	if err := validateTicketPublicationInput(input); err != nil {
 		return tickets.PublishedRevision{}, err
 	}
-	payload, err := TicketPublishPayloadSHA256WithRemediation(input.Publish, input.RemediationSeedID, input.RemediationAuthoringReference)
+	payload, err := TicketPublishPayloadSHA256WithRemediation(input.Publish, input.RemediationAuthoringReference)
 	if err != nil || !matchesPublishRequest(input.Admission, registry.TicketActionPublish, input.Publish) || input.Admission.PayloadSHA256 != payload {
 		return tickets.PublishedRevision{}, ErrTicketAdmission
 	}
 	if _, err := s.admit(ctx, input.Admission, registry.TicketActionPublish); err != nil {
 		return tickets.PublishedRevision{}, err
 	}
-	if input.RemediationSeedID != "" {
+	if input.Publish.RemediationSeedID != "" {
 		if err := s.verifyRemediationAuthoring(ctx, input); err != nil {
 			return tickets.PublishedRevision{}, err
 		}
@@ -169,7 +168,7 @@ func (s *TicketWorkflowService) Publish(ctx context.Context, input TicketPublish
 }
 
 func (s *TicketWorkflowService) ReplaceDependencies(ctx context.Context, input TicketPublishOperationInput) (tickets.PublishedRevision, error) {
-	if input.RemediationSeedID != "" || input.RemediationAuthoringReference != (RemediationAuthoringReference{}) {
+	if input.Publish.RemediationSeedID != "" || input.RemediationAuthoringReference != (RemediationAuthoringReference{}) {
 		return tickets.PublishedRevision{}, ErrTicketAdmission
 	}
 	payload, err := TicketPublishPayloadSHA256(input.Publish)
@@ -257,17 +256,21 @@ func matchesPublishRequest(request TicketOperationRequest, action registry.Allow
 }
 
 func validateTicketPublicationInput(input TicketPublishOperationInput) error {
-	seedID := strings.TrimSpace(input.RemediationSeedID)
+	seedID := strings.TrimSpace(input.Publish.RemediationSeedID)
 	ref := input.RemediationAuthoringReference
 	packetID := strings.TrimSpace(ref.PacketID)
 	packetSHA := strings.TrimSpace(ref.ExpectedPacketSHA256)
-	if input.RemediationSeedID == "" && ref == (RemediationAuthoringReference{}) {
+	if input.Publish.RemediationSeedID == "" && ref == (RemediationAuthoringReference{}) {
 		return nil
 	}
-	if seedID == "" || seedID != input.RemediationSeedID || packetID == "" || packetID != ref.PacketID || packetSHA == "" || packetSHA != ref.ExpectedPacketSHA256 || !validTicketSHA256(packetSHA) {
+	if seedID == "" || seedID != input.Publish.RemediationSeedID || packetID == "" || packetID != ref.PacketID || packetSHA == "" || packetSHA != ref.ExpectedPacketSHA256 || !validTicketSHA256(packetSHA) {
 		return ErrTicketAdmission
 	}
 	return nil
+}
+
+func ValidateTicketPublicationInput(input TicketPublishOperationInput) error {
+	return validateTicketPublicationInput(input)
 }
 
 func validateTicketDependencies(values []DependencyRequirement) error {
@@ -288,15 +291,14 @@ func validateTicketDependencies(values []DependencyRequirement) error {
 func exactNonBlank(value string) bool { return strings.TrimSpace(value) == value && value != "" }
 
 func TicketPublishPayloadSHA256(input tickets.PublishInput) (string, error) {
-	return TicketPublishPayloadSHA256WithRemediation(input, "", RemediationAuthoringReference{})
+	return TicketPublishPayloadSHA256WithRemediation(input, RemediationAuthoringReference{})
 }
 
-func TicketPublishPayloadSHA256WithRemediation(input tickets.PublishInput, remediationSeedID string, reference RemediationAuthoringReference) (string, error) {
+func TicketPublishPayloadSHA256WithRemediation(input tickets.PublishInput, reference RemediationAuthoringReference) (string, error) {
 	return ticketPayloadSHA256(struct {
-		Publish           tickets.PublishInput          `json:"publish"`
-		RemediationSeedID string                        `json:"remediation_seed_id"`
-		Authoring         RemediationAuthoringReference `json:"authoring_packet"`
-	}{Publish: input, RemediationSeedID: remediationSeedID, Authoring: reference})
+		Publish   tickets.PublishInput          `json:"publish"`
+		Authoring RemediationAuthoringReference `json:"authoring_packet"`
+	}{Publish: input, Authoring: reference})
 }
 
 func TicketApprovalPayloadSHA256(input tickets.ApproveInput) (string, error) {

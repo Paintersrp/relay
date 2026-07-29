@@ -198,10 +198,10 @@ func TestTicketWorkflowDependencyReplacementPublishesWholeRevision(t *testing.T)
 func TestTicketWorkflowRemediationReferenceRequiresCompleteIdentity(t *testing.T) {
 	base := tickets.PublishInput{WorkspaceID: "workspace-1", TicketID: "TICKET-1", ExternalPriority: 3, Revision: tickets.RevisionInput{SourceClosureRowID: 12}}
 	cases := []TicketPublishOperationInput{
-		{Publish: base, RemediationSeedID: "seed-1"},
+		{Publish: tickets.PublishInput{WorkspaceID: base.WorkspaceID, TicketID: base.TicketID, ExternalPriority: base.ExternalPriority, Revision: base.Revision, RemediationSeedID: "seed-1"}},
 		{Publish: base, RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("a", 64)}},
-		{Publish: base, RemediationSeedID: "seed-1", RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1"}},
-		{Publish: base, RemediationSeedID: "seed-1", RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("A", 64)}},
+		{Publish: tickets.PublishInput{WorkspaceID: base.WorkspaceID, TicketID: base.TicketID, ExternalPriority: base.ExternalPriority, Revision: base.Revision, RemediationSeedID: "seed-1"}, RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1"}},
+		{Publish: tickets.PublishInput{WorkspaceID: base.WorkspaceID, TicketID: base.TicketID, ExternalPriority: base.ExternalPriority, Revision: base.Revision, RemediationSeedID: "seed-1"}, RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("A", 64)}},
 	}
 	for index, input := range cases {
 		service, err := NewTicketWorkflowService(&fakeTicketPacketAuthorizer{}, &fakeTicketWorkflowOwner{})
@@ -219,7 +219,7 @@ func TestTicketWorkflowDependencyReplacementRejectsRemediationReference(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := TicketPublishOperationInput{RemediationSeedID: "seed-1", RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("a", 64)}}
+	input := TicketPublishOperationInput{Publish: tickets.PublishInput{RemediationSeedID: "seed-1"}, RemediationAuthoringReference: RemediationAuthoringReference{PacketID: "packet-1", ExpectedPacketSHA256: strings.Repeat("a", 64)}}
 	if _, err := service.ReplaceDependencies(context.Background(), input); !errors.Is(err, ErrTicketAdmission) {
 		t.Fatalf("replacement error = %v", err)
 	}
