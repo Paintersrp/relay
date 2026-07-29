@@ -637,7 +637,7 @@ func historicalAnchorPolicy(policy registry.HistoricalAuthorityPolicy) ([]regist
 		return []registry.AnchorPurpose{"reviewed_source_basis"}, []registry.AnchorPurpose{"reviewed_source_basis"}, nil
 	case "candidate_plan_and_dependency_anchors":
 		return []registry.AnchorPurpose{"reviewed_source_basis", "plan_base"}, []registry.AnchorPurpose{"reviewed_source_basis", "plan_base", "completed_dependency"}, nil
-	case "audited_ticket_and_current_authority":
+	case "audited_ticket_and_current_authority", "remediation_ticket_and_current_authority":
 		return nil, nil, nil
 	case "run_base_and_audited_commit", "audited_and_run_base_anchors":
 		return []registry.AnchorPurpose{"run_base", "audited_commit"}, []registry.AnchorPurpose{"run_base", "audited_commit"}, nil

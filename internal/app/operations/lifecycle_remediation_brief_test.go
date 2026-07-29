@@ -169,7 +169,7 @@ func assertRemediationBriefPacketContract(t *testing.T, fixture remediationLifec
 		document.WorkflowReferences[0].AuditDecisionID != fixture.decision.AuditDecisionID || document.WorkflowReferences[0].Decision != workflowstore.AuditDecisionNeedsRevision || len(document.Attestations) != 0 || len(document.Inputs) != 4 {
 		t.Fatalf("remediation brief packet contract = %#v", document)
 	}
-	if len(document.ManifestDomain.Members) != 2 || !strings.HasSuffix(document.ManifestDomain.Members[0].Path.PathID, "contracts/cross-cutting.md") || !strings.HasSuffix(document.ManifestDomain.Members[1].Path.PathID, "contracts/ticket-design-brief.md") {
+	if len(document.ManifestDomain.Members) != 2 || manifestMemberPath(t, document.ManifestDomain.Members[0]) != "contracts/cross-cutting.md" || manifestMemberPath(t, document.ManifestDomain.Members[1]) != "contracts/ticket-design-brief.md" {
 		t.Fatalf("manifest domain members = %#v", document.ManifestDomain.Members)
 	}
 	if directReplacement {
@@ -182,6 +182,15 @@ func assertRemediationBriefPacketContract(t *testing.T, fixture remediationLifec
 	if publication.result.Ticket.TicketID != map[bool]string{true: fixture.ticket.TicketID, false: "TICKET-REMEDIATION-BRIEF-SEPARATE"}[directReplacement] || publication.result.Revision.RevisionNumber != map[bool]int64{true: 2, false: 1}[directReplacement] {
 		t.Fatalf("publication identity = %#v", publication.result)
 	}
+}
+
+func manifestMemberPath(t *testing.T, member packet.ManifestMember) string {
+	t.Helper()
+	value, err := base64.StdEncoding.Strict().DecodeString(member.Path.PathBytesBase64)
+	if err != nil {
+		t.Fatalf("manifest member path %q: %v", member.Path.PathBytesBase64, err)
+	}
+	return string(value)
 }
 
 func assertVerifiedRemediationBriefInputs(t *testing.T, fixture remediationLifecycleFixture, service *Service, view PacketView, document packet.Document) map[string][]byte {
@@ -277,7 +286,7 @@ func assertSelectedRemediationTicket(t *testing.T, fixture remediationLifecycleF
 	if selected.RemediationSeedID != fixture.seed.RemediationSeedID || selected.AuditDecisionID != fixture.decision.AuditDecisionID || selected.ReopeningKind != reopening.ReopeningKind ||
 		selected.AuditedTicketID != auditedTicket.TicketID || selected.AuditedRevisionRowID != auditedRevision.ID || selected.AuditedRevisionNumber != auditedRevision.RevisionNumber ||
 		selected.RemediationTicketID != remediationTicket.TicketID || selected.RemediationRevisionRowID != remediationRevision.ID || selected.RemediationRevisionNumber != remediationRevision.RevisionNumber ||
-		selected.WorkspaceID != fixture.workspace.WorkspaceID || selected.ExternalPriority != remediationTicket.ExternalPriority || selected.ExternalPriority != 37 || selected.RepoTarget != remediationRevision.RepoTarget || selected.Branch != remediationRevision.Branch || selected.BaseCommit != remediationRevision.BaseCommit ||
+		selected.WorkspaceID != fixture.workspace.WorkspaceID || selected.ExternalPriority != remediationTicket.ExternalPriority || selected.RepoTarget != remediationRevision.RepoTarget || selected.Branch != remediationRevision.Branch || selected.BaseCommit != remediationRevision.BaseCommit ||
 		selected.SourceClosureRowID != remediationRevision.SourceClosureRowID || selected.SourceClosureID != fixture.closure.ClosureID || selected.SourceClosureCommit != fixture.closure.CommitOID || selected.SourcePath != remediationRevision.SourcePath || selected.Goal != remediationRevision.Goal || selected.Context != remediationRevision.Context || selected.TransitionApplicability != remediationRevision.TransitionApplicability {
 		t.Fatalf("selected remediation Ticket identity = %#v", selected)
 	}

@@ -59,7 +59,7 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 }
 
 func TestDerivedInputSourceIntegrity(t *testing.T) {
-	for _, operationID := range []registry.OperationID{"auditor.audit", "planner.delivery_ticket_remediation"} {
+	for _, operationID := range []registry.OperationID{"auditor.audit", "planner.delivery_ticket_remediation", "planner.ticket_design_brief_remediation"} {
 		t.Run(string(operationID), func(t *testing.T) {
 			operation, ok := registry.Lookup(operationID)
 			if !ok {
@@ -69,6 +69,11 @@ func TestDerivedInputSourceIntegrity(t *testing.T) {
 			if operationID == "planner.delivery_ticket_remediation" {
 				if len(document.WorkflowReferences) != 1 || document.WorkflowReferences[0].Kind != "audit_decision" || len(operation.DerivedInputs) != 2 {
 					t.Fatalf("remediation packet authority = %#v, derived inputs = %d", document.WorkflowReferences, len(operation.DerivedInputs))
+				}
+			}
+			if operationID == "planner.ticket_design_brief_remediation" {
+				if len(document.WorkflowReferences) != 1 || document.WorkflowReferences[0].Kind != "audit_decision" || len(operation.DerivedInputs) != 4 {
+					t.Fatalf("remediation brief authority = %#v, derived inputs = %d", document.WorkflowReferences, len(operation.DerivedInputs))
 				}
 			}
 			if _, err := NewSnapshot(document); err != nil {
@@ -97,6 +102,31 @@ func TestDerivedInputSourceIntegrity(t *testing.T) {
 				t.Fatalf("inline source with inactive fields error = %v", err)
 			}
 		})
+	}
+}
+
+func TestRemediationHistoricalAuthorityPolicy(t *testing.T) {
+	for _, policy := range []registry.HistoricalAuthorityPolicy{"audited_ticket_and_current_authority", "remediation_ticket_and_current_authority"} {
+		required, allowed, err := historicalAnchorPolicy(policy)
+		if err != nil || len(required) != 0 || len(allowed) != 0 {
+			t.Fatalf("%s policy = required %v, allowed %v, err %v", policy, required, allowed, err)
+		}
+	}
+	if _, _, err := historicalAnchorPolicy("unknown_remediation_policy"); validationCode(err) != "historical_authority" {
+		t.Fatalf("unknown policy error = %v", err)
+	}
+
+	op, ok := registry.Lookup("planner.ticket_design_brief_remediation")
+	if !ok {
+		t.Fatal("remediation brief operation is missing")
+	}
+	document := goldenDocument(t, op)
+	if _, err := NewSnapshot(document); err != nil {
+		t.Fatalf("remediation brief without anchors rejected: %v", err)
+	}
+	document.Repositories[0].Anchors = []Anchor{{AnchorName: "undeclared", Purpose: "reviewed_source_basis", CommitOID: strings.Repeat("3", 40), TreeOID: strings.Repeat("4", 40)}}
+	if _, err := NewSnapshot(document); validationCode(err) != "repository_anchor_purpose" {
+		t.Fatalf("undeclared remediation anchor error = %v", err)
 	}
 }
 
