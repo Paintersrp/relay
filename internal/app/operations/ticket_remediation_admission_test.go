@@ -2,10 +2,8 @@ package operations
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -17,9 +15,7 @@ import (
 	"relay/internal/app/features"
 	apptickets "relay/internal/app/tickets"
 	"relay/internal/mcp/semanticidentity"
-	"relay/internal/operations/packet"
 	"relay/internal/operations/registry"
-	workflowstore "relay/internal/store/workflow"
 )
 
 func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
@@ -42,10 +38,7 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			operator := createRemediationOperatorPacket(t, fixture)
-			if operator.Summary.Role != registry.Role("local_operator") || operator.Summary.OperationID != registry.LocalOperatorTicketWorkflowOperationID || operator.Summary.SurfaceContract != registry.LocalOperatorTicketWorkflowSurface {
-				t.Fatalf("operator packet summary = %#v", operator.Summary)
-			}
+			packetBoundary := newRemediationPacketBoundaryAdapter(packetService)
 			plannerDocument, err := decodeCanonicalAuthoringPacket(planner.Packet.DocumentBytes, planner.Packet.Summary.PacketSHA256)
 			if err != nil {
 				t.Fatal(err)
@@ -57,7 +50,7 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			workflow, err := NewTicketWorkflowService(packetService, ticketService)
+			workflow, err := NewTicketWorkflowService(packetBoundary, ticketService)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,7 +107,7 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 			}
 			result, err := workflow.Publish(fixture.ctx, TicketPublishOperationInput{
 				Admission: TicketOperationRequest{
-					PacketID: operator.Summary.PacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
+					PacketID: remediationLocalOperatorPacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
 					WorkspaceID: publish.WorkspaceID, TicketID: publish.TicketID, ExpectedRevisionNumber: publish.ExpectedRevisionNumber,
 					SourceClosureRowID: publish.Revision.SourceClosureRowID, ExternalPriority: publish.ExternalPriority, PayloadSHA256: payload,
 				},
@@ -123,6 +116,7 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			assertRemediationMutationRequest(t, packetBoundary, remediationExpectedMutationRequest())
 			if result.RemediationReopening == nil || result.RemediationReopening.ReopeningRevisionRowID != result.Revision.ID {
 				t.Fatalf("remediation reopening = %#v", result.RemediationReopening)
 			}
@@ -174,6 +168,15 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 			if test.replacement {
 				if result.Ticket.ID != fixture.ticket.ID || result.Revision.ReplacesRevisionRowID != (sql.NullInt64{Int64: fixture.revision.ID, Valid: true}) {
 					t.Fatalf("replacement identity = ticket %#v revision %#v", result.Ticket, result.Revision)
+				}
+				auditedRevisionsAfter, err := fixture.store.ListDeliveryTicketRevisions(fixture.ctx, fixture.ticket.ID)
+				if err != nil || len(auditedRevisionsAfter) != len(auditedRevisionsBefore)+1 {
+					t.Fatalf("audited ticket revision count = %d err=%v, want %d", len(auditedRevisionsAfter), err, len(auditedRevisionsBefore)+1)
+				}
+				for index, before := range auditedRevisionsBefore {
+					if !reflect.DeepEqual(auditedRevisionsAfter[index], before) {
+						t.Fatalf("preexisting audited revision %d changed: before=%#v after=%#v", index, before, auditedRevisionsAfter[index])
+					}
 				}
 			} else {
 				auditedTicket, err := fixture.store.GetDeliveryTicketByRowID(fixture.ctx, fixture.ticket.ID)
@@ -241,7 +244,7 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 			}
 			beforeSecond := remediationPublicationStateSnapshot(t, fixture)
 			if _, err := workflow.Publish(fixture.ctx, TicketPublishOperationInput{Admission: TicketOperationRequest{
-				PacketID: operator.Summary.PacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
+				PacketID: remediationLocalOperatorPacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
 				WorkspaceID: second.WorkspaceID, TicketID: second.TicketID, ExpectedRevisionNumber: second.ExpectedRevisionNumber,
 				SourceClosureRowID: second.Revision.SourceClosureRowID, ExternalPriority: second.ExternalPriority, PayloadSHA256: secondPayload,
 			}, Publish: second, RemediationAuthoringReference: ref}); !errors.Is(err, apptickets.ErrRemediationSeed) {
@@ -252,139 +255,72 @@ func TestTicketWorkflowRemediationPublishesBothTicketShapes(t *testing.T) {
 	}
 }
 
-func createRemediationOperatorPacket(t *testing.T, fixture remediationLifecycleFixture) PacketView {
-	t.Helper()
-	operation, ok := registry.Lookup(registry.LocalOperatorTicketWorkflowOperationID)
-	if !ok {
-		t.Fatal("local operator ticket operation is unavailable")
-	}
-	pathBytes := []byte("manifest.json")
-	path := remediationTestPath(pathBytes)
-	manifestBytes := []byte("manifest")
-	manifestSHA := digestBytes(manifestBytes)
-	document := packet.Document{
-		SchemaVersion: packet.SchemaVersion, CreatedAt: "2026-07-29T00:00:00.000000000Z", Role: operation.Role,
-		OperationID: operation.OperationID, SurfaceContract: operation.SurfaceContract,
-		SurfaceManifestSHA256: mustSurfaceManifest(operation.SurfaceContract),
-		Output:                packet.OutputContract{OutputKind: operation.OutputKind, OutputPersistence: operation.OutputPersistence},
-		Project:               packet.ProjectBinding{ProjectID: fixture.projectID}, SourcePolicy: operation.SourcePolicy, HistoricalAuthority: operation.HistoricalAuthority,
-		AllowedActions: operation.AllowedNonSourceActions,
-		Repositories:   []packet.RepositoryBinding{{RepositoryKey: "project", RepositoryTarget: "project", BindingOrder: 1, RepositoryTargetConfigurationVersion: 1, RevisionSource: packet.RevisionSourceExplicitCommit, CommitOID: strings.Repeat("a", 40), TreeOID: strings.Repeat("b", 40)}},
-		RelaySpecs:     packet.GovernanceBinding{RepositoryKey: "relay-specs", RepositoryTarget: "relay-specs", Reserved: true, RepositoryTargetConfigurationVersion: 1, RevisionSource: packet.RevisionSourceExplicitCommit, CommitOID: strings.Repeat("c", 40), TreeOID: strings.Repeat("d", 40)},
-		ManifestDomain: packet.ManifestDomainBinding{ManifestPath: path, ManifestBlobOID: strings.Repeat("e", 40), ManifestSHA256: manifestSHA, Domain: operation.ManifestDomain, Members: []packet.ManifestMember{{MemberOrder: 1, Path: path, BlobOID: strings.Repeat("f", 40), ByteSize: int64(len(manifestBytes)), SHA256: manifestSHA}}},
-		ReadinessState: packet.ReadinessReady,
-	}
-	snapshot, err := packet.NewSnapshot(document)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packetID := "opkt-operator-remediation"
-	artifactID := "artifact-operator-remediation"
-	batch, err := fixture.store.ArtifactStore().Begin(filepath.ToSlash(filepath.Join("operation-packets", packetID)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := batch.Stage("operation_packet_document", "operation-packet.json", packet.MediaType, snapshot.Bytes())
-	if err != nil {
-		_ = batch.Rollback()
-		t.Fatal(err)
-	}
-	if _, err := fixture.store.DB().Exec("PRAGMA ignore_check_constraints = ON"); err != nil {
-		_ = batch.Rollback()
-		t.Fatal(err)
-	}
-	var ignoreChecks int
-	if err := fixture.store.DB().QueryRow("PRAGMA ignore_check_constraints").Scan(&ignoreChecks); err != nil || ignoreChecks != 1 {
-		_ = batch.Rollback()
-		t.Fatalf("ignore_check_constraints = %d err=%v", ignoreChecks, err)
-	}
-	defer func() { _, _ = fixture.store.DB().Exec("PRAGMA ignore_check_constraints = OFF") }()
-	if err := fixture.store.CommitArtifactBatch(fixture.ctx, batch, func(tx *workflowstore.Tx) error {
-		artifact, err := tx.CreateOperationPacketArtifact(fixture.ctx, workflowstore.CreateOperationPacketArtifactParams{ArtifactID: artifactID, Kind: file.Kind, RelativePath: file.RelativePath, MediaType: file.MediaType, SHA256: file.SHA256, SizeBytes: file.SizeBytes})
-		if err != nil {
-			return err
-		}
-		created, err := tx.CreateOperationPacket(fixture.ctx, workflowstore.CreateOperationPacketParams{PacketID: packetID, PacketSHA256: snapshot.SHA256(), SchemaVersion: packet.SchemaVersion, Role: string(operation.Role), OperationID: string(operation.OperationID), SurfaceContractID: string(operation.SurfaceContract), ProjectID: fixture.projectID, ReadinessState: packet.ReadinessReady, CreatedAt: document.CreatedAt, PacketArtifactRowID: artifact.ID})
-		if err != nil {
-			return err
-		}
-		_, err = tx.AttachOperationPacketDependency(fixture.ctx, workflowstore.AttachOperationPacketDependencyParams{PacketRowID: created.ID, DependencyClass: workflowstore.OperationPacketDependencyPacketDocument, DependencyKey: artifact.ArtifactID, Required: true, Attached: true, Retained: true, OwnerIdentity: sql.NullString{String: artifact.ArtifactID, Valid: true}})
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	view, err := service.Get(fixture.ctx, packetID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return view
+const remediationLocalOperatorPacketID = "synthetic-local-operator-remediation"
+
+type remediationPacketBoundaryAdapter struct {
+	*Service
+	mutationRequests     []MutationRequest
+	mutationAdmissionErr error
+	plannerPacketID      string
+	wrongPlannerSurface  bool
 }
 
-func createWrongPlannerSurfacePacket(t *testing.T, fixture remediationLifecycleFixture) PacketView {
-	t.Helper()
-	operation, ok := registry.Lookup(remediationPlannerOperation)
-	if !ok {
-		t.Fatal("planner remediation operation is unavailable")
-	}
-	const packetID = "opkt-planner-wrong-surface"
-	const artifactID = "artifact-planner-wrong-surface"
-	source, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "matrix-wrong-surface-source", Identity: remediationIdentity(fixture)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	document, err := decodeCanonicalAuthoringPacket(source.Packet.DocumentBytes, source.Packet.Summary.PacketSHA256)
-	if err != nil {
-		t.Fatal(err)
-	}
-	batch, err := fixture.store.ArtifactStore().Begin(filepath.ToSlash(filepath.Join("operation-packets", packetID)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := batch.Stage("operation_packet_document", "operation-packet.json", packet.MediaType, source.Packet.DocumentBytes)
-	if err != nil {
-		_ = batch.Rollback()
-		t.Fatal(err)
-	}
-	if _, err := fixture.store.DB().Exec("PRAGMA ignore_check_constraints = ON"); err != nil {
-		_ = batch.Rollback()
-		t.Fatal(err)
-	}
-	defer func() { _, _ = fixture.store.DB().Exec("PRAGMA ignore_check_constraints = OFF") }()
-	if err := fixture.store.CommitArtifactBatch(fixture.ctx, batch, func(tx *workflowstore.Tx) error {
-		artifact, err := tx.CreateOperationPacketArtifact(fixture.ctx, workflowstore.CreateOperationPacketArtifactParams{ArtifactID: artifactID, Kind: file.Kind, RelativePath: file.RelativePath, MediaType: file.MediaType, SHA256: file.SHA256, SizeBytes: file.SizeBytes})
-		if err != nil {
-			return err
-		}
-		created, err := tx.CreateOperationPacket(fixture.ctx, workflowstore.CreateOperationPacketParams{PacketID: packetID, PacketSHA256: source.Packet.Summary.PacketSHA256, SchemaVersion: packet.SchemaVersion, Role: "planner", OperationID: string(operation.OperationID), SurfaceContractID: "planner-ticket-frontier.v1", ProjectID: fixture.projectID, ReadinessState: packet.ReadinessReady, CreatedAt: document.CreatedAt, PacketArtifactRowID: artifact.ID})
-		if err != nil {
-			return err
-		}
-		_, err = tx.AttachOperationPacketDependency(fixture.ctx, workflowstore.AttachOperationPacketDependencyParams{PacketRowID: created.ID, DependencyClass: workflowstore.OperationPacketDependencyPacketDocument, DependencyKey: artifact.ArtifactID, Required: true, Attached: true, Retained: true, OwnerIdentity: sql.NullString{String: artifact.ArtifactID, Valid: true}})
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	view, err := service.Get(fixture.ctx, packetID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return view
+func newRemediationPacketBoundaryAdapter(service *Service) *remediationPacketBoundaryAdapter {
+	return &remediationPacketBoundaryAdapter{Service: service}
 }
 
-func remediationTestPath(value []byte) packet.PathIdentity {
-	digest := sha256.New()
-	_, _ = digest.Write([]byte("relay.git-path.v1"))
-	_, _ = digest.Write([]byte{0})
-	_, _ = digest.Write(value)
-	return packet.PathIdentity{PathID: hex.EncodeToString(digest.Sum(nil)), ByteLength: int64(len(value)), PathBytesBase64: base64.StdEncoding.EncodeToString(value)}
+func (a *remediationPacketBoundaryAdapter) AuthorizeMutation(_ context.Context, request MutationRequest) (MutationAuthorization, error) {
+	a.mutationRequests = append(a.mutationRequests, MutationRequest{
+		PacketID: request.PacketID, SurfaceContract: request.SurfaceContract, OperationID: request.OperationID,
+		Action: request.Action, RequiredDependencies: append([]DependencyRequirement(nil), request.RequiredDependencies...),
+	})
+	if !reflect.DeepEqual(request, remediationExpectedMutationRequest()) {
+		return MutationAuthorization{}, ErrTicketAdmission
+	}
+	if a.mutationAdmissionErr != nil {
+		return MutationAuthorization{}, a.mutationAdmissionErr
+	}
+	return MutationAuthorization{Allowed: true}, nil
+}
+
+func (a *remediationPacketBoundaryAdapter) Get(ctx context.Context, packetID string) (PacketView, error) {
+	view, err := a.Service.Get(ctx, packetID)
+	if err != nil {
+		return PacketView{}, err
+	}
+	if a.wrongPlannerSurface && packetID == a.plannerPacketID {
+		view.Summary.SurfaceContract = registry.PlannerTicketFrontierSurface
+		view.DocumentBytes = append([]byte(nil), view.DocumentBytes...)
+	}
+	return view, nil
+}
+
+func (a *remediationPacketBoundaryAdapter) ReadVerifiedRetainedInput(ctx context.Context, packetID, inputName string) ([]byte, error) {
+	return a.Service.ReadVerifiedRetainedInput(ctx, packetID, inputName)
+}
+
+func remediationExpectedMutationRequest() MutationRequest {
+	return MutationRequest{
+		PacketID: remediationLocalOperatorPacketID, SurfaceContract: registry.LocalOperatorTicketWorkflowSurface,
+		OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
+	}
+}
+
+func assertRemediationMutationRequest(t *testing.T, adapter *remediationPacketBoundaryAdapter, want MutationRequest) {
+	t.Helper()
+	if len(adapter.mutationRequests) != 1 || !reflect.DeepEqual(adapter.mutationRequests[0], want) {
+		t.Fatalf("mutation requests = %#v, want exactly %#v", adapter.mutationRequests, []MutationRequest{want})
+	}
+}
+
+type remediationTicketOwner struct {
+	*apptickets.Service
+	publishCalls int
+}
+
+func (o *remediationTicketOwner) Publish(ctx context.Context, input apptickets.PublishInput) (apptickets.PublishedRevision, error) {
+	o.publishCalls++
+	return o.Service.Publish(ctx, input)
 }
 
 func remediationAdmissionCounts(t *testing.T, fixture remediationLifecycleFixture) map[string]int {
@@ -401,15 +337,14 @@ func remediationAdmissionCounts(t *testing.T, fixture remediationLifecycleFixtur
 }
 
 type remediationPublicationHarness struct {
-	fixture       remediationLifecycleFixture
-	packetService *Service
-	ticketService *apptickets.Service
-	workflow      *TicketWorkflowService
-	planner       PacketView
-	operator      PacketView
-	publish       apptickets.PublishInput
-	ref           RemediationAuthoringReference
-	admission     TicketOperationRequest
+	fixture        remediationLifecycleFixture
+	packetBoundary *remediationPacketBoundaryAdapter
+	ticketOwner    *remediationTicketOwner
+	workflow       *TicketWorkflowService
+	planner        PacketView
+	publish        apptickets.PublishInput
+	ref            RemediationAuthoringReference
+	admission      TicketOperationRequest
 }
 
 func newRemediationPublicationHarness(t *testing.T) remediationPublicationHarness {
@@ -427,11 +362,13 @@ func newRemediationPublicationHarness(t *testing.T) remediationPublicationHarnes
 	if err != nil {
 		t.Fatal(err)
 	}
-	workflow, err := NewTicketWorkflowService(packetService, ticketService)
+	packetBoundary := newRemediationPacketBoundaryAdapter(packetService)
+	packetBoundary.plannerPacketID = plannerResult.Packet.Summary.PacketID
+	ticketOwner := &remediationTicketOwner{Service: ticketService}
+	workflow, err := NewTicketWorkflowService(packetBoundary, ticketOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	operator := createRemediationOperatorPacket(t, fixture)
 	publish := apptickets.PublishInput{
 		WorkspaceID: fixture.workspace.WorkspaceID, TicketID: fixture.ticket.TicketID, ExternalPriority: fixture.ticket.ExternalPriority, ExpectedRevisionNumber: 1,
 		RemediationSeedID: fixture.seed.RemediationSeedID,
@@ -448,7 +385,7 @@ func newRemediationPublicationHarness(t *testing.T) remediationPublicationHarnes
 		},
 	}
 	ref := RemediationAuthoringReference{PacketID: plannerResult.Packet.Summary.PacketID, ExpectedPacketSHA256: plannerResult.Packet.Summary.PacketSHA256}
-	harness := remediationPublicationHarness{fixture: fixture, packetService: packetService, ticketService: ticketService, workflow: workflow, planner: plannerResult.Packet, operator: operator, publish: publish, ref: ref}
+	harness := remediationPublicationHarness{fixture: fixture, packetBoundary: packetBoundary, ticketOwner: ticketOwner, workflow: workflow, planner: plannerResult.Packet, publish: publish, ref: ref}
 	harness.refreshAdmission(t)
 	return harness
 }
@@ -460,7 +397,7 @@ func (h *remediationPublicationHarness) refreshAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.admission = TicketOperationRequest{
-		PacketID: h.operator.Summary.PacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
+		PacketID: remediationLocalOperatorPacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.TicketActionPublish,
 		WorkspaceID: h.publish.WorkspaceID, TicketID: h.publish.TicketID, ExpectedRevisionNumber: h.publish.ExpectedRevisionNumber,
 		SourceClosureRowID: h.publish.Revision.SourceClosureRowID, ExternalPriority: h.publish.ExternalPriority, PayloadSHA256: payload,
 	}
@@ -471,8 +408,8 @@ func TestTicketWorkflowRemediationAdmissionRejectionMatrixIsAtomic(t *testing.T)
 		name    string
 		prepare func(*testing.T, *remediationPublicationHarness)
 	}{
-		{name: "local-operator packet admission failure", prepare: func(_ *testing.T, h *remediationPublicationHarness) {
-			h.admission.PacketID = h.planner.Summary.PacketID
+		{name: "local-operator mutation admission failure", prepare: func(_ *testing.T, h *remediationPublicationHarness) {
+			h.packetBoundary.mutationAdmissionErr = errors.New("configured mutation admission failure")
 		}},
 		{name: "unknown Planner packet", prepare: func(t *testing.T, h *remediationPublicationHarness) {
 			h.ref.PacketID = "planner-packet-unknown"
@@ -497,10 +434,8 @@ func TestTicketWorkflowRemediationAdmissionRejectionMatrixIsAtomic(t *testing.T)
 			h.ref = RemediationAuthoringReference{PacketID: other.Packet.Summary.PacketID, ExpectedPacketSHA256: other.Packet.Summary.PacketSHA256}
 			h.refreshAdmission(t)
 		}},
-		{name: "wrong Planner surface", prepare: func(t *testing.T, h *remediationPublicationHarness) {
-			other := createWrongPlannerSurfacePacket(t, h.fixture)
-			h.ref = RemediationAuthoringReference{PacketID: other.Summary.PacketID, ExpectedPacketSHA256: other.Summary.PacketSHA256}
-			h.refreshAdmission(t)
+		{name: "wrong Planner surface", prepare: func(_ *testing.T, h *remediationPublicationHarness) {
+			h.packetBoundary.wrongPlannerSurface = true
 		}},
 		{name: "seed ID mismatch", prepare: func(t *testing.T, h *remediationPublicationHarness) {
 			h.publish.RemediationSeedID = "remediation-seed-other"
@@ -531,8 +466,28 @@ func TestTicketWorkflowRemediationAdmissionRejectionMatrixIsAtomic(t *testing.T)
 			h := newRemediationPublicationHarness(t)
 			tc.prepare(t, &h)
 			before := remediationPublicationStateSnapshot(t, h.fixture)
+			ownerCallsBefore := h.ticketOwner.publishCalls
 			if _, err := h.workflow.Publish(h.fixture.ctx, TicketPublishOperationInput{Admission: h.admission, Publish: h.publish, RemediationAuthoringReference: h.ref}); err == nil {
 				t.Fatal("invalid remediation publication was accepted")
+			}
+			if tc.name == "wrong Planner surface" && h.ticketOwner.publishCalls != ownerCallsBefore {
+				t.Fatalf("failed remediation invoked Ticket owner: before=%d after=%d", ownerCallsBefore, h.ticketOwner.publishCalls)
+			}
+			for index, request := range h.packetBoundary.mutationRequests {
+				if !reflect.DeepEqual(request, remediationExpectedMutationRequest()) {
+					t.Fatalf("mutation request %d = %#v, want %#v", index, request, remediationExpectedMutationRequest())
+				}
+			}
+			if len(h.packetBoundary.mutationRequests) == 0 {
+				t.Fatal("failed remediation did not reach mutation admission")
+			}
+			if tc.name == "local-operator mutation admission failure" {
+				if len(h.packetBoundary.mutationRequests) != 1 {
+					t.Fatalf("local-operator mutation attempts = %d, want 1", len(h.packetBoundary.mutationRequests))
+				}
+				if h.packetBoundary.mutationRequests[0].PacketID == h.planner.Summary.PacketID {
+					t.Fatal("Planner packet was submitted as mutation authority")
+				}
 			}
 			assertRemediationPublicationState(t, h.fixture, before)
 		})

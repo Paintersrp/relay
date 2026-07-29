@@ -285,10 +285,19 @@ func (s *TicketWorkflowService) currentAuthority(ctx context.Context, rowID int6
 }
 
 func (s *TicketWorkflowService) packetStore() *workflowstore.Store {
-	if service, ok := s.packets.(*Service); ok {
-		return service.store
+	provider, ok := s.packets.(ticketWorkflowStoreProvider)
+	if ok {
+		return provider.ticketWorkflowStore()
 	}
 	return nil
+}
+
+type ticketWorkflowStoreProvider interface {
+	ticketWorkflowStore() *workflowstore.Store
+}
+
+func (s *Service) ticketWorkflowStore() *workflowstore.Store {
+	return s.store
 }
 
 func validGitOID(value string) bool {
