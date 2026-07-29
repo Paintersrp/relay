@@ -272,6 +272,7 @@ func createRemediationAuditHistory(t *testing.T, fixture remediationLifecycleFix
 		for index, value := range []struct{ class, summary, evidence, remediation string }{
 			{"implementation", "implementation finding", "implementation evidence", "implementation remediation"},
 			{"governing_package", "package finding", "package evidence", "package remediation"},
+			{"both", "combined finding", "combined evidence", "combined remediation"},
 		} {
 			finding, findingErr := tx.CreateAuditRemediationSeedFinding(ctx, workflowstore.CreateAuditRemediationSeedFindingParams{RemediationSeedRowID: seed.ID, Sequence: int64(index + 1), UpstreamClassification: value.class, Summary: value.summary, Evidence: value.evidence, RequiredRemediation: value.remediation})
 			if findingErr != nil {
@@ -427,7 +428,7 @@ func assertRemediationSeed(t *testing.T, fixture remediationLifecycleFixture, da
 	}
 	for index, finding := range fixture.findings {
 		got := document.MaterialFindings[index]
-		if got.Sequence != finding.Sequence || got.UpstreamClassification != finding.UpstreamClassification || got.Summary != finding.Summary || got.Evidence != finding.Evidence || got.RequiredRemediation != finding.RequiredRemediation {
+		if got.Sequence != int64(index+1) || finding.Sequence != int64(index+1) || got.Sequence != finding.Sequence || got.UpstreamClassification != finding.UpstreamClassification || got.Summary != finding.Summary || got.Evidence != finding.Evidence || got.RequiredRemediation != finding.RequiredRemediation {
 			t.Fatalf("finding %d = %#v, want %#v", index, got, finding)
 		}
 	}
@@ -728,7 +729,7 @@ type remediationState struct {
 func remediationStateSnapshot(t *testing.T, fixture remediationLifecycleFixture) remediationState {
 	t.Helper()
 	state := remediationState{tables: map[string]string{}, tree: map[string]string{}}
-	for _, table := range []string{"operation_packets", "operation_packet_publications", "operation_packet_retained_artifacts", "operation_packet_artifact_bindings", "operation_packet_retention_dependencies", "source_vault_retentions", "artifacts", "delivery_tickets", "delivery_ticket_revisions", "execution_packages", "runs", "plans", "plan_passes", "execution_attempts", "audit_decisions", "audit_remediation_seeds", "audit_remediation_seed_reopenings"} {
+	for _, table := range []string{"operation_packets", "operation_packet_publications", "operation_packet_artifacts", "operation_packet_retained_artifacts", "operation_packet_artifact_bindings", "operation_packet_retention_dependencies", "operation_packet_vault_relationships", "source_vault_retentions", "artifacts", "delivery_tickets", "delivery_ticket_revisions", "delivery_ticket_revision_members", "delivery_ticket_revision_dependencies", "delivery_ticket_revision_approvals", "delivery_ticket_selections", "delivery_ticket_selection_members", "delivery_ticket_revision_satisfactions", "execution_packages", "execution_package_members", "execution_package_approval_bindings", "execution_package_approvals", "runs", "plans", "plan_passes", "execution_attempts", "audit_packets", "audit_decisions", "audit_packet_ticket_obligations", "audit_ticket_revision_decisions", "audit_remediation_seeds", "audit_remediation_seed_findings", "audit_remediation_seed_reopenings", "feature_workspace_completion_reopenings"} {
 		rows, err := fixture.store.DB().Query(`SELECT * FROM ` + table + ` ORDER BY rowid`)
 		if err != nil {
 			t.Fatal(err)
@@ -774,7 +775,7 @@ func remediationStateSnapshot(t *testing.T, fixture remediationLifecycleFixture)
 
 func assertRemediationBoundaryStable(t *testing.T, before, after remediationState) {
 	t.Helper()
-	for _, table := range []string{"delivery_tickets", "delivery_ticket_revisions", "execution_packages", "runs", "plans", "plan_passes", "execution_attempts", "audit_decisions", "audit_remediation_seeds", "audit_remediation_seed_reopenings"} {
+	for _, table := range []string{"delivery_tickets", "delivery_ticket_revisions", "delivery_ticket_revision_members", "delivery_ticket_revision_dependencies", "delivery_ticket_revision_approvals", "delivery_ticket_selections", "delivery_ticket_selection_members", "delivery_ticket_revision_satisfactions", "execution_packages", "execution_package_members", "execution_package_approval_bindings", "execution_package_approvals", "runs", "plans", "plan_passes", "execution_attempts", "audit_packets", "audit_decisions", "audit_packet_ticket_obligations", "audit_ticket_revision_decisions", "audit_remediation_seeds", "audit_remediation_seed_findings", "audit_remediation_seed_reopenings", "feature_workspace_completion_reopenings"} {
 		if before.tables[table] != after.tables[table] {
 			t.Fatalf("successful remediation changed %s", table)
 		}
