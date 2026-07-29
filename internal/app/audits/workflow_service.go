@@ -1146,7 +1146,7 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 		if err != nil {
 			return err
 		}
-		decisions, satisfactions, err := applyWorkflowPackageAuditTicketDecisionEffects(ctx, tx, run, packet, decision, document, input)
+		decisions, satisfactions, seeds, err := applyWorkflowPackageAuditTicketDecisionEffects(ctx, tx, run, packet, decision, document, input)
 		if err != nil {
 			return err
 		}
@@ -1180,7 +1180,7 @@ func (s *WorkflowAuditService) recordPackageDecision(ctx context.Context, input 
 				plan = &completedPlan
 			}
 		}
-		result = RecordWorkflowAuditDecisionResult{Run: run, Pass: pass, Plan: plan, Packet: packet, Decision: decision, Artifact: artifact, TicketRevisionDecisions: decisions, TicketSatisfactions: satisfactions, RemediationSeeds: []workflowstore.AuditRemediationSeed{}}
+		result = RecordWorkflowAuditDecisionResult{Run: run, Pass: pass, Plan: plan, Packet: packet, Decision: decision, Artifact: artifact, TicketRevisionDecisions: decisions, TicketSatisfactions: satisfactions, RemediationSeeds: seeds}
 		return nil
 	})
 	if err != nil {

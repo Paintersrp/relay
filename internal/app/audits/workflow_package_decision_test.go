@@ -82,8 +82,29 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Run.Status != workflowstore.RunStatusNeedsRevision || result.Pass != nil || result.Plan != nil || len(result.TicketRevisionDecisions) != 1 || len(result.TicketSatisfactions) != 0 || len(result.RemediationSeeds) != 0 {
+			if result.Run.Status != workflowstore.RunStatusNeedsRevision || result.Pass != nil || result.Plan != nil || len(result.TicketRevisionDecisions) != 1 || len(result.TicketSatisfactions) != 0 || len(result.RemediationSeeds) != 1 {
 				t.Fatalf("needs-revision package decision = %#v", result)
+			}
+			findings, err := fixture.store.ListAuditRemediationSeedFindings(ctx, result.RemediationSeeds[0].ID)
+			if err != nil || len(findings) != 1 || findings[0].UpstreamClassification != source || findings[0].Sequence != 1 {
+				t.Fatalf("remediation seed findings = %#v, %v", findings, err)
+			}
+			seed := result.RemediationSeeds[0]
+			if seed.AuditTicketRevisionDecisionRowID != result.TicketRevisionDecisions[0].ID || seed.AuditPacketRowID != packet.ID || seed.ExecutionPackageRowID != fixture.run.ExecutionPackageRowID.Int64 || seed.AuditedCommit != result.Decision.AuditedCommit || seed.DecisionRationale != result.Decision.Rationale {
+				t.Fatalf("remediation seed basis = %#v", seed)
+			}
+			effectsValue, err := service.GetAuditEffects(ctx, result.Decision.AuditDecisionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			effects := effectsValue.(AuditEffects)
+			seedValue, err := service.GetRemediationSeed(ctx, seed.RemediationSeedID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seedDetail := seedValue.(RemediationSeedDetail)
+			if len(effects.RemediationSeeds) != 1 || effects.RemediationSeeds[0] != seed || seedDetail.RemediationSeed != seed || len(seedDetail.MaterialFindings) != 1 || seedDetail.MaterialFindings[0] != findings[0] {
+				t.Fatalf("durable remediation seed readback = %#v %#v", effects, seedDetail)
 			}
 			pass, err := fixture.store.GetPlanPassByRowID(ctx, fixture.run.PlanPassRowID.Int64)
 			if err != nil || pass.Status != workflowstore.PassStatusInProgress {

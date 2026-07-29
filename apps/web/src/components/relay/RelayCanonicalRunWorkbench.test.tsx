@@ -271,7 +271,7 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
       packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
       document: { schema_version: "3.0" },
     });
-    mocks.recordAuditDecision.mockResolvedValue({ effects: { ticketSatisfactions: [], remediationSeeds: [] } });
+    mocks.recordAuditDecision.mockResolvedValue({ effects: { ticketSatisfactions: [], remediationSeeds: [{ remediationSeedId: "remediation-package-1" }] } });
 
     renderWorkbench("audit");
     await screen.findByText("Record confirmed decision");
@@ -288,6 +288,8 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     await user.click(screen.getByRole("button", { name: "Record decision" }));
 
     await waitFor(() => expect(mocks.recordAuditDecision).toHaveBeenCalledWith("run-1", expect.objectContaining({ materialFindings: [expect.objectContaining({ source: "governing_package" })] })));
+    expect(await screen.findByText(/Remediation seed: remediation-package-1/)).toBeInTheDocument();
+    expect(screen.getByText(/no remediation is automatic/)).toBeInTheDocument();
     expect(screen.queryByText(/ordinary Run has no ticket-package obligations/)).not.toBeInTheDocument();
   });
 

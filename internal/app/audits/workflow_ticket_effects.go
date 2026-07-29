@@ -149,48 +149,75 @@ func validateWorkflowPackageAuditDecisionInput(input RecordWorkflowAuditDecision
 	return nil
 }
 
-func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *workflowstore.Tx, run workflowstore.Run, packet workflowstore.AuditPacket, decision workflowstore.AuditDecision, document WorkflowPackageAuditPacket, input RecordWorkflowAuditDecisionInput) ([]workflowstore.AuditTicketRevisionDecision, []workflowstore.DeliveryTicketRevisionSatisfaction, error) {
+func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *workflowstore.Tx, run workflowstore.Run, packet workflowstore.AuditPacket, decision workflowstore.AuditDecision, document WorkflowPackageAuditPacket, input RecordWorkflowAuditDecisionInput) ([]workflowstore.AuditTicketRevisionDecision, []workflowstore.DeliveryTicketRevisionSatisfaction, []workflowstore.AuditRemediationSeed, error) {
 	obligations, err := tx.ListAuditPacketTicketObligations(ctx, packet.ID)
 	if err != nil || len(obligations) == 0 {
-		return nil, nil, ErrWorkflowAuditPacketStale
+		return nil, nil, nil, ErrWorkflowAuditPacketStale
 	}
 	decisions := make([]workflowstore.AuditTicketRevisionDecision, 0, len(obligations))
 	for _, obligation := range obligations {
 		if err := verifyWorkflowPackageAuditTicketDecisionEligibility(ctx, tx, run, packet, obligation); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		approval, err := tx.GetRunExecutionPackageApproval(ctx, run.ID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if !obligation.PackageApprovalRowID.Valid || !obligation.ApprovedPackageSha256.Valid || obligation.PackageApprovalRowID.Int64 != approval.ID || obligation.ApprovedPackageSha256.String != approval.PackageSha256 {
-			return nil, nil, ErrWorkflowAuditTicketIneligible
+			return nil, nil, nil, ErrWorkflowAuditTicketIneligible
 		}
 		d, err := tx.CreateAuditTicketRevisionDecision(ctx, workflowstore.CreateAuditTicketRevisionDecisionParams{AuditDecisionRowID: decision.ID, AuditPacketTicketObligationRowID: obligation.ID, PackageApprovalRowID: sql.NullInt64{Int64: approval.ID, Valid: true}, ApprovedPackageSha256: sql.NullString{String: approval.PackageSha256, Valid: true}})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		decisions = append(decisions, d)
 	}
-	if input.Decision != workflowstore.AuditDecisionAccepted {
-		return decisions, []workflowstore.DeliveryTicketRevisionSatisfaction{}, nil
+	if input.Decision == workflowstore.AuditDecisionNeedsRevision {
+		seeds := make([]workflowstore.AuditRemediationSeed, 0, len(decisions))
+		for _, revisionDecision := range decisions {
+			seed, err := tx.CreateAuditRemediationSeed(ctx, workflowstore.CreateAuditRemediationSeedParams{
+				RemediationSeedID:                workflowstore.NewAuditRemediationSeedID(),
+				AuditTicketRevisionDecisionRowID: revisionDecision.ID,
+				AuditPacketRowID:                 packet.ID,
+				ExecutionPackageRowID:            run.ExecutionPackageRowID.Int64,
+				AuditedCommit:                    decision.AuditedCommit,
+				DecisionRationale:                decision.Rationale,
+			})
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			for sequence, finding := range input.MaterialFindings {
+				if _, err := tx.CreateAuditRemediationSeedFinding(ctx, workflowstore.CreateAuditRemediationSeedFindingParams{
+					RemediationSeedRowID:   seed.ID,
+					Sequence:               int64(sequence + 1),
+					UpstreamClassification: finding.Source,
+					Summary:                finding.Summary,
+					Evidence:               finding.Evidence,
+					RequiredRemediation:    finding.RequiredRemediation,
+				}); err != nil {
+					return nil, nil, nil, err
+				}
+			}
+			seeds = append(seeds, seed)
+		}
+		return decisions, []workflowstore.DeliveryTicketRevisionSatisfaction{}, seeds, nil
 	}
 	satisfactions := make([]workflowstore.DeliveryTicketRevisionSatisfaction, 0, len(obligations))
 	for i, obligation := range obligations {
 		revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, obligation.DeliveryTicketRevisionRowID)
 		if err != nil {
-			return nil, nil, ErrWorkflowAuditTicketIneligible
+			return nil, nil, nil, ErrWorkflowAuditTicketIneligible
 		}
 		if revision.TransitionApplicability == "required" && !workflowPackageAuditTransitionProof(document, tx, ctx, obligation.AuthorityRevisionRowID) {
-			return nil, nil, ErrWorkflowAuditTicketIneligible
+			return nil, nil, nil, ErrWorkflowAuditTicketIneligible
 		}
 		s, err := tx.CreateDeliveryTicketRevisionSatisfaction(ctx, workflowstore.CreateDeliveryTicketRevisionSatisfactionParams{DeliveryTicketRevisionRowID: obligation.DeliveryTicketRevisionRowID, AuditTicketRevisionDecisionRowID: decisions[i].ID})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		satisfactions = append(satisfactions, s)
 	}
-	return decisions, satisfactions, nil
+	return decisions, satisfactions, nil, nil
 }
 
 // verifyWorkflowPackageDecisionAuthority reloads all decision authority using

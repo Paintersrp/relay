@@ -101,7 +101,7 @@ func TestTicketAuditRemediationSeedIsUniqueClassifiedAndReopenable(t *testing.T)
 		finding, err := queries.CreateAuditRemediationSeedFinding(ctx, workflowgenerated.CreateAuditRemediationSeedFindingParams{
 			RemediationSeedRowID:   remediation.ID,
 			Sequence:               1,
-			UpstreamClassification: "execution_spec",
+			UpstreamClassification: "implementation",
 			Summary:                "The execution specification omitted required persistence coverage.",
 			Evidence:               "The packet validation evidence does not exercise the required audit binding.",
 			RequiredRemediation:    "Create a current remediation ticket with complete persistence proof.",
@@ -109,7 +109,7 @@ func TestTicketAuditRemediationSeedIsUniqueClassifiedAndReopenable(t *testing.T)
 		if err != nil {
 			return err
 		}
-		if finding.UpstreamClassification != "execution_spec" {
+		if finding.UpstreamClassification != "implementation" {
 			return errors.New("remediation finding lost its upstream classification")
 		}
 		return nil
