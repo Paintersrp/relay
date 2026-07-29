@@ -872,8 +872,7 @@ func (s *LifecycleService) materializeRemediationBriefDerivedInputs(ctx context.
 		if remediationTicket.ID != auditedTicket.ID || !remediationRevision.ReplacesRevisionRowID.Valid || remediationRevision.ReplacesRevisionRowID.Int64 != auditedRevision.ID {
 			return nil, &Error{Code: CodeInvalidPacketDocument}
 		}
-		value := remediationRevision.ID
-		replacementRevisionRowID = &value
+		replacementRevisionRowID = remediationReplacementRevisionRowID(reopening.ReopeningKind, remediationRevision)
 	case "remediation_ticket":
 		if remediationTicket.ID == auditedTicket.ID {
 			return nil, &Error{Code: CodeInvalidPacketDocument}
@@ -970,6 +969,14 @@ func (s *LifecycleService) materializeRemediationBriefDerivedInputs(ctx context.
 		inputs = append(inputs, packet.InputBinding{InputName: slot, InputRole: "governing", SourceKind: packet.InputSourceInlineText, DisplayName: slot + ".json", MediaType: "application/json", SHA256: digestBytes(data), SizeBytes: int64(len(data)), AttestationKind: "derived_authority", Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: artifactID}})
 	}
 	return inputs, nil
+}
+
+func remediationReplacementRevisionRowID(reopeningKind string, remediationRevision workflowstore.DeliveryTicketRevision) *int64 {
+	if reopeningKind != "replacement_ticket_revision" || !remediationRevision.ReplacesRevisionRowID.Valid {
+		return nil
+	}
+	value := remediationRevision.ReplacesRevisionRowID.Int64
+	return &value
 }
 
 func (s *LifecycleService) materializeSelectedRemediationTicket(ctx context.Context, ticket workflowstore.DeliveryTicket, revision workflowstore.DeliveryTicketRevision, workspace workflowstore.FeatureWorkspace, closure workflowstore.SourceVaultClosure, authorityRevisionRowID int64) (selectedRemediationTicketInput, []completedDependencyOutcome, error) {
