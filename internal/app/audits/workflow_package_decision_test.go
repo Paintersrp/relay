@@ -90,16 +90,28 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 			if result.Run.Status != workflowstore.RunStatusNeedsRevision || result.Pass != nil || result.Plan != nil || len(result.TicketRevisionDecisions) != 1 || len(result.TicketSatisfactions) != 0 || len(result.RemediationSeeds) != 1 {
 				t.Fatalf("needs-revision package decision = %#v", result)
 			}
-			findings, err := fixture.store.ListAuditRemediationSeedFindings(ctx, result.RemediationSeeds[0].ID)
-			if err != nil || len(findings) != 3 {
-				t.Fatalf("remediation seed findings = %#v, %v", findings, err)
+			decisionBytes, err := readWorkflowArtifact(fixture.store, result.Artifact, MaxWorkflowAuditPacketBytes)
+			if err != nil {
+				t.Fatal(err)
 			}
-			for index, want := range []WorkflowAuditMaterialFinding{
+			var decisionDocument workflowPackageDecisionDocument
+			if err := json.Unmarshal(decisionBytes, &decisionDocument); err != nil {
+				t.Fatal(err)
+			}
+			wantFindings := []WorkflowAuditMaterialFinding{
 				{Source: "implementation", Summary: "implementation summary", Evidence: "implementation evidence", RequiredRemediation: "implementation remediation"},
 				{Source: "governing_package", Summary: "package summary", Evidence: "package evidence", RequiredRemediation: "package remediation"},
 				{Source: "both", Summary: "combined summary", Evidence: "combined evidence", RequiredRemediation: "combined remediation"},
-			} {
-				got := findings[index]
+			}
+			if !reflect.DeepEqual(decisionDocument.MaterialFindings, wantFindings) {
+				t.Fatalf("decision artifact findings = %#v, want %#v", decisionDocument.MaterialFindings, wantFindings)
+			}
+			seedFindings, err := fixture.store.ListAuditRemediationSeedFindings(ctx, result.RemediationSeeds[0].ID)
+			if err != nil || len(seedFindings) != 3 {
+				t.Fatalf("remediation seed findings = %#v, %v", seedFindings, err)
+			}
+			for index, want := range wantFindings {
+				got := seedFindings[index]
 				if got.Sequence != int64(index+1) || got.UpstreamClassification != want.Source || got.Summary != want.Summary || got.Evidence != want.Evidence || got.RequiredRemediation != want.RequiredRemediation {
 					t.Fatalf("finding %d = %#v, want %#v", index, got, want)
 				}
@@ -118,7 +130,7 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 				t.Fatal(err)
 			}
 			seedDetail := seedValue.(RemediationSeedDetail)
-			if len(effects.RemediationSeeds) != 1 || effects.RemediationSeeds[0] != seed || seedDetail.RemediationSeed != seed || !reflect.DeepEqual(seedDetail.MaterialFindings, findings) {
+			if len(effects.RemediationSeeds) != 1 || effects.RemediationSeeds[0] != seed || seedDetail.RemediationSeed != seed || !reflect.DeepEqual(seedDetail.MaterialFindings, seedFindings) {
 				t.Fatalf("durable remediation seed readback = %#v %#v", effects, seedDetail)
 			}
 			pass, err := fixture.store.GetPlanPassByRowID(ctx, fixture.run.PlanPassRowID.Int64)
@@ -324,6 +336,7 @@ func TestWorkflowPackageAuditRecordDecisionAuthorityDriftRollsBack(t *testing.T)
 					if err := test.mutate(fixture, evidence); err != nil {
 						t.Fatal(err)
 					}
+					state = capturePackageDecisionState(t, fixture)
 				}
 				return baseInspector(ctx, localPath, branch, baseCommit, auditedCommit)
 			}
@@ -337,14 +350,17 @@ func TestWorkflowPackageAuditRecordDecisionAuthorityDriftRollsBack(t *testing.T)
 }
 
 type packageDecisionState struct {
-	run                              workflowstore.Run
-	pass                             workflowstore.PlanPass
-	plan                             workflowstore.Plan
-	passStatus, planStatus           string
-	decisionRows, decisionArtifacts  int
-	ticketDecisions, satisfactions   int
-	remediationSeeds, seedFindings   int
-	decisionDirectories, stagingDirs []string
+	run                                   workflowstore.Run
+	pass                                  workflowstore.PlanPass
+	plan                                  workflowstore.Plan
+	passStatus, planStatus                string
+	decisionRows, decisionArtifacts       int
+	ticketDecisions, satisfactions        int
+	remediationSeeds, seedFindings        int
+	completionReopenings, seedReopenings  int
+	deliveryTickets, deliveryRevisions    int
+	runs, plans, passes, attempts, leases int
+	decisionDirectories, stagingDirs      []string
 }
 
 func packageDecisionInput(runID string, packet workflowstore.AuditPacket, decision string, findings []WorkflowAuditMaterialFinding) RecordWorkflowAuditDecisionInput {
@@ -418,6 +434,15 @@ func capturePackageDecisionState(t *testing.T, fixture *packageEvidenceFixture) 
 		{`SELECT COUNT(*) FROM delivery_ticket_revision_satisfactions WHERE audit_ticket_revision_decision_row_id IN (SELECT id FROM audit_ticket_revision_decisions WHERE audit_decision_row_id IN (SELECT id FROM audit_decisions WHERE run_row_id = ?))`, &state.satisfactions},
 		{`SELECT COUNT(*) FROM audit_remediation_seeds WHERE audit_ticket_revision_decision_row_id IN (SELECT id FROM audit_ticket_revision_decisions WHERE audit_decision_row_id IN (SELECT id FROM audit_decisions WHERE run_row_id = ?))`, &state.remediationSeeds},
 		{`SELECT COUNT(*) FROM audit_remediation_seed_findings WHERE remediation_seed_row_id IN (SELECT id FROM audit_remediation_seeds WHERE audit_ticket_revision_decision_row_id IN (SELECT id FROM audit_ticket_revision_decisions WHERE audit_decision_row_id IN (SELECT id FROM audit_decisions WHERE run_row_id = ?)))`, &state.seedFindings},
+		{`SELECT COUNT(*) FROM feature_workspace_completion_reopenings`, &state.completionReopenings},
+		{`SELECT COUNT(*) FROM audit_remediation_seed_reopenings`, &state.seedReopenings},
+		{`SELECT COUNT(*) FROM delivery_tickets`, &state.deliveryTickets},
+		{`SELECT COUNT(*) FROM delivery_ticket_revisions`, &state.deliveryRevisions},
+		{`SELECT COUNT(*) FROM runs`, &state.runs},
+		{`SELECT COUNT(*) FROM plans`, &state.plans},
+		{`SELECT COUNT(*) FROM plan_passes`, &state.passes},
+		{`SELECT COUNT(*) FROM execution_attempts`, &state.attempts},
+		{`SELECT COUNT(*) FROM repository_branch_mutation_leases`, &state.leases},
 	}
 	for _, item := range queries {
 		if err := fixture.store.DB().QueryRowContext(ctx, item.query, state.run.ID).Scan(item.into); err != nil {
@@ -432,7 +457,7 @@ func capturePackageDecisionState(t *testing.T, fixture *packageEvidenceFixture) 
 func assertPackageDecisionState(t *testing.T, fixture *packageEvidenceFixture, want packageDecisionState) {
 	t.Helper()
 	got := capturePackageDecisionState(t, fixture)
-	if got.run.Status != want.run.Status || got.passStatus != want.passStatus || got.planStatus != want.planStatus || got.decisionRows != want.decisionRows || got.decisionArtifacts != want.decisionArtifacts || got.ticketDecisions != want.ticketDecisions || got.satisfactions != want.satisfactions || got.remediationSeeds != want.remediationSeeds || got.seedFindings != want.seedFindings || !reflect.DeepEqual(got.decisionDirectories, want.decisionDirectories) || !reflect.DeepEqual(got.stagingDirs, want.stagingDirs) {
+	if !reflect.DeepEqual(got.run, want.run) || !reflect.DeepEqual(got.pass, want.pass) || !reflect.DeepEqual(got.plan, want.plan) || got.passStatus != want.passStatus || got.planStatus != want.planStatus || got.decisionRows != want.decisionRows || got.decisionArtifacts != want.decisionArtifacts || got.ticketDecisions != want.ticketDecisions || got.satisfactions != want.satisfactions || got.remediationSeeds != want.remediationSeeds || got.seedFindings != want.seedFindings || got.completionReopenings != want.completionReopenings || got.seedReopenings != want.seedReopenings || got.deliveryTickets != want.deliveryTickets || got.deliveryRevisions != want.deliveryRevisions || got.runs != want.runs || got.plans != want.plans || got.passes != want.passes || got.attempts != want.attempts || got.leases != want.leases || !reflect.DeepEqual(got.decisionDirectories, want.decisionDirectories) || !reflect.DeepEqual(got.stagingDirs, want.stagingDirs) {
 		t.Fatalf("decision state after failure = %#v, want %#v", got, want)
 	}
 }
