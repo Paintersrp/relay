@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	appackages "relay/internal/app/packages"
 	apptickets "relay/internal/app/tickets"
 	"relay/internal/mcp/semanticidentity"
 	"relay/internal/operations/packet"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testfixtures"
 )
 
 func TestLifecycleRemediationBriefDirectReplacementRetainsReplacedRevisionIdentity(t *testing.T) {
@@ -53,15 +56,20 @@ func TestLifecycleRemediationBriefSeparateTicketOmitsReplacementRevisionIdentity
 }
 
 type remediationBriefPublication struct {
-	result    apptickets.PublishedRevision
-	approval  workflowstore.DeliveryTicketRevisionApproval
-	selection apptickets.SelectionResult
-	canonical []byte
-	rendered  []byte
-	members   []apptickets.RevisionMemberInput
+	result       apptickets.PublishedRevision
+	approval     workflowstore.DeliveryTicketRevisionApproval
+	selection    apptickets.SelectionResult
+	canonical    []byte
+	rendered     []byte
+	members      []apptickets.RevisionMemberInput
+	dependencies []apptickets.DependencyInput
 }
 
 func publishRemediationBriefTicket(t *testing.T, fixture remediationLifecycleFixture, directReplacement bool) remediationBriefPublication {
+	return publishRemediationBriefTicketWithDependencies(t, fixture, directReplacement, nil)
+}
+
+func publishRemediationBriefTicketWithDependencies(t *testing.T, fixture remediationLifecycleFixture, directReplacement bool, dependencies []apptickets.DependencyInput) remediationBriefPublication {
 	t.Helper()
 	service, err := apptickets.NewService(fixture.store)
 	if err != nil {
@@ -73,22 +81,46 @@ func publishRemediationBriefTicket(t *testing.T, fixture remediationLifecycleFix
 		ticketID = fixture.ticket.TicketID
 		expectedRevisionNumber = fixture.revision.RevisionNumber
 	}
-	canonical := []byte(fmt.Sprintf(`{"ticket_id":%q,"purpose":"remediation brief","member_count":2}`, ticketID))
+	goal := "Retain the exact remediation brief ticket."
+	contextText := "The remediation brief uses a fresh, zero-dependency ticket publication."
+	revisionNumber := expectedRevisionNumber + 1
+	replacesRevision := "null"
+	if directReplacement {
+		revisionNumber = 2
+		replacesRevision = "1"
+	}
+	dependencyJSON := ""
+	for index, dependency := range dependencies {
+		if index > 0 {
+			dependencyJSON += ","
+		}
+		dependencyTicket, err := fixture.store.GetDeliveryTicketRevisionByRowID(fixture.ctx, dependency.RevisionRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dependencyOwner, err := fixture.store.GetDeliveryTicketByRowID(fixture.ctx, dependencyTicket.DeliveryTicketRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dependencyJSON += fmt.Sprintf(`{"ticket_id":%q,"revision":%d}`, dependencyOwner.TicketID, dependencyTicket.RevisionNumber)
+	}
+	canonical := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"remediation","ticket_id":%q,"revision":%d,"replaces_revision":%s,"repo_target":"project","branch":"main","base_commit":%q,"goal":%q,"context":%q,"scope":{"in_scope":["Exact remediation brief ticket."],"out_of_scope":["Unrelated work."]},"depends_on":[%s],"implementation_obligations":[{"path":"internal/app/operations/lifecycle_prepare.go","obligation":"Preserve the exact remediation materialization."}],"validation_intent":["Verify every retained remediation input byte-for-byte."],"transition_applicability":"not_required","completion_criteria":["The exact remediation package is prepared."]}`, ticketID, revisionNumber, replacesRevision, fixture.closure.CommitOID, goal, contextText, dependencyJSON))
 	rendered := []byte(fmt.Sprintf("# Remediation brief: %s\n\nExact caller-authored markdown.\n", ticketID))
 	members := []apptickets.RevisionMemberInput{
-		{Kind: "scope_in", Path: "internal/app/operations/lifecycle_prepare.go", Text: "Preserve the exact remediation materialization."},
+		{Kind: "implementation_obligation", Path: "internal/app/operations/lifecycle_prepare.go", Text: "Preserve the exact remediation materialization."},
 		{Kind: "validation_intent", Path: "internal/app/operations/lifecycle_remediation_brief_test.go", Text: "Verify every retained remediation input byte-for-byte."},
 	}
+	sourcePath := fmt.Sprintf("tickets/%s.ticket-%s.r%d.delivery-ticket.json", fixture.workspace.FeatureSlug, ticketID, revisionNumber)
 	publish := apptickets.PublishInput{
 		WorkspaceID: fixture.workspace.WorkspaceID, TicketID: ticketID, ExternalPriority: 37,
 		ExpectedRevisionNumber: expectedRevisionNumber, RemediationSeedID: fixture.seed.RemediationSeedID,
 		Revision: apptickets.RevisionInput{
 			RepoTarget: "project", Branch: "main", BaseCommit: fixture.closure.CommitOID, SourceClosureRowID: fixture.closure.ID,
-			SourcePath: "tickets/remediation-brief.delivery-ticket.json", Goal: "Retain the exact remediation brief ticket.",
-			Context: "The remediation brief uses a fresh, zero-dependency ticket publication.", TransitionApplicability: "not_required",
+			SourcePath: sourcePath, Goal: goal,
+			Context: contextText, TransitionApplicability: "not_required",
 			CanonicalJSON: canonical, RenderedMarkdown: rendered,
 			Members:      members,
-			Dependencies: []apptickets.DependencyInput{},
+			Dependencies: dependencies,
 		},
 	}
 	result, err := service.Publish(fixture.ctx, publish)
@@ -97,6 +129,11 @@ func publishRemediationBriefTicket(t *testing.T, fixture remediationLifecycleFix
 	}
 	if result.RemediationReopening == nil {
 		t.Fatal("remediation seed was not consumed")
+	}
+	for _, dependency := range dependencies {
+		if dependency.Outcome != "satisfied" {
+			return remediationBriefPublication{result: result, canonical: canonical, rendered: rendered, members: members, dependencies: dependencies}
+		}
 	}
 	approval, err := service.Approve(fixture.ctx, apptickets.ApproveInput{
 		TicketID: result.Ticket.TicketID, RevisionRowID: result.Revision.ID, AuthorityRevisionID: fixture.authority.AuthorityRevisionID,
@@ -112,7 +149,92 @@ func publishRemediationBriefTicket(t *testing.T, fixture remediationLifecycleFix
 	if err != nil {
 		t.Fatal(err)
 	}
-	return remediationBriefPublication{result: result, approval: approval, selection: selection, canonical: canonical, rendered: rendered, members: members}
+	return remediationBriefPublication{result: result, approval: approval, selection: selection, canonical: canonical, rendered: rendered, members: members, dependencies: dependencies}
+}
+
+func createCompletedRemediationDependency(t *testing.T, fixture remediationLifecycleFixture) workflowstore.DeliveryTicketRevision {
+	t.Helper()
+	ctx := fixture.ctx
+	ticketService, err := apptickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := []byte(`{"schema_version":"1.0","feature_slug":"remediation","ticket_id":"TICKET-REMEDIATION-DEPENDENCY","revision":1,"replaces_revision":null,"repo_target":"project","branch":"main","base_commit":"` + fixture.closure.CommitOID + `","goal":"Complete the remediation dependency.","context":"The dependency has an accepted audit outcome.","scope":{"in_scope":["Dependency completion."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[],"validation_intent":["Verify dependency completion."],"transition_applicability":"not_required","completion_criteria":["The dependency is accepted."],"cancellation":null}`)
+	published, err := ticketService.Publish(ctx, apptickets.PublishInput{
+		WorkspaceID: fixture.workspace.WorkspaceID, TicketID: "TICKET-REMEDIATION-DEPENDENCY", ExternalPriority: 5,
+		Revision: apptickets.RevisionInput{RepoTarget: "project", Branch: "main", BaseCommit: fixture.closure.CommitOID, SourceClosureRowID: fixture.closure.ID, SourcePath: "tickets/remediation-dependency.delivery-ticket.json", Goal: "Complete the remediation dependency.", Context: "The dependency has an accepted audit outcome.", TransitionApplicability: "not_required", CanonicalJSON: canonical, RenderedMarkdown: []byte("# Remediation dependency\n"), Members: []apptickets.RevisionMemberInput{{Kind: "scope_in", Path: "internal/app/operations", Text: "Complete dependency."}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ticketService.Approve(ctx, apptickets.ApproveInput{TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID, AuthorityRevisionID: fixture.authority.AuthorityRevisionID, Rationale: "Approve the completed remediation dependency."}); err != nil {
+		t.Fatal(err)
+	}
+	selection, err := ticketService.Select(ctx, apptickets.SelectInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: published.Ticket.TicketID, RevisionRowID: published.Revision.ID, Rationale: "Select the remediation dependency."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageService, err := appackages.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief := []byte(testfixtures.TicketDesignBrief)
+	briefName := fmt.Sprintf("%s.ticket-%s.r1.design-brief.md", fixture.workspace.FeatureSlug, published.Ticket.TicketID)
+	prepared, err := packageService.Prepare(ctx, appackages.PrepareInput{SelectionID: selection.Selection.SelectionID, TicketDesignBrief: appackages.ArtifactInput{DisplayName: briefName, ExpectedSHA256: lifecycleSHA(brief), Bytes: brief}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := packageService.Approve(ctx, appackages.ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "Approve the dependency package for audit completion."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		current, err := tx.GetRunByRunID(ctx, approved.Run.RunID)
+		if err != nil {
+			return err
+		}
+		for _, transition := range [][2]string{{workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecuting}, {workflowstore.RunStatusExecuting, workflowstore.RunStatusValidating}, {workflowstore.RunStatusValidating, workflowstore.RunStatusAuditReady}} {
+			current, err = tx.TransitionRun(ctx, current.RunID, transition[0], transition[1])
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	artifact := createRemediationArtifact(t, fixture.store, ctx, approved.Run.ID, "dependency-audit", "audit_packet", []byte(`{"audit":"accepted dependency"}`))
+	if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		packet, err := tx.CreateAuditPacket(ctx, workflowstore.CreateAuditPacketParams{AuditPacketID: "packet-remediation-dependency", RunRowID: approved.Run.ID, ImplementationActorKind: "applier", ArtifactRowID: artifact.ID, BaseCommit: fixture.closure.CommitOID, AuditedCommit: fixture.closure.CommitOID, PacketSHA256: artifact.SHA256})
+		if err != nil {
+			return err
+		}
+		members, err := tx.ListExecutionPackageMembers(ctx, prepared.Package.ID)
+		if err != nil || len(members) != 1 {
+			return fmt.Errorf("dependency package member unavailable: %w", err)
+		}
+		packageApproval, err := tx.GetExecutionPackageApprovalByPackageRowID(ctx, prepared.Package.ID)
+		if err != nil {
+			return err
+		}
+		obligation, err := tx.CreateAuditPacketTicketObligation(ctx, workflowstore.CreateAuditPacketTicketObligationParams{AuditPacketRowID: packet.ID, ExecutionPackageRowID: prepared.Package.ID, ExecutionPackageMemberRowID: members[0].ID, DeliveryTicketRowID: published.Ticket.ID, DeliveryTicketRevisionRowID: published.Revision.ID, AuthorityRevisionRowID: fixture.authority.ID, SourceClosureRowID: fixture.closure.ID, PackageApprovalRowID: sql.NullInt64{Int64: packageApproval.ID, Valid: true}, ApprovedPackageSha256: sql.NullString{String: prepared.Package.PackageSha256, Valid: true}})
+		if err != nil {
+			return err
+		}
+		decision, err := tx.CreateAuditDecision(ctx, workflowstore.CreateAuditDecisionParams{AuditDecisionID: "audit-remediation-dependency", RunRowID: approved.Run.ID, AuditPacketArtifactRowID: artifact.ID, AuditedCommit: fixture.closure.CommitOID, PacketSHA256: packet.PacketSHA256, Decision: workflowstore.AuditDecisionAccepted, Rationale: "The remediation dependency was accepted."})
+		if err != nil {
+			return err
+		}
+		revisionDecision, err := tx.CreateAuditTicketRevisionDecision(ctx, workflowstore.CreateAuditTicketRevisionDecisionParams{AuditDecisionRowID: decision.ID, AuditPacketTicketObligationRowID: obligation.ID, PackageApprovalRowID: sql.NullInt64{Int64: packageApproval.ID, Valid: true}, ApprovedPackageSha256: sql.NullString{String: prepared.Package.PackageSha256, Valid: true}})
+		if err != nil {
+			return err
+		}
+		_, err = tx.CreateDeliveryTicketRevisionSatisfaction(ctx, workflowstore.CreateDeliveryTicketRevisionSatisfactionParams{DeliveryTicketRevisionRowID: published.Revision.ID, AuditTicketRevisionDecisionRowID: revisionDecision.ID})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return published.Revision
 }
 
 func remediationBriefIdentity(fixture remediationLifecycleFixture) semanticidentity.CreateOperationPacket {
@@ -156,6 +278,219 @@ func TestLifecycleRemediationBriefCreatesVerifiedPacketsForBothTicketShapes(t *t
 			assertNoRemediationBriefConversationData(t, inputs)
 			assertRemediationBoundaryStable(t, before, remediationStateSnapshot(t, fixture))
 		})
+	}
+}
+
+func remediationBriefRefreshIdentity(fixture remediationLifecycleFixture, packetID string) semanticidentity.RefreshOperationPacket {
+	return semanticidentity.RefreshOperationPacket{
+		SurfaceContract:  "planner-authoring.v1",
+		ExpectedPacketID: packetID,
+		WorkflowReferences: []semanticidentity.WorkflowReferenceRequest{{
+			Kind: "audit_decision", RunID: fixture.run.RunID, AuditDecisionID: fixture.decision.AuditDecisionID,
+		}},
+	}
+}
+
+func TestLifecycleRemediationBriefRefreshSameDurableStateRebuildsAllRetainedInputs(t *testing.T) {
+	fixture := newRemediationLifecycleFixture(t)
+	publication := publishRemediationBriefTicket(t, fixture, false)
+	created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "create-remediation-brief-same-state", Identity: remediationBriefIdentity(fixture)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packetService, err := NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := decodeCanonicalAuthoringPacket(created.Packet.DocumentBytes, created.Packet.Summary.PacketSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := assertVerifiedRemediationBriefInputs(t, fixture, packetService, created.Packet, document)
+	refreshed, err := fixture.service.Refresh(fixture.ctx, RefreshLifecycleInput{
+		MutationID:    "refresh-remediation-brief-same-state",
+		PriorPacketID: created.Packet.Summary.PacketID,
+		Identity:      remediationBriefRefreshIdentity(fixture, created.Packet.Summary.PacketID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshedDocument, err := decodeCanonicalAuthoringPacket(refreshed.Packet.DocumentBytes, refreshed.Packet.Summary.PacketSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := assertVerifiedRemediationBriefInputs(t, fixture, packetService, refreshed.Packet, refreshedDocument)
+	for _, name := range []string{"remediation_seed", "selected_remediation_ticket", "completed_dependency_outcomes", "current_approved_authority"} {
+		if !bytes.Equal(before[name], after[name]) {
+			t.Fatalf("same-state refresh changed %s", name)
+		}
+	}
+	if refreshed.Prior.LifecycleState != workflowstore.OperationPacketLifecycleSuperseded || refreshed.Prior.ReplacementPacket == nil || refreshed.Prior.ReplacementPacket.PacketID != refreshed.Packet.Summary.PacketID || refreshed.Packet.Summary.PacketID == created.Packet.Summary.PacketID {
+		t.Fatalf("refresh lifecycle = %#v", refreshed)
+	}
+	oldIntegrity, err := fixture.store.GetOperationPacketPublicationIntegrity(fixture.ctx, viewPublicationID(t, fixture, created.Packet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newIntegrity, err := fixture.store.GetOperationPacketPublicationIntegrity(fixture.ctx, viewPublicationID(t, fixture, refreshed.Packet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldIDs, newIDs := map[string]bool{}, map[string]bool{}
+	for _, artifact := range oldIntegrity.RetainedArtifacts {
+		oldIDs[artifact.ArtifactID] = true
+	}
+	for _, artifact := range newIntegrity.RetainedArtifacts {
+		newIDs[artifact.ArtifactID] = true
+	}
+	for id := range oldIDs {
+		if newIDs[id] {
+			t.Fatalf("same-state refresh reused retained artifact identity %q", id)
+		}
+	}
+	_ = publication
+}
+
+func TestLifecycleRemediationBriefCompletedDependencyRetainsExactAuditCompletionIdentity(t *testing.T) {
+	fixture := newRemediationLifecycleFixture(t)
+	dependencyRevision := createCompletedRemediationDependency(t, fixture)
+	publication := publishRemediationBriefTicketWithDependencies(t, fixture, false, []apptickets.DependencyInput{{RevisionRowID: dependencyRevision.ID, Outcome: "satisfied"}})
+	created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "create-remediation-brief-completed-dependency", Identity: remediationBriefIdentity(fixture)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := decodeCanonicalAuthoringPacket(created.Packet.DocumentBytes, created.Packet.Summary.PacketSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packetService, err := NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := assertVerifiedRemediationBriefInputs(t, fixture, packetService, created.Packet, document)
+	assertSelectedRemediationTicket(t, fixture, inputs["selected_remediation_ticket"], publication, false)
+	assertCompletedRemediationDependencies(t, fixture, inputs["completed_dependency_outcomes"], publication)
+}
+
+func TestLifecycleRemediationBriefRejectsDependencyAndCallerSuppliedDerivedStateAtomically(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		dependency  string
+		callerInput string
+	}{
+		{name: "unsatisfied dependency", dependency: "blocked"},
+		{name: "caller supplied completed dependency outcomes", callerInput: "completed_dependency_outcomes"},
+		{name: "caller supplied current approved authority", callerInput: "current_approved_authority"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newRemediationLifecycleFixture(t)
+			var publication remediationBriefPublication
+			if test.dependency != "" {
+				dependency := createCompletedRemediationDependency(t, fixture)
+				publication = publishRemediationBriefTicketWithDependencies(t, fixture, false, []apptickets.DependencyInput{{RevisionRowID: dependency.ID, Outcome: test.dependency}})
+			} else {
+				publication = publishRemediationBriefTicket(t, fixture, false)
+			}
+			identity := remediationBriefIdentity(fixture)
+			if test.callerInput != "" {
+				identity.Inputs = []semanticidentity.InputBinding{{InputName: test.callerInput, SourceKind: "inline_text", DisplayName: test.callerInput + ".json", MediaType: "application/json", ExpectedSHA256: strings.Repeat("a", 64), Source: semanticidentity.InputBindingSource{Text: "{}"}}}
+			}
+			before := remediationStateSnapshot(t, fixture)
+			if _, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "reject-remediation-brief-" + strings.ReplaceAll(test.name, " ", "-"), Identity: identity}); err == nil {
+				t.Fatal("invalid remediation brief request was accepted")
+			}
+			if after := remediationStateSnapshot(t, fixture); !reflect.DeepEqual(before, after) {
+				t.Fatalf("failed remediation brief create changed state")
+			}
+			_ = publication
+		})
+	}
+}
+
+func TestLifecycleRemediationBriefRefreshRejectsStaleDependencyAtomically(t *testing.T) {
+	fixture := newRemediationLifecycleFixture(t)
+	dependencyRevision := createCompletedRemediationDependency(t, fixture)
+	publication := publishRemediationBriefTicketWithDependencies(t, fixture, false, []apptickets.DependencyInput{{RevisionRowID: dependencyRevision.ID, Outcome: "satisfied"}})
+	created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "create-remediation-brief-stale-dependency", Identity: remediationBriefIdentity(fixture)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketService, err := apptickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ticketService.Publish(fixture.ctx, apptickets.PublishInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: "TICKET-REMEDIATION-DEPENDENCY", ExpectedRevisionNumber: 1, ExternalPriority: 5, Revision: apptickets.RevisionInput{RepoTarget: "project", Branch: "main", BaseCommit: fixture.closure.CommitOID, SourceClosureRowID: fixture.closure.ID, SourcePath: "tickets/remediation-dependency-v2.delivery-ticket.json", Goal: "Complete the remediation dependency again.", Context: "The dependency advanced after packet creation.", TransitionApplicability: "not_required", CanonicalJSON: []byte(`{"dependency":"advanced"}`), RenderedMarkdown: []byte("# Advanced dependency\n"), Members: []apptickets.RevisionMemberInput{{Kind: "scope_in", Path: "internal/app/operations", Text: "Advance dependency."}}}}); err != nil {
+		t.Fatal(err)
+	}
+	before := remediationStateSnapshot(t, fixture)
+	if _, err := fixture.service.Refresh(fixture.ctx, RefreshLifecycleInput{MutationID: "refresh-remediation-brief-stale-dependency", PriorPacketID: created.Packet.Summary.PacketID, Identity: remediationBriefRefreshIdentity(fixture, created.Packet.Summary.PacketID)}); err == nil {
+		t.Fatal("refresh accepted an advanced dependency")
+	}
+	if after := remediationStateSnapshot(t, fixture); !reflect.DeepEqual(before, after) {
+		t.Fatal("failed stale-dependency refresh changed state")
+	}
+	_ = publication
+}
+
+func TestLifecycleRemediationBriefCreateRejectsStaleSelectionAtomically(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		other bool
+	}{
+		{name: "missing active selection"},
+		{name: "active selection for another revision", other: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newRemediationLifecycleFixture(t)
+			publication := publishRemediationBriefTicket(t, fixture, false)
+			consumeRemediationBriefSelection(t, fixture, publication)
+			if test.other {
+				ticketService, err := apptickets.NewService(fixture.store)
+				if err != nil {
+					t.Fatal(err)
+				}
+				other, err := ticketService.Publish(fixture.ctx, apptickets.PublishInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: "TICKET-REMEDIATION-OTHER", ExternalPriority: 1, Revision: apptickets.RevisionInput{RepoTarget: "project", Branch: "main", BaseCommit: fixture.closure.CommitOID, SourceClosureRowID: fixture.closure.ID, SourcePath: "tickets/remediation-other.ticket-TICKET-REMEDIATION-OTHER.r1.delivery-ticket.json", Goal: "Select another revision.", Context: "The active selection is intentionally different.", TransitionApplicability: "not_required", CanonicalJSON: []byte(`{"schema_version":"1.0","feature_slug":"remediation","ticket_id":"TICKET-REMEDIATION-OTHER","revision":1,"replaces_revision":null,"repo_target":"project","branch":"main","base_commit":"` + fixture.closure.CommitOID + `","goal":"Select another revision.","context":"The active selection is intentionally different.","scope":{"in_scope":["Selection."],"out_of_scope":["Other work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/operations","obligation":"Select another revision."}],"validation_intent":["Verify selection rejection."],"transition_applicability":"not_required","completion_criteria":["Selection is explicit."]}`), RenderedMarkdown: []byte("# Other revision\n"), Members: []apptickets.RevisionMemberInput{{Kind: "implementation_obligation", Path: "internal/app/operations", Text: "Select another revision."}}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := ticketService.Approve(fixture.ctx, apptickets.ApproveInput{TicketID: other.Ticket.TicketID, RevisionRowID: other.Revision.ID, AuthorityRevisionID: fixture.authority.AuthorityRevisionID, Rationale: "Approve the other revision."}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := ticketService.Select(fixture.ctx, apptickets.SelectInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: other.Ticket.TicketID, RevisionRowID: other.Revision.ID, Rationale: "Select the other revision."}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := remediationStateSnapshot(t, fixture)
+			if _, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "reject-remediation-brief-stale-selection-" + strings.ReplaceAll(test.name, " ", "-"), Identity: remediationBriefIdentity(fixture)}); err == nil {
+				t.Fatal("stale selection was accepted")
+			}
+			if after := remediationStateSnapshot(t, fixture); !reflect.DeepEqual(before, after) {
+				t.Fatal("failed stale-selection create changed state")
+			}
+		})
+	}
+}
+
+func TestLifecycleRemediationBriefRefreshRejectsAdvancedTicketAtomically(t *testing.T) {
+	fixture := newRemediationLifecycleFixture(t)
+	publication := publishRemediationBriefTicket(t, fixture, false)
+	created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "create-remediation-brief-advanced-ticket", Identity: remediationBriefIdentity(fixture)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketService, err := apptickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ticketService.Publish(fixture.ctx, apptickets.PublishInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: publication.result.Ticket.TicketID, ExpectedRevisionNumber: 1, ExternalPriority: publication.result.Ticket.ExternalPriority, Revision: apptickets.RevisionInput{RepoTarget: "project", Branch: "main", BaseCommit: fixture.closure.CommitOID, SourceClosureRowID: fixture.closure.ID, SourcePath: "tickets/remediation-advanced.ticket-TICKET-REMEDIATION-BRIEF-SEPARATE.r2.delivery-ticket.json", Goal: "Advance the remediation ticket.", Context: "The remediation ticket advanced after packet creation.", TransitionApplicability: "not_required", CanonicalJSON: []byte(`{"schema_version":"1.0","feature_slug":"remediation","ticket_id":"TICKET-REMEDIATION-BRIEF-SEPARATE","revision":2,"replaces_revision":1,"repo_target":"project","branch":"main","base_commit":"` + fixture.closure.CommitOID + `","goal":"Advance the remediation ticket.","context":"The remediation ticket advanced after packet creation.","scope":{"in_scope":["Advance."],"out_of_scope":["Other work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/operations","obligation":"Advance the remediation ticket."}],"validation_intent":["Verify stale refresh rejection."],"transition_applicability":"not_required","completion_criteria":["The advanced ticket is current."]}`), RenderedMarkdown: []byte("# Advanced remediation\n"), Members: []apptickets.RevisionMemberInput{{Kind: "implementation_obligation", Path: "internal/app/operations", Text: "Advance the remediation ticket."}}}}); err != nil {
+		t.Fatal(err)
+	}
+	before := remediationStateSnapshot(t, fixture)
+	if _, err := fixture.service.Refresh(fixture.ctx, RefreshLifecycleInput{MutationID: "refresh-remediation-brief-advanced-ticket", PriorPacketID: created.Packet.Summary.PacketID, Identity: remediationBriefRefreshIdentity(fixture, created.Packet.Summary.PacketID)}); err == nil {
+		t.Fatal("advanced remediation ticket was accepted")
+	}
+	if after := remediationStateSnapshot(t, fixture); !reflect.DeepEqual(before, after) {
+		t.Fatal("failed advanced-ticket refresh changed state")
 	}
 }
 
@@ -325,8 +660,13 @@ func assertSelectedRemediationTicket(t *testing.T, fixture remediationLifecycleF
 			t.Fatalf("Ticket member %d = %#v durable=%#v", index, got, members[index])
 		}
 	}
-	if selected.Dependencies == nil || len(selected.Dependencies) != 0 {
+	if selected.Dependencies == nil || len(selected.Dependencies) != len(publication.dependencies) {
 		t.Fatalf("selected dependencies = %#v", selected.Dependencies)
+	}
+	for index, dependency := range publication.dependencies {
+		if selected.Dependencies[index].Sequence != int64(index+1) || selected.Dependencies[index].DependencyRevisionRowID != dependency.RevisionRowID || selected.Dependencies[index].DependencyOutcome != dependency.Outcome {
+			t.Fatalf("selected dependency %d = %#v, want revision %d outcome %q", index, selected.Dependencies[index], dependency.RevisionRowID, dependency.Outcome)
+		}
 	}
 }
 
@@ -368,7 +708,7 @@ func assertRemediationBriefApprovalAndSelection(t *testing.T, fixture remediatio
 		t.Fatalf("approval = %#v selected=%#v", approval, selected.Approval)
 	}
 	selections, err := fixture.store.ListDeliveryTicketSelectionsByWorkspace(fixture.ctx, fixture.workspace.ID)
-	if err != nil || len(selections) != 2 {
+	if err != nil || len(selections) < 2 {
 		t.Fatalf("selections = %#v err=%v", selections, err)
 	}
 	var selection workflowstore.DeliveryTicketSelection
@@ -397,8 +737,26 @@ func assertCompletedRemediationDependencies(t *testing.T, fixture remediationLif
 		t.Fatal(err)
 	}
 	canonical, err := canonicalJSON(document)
-	if err != nil || !bytes.Equal(canonical, data) || document.RemediationTicketID != publication.result.Ticket.TicketID || document.RemediationRevisionRowID != publication.result.Revision.ID || document.RemediationRevisionNumber != publication.result.Revision.RevisionNumber || document.Dependencies == nil || len(document.Dependencies) != 0 {
+	if err != nil || !bytes.Equal(canonical, data) || document.RemediationTicketID != publication.result.Ticket.TicketID || document.RemediationRevisionRowID != publication.result.Revision.ID || document.RemediationRevisionNumber != publication.result.Revision.RevisionNumber || document.Dependencies == nil || len(document.Dependencies) != len(publication.dependencies) {
 		t.Fatalf("completed dependencies = %#v", document)
+	}
+	for index, dependency := range publication.dependencies {
+		dependencyRevision, err := fixture.store.GetDeliveryTicketRevisionByRowID(fixture.ctx, dependency.RevisionRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dependencyTicket, err := fixture.store.GetDeliveryTicketByRowID(fixture.ctx, dependencyRevision.DeliveryTicketRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		satisfaction, err := fixture.store.GetDeliveryTicketRevisionSatisfaction(fixture.ctx, dependencyRevision.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := document.Dependencies[index]
+		if got.Sequence != int64(index+1) || got.DependencyTicketID != dependencyTicket.TicketID || got.DependencyRevisionRowID != dependencyRevision.ID || got.DependencyRevisionNumber != dependencyRevision.RevisionNumber || got.DeclaredOutcome != dependency.Outcome || got.CurrentDependencyRevision.TicketID != dependencyTicket.TicketID || got.CurrentDependencyRevision.RevisionRowID != dependencyRevision.ID || got.CurrentDependencyRevision.RevisionNumber != dependencyRevision.RevisionNumber || got.Completion.SatisfactionRowID != satisfaction.ID || got.Completion.AuditTicketRevisionDecisionRowID != satisfaction.AuditTicketRevisionDecisionRowID {
+			t.Fatalf("completed dependency %d = %#v", index, got)
+		}
 	}
 }
 

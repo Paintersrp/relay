@@ -909,7 +909,7 @@ func (s *LifecycleService) materializeRemediationBriefDerivedInputs(ctx context.
 	if err != nil || workspace.ID != auditedTicket.WorkspaceRowID || !workspace.CurrentAuthorityRevisionRowID.Valid {
 		return nil, &Error{Code: CodeInvalidPacketDocument}
 	}
-	authorityBytes, authorityInput, err := s.currentApprovedAuthority(ctx, remediationTicket.WorkspaceRowID)
+	_, authorityInput, err := s.currentApprovedAuthority(ctx, remediationTicket.WorkspaceRowID)
 	if err != nil {
 		return nil, err
 	}
@@ -953,11 +953,15 @@ func (s *LifecycleService) materializeRemediationBriefDerivedInputs(ctx context.
 	if err != nil {
 		return nil, &Error{Code: CodeInvalidPacketDocument}
 	}
+	authorityInputBytes, err := canonicalJSON(authorityInput)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
 	values := map[string][]byte{
 		"remediation_seed":              seedBytes,
 		"selected_remediation_ticket":   selectedBytes,
 		"completed_dependency_outcomes": dependencyBytes,
-		"current_approved_authority":    authorityBytes,
+		"current_approved_authority":    authorityInputBytes,
 	}
 	inputs := make([]packet.InputBinding, 0, len(values))
 	for _, slot := range []string{"remediation_seed", "selected_remediation_ticket", "completed_dependency_outcomes", "current_approved_authority"} {

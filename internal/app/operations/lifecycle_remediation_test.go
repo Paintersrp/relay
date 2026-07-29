@@ -87,7 +87,7 @@ func newRemediationLifecycleFixture(t *testing.T) remediationLifecycleFixture {
 	}
 	for index := range fixture.authorityLayers {
 		fixture.authorityLayers[index].artifact = createRemediationArtifact(t, fixture.store, fixture.ctx, fixture.run.ID,
-			fmt.Sprintf("authority-layer-%d", index+1), "authority_layer", fixture.authorityLayers[index].bytes)
+			fmt.Sprintf("authority-layer-%d", index+1), fixture.authorityLayers[index].kind, fixture.authorityLayers[index].bytes)
 	}
 	if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		fixture.authority, err = tx.CreateFeatureWorkspaceAuthorityRevision(ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{
@@ -440,11 +440,18 @@ func assertRemediationSeed(t *testing.T, fixture remediationLifecycleFixture, da
 
 func assertCurrentAuthority(t *testing.T, fixture remediationLifecycleFixture, data []byte, authority workflowstore.FeatureWorkspaceAuthorityRevision, layers []remediationAuthorityLayer) {
 	t.Helper()
+	if !authority.SourceClosureRowID.Valid {
+		t.Fatalf("authority source closure row ID is invalid: %#v", authority)
+	}
+	expectedClosure, err := fixture.store.GetSourceVaultClosureByRowID(fixture.ctx, authority.SourceClosureRowID.Int64)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var input currentApprovedAuthorityInput
 	if err := json.Unmarshal(data, &input); err != nil {
 		t.Fatal(err)
 	}
-	if input.FeatureWorkspaceID != fixture.workspace.WorkspaceID || input.CurrentAuthorityRevisionID != authority.AuthorityRevisionID || input.SourceClosureID != fixture.closure.ClosureID || input.SourceClosureCommit != fixture.closure.CommitOID || input.AuthorityByteDigest != lifecycleSHA(mustAuthorityDocument(t, authority.AuthorityRevisionID, layers)) {
+	if input.FeatureWorkspaceID != fixture.workspace.WorkspaceID || input.CurrentAuthorityRevisionID != authority.AuthorityRevisionID || input.SourceClosureID != expectedClosure.ClosureID || input.SourceClosureCommit != expectedClosure.CommitOID || input.AuthorityByteDigest != lifecycleSHA(mustAuthorityDocument(t, authority.AuthorityRevisionID, layers)) {
 		t.Fatalf("authority identity = %#v", input)
 	}
 	authorityBytes, err := base64.StdEncoding.Strict().DecodeString(input.AuthorityBytes)
@@ -757,7 +764,7 @@ func remediationStateSnapshot(t *testing.T, fixture remediationLifecycleFixture)
 		}
 		state.tables[table] = strings.Join(values, "\x00")
 	}
-	for _, root := range []string{"operation-packet-publications", ".staging"} {
+	for _, root := range []string{"operation-packet-publications", "delivery-tickets", "packages", "runs", "audit-packets", "audit-decisions", ".staging"} {
 		base := filepath.Join(fixture.store.ArtifactStore().Root(), root)
 		_ = filepath.WalkDir(base, func(path string, entry os.DirEntry, err error) error {
 			if err != nil || entry.IsDir() {
