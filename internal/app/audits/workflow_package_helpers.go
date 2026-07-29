@@ -11,19 +11,6 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-// These narrow views are shared by canonical validation mapping and package
-// execution evidence parsing. The superseded implementation-evidence resolver
-// is intentionally not retained.
-type WorkflowImplementationEvidence struct {
-	ActorKind string
-	Executor  *WorkflowExecutorImplementationEvidence
-}
-
-type WorkflowExecutorImplementationEvidence struct {
-	ExecutionEvidenceArtifact workflowstore.Artifact
-	ExecutionEvidence         workflowExecutionEvidencePayload
-}
-
 func workflowAuditAttemptResult(raw string) WorkflowAuditAttemptResult {
 	var source struct {
 		ExitCode                 int    `json:"exit_code"`

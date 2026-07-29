@@ -18,7 +18,6 @@ import (
 type WorkflowAuditService interface {
 	Prepare(context.Context, appaudits.PrepareWorkflowAuditInput) (appaudits.PrepareWorkflowAuditResult, error)
 	GetCurrentPacket(context.Context, string) (appaudits.GetWorkflowAuditPacketResult, error)
-	GetCurrentArtifact(context.Context, appaudits.GetWorkflowAuditArtifactInput) (appaudits.GetWorkflowAuditArtifactResult, error)
 	GetStatus(context.Context, string) (appaudits.WorkflowAuditStatus, error)
 	RecordDecision(context.Context, appaudits.RecordWorkflowAuditDecisionInput) (appaudits.RecordWorkflowAuditDecisionResult, error)
 }
@@ -226,8 +225,7 @@ func writeWorkflowAuditError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusConflict, "AUDIT_CONFLICT", err.Error())
 	case errors.Is(err, appaudits.ErrWorkflowAuditConfirmation), errors.Is(err, appaudits.ErrWorkflowAuditDecisionInput):
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-	case errors.Is(err, appaudits.ErrWorkflowAuditPacketTooLarge),
-		strings.Contains(err.Error(), "required"),
+	case strings.Contains(err.Error(), "required"),
 		strings.Contains(err.Error(), "does not exist"),
 		strings.Contains(err.Error(), "not descended"),
 		strings.Contains(err.Error(), "contains no changes"),

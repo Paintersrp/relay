@@ -17,7 +17,6 @@ type (
 
 const (
 	MaxWorkflowAuditPacketBytes   = 2 * 1024 * 1024
-	MaxWorkflowAuditSourceBytes   = 512 * 1024
 	MaxWorkflowAuditEvidenceBytes = 128 * 1024
 	MaxWorkflowAuditReadBytes     = 64 * 1024
 )
@@ -29,7 +28,6 @@ var (
 	ErrWorkflowAuditPacketStale         = errors.New("workflow audit packet is stale")
 	ErrWorkflowAuditDecisionRecorded    = errors.New("workflow audit decision has already been recorded")
 	ErrWorkflowAuditConfirmation        = errors.New("operator confirmation is required")
-	ErrWorkflowAuditPacketTooLarge      = errors.New("workflow audit packet exceeds the configured bound")
 	ErrWorkflowAuditArtifactReference   = errors.New("workflow audit artifact reference is not declared by the current packet")
 	ErrWorkflowAuditArtifactOwnership   = errors.New("workflow audit artifact does not belong to the packet execution attempt")
 	ErrWorkflowAuditArtifactIntegrity   = errors.New("workflow audit artifact failed integrity verification")
@@ -39,18 +37,6 @@ var (
 )
 
 type WorkflowAuditInspector func(context.Context, string, string, string, string) (workflowrepos.AuditCommitEvidence, error)
-
-// WorkflowAuditValidationResult is shared by package evidence loading and
-// canonical validation mapping.
-type WorkflowAuditValidationResult struct {
-	Command           string `json:"command"`
-	WorkingDirectory  string `json:"working_directory,omitempty"`
-	Expected          string `json:"expected"`
-	Status            string `json:"status"`
-	ConciseResult     string `json:"concise_result"`
-	ExitCode          *int   `json:"exit_code,omitempty"`
-	ArtifactReference string `json:"artifact_reference,omitempty"`
-}
 
 type WorkflowAuditMaterialFinding struct {
 	Source              string `json:"source"`

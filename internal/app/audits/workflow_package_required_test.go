@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -54,11 +55,36 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
+	var projectID, planID, passID int64
+	if err := store.DB().QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-package-required', 'Package required') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256) VALUES (?, 'plan-package-required', 'package-required', ?) RETURNING id`, projectID, strings.Repeat("e", 64)).Scan(&planID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`INSERT INTO plan_repository_targets (plan_row_id, sequence, repo_target, branch, planning_base_commit) VALUES (?, 1, 'relay', 'main', ?)`, planID, strings.Repeat("a", 40)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`INSERT INTO plan_passes (pass_id, plan_row_id, pass_number, name, repo_target) VALUES ('pass-package-required', ?, 1, 'Package required pass', 'relay') RETURNING id`, planID).Scan(&passID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.TransitionPlanPass(ctx, "pass-package-required", workflowstore.PassStatusPlanned, workflowstore.PassStatusInProgress)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`UPDATE runs SET plan_row_id = ?, plan_pass_row_id = ? WHERE id = ?`, planID, passID, created.Run.ID); err != nil {
+		t.Fatal(err)
+	}
+	created.Run, err = store.GetRunByRunID(ctx, created.Run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	runBefore, err := store.GetRunByRunID(ctx, created.Run.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stateBefore := nonPackageAuditState(t, store, runBefore.ID)
 	loaderCalled := false
 	service, err := newWorkflowAuditService(store, func(context.Context, string, string, string, string) (workflowrepos.AuditCommitEvidence, error) {
 		t.Fatal("non-package audit invoked repository inspection")
@@ -94,10 +120,11 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			stateBefore := nonPackageAuditState(t, store, runBefore.RunID)
 			if err := test.call(); !errors.Is(err, ErrWorkflowAuditPackageRequired) {
 				t.Fatalf("error = %v, want ErrWorkflowAuditPackageRequired", err)
 			}
-			if got := nonPackageAuditState(t, store, runBefore.ID); got != stateBefore {
+			if got := nonPackageAuditState(t, store, runBefore.RunID); !reflect.DeepEqual(got, stateBefore) {
 				t.Fatalf("audit state changed: before=%+v after=%+v", stateBefore, got)
 			}
 		})
@@ -108,20 +135,39 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 }
 
 type nonPackageAuditSnapshot struct {
-	run, plan, pass, packets, artifacts, decisions, ticketDecisions, satisfactions, seeds, seedFindings, reopenings, seedReopenings int64
-	artifactEntries                                                                                                                 int
+	run                                                                                                            workflowstore.Run
+	plan                                                                                                           workflowstore.Plan
+	pass                                                                                                           workflowstore.PlanPass
+	packets, artifacts, decisions, ticketDecisions, satisfactions, seeds, seedFindings, reopenings, seedReopenings int64
+	auditPacketDirectories, auditDecisionDirectories, stagingDirectories                                           []string
 }
 
-func nonPackageAuditState(t *testing.T, store *workflowstore.Store, runID int64) nonPackageAuditSnapshot {
+func nonPackageAuditState(t *testing.T, store *workflowstore.Store, runID string) nonPackageAuditSnapshot {
 	t.Helper()
 	state := nonPackageAuditSnapshot{}
+	var err error
+	state.run, err = store.GetRunByRunID(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.run.PlanRowID.Valid || !state.run.PlanPassRowID.Valid {
+		t.Fatal("non-package fixture is not attached to a plan pass")
+	}
+	state.plan, err = store.GetPlanByRowID(context.Background(), state.run.PlanRowID.Int64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.pass, err = store.GetPlanPassByRowID(context.Background(), state.run.PlanPassRowID.Int64)
+	if err != nil {
+		t.Fatal(err)
+	}
 	queries := []struct {
 		query string
 		out   *int64
 	}{
-		{`SELECT COUNT(*) FROM runs WHERE id = ?`, &state.run},
-		{`SELECT COUNT(*) FROM plans`, &state.plan},
-		{`SELECT COUNT(*) FROM plan_passes`, &state.pass},
+		{`SELECT COUNT(*) FROM runs WHERE id = ?`, new(int64)},
+		{`SELECT COUNT(*) FROM plans`, new(int64)},
+		{`SELECT COUNT(*) FROM plan_passes`, new(int64)},
 		{`SELECT COUNT(*) FROM audit_packets WHERE run_row_id = ?`, &state.packets},
 		{`SELECT COUNT(*) FROM artifacts WHERE run_row_id = ?`, &state.artifacts},
 		{`SELECT COUNT(*) FROM audit_decisions WHERE run_row_id = ?`, &state.decisions},
@@ -135,7 +181,7 @@ func nonPackageAuditState(t *testing.T, store *workflowstore.Store, runID int64)
 	for index, item := range queries {
 		var err error
 		if index == 0 || index == 3 || index == 4 || index == 5 {
-			err = store.DB().QueryRow(item.query, runID).Scan(item.out)
+			err = store.DB().QueryRow(item.query, state.run.ID).Scan(item.out)
 		} else {
 			err = store.DB().QueryRow(item.query).Scan(item.out)
 		}
@@ -143,10 +189,26 @@ func nonPackageAuditState(t *testing.T, store *workflowstore.Store, runID int64)
 			t.Fatal(err)
 		}
 	}
-	entries, err := os.ReadDir(store.ArtifactStore().Root())
+	state.auditPacketDirectories = nonPackageAuditDirectories(t, store, "audit-packets")
+	state.auditDecisionDirectories = nonPackageAuditDirectories(t, store, "audit-decisions")
+	state.stagingDirectories = nonPackageAuditDirectories(t, store, "staging")
+	return state
+}
+
+func nonPackageAuditDirectories(t *testing.T, store *workflowstore.Store, relative string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(store.ArtifactStore().Root(), relative))
+	if errors.Is(err, os.ErrNotExist) {
+		return []string{}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.artifactEntries = len(entries)
-	return state
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			result = append(result, entry.Name())
+		}
+	}
+	return result
 }

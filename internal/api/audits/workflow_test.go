@@ -21,8 +21,6 @@ type fakeWorkflowAuditService struct {
 	statusErr     error
 	current       appaudits.GetWorkflowAuditPacketResult
 	currentErr    error
-	artifact      appaudits.GetWorkflowAuditArtifactResult
-	artifactErr   error
 	decision      appaudits.RecordWorkflowAuditDecisionResult
 	decisionErr   error
 	decisionInput appaudits.RecordWorkflowAuditDecisionInput
@@ -36,9 +34,6 @@ func (f *fakeWorkflowAuditService) GetStatus(context.Context, string) (appaudits
 }
 func (f *fakeWorkflowAuditService) GetCurrentPacket(context.Context, string) (appaudits.GetWorkflowAuditPacketResult, error) {
 	return f.current, f.currentErr
-}
-func (f *fakeWorkflowAuditService) GetCurrentArtifact(context.Context, appaudits.GetWorkflowAuditArtifactInput) (appaudits.GetWorkflowAuditArtifactResult, error) {
-	return f.artifact, f.artifactErr
 }
 func (f *fakeWorkflowAuditService) RecordDecision(_ context.Context, input appaudits.RecordWorkflowAuditDecisionInput) (appaudits.RecordWorkflowAuditDecisionResult, error) {
 	f.decisionInput = input
