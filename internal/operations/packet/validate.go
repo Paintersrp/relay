@@ -346,7 +346,11 @@ func canonicalInputs(values []InputBinding, operation registry.OperationDefiniti
 		if value.Source.Kind != value.SourceKind || !knownInputSource(value.SourceKind) {
 			return nil, invalid("input_source_kind")
 		}
-		if !info.derived && !containsSourceKind(info.definition.AllowedSourceKinds, value.SourceKind) {
+		if info.derived {
+			if value.SourceKind != InputSourceInlineText {
+				return nil, invalid("input_source_not_allowed")
+			}
+		} else if !containsSourceKind(info.definition.AllowedSourceKinds, value.SourceKind) {
 			return nil, invalid("input_source_not_allowed")
 		}
 		if err := validateInputSource(value.Source); err != nil {

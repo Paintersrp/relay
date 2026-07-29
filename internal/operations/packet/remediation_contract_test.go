@@ -31,7 +31,7 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 		"auditor.selected_pass_design_brief_review":   "ba873b584d81c92b26ec4c5bed109cbed2278ae23c057a43ce061b711db75cb0",
 		"auditor.one_shot_execution_spec_review":      "a93e98ea0e22061c8ca9162e7560ab322cb267b46c73ddeadca8e84c9393e58e",
 		"auditor.selected_pass_execution_spec_review": "f716e4336b395b9b6780517c5ca5724360104c455b49f880bb067e2423a2d2d2",
-		"auditor.audit":                               "61e248d33ff3048dada12de4c6257e254cdc110a33e35eb701df6f69120f10ad",
+		"auditor.audit":                               "61def2a371b0bfa82f628ca24aaafc9cfd9de2f0cc067beaec8c565a581c2090",
 	}
 	if len(operations) != len(golden) {
 		t.Fatalf("operation count = %d, golden count = %d", len(operations), len(golden))
@@ -55,6 +55,48 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 		if first.SizeBytes() != int64(len(first.Bytes())) || first.MediaType() != MediaType {
 			t.Fatalf("%s snapshot identity is inconsistent", operation.OperationID)
 		}
+	}
+}
+
+func TestDerivedInputSourceIntegrity(t *testing.T) {
+	for _, operationID := range []registry.OperationID{"auditor.audit", "planner.delivery_ticket_remediation"} {
+		t.Run(string(operationID), func(t *testing.T) {
+			operation, ok := registry.Lookup(operationID)
+			if !ok {
+				t.Fatalf("%s is missing", operationID)
+			}
+			document := goldenDocument(t, operation)
+			if operationID == "planner.delivery_ticket_remediation" {
+				if len(document.WorkflowReferences) != 1 || document.WorkflowReferences[0].Kind != "audit_decision" || len(operation.DerivedInputs) != 2 {
+					t.Fatalf("remediation packet authority = %#v, derived inputs = %d", document.WorkflowReferences, len(operation.DerivedInputs))
+				}
+			}
+			if _, err := NewSnapshot(document); err != nil {
+				t.Fatalf("canonical inline derived inputs rejected: %v", err)
+			}
+
+			for _, sourceKind := range []registry.InputSourceKind{InputSourceRelayArtifact, InputSourceUploadedFile, InputSourceWorkflowRecord, InputSourceCommittedSource} {
+				t.Run(string(sourceKind), func(t *testing.T) {
+					for _, slot := range operation.DerivedInputs {
+						candidate := goldenDocument(t, operation)
+						input := inputByName(candidate.Inputs, slot.InputName)
+						input.SourceKind = sourceKind
+						input.Source = derivedSource(sourceKind, document.WorkflowReferences)
+						if _, err := NewSnapshot(candidate); validationCode(err) != "input_source_not_allowed" {
+							t.Fatalf("%s source for %s error = %v", sourceKind, slot.InputName, err)
+						}
+					}
+				})
+			}
+
+			candidate := goldenDocument(t, operation)
+			input := inputByName(candidate.Inputs, operation.DerivedInputs[0].InputName)
+			input.Source.FileIndex = 0
+			input.Source.SnapshotArtifactID = "inactive-artifact"
+			if _, err := NewSnapshot(candidate); validationCode(err) != "input_source_closed" {
+				t.Fatalf("inline source with inactive fields error = %v", err)
+			}
+		})
 	}
 }
 
@@ -307,7 +349,36 @@ func goldenInput(slot registry.InputSlotDefinition, fileIndex int64, refs []Work
 	return InputBinding{InputName: slot.InputName, InputRole: slot.InputRole, SourceKind: kind, DisplayName: slot.InputName, MediaType: "application/octet-stream", SHA256: fmt.Sprintf("%064x", index+1), SizeBytes: int64(index + 1), AttestationKind: slot.AttestationKind, Source: source}
 }
 func goldenDerived(slot registry.InputSlotDefinition, index int) InputBinding {
-	return InputBinding{InputName: slot.InputName, InputRole: slot.InputRole, SourceKind: InputSourceRelayArtifact, DisplayName: slot.InputName, MediaType: "application/octet-stream", SHA256: fmt.Sprintf("%064x", 100+index), SizeBytes: int64(index + 1), AttestationKind: slot.AttestationKind, Source: InputSource{Kind: InputSourceRelayArtifact, ArtifactID: "artifact-derived-" + slot.InputName}}
+	return InputBinding{InputName: slot.InputName, InputRole: slot.InputRole, SourceKind: InputSourceInlineText, DisplayName: slot.InputName + ".json", MediaType: "application/json", SHA256: fmt.Sprintf("%064x", 100+index), SizeBytes: int64(index + 1), AttestationKind: slot.AttestationKind, Source: InputSource{Kind: InputSourceInlineText, ArtifactID: "artifact-derived-" + slot.InputName}}
+}
+
+func derivedSource(kind registry.InputSourceKind, references []WorkflowReference) InputSource {
+	source := InputSource{Kind: kind, ArtifactID: "artifact-derived-test"}
+	switch kind {
+	case InputSourceUploadedFile:
+		source.FileIndex = 0
+		source.ArtifactID = "artifact-uploaded-test"
+	case InputSourceWorkflowRecord:
+		source.WorkflowReference = references[0]
+		source.SnapshotArtifactID = "artifact-snapshot-test"
+		source.SnapshotSHA256 = strings.Repeat("4", 64)
+	case InputSourceCommittedSource:
+		source.RepositoryBindingID = "binding-relay"
+		source.CommitOID = strings.Repeat("5", 40)
+		source.TreeOID = strings.Repeat("6", 40)
+		source.Path = goldenPath("internal/example.go")
+		source.BlobOID = strings.Repeat("7", 40)
+	}
+	return source
+}
+
+func inputByName(inputs []InputBinding, name string) *InputBinding {
+	for index := range inputs {
+		if inputs[index].InputName == name {
+			return &inputs[index]
+		}
+	}
+	panic("input missing: " + name)
 }
 func goldenAtt(slot registry.InputSlotDefinition, input InputBinding) Attestation {
 	a := Attestation{Kind: slot.AttestationKind, InputName: slot.InputName}
