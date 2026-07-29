@@ -94,6 +94,35 @@ func TestPublishExplicitRemediationSeedConsumption(t *testing.T) {
 		before := capturePublishState(t, ctx, store)
 		input := publishInput(workspaceID, "P5-REMEDIATION", 63, 0, closure, "explicit-remediation", "")
 		input.RemediationSeedID = fixture.seed.RemediationSeedID
+		input.Revision.RepoTarget = "relay"
+		input.Revision.Branch = "main"
+		input.Revision.BaseCommit = closure.CommitOID
+		input.Revision.SourcePath = "remediation/explicit-remediation.json"
+		input.Revision.Goal = "Publish the caller-authored remediation ticket."
+		input.Revision.Context = "The remediation caller supplies the complete revision content."
+		input.Revision.TransitionApplicability = "required"
+		input.Revision.Members = []RevisionMemberInput{
+			{Kind: "scope_in", Path: "internal/app/tickets/service.go", Text: "Preserve the audited ticket while publishing remediation."},
+			{Kind: "validation_intent", Path: "internal/app/tickets/remediation_seed_test.go", Text: "Verify caller-authored members and dependencies."},
+		}
+		input.Revision.Dependencies = []DependencyInput{{RevisionRowID: fixture.revision.ID, Outcome: "satisfied"}}
+		auditedTicketBefore, err := store.GetDeliveryTicketByRowID(ctx, fixture.ticket.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auditedRevisionBefore, err := store.GetDeliveryTicketRevisionByRowID(ctx, fixture.revision.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auditedRevisionsBefore, err := store.ListDeliveryTicketRevisions(ctx, auditedTicketBefore.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auditedCurrentRevisionBefore := auditedTicketBefore.CurrentRevisionRowID
+		ticketsBefore, err := store.ListDeliveryTicketsByWorkspace(ctx, auditedTicketBefore.WorkspaceRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		result, err := service.Publish(ctx, input)
 		if err != nil {
 			t.Fatal(err)
@@ -104,8 +133,88 @@ func TestPublishExplicitRemediationSeedConsumption(t *testing.T) {
 		if result.Ticket.TicketID != input.TicketID || result.Revision.RevisionNumber != 1 {
 			t.Fatalf("remediation ticket result = %#v", result)
 		}
+		if result.Revision.ReplacesRevisionRowID.Valid {
+			t.Fatalf("new remediation revision unexpectedly replaces a revision: %#v", result.Revision.ReplacesRevisionRowID)
+		}
+		assertRevisionMatchesInput(t, result.Revision, input.Revision)
+		members, err := store.ListDeliveryTicketRevisionMembers(ctx, result.Revision.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(members) != len(input.Revision.Members) {
+			t.Fatalf("remediation revision members = %d, want %d", len(members), len(input.Revision.Members))
+		}
+		for index, member := range input.Revision.Members {
+			stored := members[index]
+			if stored.RevisionRowID != result.Revision.ID || stored.Sequence != int64(index+1) || stored.MemberKind != member.Kind || !reflect.DeepEqual(stored.MemberPath, nullableString(member.Path)) || stored.MemberText != member.Text {
+				t.Fatalf("remediation revision member %d = %#v, want sequence %d kind %q path %q text %q", index, stored, index+1, member.Kind, member.Path, member.Text)
+			}
+		}
+		dependencies, err := store.ListDeliveryTicketRevisionDependencies(ctx, result.Revision.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dependencies) != len(input.Revision.Dependencies) {
+			t.Fatalf("remediation revision dependencies = %d, want %d", len(dependencies), len(input.Revision.Dependencies))
+		}
+		for index, dependency := range input.Revision.Dependencies {
+			stored := dependencies[index]
+			if stored.RevisionRowID != result.Revision.ID || stored.Sequence != int64(index+1) || stored.DependsOnRevisionRowID != dependency.RevisionRowID || stored.Outcome != dependency.Outcome {
+				t.Fatalf("remediation revision dependency %d = %#v, want sequence %d revision %d outcome %q", index, stored, index+1, dependency.RevisionRowID, dependency.Outcome)
+			}
+		}
 		if before.counts["delivery_tickets"]+1 != countTable(t, store, "delivery_tickets") || before.counts["delivery_ticket_revisions"]+1 != countTable(t, store, "delivery_ticket_revisions") {
 			t.Fatal("explicit remediation did not create exactly one ticket revision")
+		}
+		auditedTicketAfter, err := store.GetDeliveryTicketByRowID(ctx, fixture.ticket.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auditedRevisionAfter, err := store.GetDeliveryTicketRevisionByRowID(ctx, fixture.revision.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auditedRevisionsAfter, err := store.ListDeliveryTicketRevisions(ctx, auditedTicketAfter.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(auditedTicketAfter, auditedTicketBefore) || !reflect.DeepEqual(auditedRevisionAfter, auditedRevisionBefore) || !reflect.DeepEqual(auditedTicketAfter.CurrentRevisionRowID, auditedCurrentRevisionBefore) || !reflect.DeepEqual(auditedRevisionsAfter, auditedRevisionsBefore) {
+			t.Fatalf("audited ticket changed: before ticket=%#v revision=%#v revisions=%#v, after ticket=%#v revision=%#v revisions=%#v", auditedTicketBefore, auditedRevisionBefore, auditedRevisionsBefore, auditedTicketAfter, auditedRevisionAfter, auditedRevisionsAfter)
+		}
+		if !auditedTicketAfter.CurrentRevisionRowID.Valid || auditedTicketAfter.CurrentRevisionRowID.Int64 != fixture.revision.ID {
+			t.Fatalf("audited ticket current revision = %#v, want %d", auditedTicketAfter.CurrentRevisionRowID, fixture.revision.ID)
+		}
+		if result.Ticket.ID == auditedTicketAfter.ID || result.Revision.DeliveryTicketRowID == auditedTicketAfter.ID {
+			t.Fatal("remediation publication reused the audited ticket")
+		}
+		ticketsAfter, err := store.ListDeliveryTicketsByWorkspace(ctx, auditedTicketAfter.WorkspaceRowID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ticketsAfter) != len(ticketsBefore)+1 {
+			t.Fatalf("workspace ticket count after remediation = %d, want %d", len(ticketsAfter), len(ticketsBefore)+1)
+		}
+		beforeTicketIDs := make(map[int64]struct{}, len(ticketsBefore))
+		for _, ticket := range ticketsBefore {
+			beforeTicketIDs[ticket.ID] = struct{}{}
+			found := false
+			for _, after := range ticketsAfter {
+				if ticket.ID == after.ID {
+					found = true
+					if !reflect.DeepEqual(ticket, after) {
+						t.Fatalf("existing ticket changed: before=%#v after=%#v", ticket, after)
+					}
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("existing ticket %d was removed", ticket.ID)
+			}
+		}
+		for _, ticket := range ticketsAfter {
+			if _, existed := beforeTicketIDs[ticket.ID]; !existed && ticket.ID != result.Ticket.ID {
+				t.Fatalf("unexpected newly created ticket = %#v", ticket)
+			}
 		}
 		assertPublishedArtifacts(t, store, result, input.Revision.CanonicalJSON, input.Revision.RenderedMarkdown)
 		assertSeedImmutable(t, ctx, store, fixture)
@@ -145,7 +254,6 @@ func TestPublishRemediationSeedRejectionMatrixIsAtomic(t *testing.T) {
 	tests := []struct {
 		name       string
 		want       error
-		withSeed   bool
 		withSecond bool
 		input      func(string, remediationSeedFixture, workflowstore.SourceVaultClosure) PublishInput
 	}{
@@ -389,31 +497,52 @@ func capturePublishState(t *testing.T, ctx context.Context, store *workflowstore
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	state.seeds, err = store.ListAuditRemediationSeedsByWorkspace(ctx, workspaceRowForState(t, ctx, store))
+	seedRows, err := store.DB().QueryContext(ctx, `
+SELECT id, remediation_seed_id, audit_ticket_revision_decision_row_id, audit_packet_row_id,
+       execution_package_row_id, audited_commit, decision_rationale, created_at
+FROM audit_remediation_seeds
+ORDER BY id`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, seed := range state.seeds {
-		findings, findingErr := store.ListAuditRemediationSeedFindings(ctx, seed.ID)
-		if findingErr != nil {
-			t.Fatal(findingErr)
+	for seedRows.Next() {
+		var seed workflowstore.AuditRemediationSeed
+		if err := seedRows.Scan(&seed.ID, &seed.RemediationSeedID, &seed.AuditTicketRevisionDecisionRowID, &seed.AuditPacketRowID, &seed.ExecutionPackageRowID, &seed.AuditedCommit, &seed.DecisionRationale, &seed.CreatedAt); err != nil {
+			seedRows.Close()
+			t.Fatal(err)
 		}
-		state.findings = append(state.findings, findings...)
+		state.seeds = append(state.seeds, seed)
 	}
+	if err := seedRows.Err(); err != nil {
+		seedRows.Close()
+		t.Fatal(err)
+	}
+	seedRows.Close()
+	findingsRows, err := store.DB().QueryContext(ctx, `
+SELECT id, remediation_seed_row_id, sequence, upstream_classification, summary,
+       evidence, required_remediation, created_at
+FROM audit_remediation_seed_findings
+ORDER BY remediation_seed_row_id, sequence, id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for findingsRows.Next() {
+		var finding workflowstore.AuditRemediationSeedFinding
+		if err := findingsRows.Scan(&finding.ID, &finding.RemediationSeedRowID, &finding.Sequence, &finding.UpstreamClassification, &finding.Summary, &finding.Evidence, &finding.RequiredRemediation, &finding.CreatedAt); err != nil {
+			findingsRows.Close()
+			t.Fatal(err)
+		}
+		state.findings = append(state.findings, finding)
+	}
+	if err := findingsRows.Err(); err != nil {
+		findingsRows.Close()
+		t.Fatal(err)
+	}
+	findingsRows.Close()
 	state.artifacts = artifactTree(t, filepath.Join(store.ArtifactStore().Root(), "delivery-tickets"))
 	state.staging = artifactTree(t, filepath.Join(store.ArtifactStore().Root(), ".staging"))
 	return state
 }
-
-func workspaceRowForState(t *testing.T, ctx context.Context, store *workflowstore.Store) int64 {
-	t.Helper()
-	var workspaceID int64
-	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM feature_workspaces ORDER BY id LIMIT 1`).Scan(&workspaceID); err != nil {
-		t.Fatal(err)
-	}
-	return workspaceID
-}
-
 func assertPublishStateEqual(t *testing.T, ctx context.Context, store *workflowstore.Store, want publishState) {
 	t.Helper()
 	got := capturePublishState(t, ctx, store)
@@ -464,6 +593,21 @@ func artifactTree(t *testing.T, root string) []string {
 	}
 	sort.Strings(entries)
 	return entries
+}
+
+func assertRevisionMatchesInput(t *testing.T, revision workflowstore.DeliveryTicketRevision, input RevisionInput) {
+	t.Helper()
+	if revision.CancellationReason != nullableString(input.CancellationReason) ||
+		revision.RepoTarget != input.RepoTarget ||
+		revision.Branch != input.Branch ||
+		revision.BaseCommit != input.BaseCommit ||
+		revision.SourceClosureRowID != input.SourceClosureRowID ||
+		revision.SourcePath != input.SourcePath ||
+		revision.Goal != input.Goal ||
+		revision.Context != input.Context ||
+		revision.TransitionApplicability != input.TransitionApplicability {
+		t.Fatalf("stored remediation revision = %#v, want caller input fields repo=%q branch=%q base=%q closure=%d path=%q goal=%q context=%q transition=%q cancellation=%q", revision, input.RepoTarget, input.Branch, input.BaseCommit, input.SourceClosureRowID, input.SourcePath, input.Goal, input.Context, input.TransitionApplicability, input.CancellationReason)
+	}
 }
 
 func assertPublishedArtifacts(t *testing.T, store *workflowstore.Store, result PublishedRevision, canonical, rendered []byte) {
