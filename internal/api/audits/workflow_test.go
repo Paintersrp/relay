@@ -18,6 +18,7 @@ type fakeWorkflowAuditService struct {
 	prepare       appaudits.PrepareWorkflowAuditResult
 	prepareErr    error
 	status        appaudits.WorkflowAuditStatus
+	statusErr     error
 	current       appaudits.GetWorkflowAuditPacketResult
 	currentErr    error
 	artifact      appaudits.GetWorkflowAuditArtifactResult
@@ -31,7 +32,7 @@ func (f *fakeWorkflowAuditService) Prepare(context.Context, appaudits.PrepareWor
 	return f.prepare, f.prepareErr
 }
 func (f *fakeWorkflowAuditService) GetStatus(context.Context, string) (appaudits.WorkflowAuditStatus, error) {
-	return f.status, nil
+	return f.status, f.statusErr
 }
 func (f *fakeWorkflowAuditService) GetCurrentPacket(context.Context, string) (appaudits.GetWorkflowAuditPacketResult, error) {
 	return f.current, f.currentErr
@@ -94,27 +95,6 @@ func TestWorkflowAuditStatusReturnsCurrentAndLatest(t *testing.T) {
 	}
 }
 
-func TestWorkflowAuditPacketReturnsExactTicketObligations(t *testing.T) {
-	service := &fakeWorkflowAuditService{
-		current: appaudits.GetWorkflowAuditPacketResult{
-			Run:      workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusAuditReady},
-			Packet:   workflowstore.AuditPacket{AuditPacketID: "packet-test", Status: workflowstore.AuditPacketStatusCurrent},
-			Document: []byte(`{"schema_version":"2.0","artifacts":[{"artifact_reference":"artifact-ticket-package","artifact_type":"ticket_package_evidence"}]}`),
-		},
-		artifact: appaudits.GetWorkflowAuditArtifactResult{Content: []byte(`{
-			"schema_version":"1.0",
-			"package":{"package_id":"package-1","package_sha256":"sha-package","workspace_id":"workspace-1","feature_slug":"feature","selection_id":"selection-1","selection_state":"consumed","authority":{"authority_revision_id":"authority-1","sha256":"sha-authority"},"source":{"closure_id":"closure-1","commit_oid":"commit-1"}},
-			"tickets":[{"sequence":1,"ticket_id":"T1","delivery_ticket_revision_row_id":2,"revision_number":1,"member_sha256":"sha-member","approval":{"approval_id":"approval-1","approval_basis_sha256":"sha-approval","authority_revision_row_id":3,"source_closure_row_id":4},"design_brief":{"artifact_reference":"brief-1","sha256":"sha-brief"}}],
-			"mutation_leases":[],"bundle_integration":{"run_id":"run-test","execution_package_id":"package-1","selection_id":"selection-1","selection_state":"consumed","approved_run_status":"package_linked"}
-		}`)},
-	}
-	response := httptest.NewRecorder()
-	workflowAuditRouter(service).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/run-test/audit/packet", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"ticketId":"T1"`) || !strings.Contains(response.Body.String(), `"packageId":"package-1"`) {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-}
-
 func TestWorkflowAuditPacketReturnsPackageDocumentObject(t *testing.T) {
 	service := &fakeWorkflowAuditService{current: appaudits.GetWorkflowAuditPacketResult{
 		Run:      workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusAuditReady},
@@ -144,7 +124,7 @@ func TestWorkflowAuditDecisionRequiresExactConfirmationInput(t *testing.T) {
 }
 
 func TestWorkflowAuditDecisionForwardsFindingSourcesUnchanged(t *testing.T) {
-	for _, source := range []string{"implementation", "governing_package", "both", "executor_implementation"} {
+	for _, source := range []string{"implementation", "governing_package", "both"} {
 		t.Run(source, func(t *testing.T) {
 			service := &fakeWorkflowAuditService{decision: appaudits.RecordWorkflowAuditDecisionResult{Run: workflowstore.Run{RunID: "run-test"}, Packet: workflowstore.AuditPacket{AuditPacketID: "packet-test"}, Decision: workflowstore.AuditDecision{AuditDecisionID: "decision-test"}}}
 			body := `{"auditPacketId":"packet-test","packetSha256":"` + strings.Repeat("c", 64) + `","auditedCommit":"` + strings.Repeat("b", 40) + `","decision":"needs_revision","rationale":"revision required","materialFindings":[{"source":"` + source + `","summary":"missing proof","evidence":"packet evidence","required_remediation":"supply proof"}],"operatorConfirmed":true}`
@@ -156,6 +136,28 @@ func TestWorkflowAuditDecisionForwardsFindingSourcesUnchanged(t *testing.T) {
 			want := appaudits.WorkflowAuditMaterialFinding{Source: source, Summary: "missing proof", Evidence: "packet evidence", RequiredRemediation: "supply proof"}
 			if len(service.decisionInput.MaterialFindings) != 1 || service.decisionInput.MaterialFindings[0] != want {
 				t.Fatalf("received findings = %#v, want %#v", service.decisionInput.MaterialFindings, want)
+			}
+		})
+	}
+}
+
+func TestWorkflowAuditEndpointsMapPackageRequired(t *testing.T) {
+	packageRequired := appaudits.ErrWorkflowAuditPackageRequired
+	tests := []struct {
+		name, method, path, body string
+	}{
+		{"prepare", http.MethodPost, "/runs/run-test/audit/prepare", `{"auditedCommit":"` + strings.Repeat("b", 40) + `"}`},
+		{"status", http.MethodGet, "/runs/run-test/audit/status", ""},
+		{"packet", http.MethodGet, "/runs/run-test/audit/packet", ""},
+		{"decision", http.MethodPost, "/runs/run-test/audit/decision", `{"auditPacketId":"packet","packetSha256":"` + strings.Repeat("c", 64) + `","auditedCommit":"` + strings.Repeat("b", 40) + `","decision":"accepted","rationale":"accepted","operatorConfirmed":true}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &fakeWorkflowAuditService{prepareErr: packageRequired, statusErr: packageRequired, currentErr: packageRequired, decisionErr: packageRequired}
+			response := httptest.NewRecorder()
+			workflowAuditRouter(service).ServeHTTP(response, httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)))
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"AUDIT_PACKAGE_REQUIRED"`) {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
 			}
 		})
 	}

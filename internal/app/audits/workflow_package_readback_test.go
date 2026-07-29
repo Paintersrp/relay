@@ -30,10 +30,6 @@ func TestWorkflowPackageAuditGetCurrentPacketModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			service.inspector = packagePrepareTestInspector()
-			service.packetValidator = func([]byte) (bool, error) {
-				t.Fatal("package readback used the legacy packet validator")
-				return false, nil
-			}
 
 			prepared, err := service.Prepare(context.Background(), PrepareWorkflowAuditInput{
 				RunID: fixture.run.RunID, AuditedCommit: strings.Repeat("c", 40),
@@ -352,24 +348,6 @@ func TestWorkflowPackageAuditGetCurrentPacketRejectsCoherentlyAlteredCanonicalDo
 		t.Fatalf("error = %v, want ErrWorkflowAuditPacketStale", err)
 	}
 	requirePackageAuditPacketStale(t, fixture, "canonical_packet_changed")
-}
-
-func TestWorkflowPackageAuditGetCurrentPacketWithoutEvidenceLoaderDoesNotMarkStale(t *testing.T) {
-	fixture, service := newPackageAuditReadbackFixture(t)
-	legacyOnly, err := NewWorkflowAuditServiceWithInspector(fixture.store, service.inspector)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := legacyOnly.GetCurrentPacket(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPackageUnavailable) {
-		t.Fatalf("error = %v, want ErrWorkflowAuditPackageUnavailable", err)
-	}
-	packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if packet.Status != workflowstore.AuditPacketStatusCurrent {
-		t.Fatalf("packet status = %q, want current", packet.Status)
-	}
 }
 
 func newPackageAuditReadbackFixture(t *testing.T) (*packageEvidenceFixture, *WorkflowAuditService) {

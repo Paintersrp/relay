@@ -20,7 +20,7 @@ import (
 )
 
 func BuildHandlers(store *workflowstore.Store, policy mcpcomposition.Services, log *slog.Logger) ([]server.MCPHandler, error) {
-	if store == nil || policy.Packets == nil || policy.Lifecycle == nil || policy.Source == nil {
+	if store == nil || policy.Vaults == nil || policy.Packets == nil || policy.Lifecycle == nil || policy.Source == nil {
 		return nil, fmt.Errorf("complete MCP application dependencies are required")
 	}
 	projects, err := workflowprojects.NewService(store)
@@ -35,7 +35,7 @@ func BuildHandlers(store *workflowstore.Store, policy mcpcomposition.Services, l
 	if err != nil {
 		return nil, err
 	}
-	audits, err := appaudits.NewWorkflowAuditService(store)
+	audits, err := appaudits.NewWorkflowAuditServiceWithSourceVaults(store, policy.Vaults)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func BuildHandlers(store *workflowstore.Store, policy mcpcomposition.Services, l
 		if err != nil {
 			return nil, err
 		}
-		application, err := mcp.NewServerForAppSurface(log, mcp.NewWorkflowDepsFromEnv(store, log), surface, registrations)
+		application, err := mcp.NewServerForAppSurface(log, mcp.NewWorkflowDepsFromEnv(store, log, policy.Vaults), surface, registrations)
 		if err != nil {
 			return nil, err
 		}

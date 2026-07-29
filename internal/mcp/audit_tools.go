@@ -47,7 +47,7 @@ var recordAuditDecisionSchema = json.RawMessage(`{
         "additionalProperties": false,
         "required": ["source", "summary", "evidence", "required_remediation"],
         "properties": {
-          "source": {"type": "string", "enum": ["executor_implementation", "execution_spec", "implementation", "governing_package", "both"]},
+          "source": {"type": "string", "enum": ["implementation", "governing_package", "both"]},
           "summary": {"type": "string", "minLength": 1},
           "evidence": {"type": "string", "minLength": 1},
           "required_remediation": {"type": "string", "minLength": 1}
@@ -98,11 +98,7 @@ func (s *Server) workflowAuditService() (WorkflowAuditToolService, error) {
 	if s != nil && s.deps != nil && s.deps.WorkflowAuditService != nil {
 		return s.deps.WorkflowAuditService, nil
 	}
-	service, err := appaudits.NewWorkflowAuditService(s.workflowStore())
-	if err != nil {
-		return nil, err
-	}
-	return service, nil
+	return nil, errors.New("workflow audit service is unavailable")
 }
 
 func (s *Server) HandleGetWorkflowAuditPacket(rawArgs json.RawMessage) ToolCallResult {
@@ -214,6 +210,8 @@ func (s *Server) HandleRecordWorkflowAuditDecision(rawArgs json.RawMessage) Tool
 
 func workflowAuditBlocked(tool string, err error) ToolCallResult {
 	switch {
+	case errors.Is(err, appaudits.ErrWorkflowAuditPackageRequired):
+		return workflowBlocked(tool, "audit_package_required", err.Error(), true, "run_id", nil)
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, appaudits.ErrWorkflowAuditPacketNotFound):
 		return workflowBlocked(tool, MCPBlockerUnknownResource, "workflow Run or audit packet was not found", true, "run_id", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactReference):

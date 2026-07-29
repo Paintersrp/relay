@@ -58,7 +58,7 @@ func TestWorkflowDepsCarryProfile(t *testing.T) {
 	for _, profile := range []string{"planner", "auditor", "local_operator", "restricted"} {
 		t.Run(profile, func(t *testing.T) {
 			t.Setenv(EnvMCPProfile, profile)
-			deps := NewWorkflowDepsFromEnv(nil, nil)
+			deps := NewWorkflowDepsFromEnv(nil, nil, nil)
 			want, _ := NormalizeToolProfile(profile)
 			if deps.ToolProfile != want {
 				t.Fatalf("ToolProfile = %q, want %q", deps.ToolProfile, want)

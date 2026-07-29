@@ -68,7 +68,7 @@ func TestGetAuditPacketReturnsAuthoritativeBody(t *testing.T) {
 			PacketSHA256:  strings.Repeat("c", 64),
 			AuditedCommit: strings.Repeat("b", 40),
 		},
-		Document: []byte(`{"schema_version":"1.0","run":{"run_id":1}}`),
+		Document: []byte(`{"schema_version":"3.0","run":{"run_id":1}}`),
 	}}
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
 	result := server.HandleGetWorkflowAuditPacket(json.RawMessage(`{"run_id":"run-test"}`))
@@ -141,7 +141,7 @@ func TestRecordAuditDecisionSchemaAndFindingSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	gotSources := schema.Properties["material_findings"].Items.Properties["source"].Enum
-	wantSources := []string{"executor_implementation", "execution_spec", "implementation", "governing_package", "both"}
+	wantSources := []string{"implementation", "governing_package", "both"}
 	if !reflect.DeepEqual(gotSources, wantSources) {
 		t.Fatalf("finding source enum = %#v, want %#v", gotSources, wantSources)
 	}
@@ -171,5 +171,18 @@ func TestRecordAuditDecisionMapsStalePacket(t *testing.T) {
 	}`))
 	if !result.IsError || !strings.Contains(result.Content[0].Text, "audit_packet_stale") {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestAuditToolsMapPackageRequired(t *testing.T) {
+	service := &fakeWorkflowAuditToolService{packetErr: appaudits.ErrWorkflowAuditPackageRequired, decisionErr: appaudits.ErrWorkflowAuditPackageRequired}
+	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
+	packet := server.HandleGetWorkflowAuditPacket(json.RawMessage(`{"run_id":"run-test"}`))
+	if !packet.IsError || !strings.Contains(packet.Content[0].Text, "audit_package_required") {
+		t.Fatalf("packet result = %+v", packet)
+	}
+	decision := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{"run_id":"run-test","audit_packet_id":"packet-test","packet_sha256":"` + strings.Repeat("c", 64) + `","audited_commit":"` + strings.Repeat("b", 40) + `","decision":"accepted","rationale":"accepted","operator_confirmed":true}`))
+	if !decision.IsError || !strings.Contains(decision.Content[0].Text, "audit_package_required") {
+		t.Fatalf("decision result = %+v", decision)
 	}
 }

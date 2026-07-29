@@ -335,28 +335,7 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     expect(submit).toBeEnabled();
   });
 
-  it.each([
-    ["package", { schema_version: "3.0" }, ["both", "implementation", "governing_package"]],
-    ["legacy", { schema_version: "2.0" }, ["both", "executor_implementation", "execution_spec"]],
-  ])("offers only the %s finding sources", async (_kind, document, expectedSources) => {
-    const user = userEvent.setup();
-    mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
-    mocks.getAuditStatus.mockResolvedValue({
-      runId: "run-1", runStatus: "audit_ready",
-      currentPacket: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
-    });
-    mocks.getAuditPacket.mockResolvedValue({
-      packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
-      document,
-    });
-
-    renderWorkbench("audit");
-    await screen.findByText("Record confirmed decision");
-    await user.selectOptions(screen.getByLabelText("Decision"), "needs_revision");
-    expect(Array.from((screen.getByLabelText("Finding source") as HTMLSelectElement).options).map((option) => option.value)).toEqual(expectedSources);
-  });
-
-  it("resets an incompatible package finding source when the packet becomes legacy", async () => {
+  it("offers only package-native finding sources", async () => {
     const user = userEvent.setup();
     mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
     mocks.getAuditStatus.mockResolvedValue({
@@ -368,50 +347,10 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
       document: { schema_version: "3.0" },
     });
 
-    const { queryClient } = renderWorkbench("audit");
+    renderWorkbench("audit");
     await screen.findByText("Record confirmed decision");
     await user.selectOptions(screen.getByLabelText("Decision"), "needs_revision");
-    const source = screen.getByLabelText("Finding source");
-    await user.selectOptions(source, "implementation");
-
-    act(() => {
-      queryClient.setQueryData(["workflow-runs", "detail", "run-1", "audit-packet"], {
-        packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
-        document: { schema_version: "2.0" },
-      });
-    });
-
-    await waitFor(() => expect(source).toHaveValue("both"));
-    expect(Array.from((source as HTMLSelectElement).options).map((option) => option.value)).toEqual(["both", "executor_implementation", "execution_spec"]);
-  });
-
-  it("resets an incompatible legacy finding source when the packet becomes package-native", async () => {
-    const user = userEvent.setup();
-    mocks.getRun.mockResolvedValue(makeDetail(makeRun("audit_ready", "audit")));
-    mocks.getAuditStatus.mockResolvedValue({
-      runId: "run-1", runStatus: "audit_ready",
-      currentPacket: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
-    });
-    mocks.getAuditPacket.mockResolvedValue({
-      packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
-      document: { schema_version: "2.0" },
-    });
-
-    const { queryClient } = renderWorkbench("audit");
-    await screen.findByText("Record confirmed decision");
-    await user.selectOptions(screen.getByLabelText("Decision"), "needs_revision");
-    const source = screen.getByLabelText("Finding source");
-    await user.selectOptions(source, "executor_implementation");
-
-    act(() => {
-      queryClient.setQueryData(["workflow-runs", "detail", "run-1", "audit-packet"], {
-        packet: { auditPacketId: "packet-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64) },
-        document: { schema_version: "3.0" },
-      });
-    });
-
-    await waitFor(() => expect(source).toHaveValue("both"));
-    expect(Array.from((source as HTMLSelectElement).options).map((option) => option.value)).toEqual(["both", "implementation", "governing_package"]);
+    expect(Array.from((screen.getByLabelText("Finding source") as HTMLSelectElement).options).map((option) => option.value)).toEqual(["both", "implementation", "governing_package"]);
   });
 
   it("disables Start while execution is active", async () => {

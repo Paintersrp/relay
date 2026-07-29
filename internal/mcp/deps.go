@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	appaudits "relay/internal/app/audits"
+	workflowpackages "relay/internal/app/packages"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -16,9 +17,13 @@ type MCPDeps struct {
 	WorkflowAuditService WorkflowAuditToolService
 }
 
-func NewWorkflowDepsFromEnv(workflowStore *workflowstore.Store, log *slog.Logger) *MCPDeps {
+func NewWorkflowDepsFromEnv(workflowStore *workflowstore.Store, log *slog.Logger, sourceVaults workflowpackages.SourceVaultReader) *MCPDeps {
 	fetcher := NewHTTPSFileParameterFetcher()
-	auditService, _ := appaudits.NewWorkflowAuditService(workflowStore)
+	var auditService WorkflowAuditToolService
+	if workflowStore != nil && sourceVaults != nil {
+		service, _ := appaudits.NewWorkflowAuditServiceWithSourceVaults(workflowStore, sourceVaults)
+		auditService = service
+	}
 	return &MCPDeps{
 		WorkflowStore:        workflowStore,
 		Log:                  log,

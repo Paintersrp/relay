@@ -1,12 +1,7 @@
 package audits
 
 import (
-	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -141,72 +136,5 @@ func TestDecodeWorkflowExecutionEvidenceRejectsAmbiguousValidation(t *testing.T)
 				t.Fatal("expected invalid structured evidence to be rejected")
 			}
 		})
-	}
-}
-
-func selectedAuditAttemptAndEvidence(t *testing.T, fixture *auditFixture) (workflowstore.ExecutionAttempt, workflowstore.Artifact) {
-	t.Helper()
-	attempt, found, err := fixture.store.GetLatestSucceededExecutionAttemptOptional(context.Background(), fixture.run.ID)
-	if err != nil || !found {
-		t.Fatalf("selected attempt = %+v, found = %v, err = %v", attempt, found, err)
-	}
-	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), attempt.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var evidence workflowstore.Artifact
-	for _, artifact := range artifacts {
-		if artifact.Kind != "execution_evidence" {
-			continue
-		}
-		if evidence.ID != 0 {
-			t.Fatal("fixture has multiple execution_evidence artifacts")
-		}
-		evidence = artifact
-	}
-	if evidence.ID == 0 {
-		t.Fatal("fixture execution_evidence artifact is missing")
-	}
-	return attempt, evidence
-}
-
-func rewriteAuditArtifact(t *testing.T, fixture *auditFixture, artifact workflowstore.Artifact, data []byte) {
-	t.Helper()
-	path, err := workflowArtifactPath(fixture.store, artifact)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(data)
-	if _, err := fixture.store.DB().Exec(`UPDATE artifacts SET sha256 = ?, size_bytes = ? WHERE id = ?`, hex.EncodeToString(digest[:]), len(data), artifact.ID); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func stageDuplicateAuditExecutionEvidence(t *testing.T, fixture *auditFixture, attempt workflowstore.ExecutionAttempt, evidence workflowstore.Artifact) {
-	t.Helper()
-	path, err := workflowArtifactPath(fixture.store, evidence)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	batch, err := fixture.store.ArtifactStore().Begin("audit-duplicate/" + attempt.AttemptID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	staged, err := batch.Stage("execution_evidence", "execution-evidence-duplicate.json", "application/json", data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.CommitArtifactBatch(context.Background(), batch, func(tx *workflowstore.Tx) error {
-		_, err := tx.CreateArtifact(context.Background(), workflowstore.CreateArtifactParams{ArtifactID: workflowstore.NewArtifactID(), OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true}, Kind: staged.Kind, RelativePath: staged.RelativePath, MediaType: staged.MediaType, SHA256: staged.SHA256, SizeBytes: staged.SizeBytes})
-		return err
-	}); err != nil {
-		t.Fatal(err)
 	}
 }

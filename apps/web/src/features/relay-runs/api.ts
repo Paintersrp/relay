@@ -31,7 +31,6 @@ import type {
   WorkflowAuditPacket,
   WorkflowAuditReadback,
   WorkflowAuditStatus,
-  WorkflowAuditTicketPackage,
   WorkflowExecutionArtifact,
   WorkflowExecutionAttempt,
   WorkflowExecutionAttemptResult,
@@ -500,62 +499,6 @@ function parseDecision(
       true,
     ),
     createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
-  };
-}
-
-function parseTicketPackage(value: unknown, method: WorkflowHttpMethod, path: string): WorkflowAuditTicketPackage {
-  const record = asWorkflowRecord(value, method, path, "ticketPackage");
-  const packageRecord = asWorkflowRecord(record.package, method, path, "ticketPackage.package");
-  const bundle = asWorkflowRecord(record.bundleIntegration, method, path, "ticketPackage.bundleIntegration");
-  return {
-    package: {
-      packageId: requiredWorkflowString(packageRecord, "packageId", method, path, "ticketPackage.package"),
-      packageSha256: requiredWorkflowString(packageRecord, "packageSha256", method, path, "ticketPackage.package"),
-      workspaceId: requiredWorkflowString(packageRecord, "workspaceId", method, path, "ticketPackage.package"),
-      featureSlug: requiredWorkflowString(packageRecord, "featureSlug", method, path, "ticketPackage.package"),
-      selectionId: requiredWorkflowString(packageRecord, "selectionId", method, path, "ticketPackage.package"),
-      selectionState: requiredWorkflowString(packageRecord, "selectionState", method, path, "ticketPackage.package"),
-      authorityRevisionId: requiredWorkflowString(packageRecord, "authorityRevisionId", method, path, "ticketPackage.package"),
-      authoritySha256: requiredWorkflowString(packageRecord, "authoritySha256", method, path, "ticketPackage.package"),
-      sourceClosureId: requiredWorkflowString(packageRecord, "sourceClosureId", method, path, "ticketPackage.package"),
-      sourceCommit: requiredWorkflowString(packageRecord, "sourceCommit", method, path, "ticketPackage.package"),
-    },
-    tickets: requiredWorkflowArray(record, "tickets", method, path, "ticketPackage").map((value) => {
-      const ticket = asWorkflowRecord(value, method, path, "ticketPackage.ticket");
-      const designBrief = asWorkflowRecord(ticket.designBrief, method, path, "ticketPackage.ticket.designBrief");
-      return {
-        sequence: requiredWorkflowInteger(ticket, "sequence", method, path, "ticketPackage.ticket", 1),
-        ticketId: requiredWorkflowString(ticket, "ticketId", method, path, "ticketPackage.ticket"),
-        revisionRowId: requiredWorkflowInteger(ticket, "revisionRowId", method, path, "ticketPackage.ticket", 1),
-        revisionNumber: requiredWorkflowInteger(ticket, "revisionNumber", method, path, "ticketPackage.ticket", 1),
-        memberSha256: requiredWorkflowString(ticket, "memberSha256", method, path, "ticketPackage.ticket"),
-        approvalId: requiredWorkflowString(ticket, "approvalId", method, path, "ticketPackage.ticket"),
-        approvalBasisSha256: requiredWorkflowString(ticket, "approvalBasisSha256", method, path, "ticketPackage.ticket"),
-        authorityRevisionRowId: requiredWorkflowInteger(ticket, "authorityRevisionRowId", method, path, "ticketPackage.ticket", 1),
-        sourceClosureRowId: requiredWorkflowInteger(ticket, "sourceClosureRowId", method, path, "ticketPackage.ticket", 1),
-        designBrief: {
-          artifactReference: requiredWorkflowString(designBrief, "artifactReference", method, path, "ticketPackage.ticket.designBrief"),
-          sha256: requiredWorkflowString(designBrief, "sha256", method, path, "ticketPackage.ticket.designBrief"),
-        },
-      };
-    }),
-    mutationLeases: requiredWorkflowArray(record, "mutationLeases", method, path, "ticketPackage").map((value) => {
-      const lease = asWorkflowRecord(value, method, path, "ticketPackage.mutationLease");
-      return {
-        leaseId: requiredWorkflowString(lease, "leaseId", method, path, "ticketPackage.mutationLease"),
-        state: requiredWorkflowString(lease, "state", method, path, "ticketPackage.mutationLease"),
-        certainty: requiredWorkflowString(lease, "certainty", method, path, "ticketPackage.mutationLease"),
-        reconciliationState: requiredWorkflowString(lease, "reconciliationState", method, path, "ticketPackage.mutationLease"),
-        releasedAt: requiredWorkflowString(lease, "releasedAt", method, path, "ticketPackage.mutationLease", true),
-      };
-    }),
-    bundleIntegration: {
-      runId: requiredWorkflowString(bundle, "runId", method, path, "ticketPackage.bundleIntegration"),
-      executionPackageId: requiredWorkflowString(bundle, "executionPackageId", method, path, "ticketPackage.bundleIntegration"),
-      selectionId: requiredWorkflowString(bundle, "selectionId", method, path, "ticketPackage.bundleIntegration"),
-      selectionState: requiredWorkflowString(bundle, "selectionState", method, path, "ticketPackage.bundleIntegration"),
-      approvedRunStatus: requiredWorkflowString(bundle, "approvedRunStatus", method, path, "ticketPackage.bundleIntegration"),
-    },
   };
 }
 
@@ -1038,14 +981,12 @@ export async function getWorkflowAuditStatus(
 export async function getWorkflowAuditPacket(runId: string): Promise<WorkflowAuditReadback> {
   const path = `/api/runs/${encodeURIComponent(runId)}/audit/packet`;
   const record = asWorkflowRecord(await requestWorkflowJson<unknown>("GET", path), "GET", path, "response");
-  const ticketPackage = optionalRecord(record, "ticketPackage", "GET", path, "response");
   if (!("document" in record)) return malformedWorkflowResponse("GET", path, "response.document is required");
   return {
     runId: requiredWorkflowString(record, "runId", "GET", path, "response"),
     runStatus: parseRunStatus(record.runStatus, "GET", path, "response.runStatus"),
     packet: parsePacket(record.packet, "GET", path, "packet"),
     document: record.document,
-    ticketPackage: ticketPackage ? parseTicketPackage(ticketPackage, "GET", path) : undefined,
   };
 }
 

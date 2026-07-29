@@ -76,8 +76,8 @@ func TestWorkflowPackageAuditPrepareModes(t *testing.T) {
 				if artifact.Kind == "audit_packet" {
 					packetArtifacts++
 				}
-				if artifact.Kind == "unified_diff" || artifact.Kind == "ticket_package_evidence" {
-					t.Fatalf("legacy sidecar artifact created: %#v", artifact)
+				if artifact.Kind == "unified_diff" {
+					t.Fatalf("unexpected sidecar artifact created: %#v", artifact)
 				}
 			}
 			if packetArtifacts != 1 {
@@ -102,19 +102,6 @@ func TestWorkflowAuditPackageConstruction(t *testing.T) {
 	}
 	if service, err := NewWorkflowAuditServiceWithSourceVaults(nil, fixture.sourceVaultReader); err == nil || service != nil {
 		t.Fatal("nil store returned a service")
-	}
-}
-
-func TestWorkflowAuditPrepareLegacy(t *testing.T) {
-	fixture := newPackageEvidenceFixture(t, false, "")
-	setPackageRunValidating(t, fixture)
-	service, err := NewWorkflowAuditServiceWithInspector(fixture.store, packagePrepareTestInspector())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: strings.Repeat("c", 40)})
-	if !errors.Is(err, ErrWorkflowAuditPackageUnavailable) {
-		t.Fatalf("error = %v, want ErrWorkflowAuditPackageUnavailable", err)
 	}
 }
 

@@ -207,28 +207,12 @@ func TestWorkflowPackageAuditRecordDecisionInputValidation(t *testing.T) {
 
 func TestWorkflowPackageAuditRecordDecisionUsesPackageRouteOnly(t *testing.T) {
 	fixture, service := newPackageAuditPrepareFixture(t, true)
-	service.packetValidator = func([]byte) (bool, error) {
-		t.Fatal("package decision invoked the legacy packet validator")
-		return false, nil
-	}
 	packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.RecordDecision(context.Background(), packageDecisionInput(fixture.run.RunID, packet, workflowstore.AuditDecisionAccepted, nil)); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestWorkflowPackageAuditRecordDecisionWithoutEvidenceLoader(t *testing.T) {
-	fixture, service := newPackageAuditPrepareFixture(t, true)
-	service.loadPackageEvidence = nil
-	packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.RecordDecision(context.Background(), packageDecisionInput(fixture.run.RunID, packet, workflowstore.AuditDecisionAccepted, nil)); !errors.Is(err, ErrWorkflowAuditPackageUnavailable) {
-		t.Fatalf("error = %v, want ErrWorkflowAuditPackageUnavailable", err)
 	}
 }
 
@@ -697,26 +681,5 @@ func TestWorkflowPackageAuditRecordDecisionPersistsImmutableArtifact(t *testing.
 		document.AuthorityRevisionID != evidence.Authority.Authority.AuthorityRevisionID || document.AuthorityRevisionRowID != evidence.Authority.Authority.ID || document.SourceClosureID != evidence.Authority.Source.ClosureID ||
 		document.SourceClosureRowID != evidence.Authority.Source.ID || document.SourceCommit != evidence.Authority.Source.CommitOID {
 		t.Fatalf("immutable package decision document = %#v", document)
-	}
-}
-
-func TestWorkflowPackageAuditRecordDecisionRejectsLegacyFindingSource(t *testing.T) {
-	fixture, service := newPackageAuditPrepareFixture(t, true)
-	ctx := context.Background()
-	packet, err := fixture.store.GetCurrentAuditPacketByRun(ctx, fixture.run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = service.RecordDecision(ctx, RecordWorkflowAuditDecisionInput{
-		RunID: fixture.run.RunID, AuditPacketID: packet.AuditPacketID, PacketSHA256: packet.PacketSHA256,
-		AuditedCommit: packet.AuditedCommit, Decision: workflowstore.AuditDecisionNeedsRevision,
-		Rationale: "Legacy source must not be translated.", OperatorConfirmed: true,
-		MaterialFindings: []WorkflowAuditMaterialFinding{{Source: "executor_implementation", Summary: "Missing proof", Evidence: "Missing", RequiredRemediation: "Add proof"}},
-	})
-	if !errors.Is(err, ErrWorkflowAuditDecisionInput) {
-		t.Fatalf("error = %v, want invalid input", err)
-	}
-	if strings.Contains(err.Error(), "stale") {
-		t.Fatalf("legacy attribution was translated into a stale conflict: %v", err)
 	}
 }

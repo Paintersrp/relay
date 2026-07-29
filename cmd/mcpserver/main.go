@@ -16,11 +16,13 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
 	"relay/internal/config"
 	"relay/internal/mcp"
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -47,7 +49,16 @@ func main() {
 	}
 	defer workflowStore.Close()
 
-	deps := mcp.NewWorkflowDepsFromEnv(workflowStore, log)
+	sourceVaultDir := os.Getenv("RELAY_SOURCE_VAULT_DIR")
+	if sourceVaultDir == "" {
+		sourceVaultDir = "data/workflow/source-vaults"
+	}
+	sourceVaults, err := sourcevault.Open(context.Background(), sourceVaultDir, workflowStore)
+	if err != nil {
+		log.Error("relay MCP server: cannot open source vaults", "path", sourceVaultDir, "error", err)
+		os.Exit(1)
+	}
+	deps := mcp.NewWorkflowDepsFromEnv(workflowStore, log, sourceVaults)
 	log.Info(
 		"relay MCP server starting",
 		"transport", "stdio",

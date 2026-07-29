@@ -25,6 +25,10 @@ import (
 
 const workflowPackageEvidenceOperations = `{"schema_version":"1.0","feature_slug":"checkout","repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`
 
+func packageEvidenceExecutionSpec(featureSlug, branch, baseCommit string) []byte {
+	return []byte(fmt.Sprintf(`{"schema_version":"2.0","feature_slug":%q,"repo_target":"relay","branch":%q,"base_commit":%q,"goal":"Package evidence test.","context":"Package evidence test.","scope":{"in_scope":["Package evidence."],"out_of_scope":[]},"steps":[],"validation":{"commands":[]},"completion_criteria":["Done."]}`, featureSlug, branch, baseCommit))
+}
+
 type packageEvidenceFixture struct {
 	store             *workflowstore.Store
 	run               workflowstore.Run
@@ -357,7 +361,7 @@ func TestWorkflowPackageExecutionEvidenceRejectsNonPackageRun(t *testing.T) {
 		RepoTarget:       "relay",
 		Branch:           "main",
 		BaseCommit:       strings.Repeat("a", 40),
-		CanonicalJSON:    auditFixtureExecutionSpec("audit-test", "main", strings.Repeat("a", 40)),
+		CanonicalJSON:    packageEvidenceExecutionSpec("audit-test", "main", strings.Repeat("a", 40)),
 		RenderedMarkdown: []byte("# Executor Brief\n\nExact task.\n"),
 	})
 	if err != nil {
@@ -1253,24 +1257,6 @@ func TestWorkflowPackageExecutionEvidenceBriefBindingMismatchFails(t *testing.T)
 		}
 	})
 
-	t.Run("legacy mode full fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
-		if err != nil {
-			t.Fatal(err)
-		}
-		installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
-			var m map[string]any
-			if err := json.Unmarshal(data, &m); err != nil {
-				return nil, err
-			}
-			m["effective_brief_mode"] = "full"
-			return json.Marshal(m)
-		})
-		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "execution evidence payload effective brief identity disagrees with brief") {
-			t.Fatalf("error = %v, want package-mode conflict", err)
-		}
-	})
 }
 
 func TestWorkflowPackageExecutionEvidenceResultJSONBindingMismatchFails(t *testing.T) {

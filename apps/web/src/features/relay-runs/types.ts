@@ -133,51 +133,10 @@ export interface WorkflowAuditDecision {
 }
 
 export interface WorkflowAuditMaterialFinding {
-  source: "executor_implementation" | "execution_spec" | "implementation" | "governing_package" | "both";
+  source: "implementation" | "governing_package" | "both";
   summary: string;
   evidence: string;
   requiredRemediation: string;
-}
-
-export interface WorkflowAuditTicketPackage {
-  package: {
-    packageId: string;
-    packageSha256: string;
-    workspaceId: string;
-    featureSlug: string;
-    selectionId: string;
-    selectionState: string;
-    authorityRevisionId: string;
-    authoritySha256: string;
-    sourceClosureId: string;
-    sourceCommit: string;
-  };
-  tickets: Array<{
-    sequence: number;
-    ticketId: string;
-    revisionRowId: number;
-    revisionNumber: number;
-    memberSha256: string;
-    approvalId: string;
-    approvalBasisSha256: string;
-    authorityRevisionRowId: number;
-    sourceClosureRowId: number;
-    designBrief: { artifactReference: string; sha256: string };
-  }>;
-  mutationLeases: Array<{
-    leaseId: string;
-    state: string;
-    certainty: string;
-    reconciliationState: string;
-    releasedAt: string;
-  }>;
-  bundleIntegration: {
-    runId: string;
-    executionPackageId: string;
-    selectionId: string;
-    selectionState: string;
-    approvedRunStatus: string;
-  };
 }
 
 export interface WorkflowAuditReadback {
@@ -185,7 +144,6 @@ export interface WorkflowAuditReadback {
   runStatus: WorkflowRunStatus;
   packet: WorkflowAuditPacket;
   document: unknown;
-  ticketPackage?: WorkflowAuditTicketPackage;
 }
 
 export interface RecordWorkflowAuditDecisionRequest {

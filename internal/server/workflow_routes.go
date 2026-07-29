@@ -152,7 +152,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 		return nil, nil, fmt.Errorf("construct MCP route descriptors: %w", err)
 	}
 
-	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
+	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log, sourceVaultReader))
 	router.Handle("/mcp", newCutoverAggregateHandler(cutoverService, mcp.NewHTTPHandler(mcpServer, log)))
 	for _, current := range mcpHandlers {
 		router.Handle(current.Path, current.Handler)
