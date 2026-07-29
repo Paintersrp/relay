@@ -40,6 +40,10 @@ type WorkflowStartResult struct {
 	Package   *PackageWorkflowDispatchResult
 }
 
+// ErrLegacyExecutionRetired rejects new execution admission for historical
+// non-package Runs while preserving their read and reconciliation paths.
+var ErrLegacyExecutionRetired = errors.New("legacy non-package execution admission is retired")
+
 type WorkflowCancelResult struct {
 	Run     workflowstore.Run
 	Attempt workflowstore.ExecutionAttempt
@@ -238,6 +242,7 @@ func (s *Execution) Start(ctx context.Context, input WorkflowStartInput) (Workfl
 		dispatched, err := packageWorkflowStartDispatch(ctx, s, prepared)
 		return workflowStartResultFromPackage(dispatched), err
 	}
+	return WorkflowStartResult{Run: run}, ErrLegacyExecutionRetired
 	switch run.Status {
 	case workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusCancelled:
 	default:

@@ -206,8 +206,26 @@ func main() {
 		metadataByName[item.Name] = item
 	}
 	order := orderedTools(routes.Routes)
-	if len(order) != 40 || len(metadataByName) != 40 || len(bindings.Bindings) != 40 {
+	if len(order) == 0 || len(metadataByName) != len(order) || len(bindings.Bindings) != len(order) {
 		fatalf("published tool cardinality differs")
+	}
+	for _, name := range order {
+		if _, ok := metadataByName[name]; !ok {
+			fatalf("metadata %q missing", name)
+		}
+		if _, ok := bindings.Bindings[name]; !ok {
+			fatalf("binding %q missing", name)
+		}
+	}
+	for name := range metadataByName {
+		if !contains(order, name) {
+			fatalf("metadata %q is extra", name)
+		}
+	}
+	for name := range bindings.Bindings {
+		if !contains(order, name) {
+			fatalf("binding %q is extra", name)
+		}
 	}
 
 	publishedContract := generatedDocument{
@@ -218,7 +236,7 @@ func main() {
 		RouteOrder:                        append([]string(nil), routes.RouteOrder...),
 		Routes:                            cloneRoutes(routes.Routes),
 		ToolOrder:                         append([]string(nil), order...),
-		Tools:                             make(map[string]generatedTool, 40),
+		Tools:                             make(map[string]generatedTool, len(order)),
 		RuntimeBindingSHA256:              digest(bindingsRaw),
 		SourceToolContractVersion:         routes.SourceToolContractVersion,
 		OperationFamilyToolContractSHA256: routes.OperationFamilyToolContractSHA256,
@@ -512,6 +530,15 @@ func orderedTools(routes []routeDefinition) []string {
 		}
 	}
 	return orderedNames
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 func cloneRoutes(values []routeDefinition) []routeDefinition {
 	routeCopies := make([]routeDefinition, len(values))

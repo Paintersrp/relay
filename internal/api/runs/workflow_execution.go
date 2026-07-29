@@ -241,6 +241,8 @@ func workflowAttemptDTO(runID string, view executor.WorkflowAttemptView) workflo
 
 func writeWorkflowExecutionError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, executor.ErrLegacyExecutionRetired):
+		shared.Error(w, http.StatusConflict, "LEGACY_EXECUTION_RETIRED", err.Error())
 	case errors.Is(err, sql.ErrNoRows):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Run or execution attempt was not found")
 	case strings.Contains(err.Error(), "cannot start"),
