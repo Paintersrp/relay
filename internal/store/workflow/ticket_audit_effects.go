@@ -41,6 +41,18 @@ func (s *Store) GetAuditRemediationSeedBySeedID(ctx context.Context, seedID stri
 	return workflowgenerated.New(s.db).GetAuditRemediationSeedBySeedID(ctx, seedID)
 }
 
+func (s *Store) GetAuditRemediationSeedByRevisionDecisionRowID(ctx context.Context, decisionRowID int64) (AuditRemediationSeed, error) {
+	return getAuditRemediationSeedByRevisionDecisionRowID(ctx, s.db, decisionRowID)
+}
+
+func (s *Store) ListAuditTicketRevisionDecisions(ctx context.Context, auditDecisionRowID int64) ([]AuditTicketRevisionDecision, error) {
+	return workflowgenerated.New(s.db).ListAuditTicketRevisionDecisions(ctx, auditDecisionRowID)
+}
+
+func (s *Store) GetAuditPacketByRowID(ctx context.Context, packetRowID int64) (AuditPacket, error) {
+	return getAuditPacketByRowID(ctx, s.db, packetRowID)
+}
+
 func (s *Store) GetAuditRemediationSeedReopening(ctx context.Context, seedRowID int64) (AuditRemediationSeedReopening, error) {
 	return workflowgenerated.New(s.db).GetAuditRemediationSeedReopening(ctx, seedRowID)
 }
@@ -106,6 +118,18 @@ func (tx *Tx) GetAuditRemediationSeedBySeedID(ctx context.Context, seedID string
 	return workflowgenerated.New(tx.tx).GetAuditRemediationSeedBySeedID(ctx, seedID)
 }
 
+func (tx *Tx) GetAuditRemediationSeedByRevisionDecisionRowID(ctx context.Context, decisionRowID int64) (AuditRemediationSeed, error) {
+	return getAuditRemediationSeedByRevisionDecisionRowID(ctx, tx.tx, decisionRowID)
+}
+
+func (tx *Tx) ListAuditTicketRevisionDecisions(ctx context.Context, auditDecisionRowID int64) ([]AuditTicketRevisionDecision, error) {
+	return workflowgenerated.New(tx.tx).ListAuditTicketRevisionDecisions(ctx, auditDecisionRowID)
+}
+
+func (tx *Tx) GetAuditPacketByRowID(ctx context.Context, packetRowID int64) (AuditPacket, error) {
+	return getAuditPacketByRowID(ctx, tx.tx, packetRowID)
+}
+
 func (tx *Tx) GetAuditRemediationSeedReopening(ctx context.Context, seedRowID int64) (AuditRemediationSeedReopening, error) {
 	return workflowgenerated.New(tx.tx).GetAuditRemediationSeedReopening(ctx, seedRowID)
 }
@@ -151,6 +175,39 @@ WHERE id = ?`, obligationRowID).Scan(
 		&value.ID, &value.AuditPacketRowID, &value.ExecutionPackageRowID, &value.ExecutionPackageMemberRowID,
 		&value.DeliveryTicketRowID, &value.DeliveryTicketRevisionRowID, &value.AuthorityRevisionRowID,
 		&value.SourceClosureRowID, &value.PackageApprovalRowID, &value.ApprovedPackageSha256, &value.CreatedAt,
+	)
+	return value, err
+}
+
+func getAuditRemediationSeedByRevisionDecisionRowID(ctx context.Context, queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, decisionRowID int64) (AuditRemediationSeed, error) {
+	var value AuditRemediationSeed
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, remediation_seed_id, audit_ticket_revision_decision_row_id, audit_packet_row_id,
+       execution_package_row_id, audited_commit, decision_rationale, created_at
+FROM audit_remediation_seeds
+WHERE audit_ticket_revision_decision_row_id = ?`, decisionRowID).Scan(
+		&value.ID, &value.RemediationSeedID, &value.AuditTicketRevisionDecisionRowID,
+		&value.AuditPacketRowID, &value.ExecutionPackageRowID, &value.AuditedCommit,
+		&value.DecisionRationale, &value.CreatedAt,
+	)
+	return value, err
+}
+
+func getAuditPacketByRowID(ctx context.Context, queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, packetRowID int64) (AuditPacket, error) {
+	var value AuditPacket
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, audit_packet_id, run_row_id, implementation_actor_kind, execution_attempt_row_id,
+       artifact_row_id, base_commit, audited_commit, packet_sha256, status, stale_reason,
+       created_at, superseded_at
+FROM audit_packets
+WHERE id = ?`, packetRowID).Scan(
+		&value.ID, &value.AuditPacketID, &value.RunRowID, &value.ImplementationActorKind,
+		&value.ExecutionAttemptRowID, &value.ArtifactRowID, &value.BaseCommit, &value.AuditedCommit,
+		&value.PacketSHA256, &value.Status, &value.StaleReason, &value.CreatedAt, &value.SupersededAt,
 	)
 	return value, err
 }

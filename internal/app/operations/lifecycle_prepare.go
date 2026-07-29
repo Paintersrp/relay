@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	featureapp "relay/internal/app/features"
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/mcp/semanticidentity"
 	"relay/internal/operations/packet"
@@ -55,6 +56,61 @@ type repositoryPreparation struct {
 type workflowPreparation struct {
 	references []packet.WorkflowReference
 	byKey      map[string]packet.WorkflowReference
+}
+
+type remediationSeedInput struct {
+	RemediationSeedID             string                      `json:"remediation_seed_id"`
+	AuditDecisionID               string                      `json:"audit_decision_id"`
+	AuditPacketID                 string                      `json:"audit_packet_id"`
+	ApprovedExecutionPackage      remediationPackageIdentity  `json:"approved_execution_package"`
+	AuditedDeliveryTicket         remediationTicketIdentity   `json:"audited_delivery_ticket"`
+	AuditedDeliveryTicketRevision remediationRevisionIdentity `json:"audited_delivery_ticket_revision"`
+	AuditedCommit                 string                      `json:"audited_commit"`
+	DecisionRationale             string                      `json:"decision_rationale"`
+	MaterialFindings              []remediationFindingInput   `json:"material_findings"`
+}
+
+type remediationPackageIdentity struct {
+	PackageID     string `json:"package_id"`
+	PackageSHA256 string `json:"package_sha256"`
+}
+
+type remediationTicketIdentity struct {
+	TicketID string `json:"ticket_id"`
+}
+
+type remediationRevisionIdentity struct {
+	RevisionID     int64 `json:"revision_id"`
+	RevisionNumber int64 `json:"revision_number"`
+}
+
+type remediationFindingInput struct {
+	Sequence               int64  `json:"sequence"`
+	UpstreamClassification string `json:"upstream_classification"`
+	Summary                string `json:"summary"`
+	Evidence               string `json:"evidence"`
+	RequiredRemediation    string `json:"required_remediation"`
+}
+
+type retainedAuthorityDocument struct {
+	AuthorityRevisionID string                   `json:"authority_revision_id"`
+	Layers              []retainedAuthorityLayer `json:"layers"`
+}
+
+type retainedAuthorityLayer struct {
+	Sequence       int64  `json:"sequence"`
+	LayerKind      string `json:"layer_kind"`
+	ArtifactSHA256 string `json:"artifact_sha256"`
+	BytesBase64    string `json:"bytes_base64"`
+}
+
+type currentApprovedAuthorityInput struct {
+	FeatureWorkspaceID         string `json:"feature_workspace_id"`
+	CurrentAuthorityRevisionID string `json:"current_authority_revision_id"`
+	SourceClosureID            string `json:"source_closure_id"`
+	AuthorityBytes             string `json:"authority_bytes"`
+	AuthorityByteDigest        string `json:"authority_byte_digest"`
+	SourceClosureCommit        string `json:"source_closure_commit"`
 }
 
 type retainedBuilder struct {
@@ -459,6 +515,9 @@ func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operati
 	if len(operation.DerivedInputs) == 0 {
 		return nil, nil
 	}
+	if operation.OperationID == "planner.delivery_ticket_remediation" {
+		return s.materializeRemediationDerivedInputs(ctx, workflow, builder)
+	}
 	if operation.OperationID != "auditor.audit" {
 		return nil, &Error{Code: CodeInvalidPacketDocument}
 	}
@@ -502,6 +561,218 @@ func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operati
 		inputs = append(inputs, packet.InputBinding{InputName: slot.InputName, InputRole: slot.InputRole, SourceKind: packet.InputSourceInlineText, DisplayName: slot.InputName + ".json", MediaType: "application/json", SHA256: digestBytes(section), SizeBytes: int64(len(section)), AttestationKind: slot.AttestationKind, Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: artifactID}})
 	}
 	return inputs, nil
+}
+
+func (s *LifecycleService) materializeRemediationDerivedInputs(ctx context.Context, workflow workflowPreparation, builder *retainedBuilder) ([]packet.InputBinding, error) {
+	var auditReference packet.WorkflowReference
+	for _, reference := range workflow.references {
+		if reference.Kind == "audit_decision" {
+			if auditReference.AuditDecisionID != "" {
+				return nil, &Error{Code: CodeInvalidPacketDocument}
+			}
+			auditReference = reference
+		}
+	}
+	if auditReference.AuditDecisionID == "" || auditReference.RunID == "" || auditReference.Decision != workflowstore.AuditDecisionNeedsRevision {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	decision, err := s.store.GetAuditDecisionByDecisionID(ctx, auditReference.AuditDecisionID)
+	if err != nil || decision.RunRowID == 0 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	run, err := s.store.GetRunByRunID(ctx, auditReference.RunID)
+	if err != nil || run.ID != decision.RunRowID || decision.Decision != workflowstore.AuditDecisionNeedsRevision {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	revisionDecisions, err := s.store.ListAuditTicketRevisionDecisions(ctx, decision.ID)
+	if err != nil || len(revisionDecisions) != 1 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	revisionDecision := revisionDecisions[0]
+	seed, err := s.store.GetAuditRemediationSeedByRevisionDecisionRowID(ctx, revisionDecision.ID)
+	if err != nil || seed.AuditTicketRevisionDecisionRowID != revisionDecision.ID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if _, err := s.store.GetAuditRemediationSeedReopening(ctx, seed.ID); err == nil || !errors.Is(err, sql.ErrNoRows) {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	obligation, err := s.store.GetAuditPacketTicketObligationByRowID(ctx, revisionDecision.AuditPacketTicketObligationRowID)
+	if err != nil || seed.AuditPacketRowID != obligation.AuditPacketRowID || seed.ExecutionPackageRowID != obligation.ExecutionPackageRowID ||
+		obligation.PackageApprovalRowID.Valid != revisionDecision.PackageApprovalRowID.Valid ||
+		(obligation.PackageApprovalRowID.Valid && obligation.PackageApprovalRowID.Int64 != revisionDecision.PackageApprovalRowID.Int64) ||
+		!obligation.ApprovedPackageSha256.Valid || !revisionDecision.ApprovedPackageSha256.Valid ||
+		obligation.ApprovedPackageSha256.String != revisionDecision.ApprovedPackageSha256.String {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	auditPacket, err := s.store.GetAuditPacketByRowID(ctx, seed.AuditPacketRowID)
+	if err != nil || auditPacket.RunRowID != run.ID || auditPacket.AuditPacketID == "" || auditPacket.PacketSHA256 != decision.PacketSHA256 ||
+		auditPacket.ArtifactRowID != decision.AuditPacketArtifactRowID || auditPacket.AuditedCommit != decision.AuditedCommit ||
+		seed.AuditedCommit != decision.AuditedCommit || auditPacket.Status != workflowstore.AuditPacketStatusCurrent {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	pkg, err := s.store.GetExecutionPackageByRowID(ctx, obligation.ExecutionPackageRowID)
+	if err != nil || pkg.ID != seed.ExecutionPackageRowID || !obligation.PackageApprovalRowID.Valid || !obligation.ApprovedPackageSha256.Valid ||
+		obligation.ApprovedPackageSha256.String != pkg.PackageSha256 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	members, err := s.store.ListExecutionPackageMembers(ctx, pkg.ID)
+	if err != nil || !containsExecutionPackageMember(members, obligation.ExecutionPackageMemberRowID, obligation.DeliveryTicketRevisionRowID) {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	ticket, err := s.store.GetDeliveryTicketByRowID(ctx, obligation.DeliveryTicketRowID)
+	if err != nil || ticket.WorkspaceRowID != pkg.WorkspaceRowID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != obligation.DeliveryTicketRevisionRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	revision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, obligation.DeliveryTicketRevisionRowID)
+	if err != nil || revision.DeliveryTicketRowID != ticket.ID || revision.CancellationReason.Valid || revision.SourceClosureRowID != pkg.SourceClosureRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if pkg.AuthorityRevisionRowID != obligation.AuthorityRevisionRowID || pkg.SourceClosureRowID != obligation.SourceClosureRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	findings, err := s.store.ListAuditRemediationSeedFindings(ctx, seed.ID)
+	if err != nil || len(findings) == 0 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	seedInput := remediationSeedInput{
+		RemediationSeedID:             seed.RemediationSeedID,
+		AuditDecisionID:               decision.AuditDecisionID,
+		AuditPacketID:                 auditPacket.AuditPacketID,
+		ApprovedExecutionPackage:      remediationPackageIdentity{PackageID: pkg.PackageID, PackageSHA256: pkg.PackageSha256},
+		AuditedDeliveryTicket:         remediationTicketIdentity{TicketID: ticket.TicketID},
+		AuditedDeliveryTicketRevision: remediationRevisionIdentity{RevisionID: revision.ID, RevisionNumber: revision.RevisionNumber},
+		AuditedCommit:                 seed.AuditedCommit,
+		DecisionRationale:             seed.DecisionRationale,
+		MaterialFindings:              make([]remediationFindingInput, len(findings)),
+	}
+	for index, finding := range findings {
+		if finding.UpstreamClassification != "implementation" && finding.UpstreamClassification != "governing_package" && finding.UpstreamClassification != "both" {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		seedInput.MaterialFindings[index] = remediationFindingInput{
+			Sequence: finding.Sequence, UpstreamClassification: finding.UpstreamClassification,
+			Summary: finding.Summary, Evidence: finding.Evidence, RequiredRemediation: finding.RequiredRemediation,
+		}
+	}
+	seedBytes, err := canonicalJSON(seedInput)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	if auditedAuthority, err := s.store.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, obligation.AuthorityRevisionRowID); err != nil || auditedAuthority.WorkspaceRowID != pkg.WorkspaceRowID || !auditedAuthority.SourceClosureRowID.Valid || auditedAuthority.SourceClosureRowID.Int64 != pkg.SourceClosureRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	_, authorityInput, err := s.currentApprovedAuthority(ctx, ticket.WorkspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	authorityInputBytes, err := canonicalJSON(authorityInput)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	seedArtifactID := builder.add(workflowstore.OperationPacketRetainedArtifactWorkflowSnapshot, "application/json", seedBytes, workflowstore.OperationPacketDependencyWorkflowSnapshot, "remediation_seed")
+	authorityArtifactID := builder.add(workflowstore.OperationPacketRetainedArtifactWorkflowSnapshot, "application/json", authorityInputBytes, workflowstore.OperationPacketDependencyWorkflowSnapshot, "current_approved_authority")
+	return []packet.InputBinding{
+		{InputName: "remediation_seed", InputRole: "governing", SourceKind: packet.InputSourceInlineText, DisplayName: "remediation_seed.json", MediaType: "application/json", SHA256: digestBytes(seedBytes), SizeBytes: int64(len(seedBytes)), AttestationKind: "derived_authority", Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: seedArtifactID}},
+		{InputName: "current_approved_authority", InputRole: "governing", SourceKind: packet.InputSourceInlineText, DisplayName: "current_approved_authority.json", MediaType: "application/json", SHA256: digestBytes(authorityInputBytes), SizeBytes: int64(len(authorityInputBytes)), AttestationKind: "derived_authority", Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: authorityArtifactID}},
+	}, nil
+}
+
+func containsExecutionPackageMember(values []workflowstore.ExecutionPackageMember, memberID, revisionID int64) bool {
+	for _, value := range values {
+		if value.ID == memberID && value.RevisionRowID == revisionID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *LifecycleService) currentApprovedAuthority(ctx context.Context, workspaceRowID int64) ([]byte, currentApprovedAuthorityInput, error) {
+	workspace, err := s.store.GetFeatureWorkspaceByRowID(ctx, workspaceRowID)
+	if err != nil || !workspace.CurrentAuthorityRevisionRowID.Valid {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	authorityService, err := featureapp.NewService(s.store)
+	if err != nil {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	history, err := authorityService.ReadAuthority(ctx, workspace.WorkspaceID)
+	if err != nil {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var current *featureapp.AuthorityRevisionDetail
+	for index := range history {
+		if history[index].Revision.ID == workspace.CurrentAuthorityRevisionRowID.Int64 {
+			if current != nil {
+				return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+			}
+			current = &history[index]
+		}
+	}
+	if current == nil || current.Revision.WorkspaceRowID != workspace.ID || current.Revision.ID == 0 {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if !current.Revision.SourceClosureRowID.Valid {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	closure, err := s.store.GetSourceVaultClosureByRowID(ctx, current.Revision.SourceClosureRowID.Int64)
+	if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.ClosureID == "" || closure.CommitOID == "" {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if len(current.Layers) == 0 {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	authorityDocument := retainedAuthorityDocument{AuthorityRevisionID: current.Revision.AuthorityRevisionID, Layers: make([]retainedAuthorityLayer, len(current.Layers))}
+	for index, layer := range current.Layers {
+		data, err := s.readFeatureAuthorityLayer(ctx, layer)
+		if err != nil || digestBytes(data) != layer.ArtifactSha256 {
+			return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		authorityDocument.Layers[index] = retainedAuthorityLayer{Sequence: layer.Sequence, LayerKind: layer.LayerKind, ArtifactSHA256: layer.ArtifactSha256, BytesBase64: base64.StdEncoding.EncodeToString(data)}
+	}
+	authorityBytes, err := canonicalJSON(authorityDocument)
+	if err != nil {
+		return nil, currentApprovedAuthorityInput{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	return authorityBytes, currentApprovedAuthorityInput{
+		FeatureWorkspaceID: workspace.WorkspaceID, CurrentAuthorityRevisionID: current.Revision.AuthorityRevisionID,
+		SourceClosureID: closure.ClosureID, AuthorityBytes: base64.StdEncoding.EncodeToString(authorityBytes),
+		AuthorityByteDigest: digestBytes(authorityBytes), SourceClosureCommit: closure.CommitOID,
+	}, nil
+}
+
+func (s *LifecycleService) readFeatureAuthorityLayer(ctx context.Context, layer workflowstore.FeatureWorkspaceAuthorityLayer) ([]byte, error) {
+	if layer.ArtifactRowID.Valid == layer.RetainedArtifactRowID.Valid || layer.ArtifactSha256 == "" {
+		return nil, errors.New("authority layer artifact identity is invalid")
+	}
+	if layer.ArtifactRowID.Valid {
+		artifact, err := s.store.GetArtifactByRowID(ctx, layer.ArtifactRowID.Int64)
+		if err != nil || artifact.SHA256 != layer.ArtifactSha256 {
+			return nil, errors.New("authority layer artifact is invalid")
+		}
+		return readWorkflowArtifact(s.store, artifact)
+	}
+	retained, err := s.store.GetOperationPacketRetainedArtifactByRowID(ctx, layer.RetainedArtifactRowID.Int64)
+	if err != nil || retained.SHA256 != layer.ArtifactSha256 {
+		return nil, errors.New("authority layer retained artifact is invalid")
+	}
+	root := s.store.ArtifactStore().Root()
+	path := filepath.Clean(filepath.Join(root, filepath.FromSlash(retained.RelativePath)))
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return nil, errors.New("authority layer retained artifact path is invalid")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || int64(len(data)) != retained.SizeBytes || digestBytes(data) != retained.SHA256 {
+		return nil, errors.New("authority layer retained artifact is unavailable")
+	}
+	return data, nil
 }
 
 func (s *LifecycleService) prepareWorkflowReferences(ctx context.Context, requests []semanticidentity.WorkflowReferenceRequest) (workflowPreparation, error) {

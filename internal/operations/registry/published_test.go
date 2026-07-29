@@ -14,7 +14,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(operations) != 17 || len(routes) != 7 {
+	if len(operations) != 18 || len(routes) != 7 {
 		t.Fatalf("operations=%d routes=%d", len(operations), len(routes))
 	}
 	seen := map[string]struct{}{}

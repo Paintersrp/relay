@@ -10,6 +10,7 @@
     "planner.transition_plan",
     "planner.ticket_design_brief",
     "planner.selected_execution_spec",
+    "planner.delivery_ticket_remediation",
     "planner.ticket_frontier",
     "auditor.requirements_review",
     "auditor.shared_design_review",
@@ -630,6 +631,41 @@
       ],
       "source_policy": "current_clean_project_required_source",
       "historical_authority": "selected_package_and_completed_dependencies",
+      "allowed_non_source_actions": [],
+      "packet_semantic_projection": "relay.semantic.operation-packet-request.v1"
+    },
+    "planner.delivery_ticket_remediation": {
+      "operation_id": "planner.delivery_ticket_remediation",
+      "role": "planner",
+      "surface_contract": "planner-authoring.v1",
+      "manifest_domain": "delivery_ticket_remediation",
+      "output_kind": "delivery_ticket_json",
+      "output_persistence": "chat_unrecorded",
+      "required_inputs": [],
+      "optional_inputs": [],
+      "conditional_refresh_inputs": [],
+      "derived_inputs": [
+        {
+          "input_name": "remediation_seed",
+          "input_role": "governing",
+          "attestation_kind": "derived_authority",
+          "allowed_source_kinds": [],
+          "workflow_record_policy": "derived"
+        },
+        {
+          "input_name": "current_approved_authority",
+          "input_role": "governing",
+          "attestation_kind": "derived_authority",
+          "allowed_source_kinds": [],
+          "workflow_record_policy": "derived"
+        }
+      ],
+      "workflow_reference_kinds": [
+        "audit_decision"
+      ],
+      "comparison_anchor_purposes": [],
+      "source_policy": "current_clean_project_required_source",
+      "historical_authority": "audited_ticket_and_current_authority",
       "allowed_non_source_actions": [],
       "packet_semantic_projection": "relay.semantic.operation-packet-request.v1"
     },

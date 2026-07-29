@@ -194,8 +194,8 @@ func validatePublishedContractsDocument() error {
 	if err := decodeStrict(publishedPublicContractJSON, &publishedPublic); err != nil {
 		return fmt.Errorf("MCP_PUBLIC_CONTRACT_INVALID: %w", err)
 	}
-	if len(publishedOps.OperationOrder) != 17 || len(publishedOps.Operations) != 17 {
-		return fmt.Errorf("published operation cardinality is not 17")
+	if len(publishedOps.OperationOrder) != 18 || len(publishedOps.Operations) != 18 {
+		return fmt.Errorf("published operation cardinality is not 18")
 	}
 	if len(publishedPublic.RouteOrder) != 7 || len(publishedPublic.Routes) != 7 {
 		return fmt.Errorf("MCP route cardinality is not 7")
