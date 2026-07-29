@@ -521,7 +521,7 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 		}
 		return GetWorkflowAuditArtifactResult{}, err
 	}
-	if !workflowAuditArtifactOwnerAllowed(current.Packet, packet, input.ArtifactReference, artifact) {
+	if !workflowAuditArtifactOwnerAllowed(current.Packet, artifact) {
 		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactOwnership
 	}
 	if artifact.SHA256 != declared.SHA256 {
@@ -540,18 +540,8 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 	}, nil
 }
 
-func workflowAuditArtifactOwnerAllowed(packet workflowstore.AuditPacket, document WorkflowPackageAuditPacket, reference string, artifact workflowstore.Artifact) bool {
-	wantOwner := workflowstore.ArtifactOwnerRun
-	wantRunRowID := packet.RunRowID
-	var wantAttemptRowID sql.NullInt64
-	if reference == document.Authority.EffectiveExecutorBrief.ArtifactReference && document.Execution.AdaptiveAttemptDispatched && packet.ExecutionAttemptRowID.Valid {
-		wantOwner = workflowstore.ArtifactOwnerExecutionAttempt
-		wantAttemptRowID = packet.ExecutionAttemptRowID
-	}
-	if wantOwner == workflowstore.ArtifactOwnerRun {
-		return artifact.OwnerType == wantOwner && artifact.RunRowID.Valid && artifact.RunRowID.Int64 == wantRunRowID
-	}
-	return artifact.OwnerType == wantOwner && artifact.ExecutionAttemptRowID.Valid && artifact.ExecutionAttemptRowID.Int64 == wantAttemptRowID.Int64
+func workflowAuditArtifactOwnerAllowed(packet workflowstore.AuditPacket, artifact workflowstore.Artifact) bool {
+	return artifact.OwnerType == workflowstore.ArtifactOwnerRun && artifact.RunRowID.Valid && artifact.RunRowID.Int64 == packet.RunRowID
 }
 
 func resolveWorkflowPackageArtifact(packet WorkflowPackageAuditPacket, reference string) (WorkflowPackageAuditArtifactReference, error) {

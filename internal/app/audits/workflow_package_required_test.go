@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -80,6 +81,10 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 	created.Run, err = store.GetRunByRunID(ctx, created.Run.RunID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	initialState := nonPackageAuditState(t, store, created.Run.RunID)
+	if initialState.run.Status != workflowstore.RunStatusValidating || initialState.plan.Status != workflowstore.PlanStatusActive || initialState.pass.Status != workflowstore.PassStatusInProgress {
+		t.Fatalf("initial lifecycle state = run=%q plan=%q pass=%q, want validating/active/in_progress", initialState.run.Status, initialState.plan.Status, initialState.pass.Status)
 	}
 	runBefore, err := store.GetRunByRunID(ctx, created.Run.RunID)
 	if err != nil {
@@ -191,7 +196,7 @@ func nonPackageAuditState(t *testing.T, store *workflowstore.Store, runID string
 	}
 	state.auditPacketDirectories = nonPackageAuditDirectories(t, store, "audit-packets")
 	state.auditDecisionDirectories = nonPackageAuditDirectories(t, store, "audit-decisions")
-	state.stagingDirectories = nonPackageAuditDirectories(t, store, "staging")
+	state.stagingDirectories = nonPackageAuditDirectories(t, store, ".staging")
 	return state
 }
 
@@ -210,5 +215,6 @@ func nonPackageAuditDirectories(t *testing.T, store *workflowstore.Store, relati
 			result = append(result, entry.Name())
 		}
 	}
+	sort.Strings(result)
 	return result
 }
