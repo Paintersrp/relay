@@ -485,10 +485,19 @@ func linkRemediationSeed(
 	}
 	revisionDecision, err := tx.GetAuditTicketRevisionDecisionByRowID(ctx, seed.AuditTicketRevisionDecisionRowID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+		}
 		return workflowstore.AuditRemediationSeedReopening{}, err
 	}
 	obligation, err := tx.GetAuditPacketTicketObligationByRowID(ctx, revisionDecision.AuditPacketTicketObligationRowID)
-	if err != nil || ticket.WorkspaceRowID == 0 {
+	if errors.Is(err, sql.ErrNoRows) || ticket.WorkspaceRowID == 0 {
+		return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
+	}
+	if err != nil {
+		return workflowstore.AuditRemediationSeedReopening{}, err
+	}
+	if seed.AuditPacketRowID != obligation.AuditPacketRowID || seed.ExecutionPackageRowID != obligation.ExecutionPackageRowID {
 		return workflowstore.AuditRemediationSeedReopening{}, ErrRemediationSeed
 	}
 	auditedTicket, err := tx.GetDeliveryTicketByRowID(ctx, obligation.DeliveryTicketRowID)
