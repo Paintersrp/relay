@@ -114,6 +114,104 @@ type currentApprovedAuthorityInput struct {
 	SourceClosureCommit        string `json:"source_closure_commit"`
 }
 
+type selectedRemediationTicketInput struct {
+	RemediationSeedID         string                                `json:"remediation_seed_id"`
+	AuditDecisionID           string                                `json:"audit_decision_id"`
+	ReopeningKind             string                                `json:"reopening_kind"`
+	AuditedTicketID           string                                `json:"audited_ticket_id"`
+	AuditedRevisionRowID      int64                                 `json:"audited_revision_row_id"`
+	AuditedRevisionNumber     int64                                 `json:"audited_revision_number"`
+	RemediationTicketID       string                                `json:"remediation_ticket_id"`
+	RemediationRevisionRowID  int64                                 `json:"remediation_revision_row_id"`
+	RemediationRevisionNumber int64                                 `json:"remediation_revision_number"`
+	ReplacementRevisionRowID  *int64                                `json:"replacement_revision_row_id,omitempty"`
+	WorkspaceID               string                                `json:"workspace_id"`
+	ExternalPriority          int64                                 `json:"external_priority"`
+	RepoTarget                string                                `json:"repo_target"`
+	Branch                    string                                `json:"branch"`
+	BaseCommit                string                                `json:"base_commit"`
+	SourceClosureRowID        int64                                 `json:"source_closure_row_id"`
+	SourceClosureID           string                                `json:"source_closure_id"`
+	SourceClosureCommit       string                                `json:"source_closure_commit"`
+	SourcePath                string                                `json:"source_path"`
+	Goal                      string                                `json:"goal"`
+	Context                   string                                `json:"context"`
+	TransitionApplicability   string                                `json:"transition_applicability"`
+	CancellationReason        string                                `json:"cancellation_reason"`
+	Members                   []selectedRemediationTicketMember     `json:"members"`
+	Dependencies              []selectedRemediationTicketDependency `json:"dependencies"`
+	Canonical                 selectedRemediationTicketArtifact     `json:"canonical_artifact"`
+	Rendered                  selectedRemediationTicketArtifact     `json:"rendered_artifact"`
+	Approval                  selectedRemediationTicketApproval     `json:"approval"`
+	Selection                 selectedRemediationTicketSelection    `json:"selection"`
+}
+
+type selectedRemediationTicketMember struct {
+	Sequence int64  `json:"sequence"`
+	Kind     string `json:"kind"`
+	Path     string `json:"path"`
+	Text     string `json:"text"`
+}
+
+type selectedRemediationTicketDependency struct {
+	Sequence                int64  `json:"sequence"`
+	DependencyRevisionRowID int64  `json:"dependency_revision_row_id"`
+	DependencyOutcome       string `json:"dependency_outcome"`
+}
+
+type selectedRemediationTicketArtifact struct {
+	RelativePath string `json:"relative_path"`
+	SHA256       string `json:"sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
+	BytesBase64  string `json:"bytes_base64"`
+}
+
+type selectedRemediationTicketApproval struct {
+	ApprovalRowID          int64  `json:"approval_row_id"`
+	ApprovalID             string `json:"approval_id"`
+	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
+	SourceClosureRowID     int64  `json:"source_closure_row_id"`
+}
+
+type selectedRemediationTicketSelection struct {
+	SelectionRowID      int64  `json:"selection_row_id"`
+	SelectionID         string `json:"selection_id"`
+	State               string `json:"state"`
+	SourceClosureRowID  int64  `json:"source_closure_row_id"`
+	MemberRowID         int64  `json:"member_row_id"`
+	MemberSequence      int64  `json:"member_sequence"`
+	MemberRevisionRowID int64  `json:"member_revision_row_id"`
+	MemberApprovalRowID int64  `json:"member_approval_row_id"`
+}
+
+type completedDependencyOutcomesInput struct {
+	RemediationTicketID       string                       `json:"remediation_ticket_id"`
+	RemediationRevisionRowID  int64                        `json:"remediation_revision_row_id"`
+	RemediationRevisionNumber int64                        `json:"remediation_revision_number"`
+	Dependencies              []completedDependencyOutcome `json:"dependencies"`
+}
+
+type completedDependencyOutcome struct {
+	Sequence                  int64                         `json:"sequence"`
+	DependencyTicketID        string                        `json:"dependency_ticket_id"`
+	DependencyRevisionRowID   int64                         `json:"dependency_revision_row_id"`
+	DependencyRevisionNumber  int64                         `json:"dependency_revision_number"`
+	DeclaredOutcome           string                        `json:"declared_outcome"`
+	CurrentDependencyRevision completedDependencyRevision   `json:"current_dependency_revision"`
+	Completion                completedDependencyCompletion `json:"completion"`
+}
+
+type completedDependencyRevision struct {
+	TicketID       string `json:"ticket_id"`
+	RevisionRowID  int64  `json:"revision_row_id"`
+	RevisionNumber int64  `json:"revision_number"`
+}
+
+type completedDependencyCompletion struct {
+	SatisfactionRowID                int64 `json:"satisfaction_row_id"`
+	AuditTicketRevisionDecisionRowID int64 `json:"audit_ticket_revision_decision_row_id"`
+}
+
 type retainedBuilder struct {
 	ids       IDGenerator
 	artifacts []PublicationArtifactInput
@@ -519,6 +617,9 @@ func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operati
 	if operation.OperationID == "planner.delivery_ticket_remediation" {
 		return s.materializeRemediationDerivedInputs(ctx, workflow, builder)
 	}
+	if operation.OperationID == "planner.ticket_design_brief_remediation" {
+		return s.materializeRemediationBriefDerivedInputs(ctx, workflow, builder)
+	}
 	if operation.OperationID != "auditor.audit" {
 		return nil, &Error{Code: CodeInvalidPacketDocument}
 	}
@@ -683,6 +784,317 @@ func (s *LifecycleService) materializeRemediationDerivedInputs(ctx context.Conte
 		{InputName: "remediation_seed", InputRole: "governing", SourceKind: packet.InputSourceInlineText, DisplayName: "remediation_seed.json", MediaType: "application/json", SHA256: digestBytes(seedBytes), SizeBytes: int64(len(seedBytes)), AttestationKind: "derived_authority", Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: seedArtifactID}},
 		{InputName: "current_approved_authority", InputRole: "governing", SourceKind: packet.InputSourceInlineText, DisplayName: "current_approved_authority.json", MediaType: "application/json", SHA256: digestBytes(authorityInputBytes), SizeBytes: int64(len(authorityInputBytes)), AttestationKind: "derived_authority", Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: authorityArtifactID}},
 	}, nil
+}
+
+func (s *LifecycleService) materializeRemediationBriefDerivedInputs(ctx context.Context, workflow workflowPreparation, builder *retainedBuilder) ([]packet.InputBinding, error) {
+	var auditReference packet.WorkflowReference
+	for _, reference := range workflow.references {
+		if reference.Kind != "audit_decision" {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		if auditReference.AuditDecisionID != "" {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		auditReference = reference
+	}
+	if auditReference.AuditDecisionID == "" || auditReference.RunID == "" || auditReference.Decision != workflowstore.AuditDecisionNeedsRevision {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	decision, err := s.store.GetAuditDecisionByDecisionID(ctx, auditReference.AuditDecisionID)
+	if err != nil || decision.RunRowID == 0 || decision.Decision != workflowstore.AuditDecisionNeedsRevision {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	run, err := s.store.GetRunByRunID(ctx, auditReference.RunID)
+	if err != nil || run.ID != decision.RunRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	revisionDecisions, err := s.store.ListAuditTicketRevisionDecisions(ctx, decision.ID)
+	if err != nil || len(revisionDecisions) != 1 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	revisionDecision := revisionDecisions[0]
+	seed, err := s.store.GetAuditRemediationSeedByRevisionDecisionRowID(ctx, revisionDecision.ID)
+	if err != nil || seed.AuditTicketRevisionDecisionRowID != revisionDecision.ID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	reopening, err := s.store.GetAuditRemediationSeedReopening(ctx, seed.ID)
+	if err != nil || reopening.RemediationSeedRowID != seed.ID || reopening.ReopeningRevisionRowID < 1 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	obligation, err := s.store.GetAuditPacketTicketObligationByRowID(ctx, revisionDecision.AuditPacketTicketObligationRowID)
+	if err != nil || seed.AuditPacketRowID != obligation.AuditPacketRowID || seed.ExecutionPackageRowID != obligation.ExecutionPackageRowID ||
+		obligation.PackageApprovalRowID.Valid != revisionDecision.PackageApprovalRowID.Valid ||
+		(obligation.PackageApprovalRowID.Valid && obligation.PackageApprovalRowID.Int64 != revisionDecision.PackageApprovalRowID.Int64) ||
+		!obligation.ApprovedPackageSha256.Valid || !revisionDecision.ApprovedPackageSha256.Valid ||
+		obligation.ApprovedPackageSha256.String != revisionDecision.ApprovedPackageSha256.String {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	auditPacket, err := s.store.GetAuditPacketByRowID(ctx, seed.AuditPacketRowID)
+	if err != nil || auditPacket.RunRowID != run.ID || auditPacket.AuditPacketID == "" || auditPacket.PacketSHA256 != decision.PacketSHA256 ||
+		auditPacket.ArtifactRowID != decision.AuditPacketArtifactRowID || auditPacket.AuditedCommit != decision.AuditedCommit ||
+		seed.AuditedCommit != decision.AuditedCommit || auditPacket.Status != workflowstore.AuditPacketStatusCurrent {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	pkg, err := s.store.GetExecutionPackageByRowID(ctx, obligation.ExecutionPackageRowID)
+	if err != nil || pkg.ID != seed.ExecutionPackageRowID || !obligation.PackageApprovalRowID.Valid || !obligation.ApprovedPackageSha256.Valid || obligation.ApprovedPackageSha256.String != pkg.PackageSha256 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	members, err := s.store.ListExecutionPackageMembers(ctx, pkg.ID)
+	if err != nil || !containsExecutionPackageMember(members, obligation.ExecutionPackageMemberRowID, obligation.DeliveryTicketRevisionRowID) {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	auditedTicket, err := s.store.GetDeliveryTicketByRowID(ctx, obligation.DeliveryTicketRowID)
+	if err != nil || auditedTicket.WorkspaceRowID != pkg.WorkspaceRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	auditedRevision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, obligation.DeliveryTicketRevisionRowID)
+	if err != nil || auditedRevision.DeliveryTicketRowID != auditedTicket.ID || auditedRevision.SourceClosureRowID != pkg.SourceClosureRowID || auditedRevision.CancellationReason.Valid {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	remediationRevision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, reopening.ReopeningRevisionRowID)
+	if err != nil || remediationRevision.ID != reopening.ReopeningRevisionRowID || remediationRevision.CancellationReason.Valid {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	remediationTicket, err := s.store.GetDeliveryTicketByRowID(ctx, remediationRevision.DeliveryTicketRowID)
+	if err != nil || remediationTicket.WorkspaceRowID != auditedTicket.WorkspaceRowID || !remediationTicket.CurrentRevisionRowID.Valid || remediationTicket.CurrentRevisionRowID.Int64 != remediationRevision.ID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if reopening.ReopeningKind != "replacement_ticket_revision" && reopening.ReopeningKind != "remediation_ticket" {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var replacementRevisionRowID *int64
+	switch reopening.ReopeningKind {
+	case "replacement_ticket_revision":
+		if remediationTicket.ID != auditedTicket.ID || !remediationRevision.ReplacesRevisionRowID.Valid || remediationRevision.ReplacesRevisionRowID.Int64 != auditedRevision.ID {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		value := remediationRevision.ID
+		replacementRevisionRowID = &value
+	case "remediation_ticket":
+		if remediationTicket.ID == auditedTicket.ID {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+	}
+
+	closure, err := s.store.GetSourceVaultClosureByRowID(ctx, remediationRevision.SourceClosureRowID)
+	if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.ClosureID == "" || closure.CommitOID == "" {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	seedFindings, err := s.store.ListAuditRemediationSeedFindings(ctx, seed.ID)
+	if err != nil || len(seedFindings) == 0 {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	seedInput := remediationSeedInput{
+		RemediationSeedID: seed.RemediationSeedID, AuditDecisionID: decision.AuditDecisionID, AuditPacketID: auditPacket.AuditPacketID,
+		ApprovedExecutionPackage:      remediationPackageIdentity{PackageID: pkg.PackageID, PackageSHA256: pkg.PackageSha256},
+		AuditedDeliveryTicket:         remediationTicketIdentity{TicketID: auditedTicket.TicketID},
+		AuditedDeliveryTicketRevision: remediationRevisionIdentity{RevisionID: auditedRevision.ID, RevisionNumber: auditedRevision.RevisionNumber},
+		AuditedCommit:                 seed.AuditedCommit, DecisionRationale: seed.DecisionRationale, MaterialFindings: make([]remediationFindingInput, len(seedFindings)),
+	}
+	for index, finding := range seedFindings {
+		if finding.UpstreamClassification != "implementation" && finding.UpstreamClassification != "governing_package" && finding.UpstreamClassification != "both" {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		seedInput.MaterialFindings[index] = remediationFindingInput{Sequence: finding.Sequence, UpstreamClassification: finding.UpstreamClassification, Summary: finding.Summary, Evidence: finding.Evidence, RequiredRemediation: finding.RequiredRemediation}
+	}
+	seedBytes, err := canonicalJSON(seedInput)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	workspace, err := s.store.GetFeatureWorkspaceByRowID(ctx, remediationTicket.WorkspaceRowID)
+	if err != nil || workspace.ID != auditedTicket.WorkspaceRowID || !workspace.CurrentAuthorityRevisionRowID.Valid {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	authorityBytes, authorityInput, err := s.currentApprovedAuthority(ctx, remediationTicket.WorkspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	if authorityInput.SourceClosureID != closure.ClosureID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	currentAuthority, err := s.store.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+	if err != nil || currentAuthority.WorkspaceRowID != workspace.ID || !currentAuthority.SourceClosureRowID.Valid || currentAuthority.SourceClosureRowID.Int64 != remediationRevision.SourceClosureRowID {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+
+	selected, dependencies, err := s.materializeSelectedRemediationTicket(ctx, remediationTicket, remediationRevision, workspace, closure, currentAuthority.ID)
+	if err != nil {
+		return nil, err
+	}
+	dependencyDocument := completedDependencyOutcomesInput{RemediationTicketID: remediationTicket.TicketID, RemediationRevisionRowID: remediationRevision.ID, RemediationRevisionNumber: remediationRevision.RevisionNumber, Dependencies: dependencies}
+	selected.RemediationSeedID = seed.RemediationSeedID
+	selected.AuditDecisionID = decision.AuditDecisionID
+	selected.ReopeningKind = reopening.ReopeningKind
+	selected.AuditedTicketID = auditedTicket.TicketID
+	selected.AuditedRevisionRowID = auditedRevision.ID
+	selected.AuditedRevisionNumber = auditedRevision.RevisionNumber
+	selected.ReplacementRevisionRowID = replacementRevisionRowID
+	selected.WorkspaceID = workspace.WorkspaceID
+	selected.SourceClosureID = closure.ClosureID
+	selected.SourceClosureCommit = closure.CommitOID
+	selected.Canonical, err = s.readSelectedRemediationTicketArtifact(remediationTicket, remediationRevision, "delivery-ticket.json", "application/json")
+	if err != nil {
+		return nil, err
+	}
+	selected.Rendered, err = s.readSelectedRemediationTicketArtifact(remediationTicket, remediationRevision, "delivery-ticket.md", "text/markdown")
+	if err != nil {
+		return nil, err
+	}
+
+	selectedBytes, err := canonicalJSON(selected)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	dependencyBytes, err := canonicalJSON(dependencyDocument)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	values := map[string][]byte{
+		"remediation_seed":              seedBytes,
+		"selected_remediation_ticket":   selectedBytes,
+		"completed_dependency_outcomes": dependencyBytes,
+		"current_approved_authority":    authorityBytes,
+	}
+	inputs := make([]packet.InputBinding, 0, len(values))
+	for _, slot := range []string{"remediation_seed", "selected_remediation_ticket", "completed_dependency_outcomes", "current_approved_authority"} {
+		data, ok := values[slot]
+		if !ok {
+			return nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		artifactID := builder.add(workflowstore.OperationPacketRetainedArtifactWorkflowSnapshot, "application/json", data, workflowstore.OperationPacketDependencyWorkflowSnapshot, slot)
+		inputs = append(inputs, packet.InputBinding{InputName: slot, InputRole: "governing", SourceKind: packet.InputSourceInlineText, DisplayName: slot + ".json", MediaType: "application/json", SHA256: digestBytes(data), SizeBytes: int64(len(data)), AttestationKind: "derived_authority", Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: artifactID}})
+	}
+	return inputs, nil
+}
+
+func (s *LifecycleService) materializeSelectedRemediationTicket(ctx context.Context, ticket workflowstore.DeliveryTicket, revision workflowstore.DeliveryTicketRevision, workspace workflowstore.FeatureWorkspace, closure workflowstore.SourceVaultClosure, authorityRevisionRowID int64) (selectedRemediationTicketInput, []completedDependencyOutcome, error) {
+	members, err := s.store.ListDeliveryTicketRevisionMembers(ctx, revision.ID)
+	if err != nil {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	cancellationReason := ""
+	if revision.CancellationReason.Valid {
+		cancellationReason = revision.CancellationReason.String
+	}
+	selected := selectedRemediationTicketInput{
+		RemediationTicketID:       ticket.TicketID,
+		RemediationRevisionRowID:  revision.ID,
+		RemediationRevisionNumber: revision.RevisionNumber,
+		WorkspaceID:               workspace.WorkspaceID,
+		ExternalPriority:          ticket.ExternalPriority,
+		RepoTarget:                revision.RepoTarget,
+		Branch:                    revision.Branch,
+		BaseCommit:                revision.BaseCommit,
+		SourceClosureRowID:        revision.SourceClosureRowID,
+		SourceClosureID:           closure.ClosureID,
+		SourceClosureCommit:       closure.CommitOID,
+		SourcePath:                revision.SourcePath,
+		Goal:                      revision.Goal,
+		Context:                   revision.Context,
+		TransitionApplicability:   revision.TransitionApplicability,
+		CancellationReason:        cancellationReason,
+		Members:                   make([]selectedRemediationTicketMember, len(members)),
+		Dependencies:              make([]selectedRemediationTicketDependency, 0),
+	}
+	for index, member := range members {
+		path := ""
+		if member.MemberPath.Valid {
+			path = member.MemberPath.String
+		}
+		selected.Members[index] = selectedRemediationTicketMember{Sequence: member.Sequence, Kind: member.MemberKind, Path: path, Text: member.MemberText}
+	}
+
+	approvals, err := s.store.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
+	if err != nil {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var currentApprovals []workflowstore.DeliveryTicketRevisionApproval
+	for _, approval := range approvals {
+		if approval.ApprovalKind == "delivery" && approval.ApprovalState == "approved" && approval.SourceClosureRowID == revision.SourceClosureRowID && approval.AuthorityRevisionRowID.Valid && approval.AuthorityRevisionRowID.Int64 == authorityRevisionRowID {
+			currentApprovals = append(currentApprovals, approval)
+		}
+	}
+	if len(currentApprovals) != 1 {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	approval := currentApprovals[0]
+	selected.Approval = selectedRemediationTicketApproval{ApprovalRowID: approval.ID, ApprovalID: approval.ApprovalID, AuthorityRevisionRowID: authorityRevisionRowID, SourceClosureRowID: approval.SourceClosureRowID}
+
+	selections, err := s.store.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var active []workflowstore.DeliveryTicketSelection
+	for _, selection := range selections {
+		if selection.State == "active" {
+			active = append(active, selection)
+		}
+	}
+	if len(active) != 1 {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	selection := active[0]
+	if selection.WorkspaceRowID != workspace.ID || !selection.SourceClosureRowID.Valid || selection.SourceClosureRowID.Int64 != revision.SourceClosureRowID {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	selectionMembers, err := s.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+	if err != nil || len(selectionMembers) != 1 {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	selectionMember := selectionMembers[0]
+	if selectionMember.RevisionRowID != revision.ID || selectionMember.ApprovalRowID != approval.ID {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	selected.Selection = selectedRemediationTicketSelection{SelectionRowID: selection.ID, SelectionID: selection.SelectionID, State: selection.State, SourceClosureRowID: selection.SourceClosureRowID.Int64, MemberRowID: selectionMember.ID, MemberSequence: selectionMember.Sequence, MemberRevisionRowID: selectionMember.RevisionRowID, MemberApprovalRowID: selectionMember.ApprovalRowID}
+
+	dependencies, err := s.store.ListDeliveryTicketRevisionDependencies(ctx, revision.ID)
+	if err != nil {
+		return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	completed := make([]completedDependencyOutcome, len(dependencies))
+	for index, dependency := range dependencies {
+		if dependency.Outcome != "satisfied" {
+			return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		dependencyRevision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, dependency.DependsOnRevisionRowID)
+		if err != nil {
+			return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		dependencyTicket, err := s.store.GetDeliveryTicketByRowID(ctx, dependencyRevision.DeliveryTicketRowID)
+		if err != nil || dependencyTicket.WorkspaceRowID != workspace.ID || !dependencyTicket.CurrentRevisionRowID.Valid || dependencyTicket.CurrentRevisionRowID.Int64 != dependencyRevision.ID {
+			return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		satisfaction, err := s.store.GetDeliveryTicketRevisionSatisfaction(ctx, dependencyRevision.ID)
+		if err != nil {
+			return selectedRemediationTicketInput{}, nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		selected.Dependencies = append(selected.Dependencies, selectedRemediationTicketDependency{Sequence: dependency.Sequence, DependencyRevisionRowID: dependency.DependsOnRevisionRowID, DependencyOutcome: dependency.Outcome})
+		completed[index] = completedDependencyOutcome{Sequence: dependency.Sequence, DependencyTicketID: dependencyTicket.TicketID, DependencyRevisionRowID: dependencyRevision.ID, DependencyRevisionNumber: dependencyRevision.RevisionNumber, DeclaredOutcome: dependency.Outcome, CurrentDependencyRevision: completedDependencyRevision{TicketID: dependencyTicket.TicketID, RevisionRowID: dependencyRevision.ID, RevisionNumber: dependencyRevision.RevisionNumber}, Completion: completedDependencyCompletion{SatisfactionRowID: satisfaction.ID, AuditTicketRevisionDecisionRowID: satisfaction.AuditTicketRevisionDecisionRowID}}
+	}
+	return selected, completed, nil
+}
+
+func (s *LifecycleService) readSelectedRemediationTicketArtifact(ticket workflowstore.DeliveryTicket, revision workflowstore.DeliveryTicketRevision, filename, mediaType string) (selectedRemediationTicketArtifact, error) {
+	relative := filepath.ToSlash(filepath.Join("delivery-tickets", ticket.TicketID, "revisions", fmt.Sprint(revision.RevisionNumber), filename))
+	root := s.store.ArtifactStore().Root()
+	path := filepath.Clean(filepath.Join(root, filepath.FromSlash(relative)))
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return selectedRemediationTicketArtifact{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return selectedRemediationTicketArtifact{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if filename == "delivery-ticket.json" && mediaType != "application/json" || filename == "delivery-ticket.md" && mediaType != "text/markdown" {
+		return selectedRemediationTicketArtifact{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	return selectedRemediationTicketArtifact{RelativePath: relative, SHA256: digestBytes(data), SizeBytes: int64(len(data)), BytesBase64: base64.StdEncoding.EncodeToString(data)}, nil
 }
 
 func containsExecutionPackageMember(values []workflowstore.ExecutionPackageMember, memberID, revisionID int64) bool {
