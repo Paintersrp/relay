@@ -64,7 +64,12 @@ func TestWorkflowPackageAuditRecordDecisionRejectsCoherentlyAlteredPacket(t *tes
 }
 
 func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
-	for _, source := range []string{"implementation", "governing_package", "both"} {
+	findings := []WorkflowAuditMaterialFinding{
+		{Source: "implementation", Summary: "  implementation summary  ", Evidence: "  implementation evidence  ", RequiredRemediation: "  implementation remediation  "},
+		{Source: "governing_package", Summary: "  package summary  ", Evidence: "  package evidence  ", RequiredRemediation: "  package remediation  "},
+		{Source: "both", Summary: "  combined summary  ", Evidence: "  combined evidence  ", RequiredRemediation: "  combined remediation  "},
+	}
+	for _, source := range []string{"all_package_native_findings"} {
 		t.Run(source, func(t *testing.T) {
 			fixture, service := newPackageAuditPrepareFixture(t, true)
 			attachPackageRunToEligiblePass(t, fixture)
@@ -77,7 +82,7 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 				RunID: fixture.run.RunID, AuditPacketID: packet.AuditPacketID, PacketSHA256: packet.PacketSHA256,
 				AuditedCommit: packet.AuditedCommit, Decision: workflowstore.AuditDecisionNeedsRevision,
 				Rationale: "The package needs a revision.", OperatorConfirmed: true,
-				MaterialFindings: []WorkflowAuditMaterialFinding{{Source: source, Summary: "Missing proof", Evidence: "The packet lacks the required proof.", RequiredRemediation: "Add the proof."}},
+				MaterialFindings: findings,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -86,8 +91,18 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 				t.Fatalf("needs-revision package decision = %#v", result)
 			}
 			findings, err := fixture.store.ListAuditRemediationSeedFindings(ctx, result.RemediationSeeds[0].ID)
-			if err != nil || len(findings) != 1 || findings[0].UpstreamClassification != source || findings[0].Sequence != 1 {
+			if err != nil || len(findings) != 3 {
 				t.Fatalf("remediation seed findings = %#v, %v", findings, err)
+			}
+			for index, want := range []WorkflowAuditMaterialFinding{
+				{Source: "implementation", Summary: "implementation summary", Evidence: "implementation evidence", RequiredRemediation: "implementation remediation"},
+				{Source: "governing_package", Summary: "package summary", Evidence: "package evidence", RequiredRemediation: "package remediation"},
+				{Source: "both", Summary: "combined summary", Evidence: "combined evidence", RequiredRemediation: "combined remediation"},
+			} {
+				got := findings[index]
+				if got.Sequence != int64(index+1) || got.UpstreamClassification != want.Source || got.Summary != want.Summary || got.Evidence != want.Evidence || got.RequiredRemediation != want.RequiredRemediation {
+					t.Fatalf("finding %d = %#v, want %#v", index, got, want)
+				}
 			}
 			seed := result.RemediationSeeds[0]
 			if seed.AuditTicketRevisionDecisionRowID != result.TicketRevisionDecisions[0].ID || seed.AuditPacketRowID != packet.ID || seed.ExecutionPackageRowID != fixture.run.ExecutionPackageRowID.Int64 || seed.AuditedCommit != result.Decision.AuditedCommit || seed.DecisionRationale != result.Decision.Rationale {
@@ -103,7 +118,7 @@ func TestWorkflowPackageAuditRecordDecisionNeedsRevision(t *testing.T) {
 				t.Fatal(err)
 			}
 			seedDetail := seedValue.(RemediationSeedDetail)
-			if len(effects.RemediationSeeds) != 1 || effects.RemediationSeeds[0] != seed || seedDetail.RemediationSeed != seed || len(seedDetail.MaterialFindings) != 1 || seedDetail.MaterialFindings[0] != findings[0] {
+			if len(effects.RemediationSeeds) != 1 || effects.RemediationSeeds[0] != seed || seedDetail.RemediationSeed != seed || !reflect.DeepEqual(seedDetail.MaterialFindings, findings) {
 				t.Fatalf("durable remediation seed readback = %#v %#v", effects, seedDetail)
 			}
 			pass, err := fixture.store.GetPlanPassByRowID(ctx, fixture.run.PlanPassRowID.Int64)

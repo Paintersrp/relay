@@ -86,7 +86,7 @@ func TestRecordAuditDecisionRequiresConfirmationAndReturnsLifecycle(t *testing.T
 			AuditedCommit:   strings.Repeat("b", 40),
 			Decision:        workflowstore.AuditDecisionAccepted,
 		},
-		RemediationSeeds: []workflowstore.AuditRemediationSeed{{RemediationSeedID: "seed-test", AuditPacketRowID: 1, ExecutionPackageRowID: 2, AuditedCommit: strings.Repeat("b", 40)}},
+		RemediationSeeds: []workflowstore.AuditRemediationSeed{},
 	}}
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
 	result := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{
@@ -99,8 +99,22 @@ func TestRecordAuditDecisionRequiresConfirmationAndReturnsLifecycle(t *testing.T
 		"observations":["non-blocking"],
 		"operator_confirmed":true
 	}`))
-	if result.IsError || !strings.Contains(result.Content[0].Text, `"run_status": "completed"`) || !strings.Contains(result.Content[0].Text, `"ticket_effects"`) || len(service.decisionInput.Observations) != 1 {
+	if result.IsError || !strings.Contains(result.Content[0].Text, `"run_status": "completed"`) || !strings.Contains(result.Content[0].Text, `"ticket_effects"`) || strings.Contains(result.Content[0].Text, "remediationSeedId") || len(service.decisionInput.Observations) != 1 {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestRecordAuditDecisionNeedsRevisionReturnsExactRemediationSeedID(t *testing.T) {
+	service := &fakeWorkflowAuditToolService{decision: appaudits.RecordWorkflowAuditDecisionResult{
+		Run:              workflowstore.Run{RunID: "run-test", Status: workflowstore.RunStatusNeedsRevision},
+		Packet:           workflowstore.AuditPacket{AuditPacketID: "packet-test", PacketSHA256: strings.Repeat("c", 64)},
+		Decision:         workflowstore.AuditDecision{AuditDecisionID: "audit-test", Decision: workflowstore.AuditDecisionNeedsRevision},
+		RemediationSeeds: []workflowstore.AuditRemediationSeed{{RemediationSeedID: "remediation-package-1"}},
+	}}
+	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
+	result := server.HandleRecordWorkflowAuditDecision(json.RawMessage(`{"run_id":"run-test","audit_packet_id":"packet-test","packet_sha256":"` + strings.Repeat("c", 64) + `","audited_commit":"` + strings.Repeat("b", 40) + `","decision":"needs_revision","rationale":"revision required","material_findings":[{"source":"governing_package","summary":"missing proof","evidence":"packet","required_remediation":"supply proof"}],"operator_confirmed":true}`))
+	if result.IsError || !strings.Contains(result.Content[0].Text, "remediation-package-1") || service.decisionInput.MaterialFindings[0].Source != "governing_package" {
+		t.Fatalf("result = %+v input = %#v", result, service.decisionInput)
 	}
 }
 

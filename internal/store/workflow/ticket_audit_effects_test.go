@@ -133,6 +133,15 @@ func TestTicketAuditRemediationSeedIsUniqueClassifiedAndReopenable(t *testing.T)
 	if _, err := store.DB().Exec(`UPDATE audit_remediation_seed_findings SET summary = 'rewritten' WHERE remediation_seed_row_id = ?`, remediation.ID); err == nil {
 		t.Fatal("remediation seed finding was mutable")
 	}
+	if _, err := store.DB().Exec(`DELETE FROM audit_remediation_seed_findings WHERE id = 1`); err == nil {
+		t.Fatal("remediation seed finding was deletable")
+	}
+	if _, err := store.DB().Exec(`UPDATE audit_remediation_seeds SET decision_rationale = 'rewritten' WHERE id = ?`, remediation.ID); err == nil {
+		t.Fatal("remediation seed was mutable")
+	}
+	if _, err := store.DB().Exec(`DELETE FROM audit_remediation_seeds WHERE id = ?`, remediation.ID); err == nil {
+		t.Fatal("remediation seed was deletable")
+	}
 
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		_, err := workflowgenerated.New(tx.tx).CreateDeliveryTicketRevisionSatisfaction(ctx, workflowgenerated.CreateDeliveryTicketRevisionSatisfactionParams{
@@ -155,6 +164,66 @@ func TestTicketAuditRemediationSeedIsUniqueClassifiedAndReopenable(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestTicketAuditRemediationSeedGuards(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	record := seedTicketAuditEffect(t, ctx, store, "needs_revision")
+	createSeed := func(decisionID, packetID, packageID int64, commit, rationale string) error {
+		return store.WithTx(ctx, func(tx *Tx) error {
+			_, err := workflowgenerated.New(tx.tx).CreateAuditRemediationSeed(ctx, workflowgenerated.CreateAuditRemediationSeedParams{RemediationSeedID: NewAuditRemediationSeedID(), AuditTicketRevisionDecisionRowID: decisionID, AuditPacketRowID: packetID, ExecutionPackageRowID: packageID, AuditedCommit: commit, DecisionRationale: rationale})
+			return err
+		})
+	}
+	if err := createSeed(record.revisionDecision.ID, record.packet.ID, record.executionPackage.ID, record.packet.AuditedCommit, record.decision.Rationale); err != nil {
+		t.Fatal(err)
+	}
+	var seed workflowgenerated.AuditRemediationSeed
+	if err := store.DB().QueryRow(`SELECT id, remediation_seed_id, audit_ticket_revision_decision_row_id, audit_packet_row_id, execution_package_row_id, audited_commit, decision_rationale, created_at FROM audit_remediation_seeds WHERE audit_ticket_revision_decision_row_id = ?`, record.revisionDecision.ID).Scan(&seed.ID, &seed.RemediationSeedID, &seed.AuditTicketRevisionDecisionRowID, &seed.AuditPacketRowID, &seed.ExecutionPackageRowID, &seed.AuditedCommit, &seed.DecisionRationale, &seed.CreatedAt); err != nil {
+		t.Fatal(err)
+	}
+	for sequence, classification := range []string{"implementation", "governing_package", "both"} {
+		err := store.WithTx(ctx, func(tx *Tx) error {
+			_, err := workflowgenerated.New(tx.tx).CreateAuditRemediationSeedFinding(ctx, workflowgenerated.CreateAuditRemediationSeedFindingParams{RemediationSeedRowID: seed.ID, Sequence: int64(sequence + 1), UpstreamClassification: classification, Summary: "summary", Evidence: "evidence", RequiredRemediation: "remediate"})
+			return err
+		})
+		if err != nil {
+			t.Fatalf("classification %q rejected: %v", classification, err)
+		}
+	}
+	for _, classification := range []string{"executor_implementation", "execution_spec", "", "arbitrary"} {
+		before := countAuditSeedFindings(t, store, seed.ID)
+		err := store.WithTx(ctx, func(tx *Tx) error {
+			_, err := workflowgenerated.New(tx.tx).CreateAuditRemediationSeedFinding(ctx, workflowgenerated.CreateAuditRemediationSeedFindingParams{RemediationSeedRowID: seed.ID, Sequence: 99, UpstreamClassification: classification, Summary: "summary", Evidence: "evidence", RequiredRemediation: "remediate"})
+			return err
+		})
+		if err == nil || countAuditSeedFindings(t, store, seed.ID) != before {
+			t.Fatalf("classification %q was accepted or changed rows", classification)
+		}
+	}
+	for _, input := range []struct {
+		decisionID, packetID, packageID int64
+		commit, rationale               string
+	}{
+		{record.revisionDecision.ID, record.packet.ID + 999, record.executionPackage.ID, record.packet.AuditedCommit, record.decision.Rationale},
+		{record.revisionDecision.ID, record.packet.ID, record.executionPackage.ID + 999, record.packet.AuditedCommit, record.decision.Rationale},
+		{record.revisionDecision.ID, record.packet.ID, record.executionPackage.ID, strings.Repeat("a", 40), record.decision.Rationale},
+		{record.revisionDecision.ID, record.packet.ID, record.executionPackage.ID, record.packet.AuditedCommit, "wrong rationale"},
+	} {
+		if err := createSeed(input.decisionID, input.packetID, input.packageID, input.commit, input.rationale); err == nil {
+			t.Fatal("invalid remediation seed basis was accepted")
+		}
+	}
+}
+
+func countAuditSeedFindings(t *testing.T, store *Store, seedID int64) int {
+	t.Helper()
+	var count int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM audit_remediation_seed_findings WHERE remediation_seed_row_id = ?`, seedID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }
 
 func TestFeatureWorkspaceCompletionIsExplicitAndReopensOnCurrentReplacement(t *testing.T) {

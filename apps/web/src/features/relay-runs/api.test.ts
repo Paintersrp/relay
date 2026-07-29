@@ -233,7 +233,7 @@ describe("canonical Run attempt transport", () => {
 
 describe("ticket-aware audit transport", () => {
 
-  it("serializes package finding attribution unchanged and accepts empty seeds", async () => {
+  it("serializes package finding attribution unchanged and reads needs-revision seeds", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(response({
         runId: "run-1", runStatus: "audit_ready",
@@ -244,7 +244,7 @@ describe("ticket-aware audit transport", () => {
         runId: "run-1", runStatus: "needs_revision",
         packet: { auditPacketId: "packet-1", implementationActorKind: "executor", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), status: "current", createdAt: "2026-07-19T00:00:00Z" },
         decision: { auditDecisionId: "decision-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), decision: "needs_revision", rationale: "missing proof", createdAt: "2026-07-19T00:00:00Z" },
-        effects: { ticketRevisionDecisions: [], ticketSatisfactions: [], remediationSeeds: [] },
+        effects: { ticketRevisionDecisions: [], ticketSatisfactions: [], remediationSeeds: [{ remediationSeedId: "remediation-package-1", auditPacketRowId: 3, executionPackageRowId: 4, auditedCommit: "b".repeat(40) }] },
       }));
     vi.stubGlobal("fetch", fetch);
 
@@ -252,6 +252,17 @@ describe("ticket-aware audit transport", () => {
     const result = await recordWorkflowAuditDecision("run-1", { auditPacketId: packet.packet.auditPacketId, packetSha256: packet.packet.packetSha256, auditedCommit: packet.packet.auditedCommit, decision: "needs_revision", rationale: "missing proof", materialFindings: [{ source: "governing_package", summary: "missing proof", evidence: "packet", requiredRemediation: "supply proof" }], observations: [], operatorConfirmed: true });
 
     expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toMatchObject({ materialFindings: [{ source: "governing_package" }] });
+    expect(result.effects.remediationSeeds[0]?.remediationSeedId).toBe("remediation-package-1");
+  });
+
+  it("reads accepted decisions with no remediation seeds", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      runId: "run-1", runStatus: "completed",
+      packet: { auditPacketId: "packet-1", implementationActorKind: "executor", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), status: "current", createdAt: "2026-07-19T00:00:00Z" },
+      decision: { auditDecisionId: "decision-1", auditedCommit: "b".repeat(40), packetSha256: "c".repeat(64), decision: "accepted", rationale: "complete", createdAt: "2026-07-19T00:00:00Z" },
+      effects: { ticketRevisionDecisions: [], ticketSatisfactions: [], remediationSeeds: [] },
+    })));
+    const result = await recordWorkflowAuditDecision("run-1", { auditPacketId: "packet-1", packetSha256: "c".repeat(64), auditedCommit: "b".repeat(40), decision: "accepted", rationale: "complete", materialFindings: [], observations: [], operatorConfirmed: true });
     expect(result.effects.remediationSeeds).toEqual([]);
   });
 
