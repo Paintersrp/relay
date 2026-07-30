@@ -8,17 +8,9 @@ import (
 
 	"relay/internal/app/packages"
 	"relay/internal/executor"
-	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
 )
-
-type fakePackagePacketAuthorizer struct{ request MutationRequest }
-
-func (f *fakePackagePacketAuthorizer) AuthorizeMutation(_ context.Context, request MutationRequest) (MutationAuthorization, error) {
-	f.request = request
-	return MutationAuthorization{Allowed: true}, nil
-}
 
 type fakePackageWorkflowOwner struct {
 	prepared bool
@@ -44,15 +36,14 @@ func (fakeMutationLeaseReconciler) ReconcileMutationLease(context.Context, strin
 	return executor.WorkflowMutationLeaseReconcileResult{Released: true}, nil
 }
 
-func TestPackageWorkflowPrepareRequiresExactPacketDependencies(t *testing.T) {
+func TestPackageWorkflowPrepareDelegatesDirectlyAfterCutover(t *testing.T) {
 	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.sqlite"), filepath.Join(t.TempDir(), "artifacts"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	packet := &fakePackagePacketAuthorizer{}
 	owner := &fakePackageWorkflowOwner{detail: packages.Detail{Package: workflowstore.ExecutionPackage{PackageID: "package-1", PackageSha256: strings.Repeat("a", 64)}}}
-	service, err := NewPackageWorkflowService(packet, owner, fakeMutationLeaseReconciler{}, store)
+	service, err := NewPackageWorkflowService(owner, fakeMutationLeaseReconciler{}, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,33 +51,10 @@ func TestPackageWorkflowPrepareRequiresExactPacketDependencies(t *testing.T) {
 		SelectionID:       "selection-1",
 		TicketDesignBrief: packages.ArtifactInput{DisplayName: "feature.ticket-T1.r1.design-brief.md", ExpectedSHA256: strings.Repeat("b", 64), Bytes: []byte(testfixtures.TicketDesignBrief)},
 	}
-	payload, err := PackagePreparePayloadSHA256(input)
-	if err != nil {
+	if _, err := service.Prepare(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
-	request := PackageOperationRequest{
-		PacketID: "packet-1", OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.PackageActionPrepare,
-		SelectionID: input.SelectionID, PayloadSHA256: payload, RequiredDependencies: packagePrepareDependencies(input),
-	}
-	if _, err := service.Prepare(context.Background(), PackagePrepareOperationInput{Admission: request, Prepare: input}); err != nil {
-		t.Fatal(err)
-	}
-	if !owner.prepared || packet.request.Action != registry.PackageActionPrepare || !sameDependencies(packet.request.RequiredDependencies, packagePrepareDependencies(input)) {
-		t.Fatalf("prepare owner=%t packet=%#v", owner.prepared, packet.request)
-	}
-
-	owner.prepared = false
-	request.RequiredDependencies = request.RequiredDependencies[:1]
-	if _, err := service.Prepare(context.Background(), PackagePrepareOperationInput{Admission: request, Prepare: input}); err == nil || owner.prepared {
-		t.Fatalf("inexact dependencies admitted: err=%v prepared=%t", err, owner.prepared)
-	}
-}
-
-func TestPackageOperationRegistryHasOneLocalOperatorOwner(t *testing.T) {
-	for _, action := range []registry.AllowedAction{registry.PackageActionPrepare, registry.PackageActionApprove, registry.MutationLeaseActionReconcile} {
-		operation, ok := registry.PackageOperationForAction(action)
-		if !ok || operation.OperationID != registry.LocalOperatorTicketWorkflowOperationID || operation.Role != "local_operator" {
-			t.Fatalf("operation for %s = %#v, %t", action, operation, ok)
-		}
+	if !owner.prepared {
+		t.Fatalf("prepare owner=%t", owner.prepared)
 	}
 }

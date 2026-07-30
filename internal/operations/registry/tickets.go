@@ -1,10 +1,8 @@
 package registry
 
 const (
-	PlannerTicketFrontierOperationID       OperationID       = "planner.ticket_frontier"
-	LocalOperatorTicketWorkflowOperationID OperationID       = "local_operator.ticket_workflow"
-	PlannerTicketFrontierSurface           SurfaceContractID = "planner-ticket-frontier.v1"
-	LocalOperatorTicketWorkflowSurface     SurfaceContractID = "local-operator-ticket-workflow.v1"
+	PlannerTicketFrontierOperationID OperationID       = "planner.ticket_frontier"
+	PlannerTicketFrontierSurface     SurfaceContractID = "planner-ticket-frontier.v1"
 
 	TicketActionReadFrontier              AllowedAction = "read_ticket_frontier"
 	TicketActionPublish                   AllowedAction = "publish_ticket"
@@ -28,31 +26,26 @@ type TicketRoleProfile struct {
 }
 
 func TicketOperations() []OperationDefinition {
-	operations := make([]OperationDefinition, 0, 2)
+	operations := make([]OperationDefinition, 0, 1)
 	if publishedOperation, ok := LookupPublishedOperation(PlannerTicketFrontierOperationID); ok {
 		operations = append(operations, publishedOperationAsLegacy(publishedOperation))
 	}
-	operations = append(operations, legacyLocalOperatorTicketWorkflowOperation())
 	return operations
 }
+
 func TicketOperationForAction(action AllowedAction) (OperationDefinition, bool) {
-	for _, op := range TicketOperations() {
-		for _, candidate := range op.AllowedNonSourceActions {
-			if candidate == action {
-				return cloneOperation(op), true
+	if action == TicketActionReadFrontier {
+		for _, op := range TicketOperations() {
+			for _, candidate := range op.AllowedNonSourceActions {
+				if candidate == action {
+					return cloneOperation(op), true
+				}
 			}
 		}
 	}
 	return OperationDefinition{}, false
 }
-func PackageOperationForAction(action AllowedAction) (OperationDefinition, bool) {
-	switch action {
-	case PackageActionPrepare, PackageActionApprove, MutationLeaseActionReconcile:
-		return TicketOperationForAction(action)
-	default:
-		return OperationDefinition{}, false
-	}
-}
+
 func TicketRoleProfiles() []TicketRoleProfile {
 	operations := TicketOperations()
 	roleProfiles := make([]TicketRoleProfile, len(operations))
@@ -60,19 +53,4 @@ func TicketRoleProfiles() []TicketRoleProfile {
 		roleProfiles[i] = TicketRoleProfile{Role: op.Role, SurfaceContract: op.SurfaceContract, Operations: []OperationID{op.OperationID}, ManifestSHA256: roleProfileSHA256(op.Role, op.SurfaceContract, op.OperationID)}
 	}
 	return roleProfiles
-}
-
-func legacyLocalOperatorTicketWorkflowOperation() OperationDefinition {
-	return OperationDefinition{
-		OperationID:              LocalOperatorTicketWorkflowOperationID,
-		Role:                     "local_operator",
-		SurfaceContract:          LocalOperatorTicketWorkflowSurface,
-		ManifestDomain:           "delivery_ticket_workflow",
-		OutputKind:               "delivery_ticket_route_mutation",
-		OutputPersistence:        "durable_workspace",
-		SourcePolicy:             "current_clean_project_required_source",
-		HistoricalAuthority:      "none",
-		AllowedNonSourceActions:  []AllowedAction{TicketActionPublish, TicketActionApprove, TicketActionUpdatePriority, TicketActionReplaceDependencies, TicketActionSelect, PackageActionPrepare, PackageActionApprove, MutationLeaseActionReconcile, FeatureCompletionActionComplete},
-		PacketSemanticProjection: "relay.semantic.ticket-mutation.v1",
-	}
 }

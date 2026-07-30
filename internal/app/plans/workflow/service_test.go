@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	appcutover "relay/internal/app/cutover"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -325,5 +326,53 @@ func assertNoRegularFiles(t *testing.T, root string) {
 	})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
+	}
+}
+
+type staticPlanMutationGate struct {
+	decision appcutover.LegacyGateDecision
+	err      error
+}
+
+func (g staticPlanMutationGate) AllowPlanMutation(context.Context) (appcutover.LegacyGateDecision, error) {
+	return g.decision, g.err
+}
+
+func TestPlanMutationsMapCutoverOutcomesBeforePlanLookup(t *testing.T) {
+	store, _ := openPlanTestStore(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		gate    staticPlanMutationGate
+		want    error
+		notWant error
+	}{
+		{
+			name:    "legacy admission closed",
+			gate:    staticPlanMutationGate{decision: appcutover.LegacyGateDecision{Allowed: false}},
+			want:    appcutover.ErrLegacyAdmissionClosed,
+			notWant: ErrPlanNotFound,
+		},
+		{
+			name:    "cutover state unavailable",
+			gate:    staticPlanMutationGate{err: errors.New("cutover state read failed")},
+			want:    ErrCutoverStateUnavailable,
+			notWant: ErrPlanNotFound,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, err := NewServiceWithIDsAndGate(store, &sequenceIDs{}, tt.gate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.CreatePlan(ctx, CreatePlanInput{}); !errors.Is(err, tt.want) || errors.Is(err, tt.notWant) {
+				t.Fatalf("CreatePlan error = %v", err)
+			}
+			if _, err := service.MovePlan(ctx, MovePlanInput{}); !errors.Is(err, tt.want) || errors.Is(err, tt.notWant) {
+				t.Fatalf("MovePlan error = %v", err)
+			}
+		})
 	}
 }

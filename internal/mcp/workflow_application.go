@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 
+	appcutover "relay/internal/app/cutover"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
@@ -47,10 +48,15 @@ type projectsOutput struct {
 }
 
 func (s *Server) submissionService() (*workflowsubmissions.Service, error) {
-	if s.workflowStore() == nil {
+	store := s.workflowStore()
+	if store == nil {
 		return nil, errors.New("MCP server is not connected to a workflow store")
 	}
-	return workflowsubmissions.NewService(s.workflowStore())
+	cutoverService, err := appcutover.NewService(store)
+	if err != nil {
+		return nil, err
+	}
+	return workflowsubmissions.NewServiceWithGate(store, appcutover.NewLegacyGate(cutoverService))
 }
 
 func (s *Server) HandleListProjects(rawArgs json.RawMessage) ToolCallResult {
@@ -136,6 +142,10 @@ func submissionApplicationBlocked(tool string, err error, provenance any) ToolCa
 		workflowsubmissions.ErrorSelectedPassFilename,
 		workflowsubmissions.ErrorRemediationAssociation:
 		return workflowBlocked(tool, submissionBlockerAssociationInvalid, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+	case workflowsubmissions.ErrorLegacyAdmissionClosed:
+		return workflowBlocked(tool, "legacy_admission_closed", applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+	case workflowsubmissions.ErrorCutoverStateUnavailable:
+		return workflowBlocked(tool, "cutover_state_unavailable", applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorPersistence:
 		return workflowBlocked(tool, submissionBlockerPersistenceFailed, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	default:

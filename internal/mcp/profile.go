@@ -9,9 +9,8 @@ import (
 type ToolProfile string
 
 const (
-	ToolProfilePlanner       ToolProfile = "planner"
-	ToolProfileAuditor       ToolProfile = "auditor"
-	ToolProfileLocalOperator ToolProfile = "local_operator"
+	ToolProfilePlanner ToolProfile = "planner"
+	ToolProfileAuditor ToolProfile = "auditor"
 
 	EnvMCPProfile = "RELAY_MCP_PROFILE"
 )
@@ -22,8 +21,6 @@ func NormalizeToolProfile(raw string) (ToolProfile, bool) {
 		return ToolProfilePlanner, true
 	case string(ToolProfileAuditor):
 		return ToolProfileAuditor, true
-	case string(ToolProfileLocalOperator):
-		return ToolProfileLocalOperator, true
 	default:
 		return ToolProfilePlanner, false
 	}

@@ -62,13 +62,13 @@ type fakeCompletion struct {
 	status appoperations.FeatureCompletionStatus
 	result appoperations.FeatureCompletionResult
 	err    error
-	input  appoperations.FeatureCompletionOperationInput
+	input  featureapp.CompletionInput
 }
 
 func (f *fakeCompletion) Evaluate(context.Context, string) (appoperations.FeatureCompletionStatus, error) {
 	return f.status, f.err
 }
-func (f *fakeCompletion) Complete(_ context.Context, input appoperations.FeatureCompletionOperationInput) (appoperations.FeatureCompletionResult, error) {
+func (f *fakeCompletion) Complete(_ context.Context, input featureapp.CompletionInput) (appoperations.FeatureCompletionResult, error) {
 	f.input = input
 	return f.result, f.err
 }
@@ -109,7 +109,7 @@ func TestWorkspaceRoutesDoNotExposeDeliveryTicketOrPackageSurfaces(t *testing.T)
 	}
 }
 
-func TestWorkspaceCompletionShowsBlockersAndForwardsExplicitAdmission(t *testing.T) {
+func TestWorkspaceCompletionShowsBlockersAndForwardsDirectCompletion(t *testing.T) {
 	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{
 		Workspace:       appoperations.FeatureCompletionWorkspace{WorkspaceID: "workspace-api", FeatureSlug: "payments", State: "open", Version: 3},
 		Gates:           []appoperations.FeatureCompletionGate{{Name: "authority", Ready: true}, {Name: "audit", Ready: false}},
@@ -124,11 +124,31 @@ func TestWorkspaceCompletionShowsBlockersAndForwardsExplicitAdmission(t *testing
 	if status.Code != http.StatusOK || !strings.Contains(status.Body.String(), `"name":"audit","ready":false`) || !strings.Contains(status.Body.String(), `"completionDecisionId":"current-completion-api"`) {
 		t.Fatalf("status = %d %s", status.Code, status.Body.String())
 	}
-	body := `{"packetId":"packet-api","operationId":"local_operator.ticket_workflow","requiredDependencies":[{"class":"feature_workspace_completion","key":"workspace:workspace-api:version:3"}],"expectedVersion":3,"operatorConfirmed":true}`
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/completion", strings.NewReader(body)))
-	if response.Code != http.StatusCreated || completion.input.Admission.PacketID != "packet-api" || !completion.input.Complete.OperatorConfirmed || !strings.Contains(response.Body.String(), `"completionDecisionId":"completion-api"`) {
-		t.Fatalf("response = %d input = %#v body = %s", response.Code, completion.input, response.Body.String())
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/completion", strings.NewReader(`{"expectedVersion":3,"operatorConfirmed":true}`)))
+	want := featureapp.CompletionInput{WorkspaceID: "workspace-api", ExpectedVersion: 3, OperatorConfirmed: true}
+	if response.Code != http.StatusCreated || completion.input != want || !strings.Contains(response.Body.String(), `"completionDecisionId":"completion-api"`) {
+		t.Fatalf("response = %d input = %#v want = %#v body = %s", response.Code, completion.input, want, response.Body.String())
+	}
+}
+
+func TestWorkspaceCompletionRejectsLegacyPacketFields(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{name: "packet ID", body: `{"packetId":"packet-api","expectedVersion":3,"operatorConfirmed":true}`},
+		{name: "operation ID", body: `{"operationId":"local_operator.ticket_workflow","expectedVersion":3,"operatorConfirmed":true}`},
+		{name: "required dependencies", body: `{"requiredDependencies":[],"expectedVersion":3,"operatorConfirmed":true}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			completion := &fakeCompletion{}
+			response := httptest.NewRecorder()
+			workspaceRouter(&fakeWayfinder{}, &fakeAuthority{}, completion).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/completion", strings.NewReader(test.body)))
+			if response.Code != http.StatusBadRequest || completion.input != (featureapp.CompletionInput{}) {
+				t.Fatalf("response = %d input = %#v body = %s", response.Code, completion.input, response.Body.String())
+			}
+		})
 	}
 }
 

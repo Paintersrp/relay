@@ -6,33 +6,34 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"relay/internal/api/shared"
 	appoperations "relay/internal/app/operations"
 	apppackages "relay/internal/app/packages"
 	"relay/internal/executor"
-	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
+
+	"github.com/go-chi/chi/v5"
 )
 
-type apiPacketAuthorizer struct{ request appoperations.MutationRequest }
-
-func (f *apiPacketAuthorizer) AuthorizeMutation(_ context.Context, request appoperations.MutationRequest) (appoperations.MutationAuthorization, error) {
-	f.request = request
-	return appoperations.MutationAuthorization{Allowed: true}, nil
+type apiPackageOwner struct {
+	detail        apppackages.Detail
+	preparedInput *apppackages.PrepareInput
+	approvedInput *apppackages.ApproveInput
 }
 
-type apiPackageOwner struct{ detail apppackages.Detail }
-
-func (f *apiPackageOwner) Prepare(_ context.Context, _ apppackages.PrepareInput) (apppackages.PrepareResult, error) {
+func (f *apiPackageOwner) Prepare(_ context.Context, input apppackages.PrepareInput) (apppackages.PrepareResult, error) {
+	f.preparedInput = &input
 	return apppackages.PrepareResult{Package: f.detail.Package}, nil
 }
-func (f *apiPackageOwner) Approve(_ context.Context, _ apppackages.ApproveInput) (apppackages.ApproveResult, error) {
+
+func (f *apiPackageOwner) Approve(_ context.Context, input apppackages.ApproveInput) (apppackages.ApproveResult, error) {
+	f.approvedInput = &input
 	return apppackages.ApproveResult{Package: f.detail.Package}, nil
 }
+
 func (f *apiPackageOwner) Get(_ context.Context, _ string) (apppackages.Detail, error) {
 	return f.detail, nil
 }
@@ -43,44 +44,215 @@ func (apiLeaseReconciler) ReconcileMutationLease(context.Context, string) (execu
 	return executor.WorkflowMutationLeaseReconcileResult{Released: true}, nil
 }
 
-func TestPrepareRouteUsesPacketAdmittedPackageOwner(t *testing.T) {
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
+func newWorkflowRouter(t *testing.T, owner *apiPackageOwner) http.Handler {
+	t.Helper()
+	service, err := appoperations.NewPackageWorkflowService(owner, apiLeaseReconciler{}, &workflowstore.Store{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = store.Close() })
-	packet := &apiPacketAuthorizer{}
-	owner := &apiPackageOwner{detail: apppackages.Detail{Package: workflowstore.ExecutionPackage{PackageID: "package-api", PackageSha256: strings.Repeat("a", 64)}}}
-	service, err := appoperations.NewPackageWorkflowService(packet, owner, apiLeaseReconciler{}, store)
+	router := chi.NewRouter()
+	MountWorkflowRoutes(router, NewWorkflowHandler(service))
+	return router
+}
+
+func testPackageOwner() *apiPackageOwner {
+	return &apiPackageOwner{detail: apppackages.Detail{Package: workflowstore.ExecutionPackage{
+		PackageID:     "package-api",
+		PackageSha256: strings.Repeat("a", 64),
+	}}}
+}
+
+func jsonRequestBody(t *testing.T, value any) string {
+	t.Helper()
+	body, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := NewWorkflowHandler(service)
-	body := `{"packetId":"packet-api","operationId":"local_operator.ticket_workflow","selectionId":"selection-api","ticketDesignBrief":{"displayName":"feature.ticket-T1.r1.design-brief.md","expectedSha256":"` + strings.Repeat("b", 64) + `","bytesBase64":"` + base64.StdEncoding.EncodeToString([]byte(testfixtures.TicketDesignBrief)) + `"},"requiredDependencies":[{"class":"execution_package_selection","key":"selection:selection-api"},{"class":"execution_package_ticket_design_brief","key":"feature.ticket-T1.r1.design-brief.md:` + strings.Repeat("b", 64) + `"}]}`
-	request := httptest.NewRequest(http.MethodPost, "/execution-packages", strings.NewReader(body))
+	return string(body)
+}
+
+func TestPrepareRouteForwardsDirectPackageInput(t *testing.T) {
+	owner := testPackageOwner()
+	router := newWorkflowRouter(t, owner)
+	briefBytes := []byte("# Brief\n")
+	operationsBytes := []byte(`{"operations":[]}`)
+	body := prepareRequest{
+		SelectionID: "selection-api",
+		TicketDesignBrief: artifactRequest{
+			DisplayName:    "feature.ticket-T1.r1.design-brief.md",
+			ExpectedSHA256: strings.Repeat("b", 64),
+			BytesBase64:    base64.StdEncoding.EncodeToString(briefBytes),
+		},
+		DeterministicOperations: &artifactRequest{
+			DisplayName:    "feature.ticket-T1.r1.deterministic-operations.json",
+			ExpectedSHA256: strings.Repeat("c", 64),
+			BytesBase64:    base64.StdEncoding.EncodeToString(operationsBytes),
+		},
+	}
 	response := httptest.NewRecorder()
-	handler.Prepare(response, request)
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/execution-packages", strings.NewReader(jsonRequestBody(t, body))))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	if packet.request.OperationID != registry.LocalOperatorTicketWorkflowOperationID || packet.request.Action != registry.PackageActionPrepare {
-		t.Fatalf("packet request = %#v", packet.request)
+	if owner.preparedInput == nil {
+		t.Fatal("package prepare input was not forwarded")
+	}
+	input := owner.preparedInput
+	if input.SelectionID != body.SelectionID || input.TicketDesignBrief.DisplayName != body.TicketDesignBrief.DisplayName || input.TicketDesignBrief.ExpectedSHA256 != body.TicketDesignBrief.ExpectedSHA256 || string(input.TicketDesignBrief.Bytes) != string(briefBytes) {
+		t.Fatalf("prepare input = %#v", input)
+	}
+	if input.DeterministicOperations == nil || input.DeterministicOperations.DisplayName != body.DeterministicOperations.DisplayName || input.DeterministicOperations.ExpectedSHA256 != body.DeterministicOperations.ExpectedSHA256 || string(input.DeterministicOperations.Bytes) != string(operationsBytes) {
+		t.Fatalf("deterministic operations = %#v", input.DeterministicOperations)
 	}
 }
 
-func TestLeaseViewCarriesOwnerRunIDWithoutRuntimeMetadata(t *testing.T) {
-	raw, err := json.Marshal(appoperations.MutationLeaseView{LeaseID: "lease-retained", RunID: "run-blocked", OwnerRunID: "run-lease-owner"})
-	if err != nil {
-		t.Fatal(err)
+func TestApproveRouteForwardsDirectPackageInput(t *testing.T) {
+	owner := testPackageOwner()
+	router := newWorkflowRouter(t, owner)
+	body := approveRequest{
+		ExpectedPackageSha256:        strings.Repeat("d", 64),
+		OperatorConfirmationEvidence: "operator confirmed package-api",
 	}
-	text := string(raw)
-	if !strings.Contains(text, `"runId":"run-blocked"`) || !strings.Contains(text, `"ownerRunId":"run-lease-owner"`) {
-		t.Fatalf("lease JSON = %s", text)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/execution-packages/package-api/approvals", strings.NewReader(jsonRequestBody(t, body))))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	for _, forbidden := range []string{"ownerIdentity", "localPath", "process", "reconciliationNote"} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("lease JSON exposed %q: %s", forbidden, text)
-		}
+	if owner.approvedInput == nil {
+		t.Fatal("package approval input was not forwarded")
+	}
+	if owner.approvedInput.PackageID != "package-api" || owner.approvedInput.ExpectedPackageSha256 != body.ExpectedPackageSha256 || owner.approvedInput.OperatorConfirmationEvidence != body.OperatorConfirmationEvidence {
+		t.Fatalf("approve input = %#v", owner.approvedInput)
+	}
+}
+
+func TestWorkflowRoutesRejectLegacyPacketFields(t *testing.T) {
+	owner := testPackageOwner()
+	router := newWorkflowRouter(t, owner)
+	brief := map[string]string{
+		"displayName":    "feature.ticket-T1.r1.design-brief.md",
+		"expectedSha256": strings.Repeat("b", 64),
+		"bytesBase64":    base64.StdEncoding.EncodeToString([]byte("# Brief\n")),
+	}
+	for _, tc := range []struct {
+		name string
+		path string
+		body any
+	}{
+		{
+			name: "prepare packet ID",
+			path: "/execution-packages",
+			body: map[string]any{
+				"selectionId":       "selection-api",
+				"ticketDesignBrief": brief,
+				"packetId":          "packet-api",
+			},
+		},
+		{
+			name: "approve operation ID",
+			path: "/execution-packages/package-api/approvals",
+			body: map[string]any{
+				"expectedPackageSha256":        strings.Repeat("d", 64),
+				"operatorConfirmationEvidence": "operator confirmed package-api",
+				"operationId":                  "local_operator.ticket_workflow",
+			},
+		},
+		{
+			name: "reconcile required dependencies",
+			path: "/runs/run-api/mutation-lease/reconcile",
+			body: map[string]any{
+				"leaseId":              "lease-api",
+				"requiredDependencies": []any{},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(jsonRequestBody(t, tc.body))))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if owner.preparedInput != nil || owner.approvedInput != nil {
+		t.Fatalf("legacy field request reached owner: prepare=%#v approve=%#v", owner.preparedInput, owner.approvedInput)
+	}
+}
+
+func TestReconcileRouteRequiresExactNonblankLeaseID(t *testing.T) {
+	owner := testPackageOwner()
+	router := newWorkflowRouter(t, owner)
+	for _, tc := range []struct {
+		name    string
+		leaseID string
+	}{
+		{name: "missing"},
+		{name: "blank", leaseID: "   "},
+		{name: "outer whitespace", leaseID: " lease-api "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/runs/run-api/mutation-lease/reconcile", strings.NewReader(jsonRequestBody(t, reconcileRequest{LeaseID: tc.leaseID}))))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			var errorResponse shared.ErrorShape
+			if err := json.Unmarshal(response.Body.Bytes(), &errorResponse); err != nil {
+				t.Fatal(err)
+			}
+			if errorResponse.Message != "A nonblank mutation lease ID is required" {
+				t.Fatalf("error response = %#v", errorResponse)
+			}
+		})
+	}
+}
+
+func TestWritePackageErrorUsesDirectDomainConflictMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		err       error
+		status    int
+		errorCode string
+		message   string
+	}{
+		{
+			name:      "package basis",
+			err:       apppackages.ErrPackageBasisChanged,
+			status:    http.StatusConflict,
+			errorCode: "CONFLICT",
+			message:   "Execution package basis is stale or already linked to a Run",
+		},
+		{
+			name:      "missing lease",
+			err:       appoperations.ErrNoActiveMutationLease,
+			status:    http.StatusConflict,
+			errorCode: "LEASE_CONFLICT",
+			message:   "Mutation lease is missing, stale, or does not match the Run",
+		},
+		{
+			name:      "mismatched lease",
+			err:       appoperations.ErrMutationLeaseConflict,
+			status:    http.StatusConflict,
+			errorCode: "LEASE_CONFLICT",
+			message:   "Mutation lease is missing, stale, or does not match the Run",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writePackageError(response, tc.err)
+			if response.Code != tc.status {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			var errorResponse shared.ErrorShape
+			if err := json.Unmarshal(response.Body.Bytes(), &errorResponse); err != nil {
+				t.Fatal(err)
+			}
+			if errorResponse.Error != tc.errorCode || errorResponse.Message != tc.message {
+				t.Fatalf("error response = %#v", errorResponse)
+			}
+			if strings.Contains(strings.ToLower(errorResponse.Message), "packet") || strings.Contains(strings.ToLower(errorResponse.Message), "admission") {
+				t.Fatalf("legacy conflict wording = %q", errorResponse.Message)
+			}
+		})
 	}
 }

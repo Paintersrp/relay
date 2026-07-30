@@ -60,6 +60,7 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 		method string
 		path   string
 	}{
+		{http.MethodPost, "/api/runs"},
 		{http.MethodPost, "/api/runs/1/approve-intake"},
 		{http.MethodPost, "/api/runs/1/prepare"},
 		{http.MethodPost, "/api/runs/1/render-brief"},

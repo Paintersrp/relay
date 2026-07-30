@@ -2,10 +2,6 @@ package operations
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"strconv"
 	"strings"
 
@@ -14,100 +10,46 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-var ErrTicketAdmission = errors.New("invalid ticket packet admission")
-
-type TicketSelectionMember struct {
-	TicketID      string
-	RevisionRowID int64
+// TicketFrontierReadRequest is the only packet-authorized Ticket request that
+// remains after the local-operator cutover. Ticket mutations are direct domain
+// operations and never pass through this boundary.
+type TicketFrontierReadRequest struct {
+	PacketID string
+	TicketID string
 }
 
-type TicketOperationRequest struct {
-	PacketID               string
-	OperationID            registry.OperationID
-	Action                 registry.AllowedAction
-	WorkspaceID            string
-	TicketID               string
-	RevisionRowID          int64
-	ExpectedRevisionNumber int64
-	AuthorityRevisionID    string
-	SourceClosureRowID     int64
-	ExternalPriority       int64
-	PayloadSHA256          string
-	SelectionMembers       []TicketSelectionMember
-	RequiredDependencies   []DependencyRequirement
-}
+// TicketFrontierAdmissionService verifies the exact active Planner frontier
+// packet. It intentionally cannot encode Ticket, package, lease, or completion
+// mutations.
+type TicketFrontierAdmissionService struct{ packets PacketMutationAuthorizer }
 
-type TicketAdmissionService struct{ packets PacketMutationAuthorizer }
-
-func NewTicketAdmissionService(packets PacketMutationAuthorizer) (*TicketAdmissionService, error) {
+func NewTicketFrontierAdmissionService(packets PacketMutationAuthorizer) (*TicketFrontierAdmissionService, error) {
 	if packets == nil {
 		return nil, ErrTicketAdmission
 	}
-	return &TicketAdmissionService{packets: packets}, nil
+	return &TicketFrontierAdmissionService{packets: packets}, nil
 }
 
-func ValidateTicketOperationRequest(request TicketOperationRequest) error {
-	if strings.TrimSpace(request.PacketID) != request.PacketID || request.PacketID == "" ||
-		strings.TrimSpace(request.WorkspaceID) != request.WorkspaceID || request.WorkspaceID == "" {
+func ValidateTicketFrontierReadRequest(request TicketFrontierReadRequest) error {
+	if !exactNonBlank(request.PacketID) || !exactNonBlank(request.TicketID) {
 		return ErrTicketAdmission
 	}
-	operation, ok := registry.TicketOperationForAction(request.Action)
-	if !ok || operation.OperationID != request.OperationID {
-		return ErrTicketAdmission
-	}
-	if err := validateTicketDependencies(request.RequiredDependencies); err != nil {
-		return err
-	}
-
-	switch request.Action {
-	case registry.TicketActionReadFrontier:
-		if request.TicketID != "" || request.RevisionRowID != 0 || request.ExpectedRevisionNumber != 0 ||
-			request.AuthorityRevisionID != "" || request.SourceClosureRowID != 0 || request.ExternalPriority != 0 || request.PayloadSHA256 != "" || len(request.SelectionMembers) != 0 {
-			return ErrTicketAdmission
-		}
-	case registry.TicketActionPublish:
-		if !exactNonBlank(request.TicketID) || request.RevisionRowID != 0 || request.ExpectedRevisionNumber < 0 ||
-			request.AuthorityRevisionID != "" || request.SourceClosureRowID < 1 || request.ExternalPriority < 0 || !validTicketSHA256(request.PayloadSHA256) || len(request.SelectionMembers) != 0 {
-			return ErrTicketAdmission
-		}
-	case registry.TicketActionReplaceDependencies:
-		if !exactNonBlank(request.TicketID) || request.RevisionRowID != 0 || request.ExpectedRevisionNumber < 1 ||
-			request.AuthorityRevisionID != "" || request.SourceClosureRowID < 1 || request.ExternalPriority < 0 || !validTicketSHA256(request.PayloadSHA256) || len(request.SelectionMembers) != 0 {
-			return ErrTicketAdmission
-		}
-	case registry.TicketActionApprove:
-		if !exactNonBlank(request.TicketID) || request.RevisionRowID < 1 || request.ExpectedRevisionNumber != 0 ||
-			!exactNonBlank(request.AuthorityRevisionID) || request.SourceClosureRowID < 1 || request.ExternalPriority != 0 || !validTicketSHA256(request.PayloadSHA256) || len(request.SelectionMembers) != 0 {
-			return ErrTicketAdmission
-		}
-	case registry.TicketActionUpdatePriority:
-		if !exactNonBlank(request.TicketID) || request.RevisionRowID != 0 || request.ExpectedRevisionNumber != 0 ||
-			request.AuthorityRevisionID != "" || request.SourceClosureRowID != 0 || request.ExternalPriority < 0 || !validTicketSHA256(request.PayloadSHA256) || len(request.SelectionMembers) != 0 {
-			return ErrTicketAdmission
-		}
-	case registry.TicketActionSelect:
-		if !exactNonBlank(request.TicketID) || request.RevisionRowID < 1 || request.ExpectedRevisionNumber != 0 ||
-			request.AuthorityRevisionID != "" || request.SourceClosureRowID != 0 || request.ExternalPriority != 0 ||
-			!validTicketSHA256(request.PayloadSHA256) || len(request.SelectionMembers) != 0 {
-			return ErrTicketAdmission
-		}
-	default:
+	operation, ok := registry.TicketOperationForAction(registry.TicketActionReadFrontier)
+	if !ok || operation.OperationID != registry.PlannerTicketFrontierOperationID ||
+		operation.SurfaceContract != registry.PlannerTicketFrontierSurface {
 		return ErrTicketAdmission
 	}
 	return nil
 }
 
-func (s *TicketAdmissionService) Admit(ctx context.Context, request TicketOperationRequest) (MutationAuthorization, error) {
-	if s == nil || s.packets == nil {
+func (s *TicketFrontierAdmissionService) Admit(ctx context.Context, request TicketFrontierReadRequest) (MutationAuthorization, error) {
+	if s == nil || s.packets == nil || ValidateTicketFrontierReadRequest(request) != nil {
 		return MutationAuthorization{}, ErrTicketAdmission
 	}
-	if err := ValidateTicketOperationRequest(request); err != nil {
-		return MutationAuthorization{}, err
-	}
-	operation, _ := registry.TicketOperationForAction(request.Action)
+	operation, _ := registry.TicketOperationForAction(registry.TicketActionReadFrontier)
 	return s.packets.AuthorizeMutation(ctx, MutationRequest{
 		PacketID: request.PacketID, SurfaceContract: operation.SurfaceContract, OperationID: operation.OperationID,
-		Action: request.Action, RequiredDependencies: append([]DependencyRequirement(nil), request.RequiredDependencies...),
+		Action: registry.TicketActionReadFrontier,
 	})
 }
 
@@ -120,210 +62,117 @@ type TicketWorkflowOwner interface {
 	Select(context.Context, tickets.SelectInput) (tickets.SelectionResult, error)
 }
 
-type TicketWorkflowService struct {
-	admission *TicketAdmissionService
-	owner     TicketWorkflowOwner
-	packets   PacketMutationAuthorizer
+// PacketReader is deliberately read-only. It exists solely to verify the
+// Planner remediation authoring packet before remediation publication.
+type PacketReader interface {
+	Get(context.Context, string) (PacketView, error)
 }
 
-func NewTicketWorkflowService(packets PacketMutationAuthorizer, owner TicketWorkflowOwner) (*TicketWorkflowService, error) {
-	admission, err := NewTicketAdmissionService(packets)
-	if err != nil || owner == nil {
+// TicketWorkflowService projects direct Delivery Ticket domain commands. It
+// has no local-operator mutation admission path. A supplied packet reader is
+// used only for remediation authoring verification.
+type TicketWorkflowService struct {
+	owner   TicketWorkflowOwner
+	packets PacketReader
+}
+
+func NewTicketWorkflowService(packets PacketReader, owner TicketWorkflowOwner) (*TicketWorkflowService, error) {
+	if owner == nil {
 		return nil, ErrTicketAdmission
 	}
-	return &TicketWorkflowService{admission: admission, owner: owner, packets: packets}, nil
+	return &TicketWorkflowService{owner: owner, packets: packets}, nil
 }
 
 // RemediationAuthoringReference binds a remediation publication to the exact
-// Planner packet that supplied its retained authoring context. The Planner
-// packet is read-only; the local-operator packet remains the mutation authority.
+// active Planner packet that supplied its retained authoring context. It is
+// authoring authority only, never mutation authorization.
 type RemediationAuthoringReference struct {
 	PacketID             string `json:"packet_id"`
 	ExpectedPacketSHA256 string `json:"expected_packet_sha256"`
 }
 
-type TicketPublishOperationInput struct {
-	Admission                     TicketOperationRequest
-	Publish                       tickets.PublishInput
-	RemediationAuthoringReference RemediationAuthoringReference
-}
-
-func (s *TicketWorkflowService) Publish(ctx context.Context, input TicketPublishOperationInput) (tickets.PublishedRevision, error) {
-	if err := validateTicketPublicationInput(input); err != nil {
-		return tickets.PublishedRevision{}, err
-	}
-	payload, err := TicketPublishPayloadSHA256WithRemediation(input.Publish, input.RemediationAuthoringReference)
-	if err != nil || !matchesPublishRequest(input.Admission, registry.TicketActionPublish, input.Publish) || input.Admission.PayloadSHA256 != payload {
+// Publish delegates ordinary publication directly to the Ticket owner. A
+// remediation publication is admitted only after its Planner authoring packet
+// has been read and verified exactly.
+func (s *TicketWorkflowService) Publish(ctx context.Context, input tickets.PublishInput, reference *RemediationAuthoringReference) (tickets.PublishedRevision, error) {
+	if s == nil || s.owner == nil {
 		return tickets.PublishedRevision{}, ErrTicketAdmission
 	}
-	if _, err := s.admit(ctx, input.Admission, registry.TicketActionPublish); err != nil {
+	if err := ValidateTicketPublicationInput(input, reference); err != nil {
 		return tickets.PublishedRevision{}, err
 	}
-	if input.Publish.RemediationSeedID != "" {
-		if err := s.verifyRemediationAuthoring(ctx, input); err != nil {
+	if input.RemediationSeedID != "" {
+		if err := s.verifyRemediationAuthoring(ctx, input, *reference); err != nil {
 			return tickets.PublishedRevision{}, err
 		}
 	}
-	return s.owner.Publish(ctx, input.Publish)
+	return s.owner.Publish(ctx, input)
 }
 
-func (s *TicketWorkflowService) ReplaceDependencies(ctx context.Context, input TicketPublishOperationInput) (tickets.PublishedRevision, error) {
-	if input.Publish.RemediationSeedID != "" || input.RemediationAuthoringReference != (RemediationAuthoringReference{}) {
+func (s *TicketWorkflowService) ReplaceDependencies(ctx context.Context, input tickets.PublishInput) (tickets.PublishedRevision, error) {
+	if s == nil || s.owner == nil || input.RemediationSeedID != "" {
 		return tickets.PublishedRevision{}, ErrTicketAdmission
 	}
-	payload, err := TicketPublishPayloadSHA256(input.Publish)
-	if err != nil || !matchesPublishRequest(input.Admission, registry.TicketActionReplaceDependencies, input.Publish) || input.Admission.PayloadSHA256 != payload {
-		return tickets.PublishedRevision{}, ErrTicketAdmission
-	}
-	if _, err := s.admit(ctx, input.Admission, registry.TicketActionReplaceDependencies); err != nil {
-		return tickets.PublishedRevision{}, err
-	}
-	return s.owner.Publish(ctx, input.Publish)
+	return s.owner.Publish(ctx, input)
 }
 
-type TicketApprovalOperationInput struct {
-	Admission TicketOperationRequest
-	Approve   tickets.ApproveInput
-}
-
-func (s *TicketWorkflowService) Approve(ctx context.Context, input TicketApprovalOperationInput) (workflowstore.DeliveryTicketRevisionApproval, error) {
-	request := input.Admission
-	payload, err := TicketApprovalPayloadSHA256(input.Approve)
-	if request.Action != registry.TicketActionApprove || request.TicketID != input.Approve.TicketID ||
-		request.RevisionRowID != input.Approve.RevisionRowID || request.AuthorityRevisionID != input.Approve.AuthorityRevisionID || err != nil || request.PayloadSHA256 != payload {
+// Approve verifies the caller's revision and source-closure binding against
+// the current Ticket before delegating the authority-bound approval to the
+// Ticket owner.
+func (s *TicketWorkflowService) Approve(ctx context.Context, input tickets.ApproveInput, sourceClosureRowID int64) (workflowstore.DeliveryTicketRevisionApproval, error) {
+	if s == nil || s.owner == nil || sourceClosureRowID < 1 {
 		return workflowstore.DeliveryTicketRevisionApproval{}, ErrTicketAdmission
 	}
-	if _, err := s.admit(ctx, request, registry.TicketActionApprove); err != nil {
-		return workflowstore.DeliveryTicketRevisionApproval{}, err
-	}
-	detail, err := s.owner.Read(ctx, request.TicketID)
+	detail, err := s.owner.Read(ctx, input.TicketID)
 	if err != nil {
 		return workflowstore.DeliveryTicketRevisionApproval{}, err
 	}
-	if detail.Revision.ID != request.RevisionRowID || detail.Revision.SourceClosureRowID != request.SourceClosureRowID {
+	if !detail.Ticket.CurrentRevisionRowID.Valid || detail.Ticket.CurrentRevisionRowID.Int64 != input.RevisionRowID ||
+		detail.Revision.ID != input.RevisionRowID || detail.Revision.SourceClosureRowID != sourceClosureRowID {
 		return workflowstore.DeliveryTicketRevisionApproval{}, ErrTicketAdmission
 	}
-	return s.owner.Approve(ctx, input.Approve)
+	return s.owner.Approve(ctx, input)
 }
 
-func (s *TicketWorkflowService) UpdatePriority(ctx context.Context, request TicketOperationRequest) (workflowstore.DeliveryTicket, error) {
-	payload, err := TicketPriorityPayloadSHA256(request.TicketID, request.ExternalPriority)
-	if err != nil || request.PayloadSHA256 != payload {
+func (s *TicketWorkflowService) UpdatePriority(ctx context.Context, ticketID string, externalPriority int64) (workflowstore.DeliveryTicket, error) {
+	if s == nil || s.owner == nil {
 		return workflowstore.DeliveryTicket{}, ErrTicketAdmission
 	}
-	if _, err := s.admit(ctx, request, registry.TicketActionUpdatePriority); err != nil {
-		return workflowstore.DeliveryTicket{}, err
+	return s.owner.UpdateExternalPriority(ctx, ticketID, externalPriority)
+}
+
+// ListFrontier is a direct HTTP/domain read. The separately mounted MCP
+// frontier route applies TicketFrontierAdmissionService before calling the
+// same owner read.
+func (s *TicketWorkflowService) ListFrontier(ctx context.Context, workspaceID string) (tickets.Frontier, error) {
+	if s == nil || s.owner == nil {
+		return tickets.Frontier{}, ErrTicketAdmission
 	}
-	return s.owner.UpdateExternalPriority(ctx, request.TicketID, request.ExternalPriority)
+	return s.owner.ListFrontier(ctx, workspaceID)
 }
 
-func (s *TicketWorkflowService) ListFrontier(ctx context.Context, request TicketOperationRequest) (tickets.Frontier, error) {
-	if _, err := s.admit(ctx, request, registry.TicketActionReadFrontier); err != nil {
-		return tickets.Frontier{}, err
-	}
-	return s.owner.ListFrontier(ctx, request.WorkspaceID)
-}
-
-type TicketSelectionOperationInput struct {
-	Admission TicketOperationRequest
-	Select    tickets.SelectInput
-}
-
-func (s *TicketWorkflowService) Select(ctx context.Context, input TicketSelectionOperationInput) (tickets.SelectionResult, error) {
-	payload, err := TicketSelectionPayloadSHA256(input.Select)
-	if input.Admission.Action != registry.TicketActionSelect || input.Admission.WorkspaceID != input.Select.WorkspaceID ||
-		input.Admission.TicketID != input.Select.TicketID || input.Admission.RevisionRowID != input.Select.RevisionRowID ||
-		err != nil || input.Admission.PayloadSHA256 != payload {
+func (s *TicketWorkflowService) Select(ctx context.Context, input tickets.SelectInput) (tickets.SelectionResult, error) {
+	if s == nil || s.owner == nil {
 		return tickets.SelectionResult{}, ErrTicketAdmission
 	}
-	if _, err := s.admit(ctx, input.Admission, registry.TicketActionSelect); err != nil {
-		return tickets.SelectionResult{}, err
-	}
-	return s.owner.Select(ctx, input.Select)
+	return s.owner.Select(ctx, input)
 }
 
-func (s *TicketWorkflowService) admit(ctx context.Context, request TicketOperationRequest, action registry.AllowedAction) (MutationAuthorization, error) {
-	if s == nil || s.admission == nil || s.owner == nil || request.Action != action {
-		return MutationAuthorization{}, ErrTicketAdmission
-	}
-	return s.admission.Admit(ctx, request)
-}
-
-func matchesPublishRequest(request TicketOperationRequest, action registry.AllowedAction, input tickets.PublishInput) bool {
-	return request.Action == action && request.WorkspaceID == input.WorkspaceID && request.TicketID == input.TicketID &&
-		request.ExpectedRevisionNumber == input.ExpectedRevisionNumber && request.ExternalPriority == input.ExternalPriority &&
-		request.SourceClosureRowID == input.Revision.SourceClosureRowID
-}
-
-func validateTicketPublicationInput(input TicketPublishOperationInput) error {
-	seedID := strings.TrimSpace(input.Publish.RemediationSeedID)
-	ref := input.RemediationAuthoringReference
-	packetID := strings.TrimSpace(ref.PacketID)
-	packetSHA := strings.TrimSpace(ref.ExpectedPacketSHA256)
-	if input.Publish.RemediationSeedID == "" && ref == (RemediationAuthoringReference{}) {
+func ValidateTicketPublicationInput(input tickets.PublishInput, reference *RemediationAuthoringReference) error {
+	if input.RemediationSeedID == "" {
+		if reference != nil {
+			return ErrTicketAdmission
+		}
 		return nil
 	}
-	if seedID == "" || seedID != input.Publish.RemediationSeedID || packetID == "" || packetID != ref.PacketID || packetSHA == "" || packetSHA != ref.ExpectedPacketSHA256 || !validTicketSHA256(packetSHA) {
+	if reference == nil || !exactNonBlank(input.RemediationSeedID) || !exactNonBlank(reference.PacketID) ||
+		!exactNonBlank(reference.ExpectedPacketSHA256) || !validTicketSHA256(reference.ExpectedPacketSHA256) {
 		return ErrTicketAdmission
 	}
 	return nil
 }
 
-func ValidateTicketPublicationInput(input TicketPublishOperationInput) error {
-	return validateTicketPublicationInput(input)
-}
-
-func validateTicketDependencies(values []DependencyRequirement) error {
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		if !exactNonBlank(value.Class) || !exactNonBlank(value.Key) {
-			return ErrTicketAdmission
-		}
-		key := value.Class + "\x00" + value.Key
-		if _, duplicate := seen[key]; duplicate {
-			return ErrTicketAdmission
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
-}
-
 func exactNonBlank(value string) bool { return strings.TrimSpace(value) == value && value != "" }
-
-func TicketPublishPayloadSHA256(input tickets.PublishInput) (string, error) {
-	return TicketPublishPayloadSHA256WithRemediation(input, RemediationAuthoringReference{})
-}
-
-func TicketPublishPayloadSHA256WithRemediation(input tickets.PublishInput, reference RemediationAuthoringReference) (string, error) {
-	return ticketPayloadSHA256(struct {
-		Publish   tickets.PublishInput          `json:"publish"`
-		Authoring RemediationAuthoringReference `json:"authoring_packet"`
-	}{Publish: input, Authoring: reference})
-}
-
-func TicketApprovalPayloadSHA256(input tickets.ApproveInput) (string, error) {
-	return ticketPayloadSHA256(input)
-}
-
-func TicketPriorityPayloadSHA256(ticketID string, externalPriority int64) (string, error) {
-	return ticketPayloadSHA256(struct {
-		TicketID         string `json:"ticket_id"`
-		ExternalPriority int64  `json:"external_priority"`
-	}{TicketID: ticketID, ExternalPriority: externalPriority})
-}
-
-func TicketSelectionPayloadSHA256(input tickets.SelectInput) (string, error) {
-	return ticketPayloadSHA256(input)
-}
-
-func ticketPayloadSHA256(value any) (string, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
-}
 
 func validTicketSHA256(value string) bool {
 	if len(value) != 64 {
@@ -337,6 +186,4 @@ func validTicketSHA256(value string) bool {
 	return true
 }
 
-func stringRevisionID(value int64) string {
-	return strconv.FormatInt(value, 10)
-}
+func stringRevisionID(value int64) string { return strconv.FormatInt(value, 10) }

@@ -12,7 +12,6 @@ import (
 
 	appcutover "relay/internal/app/cutover"
 	workflowplans "relay/internal/app/plans/workflow"
-	workflowruns "relay/internal/app/runs/workflow"
 	"relay/internal/planningartifacts"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
@@ -21,15 +20,6 @@ import (
 const MaxDiagnostics = 50
 
 var lowercaseSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// Type aliases for API packages to use app-layer names instead of importing internal/store/workflow
-type (
-	Project  = workflowstore.Project
-	Plan     = workflowstore.Plan
-	PlanPass = workflowstore.PlanPass
-	Artifact = workflowstore.Artifact
-	Run      = workflowstore.Run
-)
 
 type ValidationInput struct {
 	DisplayName    string
@@ -59,23 +49,16 @@ type SubmitPlanResult struct {
 	Artifacts []workflowstore.Artifact
 }
 
-type CreateRunInput struct {
-	DisplayName     string
-	ExpectedSHA256  string
-	CanonicalBytes  []byte
-	PlanID          string
-	PassNumber      int64
-	RemediatesRunID string
-}
-
-type CreateRunResult struct {
-	Run       workflowstore.Run
-	Artifacts []workflowstore.Artifact
+// PlanSubmissionGate keeps canonical Plan submission and the underlying Plan
+// mutation on the same cutover boundary.
+type PlanSubmissionGate interface {
+	workflowplans.PlanMutationGate
+	AllowNewPlan(context.Context) (appcutover.LegacyGateDecision, error)
 }
 
 type Service struct {
 	store       *workflowstore.Store
-	cutoverGate *appcutover.LegacyGate
+	cutoverGate PlanSubmissionGate
 }
 
 type planArtifactModel struct {
@@ -93,22 +76,36 @@ type planArtifactModel struct {
 	} `json:"passes"`
 }
 
-type executionSpecModel struct {
-	FeatureSlug string `json:"feature_slug"`
-	RepoTarget  string `json:"repo_target"`
-	Branch      string `json:"branch"`
-	BaseCommit  string `json:"base_commit"`
-}
-
 func NewService(store *workflowstore.Store) (*Service, error) {
-	return NewServiceWithGate(store, nil)
+	cutoverService, err := appcutover.NewService(store)
+	if err != nil {
+		return nil, err
+	}
+	return NewServiceWithGate(store, appcutover.NewLegacyGate(cutoverService))
 }
 
-func NewServiceWithGate(store *workflowstore.Store, gate *appcutover.LegacyGate) (*Service, error) {
+func NewServiceWithGate(store *workflowstore.Store, gate PlanSubmissionGate) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
+	if gate == nil {
+		return nil, fmt.Errorf("workflow cutover gate is required")
+	}
 	return &Service{store: store, cutoverGate: gate}, nil
+}
+
+func (s *Service) admitNewPlan(ctx context.Context) error {
+	if s == nil || s.cutoverGate == nil {
+		return applicationError(ErrorCutoverStateUnavailable, "Cutover admission state is unavailable", "cutover", false, nil)
+	}
+	decision, err := s.cutoverGate.AllowNewPlan(ctx)
+	if err != nil {
+		return applicationError(ErrorCutoverStateUnavailable, "Cutover admission state is unavailable", "cutover", false, err)
+	}
+	if !decision.Allowed {
+		return applicationError(ErrorLegacyAdmissionClosed, "Legacy Plan submission is closed; use ticket-oriented admission", "cutover", true, appcutover.ErrLegacyAdmissionClosed)
+	}
+	return nil
 }
 
 func (s *Service) ValidateArtifact(_ context.Context, input ValidationInput) (ValidationResult, error) {
@@ -172,16 +169,10 @@ func (s *Service) SubmitPlan(ctx context.Context, input SubmitPlanInput) (Submit
 			nil,
 		)
 	}
-	if s.cutoverGate != nil {
-		decision, err := s.cutoverGate.AllowNewPlan(ctx)
-		if err != nil {
-			return SubmitPlanResult{}, applicationError(ErrorPersistence, "cutover service unavailable", "cutover", false, err)
-		}
-		if !decision.Allowed {
-			return SubmitPlanResult{}, applicationError(ErrorPersistence, "legacy Plan submission is closed; use ticket-oriented admission", "cutover", true, nil)
-		}
+	if err := s.admitNewPlan(ctx); err != nil {
+		return SubmitPlanResult{}, err
 	}
-	plans, err := workflowplans.NewService(s.store)
+	plans, err := workflowplans.NewServiceWithGate(s.store, s.cutoverGate)
 	if err != nil {
 		return SubmitPlanResult{}, applicationError(ErrorPersistence, "workflow Plan service is unavailable", "workflow_store", false, err)
 	}
@@ -204,11 +195,6 @@ func (s *Service) SubmitPlan(ctx context.Context, input SubmitPlanInput) (Submit
 	}, nil
 }
 
-func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRunResult, error) {
-	_ = ctx
-	_ = input
-	return CreateRunResult{}, applicationError(ErrorPersistence, "authored Execution Spec Run admission has been removed; use selected-package admission", "create_run", true, nil)
-}
 func compileMutation(displayName, expectedSHA string, data []byte, expectedKind speccompiler.ArtifactKind) (speccompiler.FilenameInfo, string, error) {
 	if !lowercaseSHA256.MatchString(expectedSHA) {
 		return speccompiler.FilenameInfo{}, "", applicationError(
@@ -276,6 +262,10 @@ func compileMutation(displayName, expectedSHA string, data []byte, expectedKind 
 
 func classifyPlanError(err error) error {
 	switch {
+	case errors.Is(err, appcutover.ErrLegacyAdmissionClosed):
+		return applicationError(ErrorLegacyAdmissionClosed, "Legacy Plan submission is closed; use ticket-oriented admission", "cutover", true, err)
+	case errors.Is(err, workflowplans.ErrCutoverStateUnavailable):
+		return applicationError(ErrorCutoverStateUnavailable, "Cutover admission state is unavailable", "cutover", false, err)
 	case errors.Is(err, workflowplans.ErrProjectNotFound):
 		return applicationError(ErrorProjectNotFound, "referenced Project was not found", "project_id", true, err)
 	case errors.Is(err, workflowplans.ErrProjectArchived):
@@ -284,24 +274,6 @@ func classifyPlanError(err error) error {
 		return applicationError(ErrorRepositoryNotFound, "repository target is not registered with exact key casing", "repo_target", true, err)
 	case errors.Is(err, workflowplans.ErrPlanNotFound):
 		return applicationError(ErrorPlanPassAssociation, "referenced Plan was not found", "plan_id", true, err)
-	default:
-		return applicationError(ErrorPersistence, "workflow persistence failed", "workflow_store", false, err)
-	}
-}
-
-func classifyRunError(err error) error {
-	switch {
-	case errors.Is(err, workflowruns.ErrRepositoryTargetNotFound):
-		return applicationError(ErrorRepositoryNotFound, "repository target is not registered with exact key casing", "repo_target", true, err)
-	case errors.Is(err, workflowruns.ErrPlanPassAssociation):
-		if strings.Contains(err.Error(), "managed Plan") && strings.Contains(err.Error(), "was not found") {
-			return applicationError(ErrorUnknownResource, "referenced Plan was not found", "plan_id", true, err)
-		}
-		return applicationError(ErrorPlanPassAssociation, "Plan, pass, or repository association is invalid", "association", true, err)
-	case errors.Is(err, workflowruns.ErrRemediationAssociation):
-		return applicationError(ErrorRemediationAssociation, "remediation Run association is invalid", "remediates_run_id", true, err)
-	case errors.Is(err, workflowruns.ErrInvalidRunInput):
-		return applicationError(ErrorPlanPassAssociation, err.Error(), "association", true, err)
 	default:
 		return applicationError(ErrorPersistence, "workflow persistence failed", "workflow_store", false, err)
 	}

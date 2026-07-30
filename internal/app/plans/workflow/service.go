@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	workflowartifacts "relay/internal/artifacts/workflow"
 	appcutover "relay/internal/app/cutover"
+	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -17,6 +17,7 @@ var (
 	ErrProjectArchived          = errors.New("Project is archived")
 	ErrRepositoryTargetNotFound = errors.New("repository target not found")
 	ErrPlanNotFound             = errors.New("Plan not found")
+	ErrCutoverStateUnavailable  = errors.New("cutover admission state is unavailable")
 )
 
 type IDGenerator interface {
@@ -31,43 +32,64 @@ func (defaultIDGenerator) PlanID() string     { return workflowstore.NewPlanID()
 func (defaultIDGenerator) PassID() string     { return workflowstore.NewPassID() }
 func (defaultIDGenerator) ArtifactID() string { return workflowstore.NewArtifactID() }
 
+// PlanMutationGate is the cutover boundary for legacy Plan writes. Reads remain
+// available regardless of cutover state.
+type PlanMutationGate interface {
+	AllowPlanMutation(context.Context) (appcutover.LegacyGateDecision, error)
+}
+
 type Service struct {
 	store       *workflowstore.Store
 	ids         IDGenerator
-	cutoverGate *appcutover.LegacyGate
+	cutoverGate PlanMutationGate
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})
 }
 
-func NewServiceWithGate(store *workflowstore.Store, gate *appcutover.LegacyGate) (*Service, error) {
+func NewServiceWithGate(store *workflowstore.Store, gate PlanMutationGate) (*Service, error) {
 	return NewServiceWithIDsAndGate(store, defaultIDGenerator{}, gate)
 }
 
-func NewServiceWithIDsAndGate(store *workflowstore.Store, ids IDGenerator, gate *appcutover.LegacyGate) (*Service, error) {
+func NewServiceWithIDsAndGate(store *workflowstore.Store, ids IDGenerator, gate PlanMutationGate) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
 	if ids == nil {
 		return nil, fmt.Errorf("workflow ID generator is required")
 	}
+	if gate == nil {
+		return nil, fmt.Errorf("workflow cutover gate is required")
+	}
 	return &Service{store: store, ids: ids, cutoverGate: gate}, nil
 }
 
 func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
-	return NewServiceWithIDsAndGate(store, ids, nil)
+	cutoverService, err := appcutover.NewService(store)
+	if err != nil {
+		return nil, err
+	}
+	return NewServiceWithIDsAndGate(store, ids, appcutover.NewLegacyGate(cutoverService))
+}
+
+func (s *Service) admitPlanMutation(ctx context.Context) error {
+	if s == nil || s.cutoverGate == nil {
+		return ErrCutoverStateUnavailable
+	}
+	decision, err := s.cutoverGate.AllowPlanMutation(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrCutoverStateUnavailable, err)
+	}
+	if !decision.Allowed {
+		return appcutover.ErrLegacyAdmissionClosed
+	}
+	return nil
 }
 
 func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (CreatePlanResult, error) {
-	if s.cutoverGate != nil {
-		decision, err := s.cutoverGate.AllowPlanMutation(ctx)
-		if err != nil {
-			return CreatePlanResult{}, fmt.Errorf("cutover service unavailable: %w", err)
-		}
-		if !decision.Allowed {
-			return CreatePlanResult{}, fmt.Errorf("%w: legacy Plan mutation is closed; use ticket-oriented admission", ErrPlanNotFound)
-		}
+	if err := s.admitPlanMutation(ctx); err != nil {
+		return CreatePlanResult{}, err
 	}
 
 	if err := validateCreatePlanInput(input); err != nil {
@@ -233,6 +255,9 @@ func (s *Service) GetPlan(ctx context.Context, planID string) (GetPlanResult, er
 }
 
 func (s *Service) MovePlan(ctx context.Context, input MovePlanInput) (MovePlanResult, error) {
+	if err := s.admitPlanMutation(ctx); err != nil {
+		return MovePlanResult{}, err
+	}
 	planID := strings.TrimSpace(input.PlanID)
 	projectID := strings.TrimSpace(input.ProjectID)
 	if planID == "" {
@@ -242,6 +267,7 @@ func (s *Service) MovePlan(ctx context.Context, input MovePlanInput) (MovePlanRe
 		return MovePlanResult{}, fmt.Errorf("%w: Project ID is required", ErrProjectNotFound)
 	}
 	result := MovePlanResult{}
+
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		plan, err := tx.GetPlanByPlanID(ctx, planID)
 		if errors.Is(err, sql.ErrNoRows) {

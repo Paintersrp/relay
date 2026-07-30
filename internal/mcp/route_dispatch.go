@@ -19,14 +19,21 @@ import (
 )
 
 type RouteDispatchServices struct {
-	Projects      *workflowprojects.Service
-	Packets       *appoperations.Service
-	Lifecycle     *OperationPacketLifecycleHandler
-	Source        *sourcegateway.Service
-	Wayfinder     *appwayfinder.Service
-	Tickets       *apptickets.Service
-	Audits        WorkflowAuditToolService
-	AuditReadback AuditReadbackService
+	Projects               *workflowprojects.Service
+	Packets                *appoperations.Service
+	Lifecycle              *OperationPacketLifecycleHandler
+	Source                 *sourcegateway.Service
+	Wayfinder              *appwayfinder.Service
+	Tickets                TicketFrontierReader
+	TicketFrontierAdmitter *TicketFrontierAdmitter
+	Audits                 WorkflowAuditToolService
+	AuditReadback          AuditReadbackService
+}
+
+// TicketFrontierReader is the owner read boundary reached only after packet
+// admission succeeds for the published Planner frontier route.
+type TicketFrontierReader interface {
+	Read(context.Context, string) (apptickets.TicketDetail, error)
 }
 
 type AuditReadbackService interface {
@@ -36,7 +43,7 @@ type AuditReadbackService interface {
 
 func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServices) (RouteDispatchers, error) {
 	handlers := make(map[string]map[string]SurfaceHandler, len(set.Manifests))
-	toolNames := make(map[string]struct{}, 40)
+	toolNames := make(map[string]struct{}, 38)
 	for _, manifest := range set.Manifests {
 		if _, exists := handlers[manifest.RoutePath]; exists {
 			return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate route %s", manifest.RoutePath)
@@ -55,7 +62,7 @@ func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServ
 		}
 		handlers[manifest.RoutePath] = routeHandlers
 	}
-	if len(toolNames) != 40 {
+	if len(toolNames) != 38 {
 		return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: got %d handlers", len(toolNames))
 	}
 	return RouteDispatchers{Handlers: handlers}, nil
@@ -72,7 +79,7 @@ func newRouteToolDispatcher(manifest routecontracts.RouteManifest, tool routecon
 	case "wayfinder_action":
 		return newWayfinderHandler(tool.Name, services.Wayfinder), nil
 	case "frontier":
-		return newTicketFrontierHandler(manifest, services.Packets, services.Tickets), nil
+		return newTicketFrontierHandler(manifest, tool, services.TicketFrontierAdmitter, services.Tickets), nil
 	case "audit":
 		return newAuditReadbackHandler(manifest, tool.Name, services), nil
 	default:
@@ -608,7 +615,7 @@ func newWayfinderHandler(name string, service *appwayfinder.Service) SurfaceHand
 	}
 }
 
-func newTicketFrontierHandler(manifest routecontracts.RouteManifest, packets *appoperations.Service, tickets *apptickets.Service) SurfaceHandler {
+func newTicketFrontierHandler(manifest routecontracts.RouteManifest, tool routecontracts.ToolManifest, admitter *TicketFrontierAdmitter, tickets TicketFrontierReader) SurfaceHandler {
 	return func(raw json.RawMessage) ToolCallResult {
 		var in struct {
 			PacketID string `json:"packet_id"`
@@ -617,12 +624,24 @@ func newTicketFrontierHandler(manifest routecontracts.RouteManifest, packets *ap
 		if err := brokerDecodeStrict(raw, &in); err != nil {
 			return toolErr(err.Error())
 		}
-		view, err := packets.Get(context.Background(), in.PacketID)
+		if manifest.Role != "planner" || manifest.SurfaceContract != string(registry.PlannerTicketFrontierSurface) || tool.OperationID != string(registry.PlannerTicketFrontierOperationID) {
+			return toolErr("MCP_TICKET_FRONTIER_ROUTE_INVALID")
+		}
+		if admitter == nil || tickets == nil {
+			return toolErr("MCP_TICKET_FRONTIER_ADMISSION_UNAVAILABLE")
+		}
+		identity := TicketFrontierOperationIdentity{
+			ExpectedPacketID: in.PacketID,
+			OperationID:      tool.OperationID,
+			Action:           string(registry.TicketActionReadFrontier),
+			TicketID:         in.TicketID,
+		}
+		authorization, semanticRequestSHA256, err := admitter.Admit(context.Background(), identity)
 		if err != nil {
 			return toolErr(err.Error())
 		}
-		if string(view.Summary.SurfaceContract) != manifest.SurfaceContract || string(view.Summary.OperationID) != "planner.ticket_frontier" {
-			return toolErr("packet route mismatch")
+		if !authorization.Allowed || semanticRequestSHA256 == "" {
+			return toolErr("MCP_TICKET_FRONTIER_ADMISSION_DENIED")
 		}
 		value, err := tickets.Read(context.Background(), in.TicketID)
 		if err != nil {

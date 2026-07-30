@@ -8,7 +8,7 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-// MCPDeps contains only the dependencies used by the Planner, Auditor, and local-operator tool profiles.
+// MCPDeps contains only the dependencies used by the active Planner and Auditor tool profiles.
 type MCPDeps struct {
 	WorkflowStore        *workflowstore.Store
 	Log                  *slog.Logger

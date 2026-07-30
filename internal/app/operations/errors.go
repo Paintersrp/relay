@@ -2,6 +2,12 @@ package operations
 
 import "errors"
 
+var (
+	ErrTicketAdmission            = errors.New("ticket workflow admission is invalid")
+	ErrPackageAdmission           = errors.New("execution package workflow is unavailable")
+	ErrFeatureCompletionAdmission = errors.New("feature completion workflow is unavailable")
+)
+
 type Error struct {
 	Code                   string
 	Replacement            *ReplacementPacketIdentity

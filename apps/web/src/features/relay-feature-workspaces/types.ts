@@ -88,9 +88,6 @@ export interface FeatureCompletionStatus {
   currentDecision?: { completionDecisionId: string; authorityRevisionRowId: number; sourceClosureRowId: number; decision: string; createdAt: string };
 }
 export interface CompleteFeatureWorkspaceRequest {
-  packetId: string;
-  operationId: string;
-  requiredDependencies: Array<{ class: string; key: string }>;
   expectedVersion: number;
   operatorConfirmed: boolean;
 }

@@ -1,11 +1,3 @@
-export interface PacketAdmissionRequest {
-  packetId: string;
-  operationId: string;
-  requiredDependencies: { class: string; key: string }[];
-  expectedPackageSha256?: string;
-  operatorConfirmationEvidence?: string;
-}
-
 export interface PackageArtifactInput {
   displayName: string;
   expectedSha256: string;

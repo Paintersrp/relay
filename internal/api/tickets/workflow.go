@@ -13,18 +13,17 @@ import (
 	"relay/internal/api/shared"
 	appoperations "relay/internal/app/operations"
 	apptickets "relay/internal/app/tickets"
-	"relay/internal/operations/registry"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type WorkflowService interface {
-	Publish(context.Context, appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error)
-	ReplaceDependencies(context.Context, appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error)
-	Approve(context.Context, appoperations.TicketApprovalOperationInput) (RevisionApproval, error)
-	UpdatePriority(context.Context, appoperations.TicketOperationRequest) (DeliveryTicket, error)
-	ListFrontier(context.Context, appoperations.TicketOperationRequest) (apptickets.Frontier, error)
-	Select(context.Context, appoperations.TicketSelectionOperationInput) (apptickets.SelectionResult, error)
+	Publish(context.Context, apptickets.PublishInput, *appoperations.RemediationAuthoringReference) (apptickets.PublishedRevision, error)
+	ReplaceDependencies(context.Context, apptickets.PublishInput) (apptickets.PublishedRevision, error)
+	Approve(context.Context, apptickets.ApproveInput, int64) (RevisionApproval, error)
+	UpdatePriority(context.Context, string, int64) (DeliveryTicket, error)
+	ListFrontier(context.Context, string) (apptickets.Frontier, error)
+	Select(context.Context, apptickets.SelectInput) (apptickets.SelectionResult, error)
 }
 
 type ReadService interface {
@@ -79,42 +78,36 @@ type appWorkflowAdapter struct {
 	service *appoperations.TicketWorkflowService
 }
 
-func (a appWorkflowAdapter) Publish(ctx context.Context, input appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error) {
-	return a.service.Publish(ctx, input)
+func (a appWorkflowAdapter) Publish(ctx context.Context, input apptickets.PublishInput, reference *appoperations.RemediationAuthoringReference) (apptickets.PublishedRevision, error) {
+	return a.service.Publish(ctx, input, reference)
 }
 
-func (a appWorkflowAdapter) ReplaceDependencies(ctx context.Context, input appoperations.TicketPublishOperationInput) (apptickets.PublishedRevision, error) {
+func (a appWorkflowAdapter) ReplaceDependencies(ctx context.Context, input apptickets.PublishInput) (apptickets.PublishedRevision, error) {
 	return a.service.ReplaceDependencies(ctx, input)
 }
 
-func (a appWorkflowAdapter) Approve(ctx context.Context, input appoperations.TicketApprovalOperationInput) (RevisionApproval, error) {
-	value, err := a.service.Approve(ctx, input)
+func (a appWorkflowAdapter) Approve(ctx context.Context, input apptickets.ApproveInput, sourceClosureRowID int64) (RevisionApproval, error) {
+	value, err := a.service.Approve(ctx, input, sourceClosureRowID)
 	return RevisionApproval{ApprovalID: value.ApprovalID, RevisionRowID: value.RevisionRowID, ApprovalKind: value.ApprovalKind, ApprovalState: value.ApprovalState, AuthorityRevisionRowID: value.AuthorityRevisionRowID, SourceClosureRowID: value.SourceClosureRowID, Rationale: value.Rationale, CreatedAt: value.CreatedAt}, err
 }
 
-func (a appWorkflowAdapter) UpdatePriority(ctx context.Context, input appoperations.TicketOperationRequest) (DeliveryTicket, error) {
-	value, err := a.service.UpdatePriority(ctx, input)
+func (a appWorkflowAdapter) UpdatePriority(ctx context.Context, ticketID string, externalPriority int64) (DeliveryTicket, error) {
+	value, err := a.service.UpdatePriority(ctx, ticketID, externalPriority)
 	return DeliveryTicket{TicketID: value.TicketID, ExternalPriority: value.ExternalPriority, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}, err
 }
 
-func (a appWorkflowAdapter) ListFrontier(ctx context.Context, input appoperations.TicketOperationRequest) (apptickets.Frontier, error) {
-	return a.service.ListFrontier(ctx, input)
+func (a appWorkflowAdapter) ListFrontier(ctx context.Context, workspaceID string) (apptickets.Frontier, error) {
+	return a.service.ListFrontier(ctx, workspaceID)
 }
 
-func (a appWorkflowAdapter) Select(ctx context.Context, input appoperations.TicketSelectionOperationInput) (apptickets.SelectionResult, error) {
+func (a appWorkflowAdapter) Select(ctx context.Context, input apptickets.SelectInput) (apptickets.SelectionResult, error) {
 	return a.service.Select(ctx, input)
 }
 
-type dependencyRequest struct {
-	Class string `json:"class"`
-	Key   string `json:"key"`
-}
-
-type TicketAdmissionRequest struct {
-	PacketID             string              `json:"packetId"`
-	OperationID          string              `json:"operationId"`
-	RequiredDependencies []dependencyRequest `json:"requiredDependencies"`
-}
+// --- HTTP request types ---
+// Legacy packet-admission fields (packetId, operationId, requiredDependencies)
+// are rejected by strict JSON decoding. Remediation authoring fields are
+// accepted only by delivery ticket publication.
 
 type revisionMemberRequest struct {
 	Kind string `json:"kind"`
@@ -144,7 +137,6 @@ type revisionRequest struct {
 }
 
 type publishRequest struct {
-	TicketAdmissionRequest
 	ExternalPriority              int64           `json:"externalPriority"`
 	ExpectedRevisionNumber        int64           `json:"expectedRevisionNumber"`
 	Revision                      revisionRequest `json:"revision"`
@@ -154,14 +146,12 @@ type publishRequest struct {
 }
 
 type dependencyReplacementRequest struct {
-	TicketAdmissionRequest
 	ExternalPriority       int64           `json:"externalPriority"`
 	ExpectedRevisionNumber int64           `json:"expectedRevisionNumber"`
 	Revision               revisionRequest `json:"revision"`
 }
 
 type approveRequest struct {
-	TicketAdmissionRequest
 	RevisionRowID       int64  `json:"revisionRowId"`
 	AuthorityRevisionID string `json:"authorityRevisionId"`
 	SourceClosureRowID  int64  `json:"sourceClosureRowId"`
@@ -169,16 +159,16 @@ type approveRequest struct {
 }
 
 type priorityRequest struct {
-	TicketAdmissionRequest
 	ExternalPriority int64 `json:"externalPriority"`
 }
 
 type selectionRequest struct {
-	TicketAdmissionRequest
 	TicketID      string `json:"ticketId"`
 	RevisionRowID int64  `json:"revisionRowId"`
 	Rationale     string `json:"rationale"`
 }
+
+// --- Handlers ---
 
 func (h *WorkflowHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ticketID := strings.TrimSpace(chi.URLParam(r, "ticketID"))
@@ -196,12 +186,12 @@ func (h *WorkflowHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WorkflowHandler) Frontier(w http.ResponseWriter, r *http.Request) {
-	request, ok := frontierRequest(r)
+	workspaceID, ok := frontierWorkspaceID(r)
 	if !ok {
 		badRequest(w, "Invalid ticket frontier request")
 		return
 	}
-	frontier, err := h.workflow.ListFrontier(r.Context(), request)
+	frontier, err := h.workflow.ListFrontier(r.Context(), workspaceID)
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -227,23 +217,18 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid delivery ticket revision request")
 		return
 	}
-	input, admission, err := publishInput(request, workspaceID(r), ticketID(r), registry.TicketActionPublish)
+	input, err := buildPublishInput(request.ExternalPriority, request.ExpectedRevisionNumber, request.Revision, workspaceID(r), ticketID(r))
 	if err != nil {
 		badRequest(w, err.Error())
 		return
 	}
-	ref := appoperations.RemediationAuthoringReference{PacketID: request.AuthoringPacketID, ExpectedPacketSHA256: request.ExpectedAuthoringPacketSHA256}
 	input.RemediationSeedID = request.RemediationSeedID
-	if err := appoperations.ValidateTicketPublicationInput(appoperations.TicketPublishOperationInput{Publish: input, RemediationAuthoringReference: ref}); err != nil {
+	reference := remediationReference(request)
+	if err := appoperations.ValidateTicketPublicationInput(input, reference); err != nil {
 		badRequest(w, "Invalid delivery ticket revision request")
 		return
 	}
-	admission.PayloadSHA256, err = appoperations.TicketPublishPayloadSHA256WithRemediation(input, ref)
-	if err != nil {
-		badRequest(w, "Invalid delivery ticket revision request")
-		return
-	}
-	result, err := h.workflow.Publish(r.Context(), appoperations.TicketPublishOperationInput{Admission: admission, Publish: input, RemediationAuthoringReference: ref})
+	result, err := h.workflow.Publish(r.Context(), input, reference)
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -257,12 +242,12 @@ func (h *WorkflowHandler) ReplaceDependencies(w http.ResponseWriter, r *http.Req
 		badRequest(w, "Invalid delivery ticket dependency replacement request")
 		return
 	}
-	input, admission, err := publishInputValues(request.TicketAdmissionRequest, request.ExternalPriority, request.ExpectedRevisionNumber, request.Revision, workspaceID(r), ticketID(r), registry.TicketActionReplaceDependencies)
+	input, err := buildPublishInput(request.ExternalPriority, request.ExpectedRevisionNumber, request.Revision, workspaceID(r), ticketID(r))
 	if err != nil {
 		badRequest(w, err.Error())
 		return
 	}
-	result, err := h.workflow.ReplaceDependencies(r.Context(), appoperations.TicketPublishOperationInput{Admission: admission, Publish: input})
+	result, err := h.workflow.ReplaceDependencies(r.Context(), input)
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -276,19 +261,13 @@ func (h *WorkflowHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid delivery ticket approval request")
 		return
 	}
-	admission, err := admissionFrom(request.TicketAdmissionRequest, workspaceID(r), ticketID(r), registry.TicketActionApprove, request.SourceClosureRowID, request.RevisionRowID, 0, request.AuthorityRevisionID, "")
-	if err != nil {
-		badRequest(w, err.Error())
-		return
+	input := apptickets.ApproveInput{
+		TicketID:            ticketID(r),
+		RevisionRowID:       request.RevisionRowID,
+		AuthorityRevisionID: request.AuthorityRevisionID,
+		Rationale:           request.Rationale,
 	}
-	input := apptickets.ApproveInput{TicketID: ticketID(r), RevisionRowID: request.RevisionRowID, AuthorityRevisionID: request.AuthorityRevisionID, Rationale: request.Rationale}
-	payload, err := appoperations.TicketApprovalPayloadSHA256(input)
-	if err != nil {
-		badRequest(w, "Invalid delivery ticket approval request")
-		return
-	}
-	admission.PayloadSHA256 = payload
-	approval, err := h.workflow.Approve(r.Context(), appoperations.TicketApprovalOperationInput{Admission: admission, Approve: input})
+	approval, err := h.workflow.Approve(r.Context(), input, request.SourceClosureRowID)
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -302,18 +281,7 @@ func (h *WorkflowHandler) UpdatePriority(w http.ResponseWriter, r *http.Request)
 		badRequest(w, "Invalid delivery ticket priority request")
 		return
 	}
-	admission, err := admissionFrom(request.TicketAdmissionRequest, workspaceID(r), ticketID(r), registry.TicketActionUpdatePriority, 0, 0, 0, "", "")
-	if err != nil {
-		badRequest(w, err.Error())
-		return
-	}
-	admission.ExternalPriority = request.ExternalPriority
-	admission.PayloadSHA256, err = appoperations.TicketPriorityPayloadSHA256(ticketID(r), request.ExternalPriority)
-	if err != nil {
-		badRequest(w, "Invalid delivery ticket priority request")
-		return
-	}
-	ticket, err := h.workflow.UpdatePriority(r.Context(), admission)
+	ticket, err := h.workflow.UpdatePriority(r.Context(), ticketID(r), request.ExternalPriority)
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -328,17 +296,7 @@ func (h *WorkflowHandler) Select(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := apptickets.SelectInput{WorkspaceID: workspaceID(r), TicketID: request.TicketID, RevisionRowID: request.RevisionRowID, Rationale: request.Rationale}
-	payload, err := appoperations.TicketSelectionPayloadSHA256(input)
-	if err != nil {
-		badRequest(w, "Invalid delivery ticket selection request")
-		return
-	}
-	admission, err := admissionFrom(request.TicketAdmissionRequest, workspaceID(r), request.TicketID, registry.TicketActionSelect, input.RevisionRowID, input.RevisionRowID, 0, "", payload)
-	if err != nil {
-		badRequest(w, err.Error())
-		return
-	}
-	result, err := h.workflow.Select(r.Context(), appoperations.TicketSelectionOperationInput{Admission: admission, Select: input})
+	result, err := h.workflow.Select(r.Context(), input)
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -346,13 +304,9 @@ func (h *WorkflowHandler) Select(w http.ResponseWriter, r *http.Request) {
 	shared.JSON(w, http.StatusCreated, selectionDTO(result))
 }
 
-func publishInput(request publishRequest, workspaceID, ticketID string, action registry.AllowedAction) (apptickets.PublishInput, appoperations.TicketOperationRequest, error) {
-	return publishInputValues(request.TicketAdmissionRequest, request.ExternalPriority, request.ExpectedRevisionNumber, request.Revision, workspaceID, ticketID, action)
-}
-
-func publishInputValues(admissionRequest TicketAdmissionRequest, externalPriority, expectedRevisionNumber int64, revision revisionRequest, workspaceID, ticketID string, action registry.AllowedAction) (apptickets.PublishInput, appoperations.TicketOperationRequest, error) {
+func buildPublishInput(externalPriority, expectedRevisionNumber int64, revision revisionRequest, workspaceID, ticketID string) (apptickets.PublishInput, error) {
 	if revision.CanonicalJSON == nil {
-		return apptickets.PublishInput{}, appoperations.TicketOperationRequest{}, errors.New("canonicalJson is required")
+		return apptickets.PublishInput{}, errors.New("canonicalJson is required")
 	}
 	members := make([]apptickets.RevisionMemberInput, 0, len(revision.Members))
 	for _, member := range revision.Members {
@@ -362,34 +316,26 @@ func publishInputValues(admissionRequest TicketAdmissionRequest, externalPriorit
 	for _, dependency := range revision.Dependencies {
 		dependencies = append(dependencies, apptickets.DependencyInput{RevisionRowID: dependency.RevisionRowID, Outcome: dependency.Outcome})
 	}
-	input := apptickets.PublishInput{WorkspaceID: workspaceID, TicketID: ticketID, ExternalPriority: externalPriority, ExpectedRevisionNumber: expectedRevisionNumber, Revision: apptickets.RevisionInput{
+	return apptickets.PublishInput{WorkspaceID: workspaceID, TicketID: ticketID, ExternalPriority: externalPriority, ExpectedRevisionNumber: expectedRevisionNumber, Revision: apptickets.RevisionInput{
 		RepoTarget: revision.RepoTarget, Branch: revision.Branch, BaseCommit: revision.BaseCommit, SourceClosureRowID: revision.SourceClosureRowID,
 		SourcePath: revision.SourcePath, Goal: revision.Goal, Context: revision.Context, TransitionApplicability: revision.TransitionApplicability,
 		CancellationReason: revision.CancellationReason, CanonicalJSON: revision.CanonicalJSON, RenderedMarkdown: []byte(revision.RenderedMarkdown), Members: members, Dependencies: dependencies,
-	}}
-	payload, err := appoperations.TicketPublishPayloadSHA256(input)
-	if err != nil {
-		return apptickets.PublishInput{}, appoperations.TicketOperationRequest{}, err
-	}
-	admission, err := admissionFrom(admissionRequest, workspaceID, ticketID, action, input.Revision.SourceClosureRowID, 0, expectedRevisionNumber, "", payload)
-	return input, admission, err
+	}}, nil
 }
 
-func admissionFrom(request TicketAdmissionRequest, workspaceID, ticketID string, action registry.AllowedAction, sourceClosureID, revisionID, expectedRevision int64, authorityID, payload string) (appoperations.TicketOperationRequest, error) {
-	dependencies := make([]appoperations.DependencyRequirement, 0, len(request.RequiredDependencies))
-	for _, dependency := range request.RequiredDependencies {
-		dependencies = append(dependencies, appoperations.DependencyRequirement{Class: dependency.Class, Key: dependency.Key})
+func remediationReference(request publishRequest) *appoperations.RemediationAuthoringReference {
+	if request.RemediationSeedID == "" && request.AuthoringPacketID == "" && request.ExpectedAuthoringPacketSHA256 == "" {
+		return nil
 	}
-	return appoperations.TicketOperationRequest{PacketID: request.PacketID, OperationID: registry.OperationID(request.OperationID), Action: action, WorkspaceID: workspaceID, TicketID: ticketID, RevisionRowID: revisionID, ExpectedRevisionNumber: expectedRevision, AuthorityRevisionID: authorityID, SourceClosureRowID: sourceClosureID, PayloadSHA256: payload, RequiredDependencies: dependencies}, nil
+	return &appoperations.RemediationAuthoringReference{PacketID: request.AuthoringPacketID, ExpectedPacketSHA256: request.ExpectedAuthoringPacketSHA256}
 }
 
-func frontierRequest(r *http.Request) (appoperations.TicketOperationRequest, bool) {
-	packetID := strings.TrimSpace(r.URL.Query().Get("packetId"))
-	operationID := strings.TrimSpace(r.URL.Query().Get("operationId"))
-	if packetID == "" || operationID == "" || workspaceID(r) == "" {
-		return appoperations.TicketOperationRequest{}, false
+func frontierWorkspaceID(r *http.Request) (string, bool) {
+	id := workspaceID(r)
+	if id == "" || r.URL.RawQuery != "" {
+		return "", false
 	}
-	return appoperations.TicketOperationRequest{PacketID: packetID, OperationID: registry.OperationID(operationID), Action: registry.TicketActionReadFrontier, WorkspaceID: workspaceID(r)}, true
+	return id, true
 }
 
 func ticketDTO(detail apptickets.TicketDetail) map[string]any {
@@ -461,11 +407,11 @@ func writeTicketError(w http.ResponseWriter, err error) {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, apptickets.ErrTicketNotFound), errors.Is(err, apptickets.ErrSelectionWorkspaceNotFound):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Delivery ticket or workspace was not found")
 	case packetCode == appoperations.CodePacketNotFound:
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Operation packet was not found")
+		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Planner remediation authoring packet was not found")
 	case packetCode != "" && packetCode != appoperations.CodeInternalFailure:
-		shared.Error(w, http.StatusConflict, "CONFLICT", "Operation packet is stale, unavailable, or does not authorize this ticket action")
+		shared.Error(w, http.StatusConflict, "CONFLICT", "Planner remediation authoring packet is stale, unavailable, or does not match this remediation publication")
 	case errors.Is(err, apptickets.ErrSelectionConflict), errors.Is(err, apptickets.ErrSelectionMemberStale), errors.Is(err, apptickets.ErrSelectionSourceStale), errors.Is(err, apptickets.ErrSelectionAuthorityStale), errors.Is(err, apptickets.ErrSelectionDependenciesInvalid), errors.Is(err, apptickets.ErrRevisionConflict), errors.Is(err, appoperations.ErrTicketAdmission):
-		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket state is stale or packet admission failed")
+		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket state is stale or invalid")
 	case errors.Is(err, apptickets.ErrRemediationSeed):
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket remediation seed is stale or already consumed")
 	case errors.Is(err, apptickets.ErrInvalidTicket), errors.Is(err, apptickets.ErrInvalidSelection), errors.Is(err, apptickets.ErrSelectionMemberNotReady):

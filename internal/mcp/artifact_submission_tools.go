@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/url"
-	"os"
 	"strings"
 
 	workflowplans "relay/internal/app/plans/workflow"
@@ -99,12 +97,9 @@ type artifactArgs struct {
 }
 
 type artifactSubmissionArgs struct {
-	ProjectID       string               `json:"project_id,omitempty"`
-	ArtifactFile    ChatGPTFileReference `json:"artifact_file"`
-	ExpectedSHA256  string               `json:"expected_sha256"`
-	PlanID          string               `json:"plan_id,omitempty"`
-	PassNumber      int64                `json:"pass_number,omitempty"`
-	RemediatesRunID string               `json:"remediates_run_id,omitempty"`
+	ProjectID      string               `json:"project_id,omitempty"`
+	ArtifactFile   ChatGPTFileReference `json:"artifact_file"`
+	ExpectedSHA256 string               `json:"expected_sha256"`
 }
 
 type getPlanArgs struct {
@@ -131,15 +126,6 @@ type planOutput struct {
 	Artifacts []workflowArtifactOutput `json:"artifacts"`
 }
 
-type runOutput struct {
-	OK         bool                      `json:"ok"`
-	Tool       string                    `json:"tool"`
-	Run        runMetadata               `json:"run"`
-	Artifacts  []workflowArtifactOutput  `json:"artifacts"`
-	Provenance ExactSubmissionProvenance `json:"provenance"`
-	ReviewURL  string                    `json:"review_url"`
-}
-
 type planMetadata struct {
 	PlanID          string `json:"plan_id"`
 	FeatureSlug     string `json:"feature_slug"`
@@ -157,21 +143,6 @@ type passMetadata struct {
 	Status     string `json:"status"`
 }
 
-type runMetadata struct {
-	RunID           string `json:"run_id"`
-	FeatureSlug     string `json:"feature_slug"`
-	RepoTarget      string `json:"repo_target"`
-	Status          string `json:"status"`
-	Branch          string `json:"branch"`
-	BaseCommit      string `json:"base_commit"`
-	CanonicalSHA256 string `json:"canonical_sha256"`
-	PlanID          string `json:"plan_id,omitempty"`
-	PassNumber      int64  `json:"pass_number,omitempty"`
-	RemediatesRunID string `json:"remediates_run_id,omitempty"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
-}
-
 type workflowArtifactOutput struct {
 	ArtifactID   string `json:"artifact_id"`
 	OwnerType    string `json:"owner_type"`
@@ -187,8 +158,6 @@ func workflowToolDefinitions(profile ToolProfile) []ToolDefinition {
 	switch profile {
 	case ToolProfileAuditor:
 		return []ToolDefinition{ToolValidateArtifact, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
-	case ToolProfileLocalOperator:
-		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
 	case ToolProfilePlanner:
 		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan}
 	default:
@@ -304,52 +273,6 @@ func (s *Server) HandleGetPlan(rawArgs json.RawMessage) ToolCallResult {
 	})
 }
 
-func (s *Server) HandleCreateRun(rawArgs json.RawMessage) ToolCallResult {
-	if s.workflowStore() == nil {
-		return workflowBlocked("create_run", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
-	}
-	var input artifactSubmissionArgs
-	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return workflowBlocked("create_run", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "create_run", nil)
-	}
-	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
-	if fetchErr != nil {
-		return toolBlockedResult("create_run", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
-	}
-	provenance := exactArtifactProvenance(content, input.ExpectedSHA256)
-	service, err := s.submissionService()
-	if err != nil {
-		return workflowBlocked("create_run", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
-	}
-	result, err := service.CreateRun(context.Background(), workflowsubmissions.CreateRunInput{
-		DisplayName:     content.DisplayName,
-		ExpectedSHA256:  input.ExpectedSHA256,
-		CanonicalBytes:  content.Bytes,
-		PlanID:          input.PlanID,
-		PassNumber:      input.PassNumber,
-		RemediatesRunID: input.RemediatesRunID,
-	})
-	if err != nil {
-		return submissionApplicationBlocked("create_run", err, provenance)
-	}
-	return workflowOK(runOutput{
-		OK:         true,
-		Tool:       "create_run",
-		Run:        runOut(result.Run, s.workflowStore()),
-		Artifacts:  artifactOut(result.Artifacts),
-		Provenance: provenance,
-		ReviewURL:  runReviewURL(result.Run.RunID),
-	})
-}
-
-func runReviewURL(runID string) string {
-	base := strings.TrimSpace(os.Getenv("RELAY_WEB_BASE_URL"))
-	if base == "" {
-		base = "http://localhost:3000"
-	}
-	return strings.TrimRight(base, "/") + "/runs/" + url.PathEscape(runID) + "/specification"
-}
-
 func workflowBlocked(tool, code, message string, recoverable bool, ref string, metadata any) ToolCallResult {
 	return toolBlockedResult(tool, []MCPBlocker{newMCPBlocker(code, message, recoverable, []MCPBlockerEvidence{{Kind: "field", Ref: ref}}, []string{"Correct the blocker and retry the tool."})}, metadata)
 }
@@ -445,45 +368,6 @@ func artifactOut(artifacts []workflowstore.Artifact) []workflowArtifactOutput {
 			SizeBytes:    artifact.SizeBytes,
 			CreatedAt:    artifact.CreatedAt,
 		})
-	}
-	return out
-}
-
-func runOut(run workflowstore.Run, store *workflowstore.Store) runMetadata {
-	canonicalSHA256 := ""
-	if run.CanonicalSHA256.Valid {
-		canonicalSHA256 = run.CanonicalSHA256.String
-	}
-	out := runMetadata{
-		RunID:           run.RunID,
-		FeatureSlug:     run.FeatureSlug,
-		RepoTarget:      run.RepoTarget,
-		Status:          run.Status,
-		Branch:          run.Branch,
-		BaseCommit:      run.BaseCommit,
-		CanonicalSHA256: canonicalSHA256,
-		CreatedAt:       run.CreatedAt,
-		UpdatedAt:       run.UpdatedAt,
-	}
-	if store != nil && run.PlanRowID.Valid {
-		if plan, err := store.GetPlanByRowID(context.Background(), run.PlanRowID.Int64); err == nil {
-			out.PlanID = plan.PlanID
-		}
-	}
-	if store != nil && run.PlanPassRowID.Valid {
-		if pass, err := store.GetPlanPassByRowID(context.Background(), run.PlanPassRowID.Int64); err == nil {
-			out.PassNumber = pass.PassNumber
-			if out.PlanID == "" {
-				if plan, err := store.GetPlanByRowID(context.Background(), pass.PlanRowID); err == nil {
-					out.PlanID = plan.PlanID
-				}
-			}
-		}
-	}
-	if store != nil && run.RemediatesRunRowID.Valid {
-		if remediates, err := store.GetRunByRowID(context.Background(), run.RemediatesRunRowID.Int64); err == nil {
-			out.RemediatesRunID = remediates.RunID
-		}
 	}
 	return out
 }

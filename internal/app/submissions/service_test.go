@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	appcutover "relay/internal/app/cutover"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/speccompiler"
@@ -162,7 +163,7 @@ func TestValidateArtifactValidatesAuthoredMarkdownWithoutAdmission(t *testing.T)
 	}
 }
 
-func TestAuthoredMarkdownCannotBeAdmittedAsPlanOrRun(t *testing.T) {
+func TestAuthoredMarkdownCannotBeAdmittedAsPlan(t *testing.T) {
 	fixture := newSubmissionFixture(t)
 	ticketBrief := []byte(testfixtures.TicketDesignBrief)
 	_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
@@ -173,59 +174,6 @@ func TestAuthoredMarkdownCannotBeAdmittedAsPlanOrRun(t *testing.T) {
 	})
 	assertApplicationCode(t, err, ErrorInvalidArtifactKind)
 	assertNoPlanSubmission(t, fixture)
-
-	sharedDesign := []byte("# Shared Design\n\n## Context\n\n## Design\n\n## Risks\n\n## Validation\n")
-	_, err = fixture.service.CreateRun(context.Background(), CreateRunInput{
-		DisplayName:    "relay.design.md",
-		ExpectedSHA256: SHA256(sharedDesign),
-		CanonicalBytes: sharedDesign,
-	})
-	assertApplicationCode(t, err, ErrorInvalidArtifactKind)
-	if got := tableCount(t, fixture.store, "runs"); got != 0 {
-		t.Fatalf("runs = %d, want 0", got)
-	}
-}
-
-func TestExecutionVersionResultsPropagateThroughValidationAndRunCreation(t *testing.T) {
-	v1 := canonicalExecutionSpecBytes("relay")
-	v2 := bytes.Replace(v1, []byte(`"schema_version": "1.0"`), []byte(`"schema_version": "2.0"`), 1)
-	compiledV2 := speccompiler.Compile("canonical-service.execution-spec.json", v2)
-	validatedV2 := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: v2})
-	if !validatedV2.OK || validatedV2.Status != "valid" || validatedV2.Kind != "execution_spec" || validatedV2.SHA256 != SHA256(v2) {
-		t.Fatalf("v2 validation result = %+v", validatedV2)
-	}
-	assertDiagnosticsMatch(t, "v2 diagnostics", validatedV2.Diagnostics, compiledV2.Errors)
-	assertDiagnosticsMatch(t, "v2 notices", validatedV2.Notices, compiledV2.Notices)
-
-	anomalous := bytes.Replace(v2, []byte("  \"schema_version\": \"2.0\",\n"), nil, 1)
-	compiledAnomalous := speccompiler.Compile("canonical-service.execution-spec.json", anomalous)
-	validatedAnomalous := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: anomalous})
-	if !validatedAnomalous.OK || len(validatedAnomalous.Notices) != 1 || validatedAnomalous.Notices[0].Code != "schema_version_anomaly" {
-		t.Fatalf("anomalous validation result = %+v", validatedAnomalous)
-	}
-	assertDiagnosticsMatch(t, "anomalous diagnostics", validatedAnomalous.Diagnostics, compiledAnomalous.Errors)
-	assertDiagnosticsMatch(t, "anomalous notices", validatedAnomalous.Notices, compiledAnomalous.Notices)
-
-	unsupported := bytes.Replace(v2, []byte(`"schema_version": "2.0"`), []byte(`"schema_version": "3.0"`), 1)
-	compiledUnsupported := speccompiler.Compile("canonical-service.execution-spec.json", unsupported)
-	validatedUnsupported := validateArtifact(ValidationInput{DisplayName: "canonical-service.execution-spec.json", CanonicalBytes: unsupported})
-	if !validatedUnsupported.OK || validatedUnsupported.Status != "valid" || len(validatedUnsupported.Notices) != 1 || validatedUnsupported.Notices[0].Code != "schema_version_anomaly" {
-		t.Fatalf("unsupported validation result = %+v", validatedUnsupported)
-	}
-	assertDiagnosticsMatch(t, "unsupported diagnostics", validatedUnsupported.Diagnostics, compiledUnsupported.Errors)
-
-	fixture := newSubmissionFixture(t)
-	created, err := fixture.service.CreateRun(context.Background(), CreateRunInput{
-		DisplayName:    "canonical-service.execution-spec.json",
-		ExpectedSHA256: SHA256(v2),
-		CanonicalBytes: v2,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(created.Artifacts) != 2 {
-		t.Fatalf("v2 Run artifacts = %+v", created.Artifacts)
-	}
 }
 
 func assertDiagnosticsMatch(
@@ -284,92 +232,6 @@ func TestPlanSubmissionReturnsCommittedProjectAggregate(t *testing.T) {
 		len(result.Artifacts) != 2 {
 		t.Fatalf("Plan result = %+v", result)
 	}
-}
-
-func TestRunSubmissionPreservesSelectedPassFilenameContract(t *testing.T) {
-	t.Run("matching managed qualifier succeeds and persists qualified basenames", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		plan := fixture.submitPlan(t)
-		data := canonicalExecutionSpecBytes("relay")
-		result, err := fixture.service.CreateRun(context.Background(), CreateRunInput{
-			DisplayName:    "canonical-service.pass-1.execution-spec.json",
-			ExpectedSHA256: SHA256(data),
-			CanonicalBytes: data,
-			PlanID:         plan.Plan.PlanID,
-			PassNumber:     1,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !result.Run.PlanRowID.Valid || !result.Run.PlanPassRowID.Valid {
-			t.Fatalf("managed Run = %+v", result.Run)
-		}
-		paths := map[string]bool{}
-		for _, artifact := range result.Artifacts {
-			paths[filepath.ToSlash(artifact.RelativePath)] = true
-		}
-		base := "runs/" + result.Run.RunID + "/"
-		if !paths[base+"canonical-service.pass-1.execution-spec.json"] ||
-			!paths[base+"canonical-service.pass-1.executor-brief.md"] {
-			t.Fatalf("qualified artifact paths = %+v", paths)
-		}
-	})
-
-	for _, test := range []struct {
-		name     string
-		fileName string
-		plan     bool
-		pass     int64
-	}{
-		{name: "managed missing qualifier", fileName: "canonical-service.execution-spec.json", plan: true, pass: 1},
-		{name: "managed malformed qualifier", fileName: "canonical-service.pass-01.execution-spec.json", plan: true, pass: 1},
-		{name: "managed mismatched qualifier", fileName: "canonical-service.pass-2.execution-spec.json", plan: true, pass: 1},
-		{name: "standalone qualified", fileName: "canonical-service.pass-1.execution-spec.json"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			fixture := newSubmissionFixture(t)
-			input := CreateRunInput{
-				DisplayName:    test.fileName,
-				ExpectedSHA256: SHA256(canonicalExecutionSpecBytes("relay")),
-				CanonicalBytes: canonicalExecutionSpecBytes("relay"),
-				PassNumber:     test.pass,
-			}
-			if test.plan {
-				input.PlanID = fixture.submitPlan(t).Plan.PlanID
-			}
-			beforeArtifacts := tableCount(t, fixture.store, "artifacts")
-			beforeFiles := regularFileCount(t, filepath.Join(fixture.root, "artifacts"))
-			_, err := fixture.service.CreateRun(context.Background(), input)
-			application, ok := AsApplicationError(err)
-			if !ok {
-				t.Fatalf("error = %v", err)
-			}
-			if application.Code != ErrorSelectedPassFilename {
-				t.Fatalf("code = %q", application.Code)
-			}
-			if tableCount(t, fixture.store, "runs") != 0 ||
-				tableCount(t, fixture.store, "artifacts") != beforeArtifacts ||
-				regularFileCount(t, filepath.Join(fixture.root, "artifacts")) != beforeFiles {
-				t.Fatal("failed Run submission created durable state")
-			}
-		})
-	}
-
-	t.Run("standalone unqualified succeeds", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		data := canonicalExecutionSpecBytes("relay")
-		result, err := fixture.service.CreateRun(context.Background(), CreateRunInput{
-			DisplayName:    "canonical-service.execution-spec.json",
-			ExpectedSHA256: SHA256(data),
-			CanonicalBytes: data,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.Run.PlanRowID.Valid || result.Run.PlanPassRowID.Valid {
-			t.Fatalf("standalone Run = %+v", result.Run)
-		}
-	})
 }
 
 func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
@@ -499,48 +361,6 @@ func canonicalPlanBytes(repoTarget string) []byte {
 `, repoTarget, repoTarget))
 }
 
-func canonicalExecutionSpecBytes(repoTarget string) []byte {
-	return []byte(fmt.Sprintf(`{
-  "schema_version": "1.0",
-  "feature_slug": "canonical-service",
-  "repo_target": %q,
-  "branch": "main",
-  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "goal": "Test canonical Run creation.",
-  "context": "Canonical service Execution Spec context.",
-  "scope": {
-    "in_scope": ["Create the test source."],
-    "out_of_scope": ["No extra behavior."]
-  },
-  "steps": [{
-    "number": 1,
-    "goal": "Create the test source.",
-    "substeps": [{
-      "number": 1,
-      "instruction": "Create the canonical service test source.",
-      "files": [{
-        "path": "internal/canonicalservice/test.go",
-        "operation": "create",
-        "purpose": "Provide the test source.",
-        "implementation": {
-          "content": "package canonicalservice\n\nfunc Enabled() bool {\n\treturn true\n}\n"
-        }
-      }],
-      "completion_criteria": ["The source is defined."]
-    }],
-    "completion_criteria": ["The source is complete."]
-  }],
-  "validation": {
-    "commands": [{
-      "command": "go test ./internal/canonicalservice",
-      "expected": "The canonical service test package passes."
-    }]
-  },
-  "completion_criteria": ["The canonical Run input is complete."]
-}
-`, repoTarget))
-}
-
 func tableCount(t *testing.T, store *workflowstore.Store, table string) int {
 	t.Helper()
 	var count int
@@ -569,4 +389,57 @@ func regularFileCount(t *testing.T, root string) int {
 		t.Fatal(err)
 	}
 	return count
+}
+
+type staticSubmissionGate struct {
+	newPlanDecision  appcutover.LegacyGateDecision
+	newPlanErr       error
+	mutationDecision appcutover.LegacyGateDecision
+	mutationErr      error
+}
+
+func (g staticSubmissionGate) AllowNewPlan(context.Context) (appcutover.LegacyGateDecision, error) {
+	return g.newPlanDecision, g.newPlanErr
+}
+
+func (g staticSubmissionGate) AllowPlanMutation(context.Context) (appcutover.LegacyGateDecision, error) {
+	return g.mutationDecision, g.mutationErr
+}
+
+func TestSubmitPlanMapsCutoverGateOutcomes(t *testing.T) {
+	tests := []struct {
+		name string
+		gate staticSubmissionGate
+		want ErrorCode
+	}{
+		{
+			name: "legacy admission closed",
+			gate: staticSubmissionGate{newPlanDecision: appcutover.LegacyGateDecision{Allowed: false}},
+			want: ErrorLegacyAdmissionClosed,
+		},
+		{
+			name: "cutover state unavailable",
+			gate: staticSubmissionGate{newPlanErr: errors.New("cutover state read failed")},
+			want: ErrorCutoverStateUnavailable,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newSubmissionFixture(t)
+			service, err := NewServiceWithGate(fixture.store, tt.gate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture.service = service
+			data := canonicalPlanBytes("relay")
+			_, err = fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
+				ProjectID:      fixture.project.ProjectID,
+				DisplayName:    "canonical-service.plan.json",
+				ExpectedSHA256: SHA256(data),
+				CanonicalBytes: data,
+			})
+			assertApplicationCode(t, err, tt.want)
+			assertNoPlanSubmission(t, fixture)
+		})
+	}
 }

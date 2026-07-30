@@ -2,69 +2,66 @@ package registry
 
 import "testing"
 
-func TestTicketOperationInventoryIsClosedAndOrdered(t *testing.T) {
+func TestTicketOperationInventoryContainsOnlyPlannerFrontier(t *testing.T) {
 	operations := TicketOperations()
-	if len(operations) != 2 {
-		t.Fatalf("operation count = %d", len(operations))
+	if len(operations) != 1 {
+		t.Fatalf("operation count = %d, want 1", len(operations))
 	}
-
 	if operations[0].OperationID != PlannerTicketFrontierOperationID || operations[0].Role != "planner" ||
 		operations[0].SurfaceContract != PlannerTicketFrontierSurface ||
 		len(operations[0].AllowedNonSourceActions) != 1 || operations[0].AllowedNonSourceActions[0] != TicketActionReadFrontier {
 		t.Fatalf("planner frontier operation = %#v", operations[0])
 	}
+}
 
-	wantMutations := []AllowedAction{
-		TicketActionPublish,
-		TicketActionApprove,
-		TicketActionUpdatePriority,
-		TicketActionReplaceDependencies,
-		TicketActionSelect,
-		PackageActionPrepare,
-		PackageActionApprove,
-		MutationLeaseActionReconcile,
-		FeatureCompletionActionComplete,
+func TestTicketOperationForActionResolvesOnlyFrontierRead(t *testing.T) {
+	op, ok := TicketOperationForAction(TicketActionReadFrontier)
+	if !ok || op.OperationID != PlannerTicketFrontierOperationID {
+		t.Fatalf("frontier read = %#v, %v", op, ok)
 	}
-	if operations[1].OperationID != LocalOperatorTicketWorkflowOperationID || operations[1].Role != "local_operator" ||
-		operations[1].SurfaceContract != LocalOperatorTicketWorkflowSurface ||
-		len(operations[1].AllowedNonSourceActions) != len(wantMutations) {
-		t.Fatalf("local-operator workflow operation = %#v", operations[1])
-	}
-	for index, want := range wantMutations {
-		if got := operations[1].AllowedNonSourceActions[index]; got != want {
-			t.Fatalf("mutation action %d = %q, want %q", index, got, want)
+	for _, action := range []AllowedAction{
+		TicketActionPublish, TicketActionApprove, TicketActionUpdatePriority,
+		TicketActionReplaceDependencies, TicketActionSelect,
+		PackageActionPrepare, PackageActionApprove,
+		MutationLeaseActionReconcile, FeatureCompletionActionComplete,
+	} {
+		if _, ok := TicketOperationForAction(action); ok {
+			t.Fatalf("mutation action %q unexpectedly resolved through registry", action)
 		}
-	}
-
-	for _, operation := range operations {
-		for _, action := range operation.AllowedNonSourceActions {
-			owner, ok := TicketOperationForAction(action)
-			if !ok || owner.OperationID != operation.OperationID || owner.SurfaceContract != operation.SurfaceContract {
-				t.Fatalf("action %q owner = %#v, %v", action, owner, ok)
-			}
-		}
-	}
-	if _, ok := TicketOperationForAction("create_package"); ok {
-		t.Fatal("package action was admitted")
 	}
 }
 
-func TestTicketRoleProfilesExposeOnlyPlannerReadAndLocalOperatorMutations(t *testing.T) {
+func TestTicketRegistryDoesNotReturnLocalOperatorTicketWorkflow(t *testing.T) {
+	for _, op := range TicketOperations() {
+		if op.OperationID == "local_operator.ticket_workflow" {
+			t.Fatalf("local_operator.ticket_workflow found in TicketOperations()")
+		}
+	}
+	if _, ok := TicketOperationForAction("prepare_execution_package"); ok {
+		t.Fatal("package prepare action resolved through ticket registry")
+	}
+	if _, ok := TicketOperationForAction("reconcile_mutation_lease"); ok {
+		t.Fatal("lease reconcile action resolved through ticket registry")
+	}
+	if _, ok := TicketOperationForAction("complete_feature_workspace"); ok {
+		t.Fatal("completion action resolved through ticket registry")
+	}
+}
+
+func TestTicketRoleProfilesExposeOnlyPlannerRead(t *testing.T) {
 	profiles := TicketRoleProfiles()
-	if len(profiles) != 2 {
-		t.Fatalf("profile count = %d", len(profiles))
+	if len(profiles) != 1 {
+		t.Fatalf("profile count = %d, want 1", len(profiles))
 	}
-	for _, profile := range profiles {
-		if profile.ManifestSHA256 == "" || len(profile.Operations) != 1 {
-			t.Fatalf("invalid profile: %#v", profile)
-		}
-		operation, ok := Lookup(profile.Operations[0])
-		if !ok || operation.Role != profile.Role || operation.SurfaceContract != profile.SurfaceContract {
-			t.Fatalf("profile operation mismatch: %#v", profile)
-		}
+	profile := profiles[0]
+	if profile.Role != "planner" || len(profile.Operations) != 1 || profile.Operations[0] != PlannerTicketFrontierOperationID {
+		t.Fatalf("profile = %#v", profile)
 	}
-	if profiles[0].Role != "planner" || profiles[0].Operations[0] != PlannerTicketFrontierOperationID ||
-		profiles[1].Role != "local_operator" || profiles[1].Operations[0] != LocalOperatorTicketWorkflowOperationID {
-		t.Fatalf("profiles = %#v", profiles)
+	if profile.ManifestSHA256 == "" {
+		t.Fatal("manifest SHA256 is empty")
+	}
+	operation, ok := Lookup(profile.Operations[0])
+	if !ok || operation.Role != profile.Role || operation.SurfaceContract != profile.SurfaceContract {
+		t.Fatalf("profile operation mismatch: %#v", profile)
 	}
 }

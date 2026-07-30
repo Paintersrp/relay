@@ -43,4 +43,10 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(screen.getByText("Discovery")).toBeTruthy();
     expect(screen.getByText("Route workspace")).toBeTruthy();
   });
+
+  it("does not render packet-admission controls for completion", () => {
+    render(<RelayFeatureWorkspaceDetail detail={base} />, { wrapper });
+    expect(screen.getByText(/Completion is an explicit action against the displayed current gates/)).toBeTruthy();
+    expect(screen.queryByLabelText("Local-operator packet ID")).toBeNull();
+  });
 });

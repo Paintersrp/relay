@@ -14,7 +14,6 @@ import (
 	featureapp "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	wayfinder "relay/internal/app/wayfinder"
-	"relay/internal/operations/registry"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -37,7 +36,7 @@ type AuthorityService interface {
 
 type CompletionService interface {
 	Evaluate(context.Context, string) (appoperations.FeatureCompletionStatus, error)
-	Complete(context.Context, appoperations.FeatureCompletionOperationInput) (appoperations.FeatureCompletionResult, error)
+	Complete(context.Context, featureapp.CompletionInput) (appoperations.FeatureCompletionResult, error)
 }
 
 type Workspace struct {
@@ -250,16 +249,9 @@ type recordAuthorityApprovalRequest struct {
 	ArtifactSHA256               string `json:"artifactSha256"`
 	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
 }
-type completionDependencyRequest struct {
-	Class string `json:"class"`
-	Key   string `json:"key"`
-}
 type completeWorkspaceRequest struct {
-	PacketID             string                        `json:"packetId"`
-	OperationID          string                        `json:"operationId"`
-	RequiredDependencies []completionDependencyRequest `json:"requiredDependencies"`
-	ExpectedVersion      int64                         `json:"expectedVersion"`
-	OperatorConfirmed    bool                          `json:"operatorConfirmed"`
+	ExpectedVersion   int64 `json:"expectedVersion"`
+	OperatorConfirmed bool  `json:"operatorConfirmed"`
 }
 
 func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -422,24 +414,8 @@ func (h *WorkspaceHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid feature completion request")
 		return
 	}
-	dependencies := make([]appoperations.DependencyRequirement, 0, len(request.RequiredDependencies))
-	for _, dependency := range request.RequiredDependencies {
-		dependencies = append(dependencies, appoperations.DependencyRequirement{Class: dependency.Class, Key: dependency.Key})
-	}
 	complete := featureapp.CompletionInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, OperatorConfirmed: request.OperatorConfirmed}
-	payload, err := appoperations.FeatureCompletionPayloadSHA256(complete)
-	if err != nil {
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature completion request could not be prepared")
-		return
-	}
-	result, err := h.completion.Complete(r.Context(), appoperations.FeatureCompletionOperationInput{
-		Admission: appoperations.FeatureCompletionOperationRequest{
-			PacketID: request.PacketID, OperationID: registry.OperationID(request.OperationID),
-			Action: registry.FeatureCompletionActionComplete, WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion,
-			PayloadSHA256: payload, RequiredDependencies: dependencies,
-		},
-		Complete: complete,
-	})
+	result, err := h.completion.Complete(r.Context(), complete)
 	if err != nil {
 		writeWorkspaceError(w, err)
 		return
@@ -512,12 +488,12 @@ func authorityDTO(value featureapp.AuthorityRevisionDetail) map[string]any {
 
 func approvalDTO(value featureapp.GoverningArtifactApproval) map[string]any {
 	return map[string]any{
-		"approvalId":                    value.ApprovalID,
-		"workspaceRowId":                value.WorkspaceRowID,
-		"artifactRowId":                 nullableIntDTO(value.ArtifactRowID),
-		"retainedArtifactRowId":         nullableIntDTO(value.RetainedArtifactRowID),
+		"approvalId":                   value.ApprovalID,
+		"workspaceRowId":               value.WorkspaceRowID,
+		"artifactRowId":                nullableIntDTO(value.ArtifactRowID),
+		"retainedArtifactRowId":        nullableIntDTO(value.RetainedArtifactRowID),
 		"family":                       value.Family,
-		"artifactSha256":                value.ArtifactSha256,
+		"artifactSha256":               value.ArtifactSha256,
 		"operatorConfirmationEvidence": value.OperatorConfirmationEvidence,
 		"invalidatedByApprovalRowId":   nullableIntDTO(value.InvalidatedByApprovalRowID),
 		"supersededByApprovalRowId":    nullableIntDTO(value.SupersededByApprovalRowID),
@@ -610,7 +586,7 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict):
 		shared.Error(w, http.StatusConflict, "VERSION_CONFLICT", "Feature workspace was changed by another operator. Reload before retrying.")
 	case errors.Is(err, featureapp.ErrFeatureCompletionNotReady), errors.Is(err, featureapp.ErrFeatureCompletionRecorded), errors.Is(err, appoperations.ErrFeatureCompletionAdmission):
-		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently authorized or eligible. Reload the completion gates and packet evidence.")
+		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently eligible. Reload the completion gates.")
 	case errors.Is(err, featureapp.ErrFeatureCompletionConfirmation):
 		badRequest(w, err.Error())
 	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated):

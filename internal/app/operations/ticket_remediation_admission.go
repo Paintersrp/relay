@@ -34,12 +34,11 @@ type ticketAuthoringPacketReader interface {
 	ReadVerifiedRetainedInput(context.Context, string, string) ([]byte, error)
 }
 
-func (s *TicketWorkflowService) verifyRemediationAuthoring(ctx context.Context, input TicketPublishOperationInput) error {
+func (s *TicketWorkflowService) verifyRemediationAuthoring(ctx context.Context, input tickets.PublishInput, ref RemediationAuthoringReference) error {
 	reader, ok := s.packets.(ticketAuthoringPacketReader)
 	if !ok {
 		return ErrTicketAdmission
 	}
-	ref := input.RemediationAuthoringReference
 	view, err := reader.Get(ctx, ref.PacketID)
 	if err != nil {
 		return err
@@ -87,14 +86,14 @@ func (s *TicketWorkflowService) verifyRemediationAuthoring(ctx context.Context, 
 		return err
 	}
 	seed, err := decodeRemediationSeed(seedBytes)
-	if err != nil || !validateRemediationSeed(seed, input.Publish.RemediationSeedID, document.WorkflowReferences[0].AuditDecisionID) {
+	if err != nil || !validateRemediationSeed(seed, input.RemediationSeedID, document.WorkflowReferences[0].AuditDecisionID) {
 		return ErrTicketAdmission
 	}
 	authority, err := decodeCurrentApprovedAuthority(authorityBytes)
 	if err != nil {
 		return ErrTicketAdmission
 	}
-	return s.validateCurrentApprovedAuthority(ctx, input.Publish, authority)
+	return s.validateCurrentApprovedAuthority(ctx, input, authority)
 }
 
 func (s *Service) ReadVerifiedRetainedInput(ctx context.Context, packetID, inputName string) ([]byte, error) {

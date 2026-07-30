@@ -30,6 +30,12 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 	if len(seen) != 38 {
 		t.Fatalf("tools=%d", len(seen))
 	}
+	if _, ok := seen["create_run"]; ok {
+		t.Fatal("retired create_run tool is published by a route")
+	}
+	if _, ok := LookupPublishedToolContract("create_run"); ok {
+		t.Fatal("retired create_run tool is published")
+	}
 	for _, forbidden := range []OperationID{"planner.plan", "planner.one_shot_execution_spec", "auditor.plan_review", "auditor.remediation_execution_spec", "features.authority", "local_operator.ticket_workflow"} {
 		if _, ok := LookupPublishedOperation(forbidden); ok {
 			t.Fatalf("forbidden %q", forbidden)

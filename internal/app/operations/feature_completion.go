@@ -2,44 +2,19 @@ package operations
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
 
 	featureapp "relay/internal/app/features"
-	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
 )
 
-var ErrFeatureCompletionAdmission = errors.New("invalid feature completion packet admission")
-
-const featureCompletionDependencyClass = "feature_workspace_completion"
-
-// FeatureCompletionOperationRequest is the packet-bound identity for an
-// explicit Feature Workspace completion. The shared features owner remains the
-// only authority for calculating gates and creating the completion record.
-type FeatureCompletionOperationRequest struct {
-	PacketID             string
-	OperationID          registry.OperationID
-	Action               registry.AllowedAction
-	WorkspaceID          string
-	ExpectedVersion      int64
-	PayloadSHA256        string
-	RequiredDependencies []DependencyRequirement
-}
-
-// FeatureCompletionWorkflowOwner is deliberately limited to the shared
-// feature-completion contract. It cannot publish authority, create tickets, or
-// make any remediation change.
+// FeatureCompletionWorkflowOwner is deliberately limited to the existing
+// completion owner. It cannot publish authority, create Tickets, or mutate
+// package state.
 type FeatureCompletionWorkflowOwner interface {
 	EvaluateCompletion(context.Context, string) (featureapp.CompletionStatus, error)
 	Complete(context.Context, featureapp.CompletionInput) (featureapp.CompletionResult, error)
 }
 
-// FeatureCompletionWorkspace is the API-safe workspace projection returned by
-// the packet-admitted completion workflow. Persistence models stay behind this
-// shared application boundary.
 type FeatureCompletionWorkspace struct {
 	WorkspaceID string
 	FeatureSlug string
@@ -73,19 +48,18 @@ type FeatureCompletionResult struct {
 	Workspace FeatureCompletionWorkspace
 }
 
-// FeatureCompletionWorkflowService admits the explicit local-operator action
-// before delegating to the shared feature owner. Evaluation is read-only and
-// intentionally does not require a packet.
+// FeatureCompletionWorkflowService is a direct projection over the existing
+// feature-completion owner. Completion evaluation and mutation retain the
+// owner's authority, source-state, version, and transactional gates.
 type FeatureCompletionWorkflowService struct {
-	packets PacketMutationAuthorizer
-	owner   FeatureCompletionWorkflowOwner
+	owner FeatureCompletionWorkflowOwner
 }
 
-func NewFeatureCompletionWorkflowService(packets PacketMutationAuthorizer, owner FeatureCompletionWorkflowOwner) (*FeatureCompletionWorkflowService, error) {
-	if packets == nil || owner == nil {
+func NewFeatureCompletionWorkflowService(owner FeatureCompletionWorkflowOwner) (*FeatureCompletionWorkflowService, error) {
+	if owner == nil {
 		return nil, ErrFeatureCompletionAdmission
 	}
-	return &FeatureCompletionWorkflowService{packets: packets, owner: owner}, nil
+	return &FeatureCompletionWorkflowService{owner: owner}, nil
 }
 
 func (s *FeatureCompletionWorkflowService) Evaluate(ctx context.Context, workspaceID string) (FeatureCompletionStatus, error) {
@@ -99,32 +73,11 @@ func (s *FeatureCompletionWorkflowService) Evaluate(ctx context.Context, workspa
 	return featureCompletionStatusProjection(status), nil
 }
 
-type FeatureCompletionOperationInput struct {
-	Admission FeatureCompletionOperationRequest
-	Complete  featureapp.CompletionInput
-}
-
-func (s *FeatureCompletionWorkflowService) Complete(ctx context.Context, input FeatureCompletionOperationInput) (FeatureCompletionResult, error) {
-	payload, err := FeatureCompletionPayloadSHA256(input.Complete)
-	if err != nil || input.Admission.Action != registry.FeatureCompletionActionComplete ||
-		input.Admission.WorkspaceID != input.Complete.WorkspaceID ||
-		input.Admission.ExpectedVersion != input.Complete.ExpectedVersion ||
-		input.Admission.PayloadSHA256 != payload ||
-		!sameDependencies(input.Admission.RequiredDependencies, featureCompletionDependencies(input.Complete)) {
+func (s *FeatureCompletionWorkflowService) Complete(ctx context.Context, input featureapp.CompletionInput) (FeatureCompletionResult, error) {
+	if s == nil || s.owner == nil {
 		return FeatureCompletionResult{}, ErrFeatureCompletionAdmission
 	}
-	if err := ValidateFeatureCompletionOperationRequest(input.Admission); err != nil {
-		return FeatureCompletionResult{}, err
-	}
-	operation, _ := registry.TicketOperationForAction(input.Admission.Action)
-	if _, err := s.packets.AuthorizeMutation(ctx, MutationRequest{
-		PacketID: input.Admission.PacketID, SurfaceContract: operation.SurfaceContract,
-		OperationID: operation.OperationID, Action: input.Admission.Action,
-		RequiredDependencies: append([]DependencyRequirement(nil), input.Admission.RequiredDependencies...),
-	}); err != nil {
-		return FeatureCompletionResult{}, err
-	}
-	result, err := s.owner.Complete(ctx, input.Complete)
+	result, err := s.owner.Complete(ctx, input)
 	if err != nil {
 		return FeatureCompletionResult{}, err
 	}
@@ -170,37 +123,4 @@ func featureCompletionDecisionProjection(value workflowstore.FeatureWorkspaceCom
 		Decision:               value.Decision,
 		CreatedAt:              value.CreatedAt,
 	}
-}
-
-func ValidateFeatureCompletionOperationRequest(request FeatureCompletionOperationRequest) error {
-	if !exactNonBlank(request.PacketID) || !exactNonBlank(request.WorkspaceID) || request.ExpectedVersion < 1 ||
-		!validTicketSHA256(request.PayloadSHA256) ||
-		!sameDependencies(request.RequiredDependencies, featureCompletionDependencies(featureapp.CompletionInput{WorkspaceID: request.WorkspaceID, ExpectedVersion: request.ExpectedVersion})) {
-		return ErrFeatureCompletionAdmission
-	}
-	operation, ok := registry.TicketOperationForAction(request.Action)
-	if !ok || operation.OperationID != request.OperationID || request.Action != registry.FeatureCompletionActionComplete {
-		return ErrFeatureCompletionAdmission
-	}
-	return nil
-}
-
-func FeatureCompletionPayloadSHA256(input featureapp.CompletionInput) (string, error) {
-	raw, err := json.Marshal(struct {
-		WorkspaceID       string `json:"workspace_id"`
-		ExpectedVersion   int64  `json:"expected_version"`
-		OperatorConfirmed bool   `json:"operator_confirmed"`
-	}{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorConfirmed: input.OperatorConfirmed})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
-}
-
-func featureCompletionDependencies(input featureapp.CompletionInput) []DependencyRequirement {
-	return []DependencyRequirement{{
-		Class: featureCompletionDependencyClass,
-		Key:   "workspace:" + input.WorkspaceID + ":version:" + stringRevisionID(input.ExpectedVersion),
-	}}
 }

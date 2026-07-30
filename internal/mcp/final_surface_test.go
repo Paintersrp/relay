@@ -18,7 +18,6 @@ func TestFinalAdvertisedToolsReachDispatcher(t *testing.T) {
 	for _, profile := range []ToolProfile{
 		ToolProfilePlanner,
 		ToolProfileAuditor,
-		ToolProfileLocalOperator,
 	} {
 		t.Run(string(profile), func(t *testing.T) {
 			server := NewServer(nil, &MCPDeps{ToolProfile: profile})
@@ -82,7 +81,7 @@ func TestFinalPlannerCompilerActionsRemainAdvertised(t *testing.T) {
 }
 
 func TestFinalServerRejectsUnknownTool(t *testing.T) {
-	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfilePlanner})
 	response := finalToolCallResponse(t, server, "not_a_relay_tool")
 	if response.Error == nil || response.Error.Code != CodeMethodNotFound {
 		t.Fatalf("unknown tool response = %+v", response)

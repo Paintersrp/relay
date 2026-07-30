@@ -1,9 +1,3 @@
-export interface TicketAdmissionRequest {
-  packetId: string;
-  operationId: string;
-  requiredDependencies?: { class: string; key: string }[];
-}
-
 export interface TicketFrontierEntry {
   ticketId: string;
   revisionRowId: number;
@@ -21,7 +15,8 @@ export interface TicketSelectionMember { ticketId: string; revisionRowId: number
 export interface SelectedTicket { ticketId: string; revisionRowId: number; revisionNumber: number; approvalRowId: number }
 export interface TicketSelection { selectionId: string; state: string; rationale: string; createdAt: string; selectedTicket: SelectedTicket }
 
-export interface PublishTicketRevisionRequest extends TicketAdmissionRequest {
+// PublishTicketRevisionRequest is a direct domain operation with no packet fields.
+export interface PublishTicketRevisionRequest {
   externalPriority: number;
   expectedRevisionNumber: number;
   revision: {
@@ -39,6 +34,10 @@ export interface PublishTicketRevisionRequest extends TicketAdmissionRequest {
     members: { kind: string; path?: string; text: string }[];
     dependencies: { revisionRowId: number; outcome: "satisfied" | "blocked" | "not_applicable" }[];
   };
+  // Remediation authoring reference. Only supplied for remediation publications.
+  remediationSeedId?: string;
+  authoringPacketId?: string;
+  expectedAuthoringPacketSha256?: string;
 }
 
 export interface TicketDetail {

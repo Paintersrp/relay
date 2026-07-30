@@ -8,7 +8,6 @@ import (
 
 	appackages "relay/internal/app/packages"
 	"relay/internal/executor"
-	"relay/internal/operations/registry"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
@@ -48,10 +47,6 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	t.Helper()
 	fixture := newRemediationLifecycleFixture(t)
 	publication := publishRemediationBriefTicket(t, fixture, false)
-	planner, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{MutationID: "create-remediation-package-planner", Identity: remediationBriefIdentity(fixture)})
-	if err != nil {
-		t.Fatal(err)
-	}
 	brief := []byte(testfixtures.TicketDesignBrief)
 	briefName := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", fixture.workspace.FeatureSlug, publication.result.Ticket.TicketID, publication.result.Revision.RevisionNumber)
 	prepare := appackages.PrepareInput{SelectionID: publication.selection.Selection.SelectionID, TicketDesignBrief: appackages.ArtifactInput{DisplayName: briefName, ExpectedSHA256: lifecycleSHA(brief), Bytes: brief}}
@@ -64,17 +59,11 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	authorizer := &fakePackagePacketAuthorizer{}
-	workflow, err := NewPackageWorkflowService(authorizer, owner, fakeMutationLeaseReconciler{}, fixture.store)
+	workflow, err := NewPackageWorkflowService(owner, fakeMutationLeaseReconciler{}, fixture.store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, err := PackagePreparePayloadSHA256(prepare)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admission := PackageOperationRequest{PacketID: planner.Packet.Summary.PacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.PackageActionPrepare, SelectionID: prepare.SelectionID, PayloadSHA256: payload, RequiredDependencies: packagePrepareDependencies(prepare)}
-	prepared, err := workflow.Prepare(fixture.ctx, PackagePrepareOperationInput{Admission: admission, Prepare: prepare})
+	prepared, err := workflow.Prepare(fixture.ctx, prepare)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,11 +83,7 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	if packageRow.DeterministicOperationsSha256.Valid != withOperations {
 		t.Fatalf("package operations presence = %#v", packageRow)
 	}
-	approvalPayload, err := PackageApprovePayloadSHA256(packageRow.PackageID, packageRow.PackageSha256, "Approve the exact remediation package.")
-	if err != nil {
-		t.Fatal(err)
-	}
-	approved, err := workflow.Approve(fixture.ctx, PackageApproveOperationInput{Admission: PackageOperationRequest{PacketID: planner.Packet.Summary.PacketID, OperationID: registry.LocalOperatorTicketWorkflowOperationID, Action: registry.PackageActionApprove, PackageID: packageRow.PackageID, PayloadSHA256: approvalPayload, ExpectedPackageSha256: packageRow.PackageSha256, OperatorConfirmationEvidence: "Approve the exact remediation package.", RequiredDependencies: packageApproveDependencies(packageRow)}})
+	approved, err := workflow.Approve(fixture.ctx, appackages.ApproveInput{PackageID: packageRow.PackageID, ExpectedPackageSha256: packageRow.PackageSha256, OperatorConfirmationEvidence: "Approve the exact remediation package."})
 	if err != nil {
 		t.Fatal(err)
 	}

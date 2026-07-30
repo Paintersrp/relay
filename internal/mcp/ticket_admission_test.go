@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	appoperations "relay/internal/app/operations"
@@ -19,128 +18,64 @@ func (f *fakeMCPTicketPacketAuthorizer) AuthorizeMutation(_ context.Context, req
 	return appoperations.MutationAuthorization{Allowed: true}, nil
 }
 
-func TestTicketOperationIdentityCanonicalizesDependencies(t *testing.T) {
-	identity := TicketOperationIdentity{
-		MutationID: "mutation-1", ExpectedPacketID: "packet-1", OperationID: string(registry.LocalOperatorTicketWorkflowOperationID),
-		Action: string(registry.TicketActionSelect), WorkspaceID: "workspace-1", TicketID: "TICKET-1", RevisionRowID: 1,
-		PayloadSHA256: strings.Repeat("a", 64),
-		RequiredDependencies: []TicketPacketDependency{{Class: "workflow_snapshot", Key: "ticket:TICKET-2"}, {Class: "workflow_snapshot", Key: "ticket:TICKET-1"}},
-	}
-	first, err := identity.SemanticRequestSHA256()
-	if err != nil || first == "" {
-		t.Fatalf("first fingerprint = %q, %v", first, err)
-	}
-	identity.RequiredDependencies[0], identity.RequiredDependencies[1] = identity.RequiredDependencies[1], identity.RequiredDependencies[0]
-	second, err := identity.SemanticRequestSHA256()
-	if err != nil || second != first {
-		t.Fatalf("reordered fingerprint = %q, %v; want %q", second, err, first)
-	}
-	identity.RequiredDependencies = append(identity.RequiredDependencies, identity.RequiredDependencies[0])
-	if _, err := identity.SemanticRequestSHA256(); err == nil {
-		t.Fatal("duplicate retained dependency was accepted")
-	}
-}
-
-func TestTicketSelectionRejectsLegacyMembersArray(t *testing.T) {
-	identity := TicketOperationIdentity{
-		MutationID: "mutation-1", ExpectedPacketID: "packet-1", OperationID: string(registry.LocalOperatorTicketWorkflowOperationID),
-		Action: string(registry.TicketActionSelect), WorkspaceID: "workspace-1", TicketID: "TICKET-1", RevisionRowID: 1,
-		PayloadSHA256: strings.Repeat("a", 64),
-		SelectionMembers: []TicketSelectionMemberIdentity{{TicketID: "TICKET-1", RevisionRowID: 1}},
-	}
-	if err := identity.Validate(); err == nil {
-		t.Fatal("legacy selection members array was accepted for select action")
-	}
-}
-
-func TestTicketMutationIdentityBindsAuthoritySourceAndPayload(t *testing.T) {
-	identity := TicketOperationIdentity{
-		MutationID: "mutation-1", ExpectedPacketID: "packet-1", OperationID: string(registry.LocalOperatorTicketWorkflowOperationID),
-		Action: string(registry.TicketActionApprove), WorkspaceID: "workspace-1", TicketID: "TICKET-1", RevisionRowID: 7,
-		AuthorityRevisionID: "authority-1", SourceClosureRowID: 9, PayloadSHA256: strings.Repeat("a", 64),
-	}
-	first, err := identity.SemanticRequestSHA256()
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity.AuthorityRevisionID = "authority-2"
-	authorityChanged, err := identity.SemanticRequestSHA256()
-	if err != nil || authorityChanged == first {
-		t.Fatalf("authority fingerprint = %q, %v", authorityChanged, err)
-	}
-	identity.AuthorityRevisionID = "authority-1"
-	identity.SourceClosureRowID = 10
-	sourceChanged, err := identity.SemanticRequestSHA256()
-	if err != nil || sourceChanged == first {
-		t.Fatalf("source fingerprint = %q, %v", sourceChanged, err)
-	}
-	identity.SourceClosureRowID = 9
-	identity.PayloadSHA256 = strings.Repeat("b", 64)
-	payloadChanged, err := identity.SemanticRequestSHA256()
-	if err != nil || payloadChanged == first {
-		t.Fatalf("payload fingerprint = %q, %v", payloadChanged, err)
-	}
-}
-
-func TestTicketOperationIdentityStrictDecodeAndRouteValidation(t *testing.T) {
-	valid := TicketOperationIdentity{
+func TestTicketFrontierIdentityAcceptsOnlyPlannerFrontierRead(t *testing.T) {
+	identity := TicketFrontierOperationIdentity{
 		ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID),
-		Action: string(registry.TicketActionReadFrontier), WorkspaceID: "workspace-1",
+		Action: string(registry.TicketActionReadFrontier), TicketID: "workspace-1",
 	}
-	raw, err := json.Marshal(valid)
+	if err := identity.Validate(); err != nil {
+		t.Fatalf("valid frontier identity rejected: %v", err)
+	}
+	sha, err := identity.SemanticRequestSHA256()
+	if err != nil || sha == "" {
+		t.Fatalf("frontier SHA256 = %q, %v", sha, err)
+	}
+	identity.Action = string(registry.TicketActionPublish)
+	if err := identity.Validate(); err == nil {
+		t.Fatal("mutation action on frontier identity was accepted")
+	}
+}
+
+func TestTicketFrontierIdentityStrictDecode(t *testing.T) {
+	raw := json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","ticket_id":"ticket-1"}`)
+	identity, err := DecodeTicketFrontierOperationIdentity(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := DecodeTicketOperationIdentity(raw)
-	if err != nil || decoded.Action != string(registry.TicketActionReadFrontier) {
-		t.Fatalf("decoded = %#v, %v", decoded, err)
+	if identity.TicketID != "ticket-1" {
+		t.Fatalf("ticket ID = %q", identity.TicketID)
 	}
-	if _, err := DecodeTicketOperationIdentity(append(raw[:len(raw)-1], []byte(`,"unknown":true}`)...)); err == nil {
+	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","workspace_id":"workspace-1"}`)); err == nil {
+		t.Fatal("legacy workspace_id field was accepted")
+	}
+	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","ticket_id":"ticket-1","unknown":true}`)); err == nil {
 		t.Fatal("unknown field was accepted")
 	}
-	valid.MutationID = "mutation-1"
-	if _, err := valid.SemanticRequestSHA256(); err == nil {
-		t.Fatal("frontier read with mutation id was accepted")
-	}
-	valid.MutationID = ""
-	valid.OperationID = string(registry.LocalOperatorTicketWorkflowOperationID)
-	if _, err := valid.SemanticRequestSHA256(); err == nil {
-		t.Fatal("planner action on local-operator operation was accepted")
-	}
 }
 
-func TestTicketPacketAdmitterForwardsExactRegisteredRoute(t *testing.T) {
+func TestTicketFrontierAdmitterForwardsExactPlannerRoute(t *testing.T) {
 	packet := &fakeMCPTicketPacketAuthorizer{}
-	service, err := appoperations.NewTicketAdmissionService(packet)
+	service, err := appoperations.NewTicketFrontierAdmissionService(packet)
 	if err != nil {
 		t.Fatal(err)
 	}
-	admitter, err := NewTicketPacketAdmitter(service)
+	admitter, err := NewTicketFrontierAdmitter(service)
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := TicketOperationIdentity{
-		MutationID: "mutation-1", ExpectedPacketID: "packet-1", OperationID: string(registry.LocalOperatorTicketWorkflowOperationID),
-		Action: string(registry.TicketActionUpdatePriority), WorkspaceID: "workspace-1", TicketID: "TICKET-1", ExternalPriority: 8,
-		PayloadSHA256: strings.Repeat("a", 64), RequiredDependencies: []TicketPacketDependency{{Class: "workflow_snapshot", Key: "ticket:TICKET-1"}},
-	}
+	identity := TicketFrontierOperationIdentity{ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID), Action: string(registry.TicketActionReadFrontier), TicketID: "workspace-1"}
 	authorization, fingerprint, err := admitter.Admit(context.Background(), identity)
 	if err != nil || !authorization.Allowed || fingerprint == "" {
 		t.Fatalf("admission = %#v, %q, %v", authorization, fingerprint, err)
 	}
-	if packet.request.SurfaceContract != registry.LocalOperatorTicketWorkflowSurface || packet.request.OperationID != registry.LocalOperatorTicketWorkflowOperationID || packet.request.Action != registry.TicketActionUpdatePriority {
+	if packet.request.SurfaceContract != registry.PlannerTicketFrontierSurface || packet.request.OperationID != registry.PlannerTicketFrontierOperationID || packet.request.Action != registry.TicketActionReadFrontier {
 		t.Fatalf("packet request = %#v", packet.request)
 	}
 }
 
-func TestTicketRoleSurfacesExcludePackagesAndRuns(t *testing.T) {
+func TestTicketRoleSurfacesExposeOnlyPlannerFrontier(t *testing.T) {
 	surfaces := TicketRoleSurfaces()
-	if len(surfaces) != 2 || surfaces[0].Role != "planner" || surfaces[1].Role != "local_operator" {
+	if len(surfaces) != 1 || surfaces[0].Role != registry.Role("planner") || len(surfaces[0].Operations) != 1 || surfaces[0].Operations[0] != registry.PlannerTicketFrontierOperationID {
 		t.Fatalf("surfaces = %#v", surfaces)
-	}
-	for _, surface := range surfaces {
-		if surface.SurfaceContract == "" || surface.ManifestSHA256 == "" || len(surface.Operations) != 1 {
-			t.Fatalf("invalid surface = %#v", surface)
-		}
 	}
 }

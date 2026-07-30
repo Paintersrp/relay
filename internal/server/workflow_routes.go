@@ -69,11 +69,16 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct project service: %w", err)
 	}
-	planMutationService, err := workflowplans.NewService(workflowStore)
+	cutoverService, err := appcutover.NewService(workflowStore)
+	if err != nil {
+		return nil, nil, fmt.Errorf("construct cutover service: %w", err)
+	}
+	legacyGate := appcutover.NewLegacyGate(cutoverService)
+	planMutationService, err := workflowplans.NewServiceWithGate(workflowStore, legacyGate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct plan mutation service: %w", err)
 	}
-	submissionService, err := workflowsubmissions.NewService(workflowStore)
+	submissionService, err := workflowsubmissions.NewServiceWithGate(workflowStore, legacyGate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct submission service: %w", err)
 	}
@@ -105,7 +110,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct ticket workflow service: %w", err)
 	}
-	featureCompletionWorkflowService, err := appoperations.NewFeatureCompletionWorkflowService(packetService, featureAuthorityService)
+	featureCompletionWorkflowService, err := appoperations.NewFeatureCompletionWorkflowService(featureAuthorityService)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct feature completion workflow service: %w", err)
 	}
@@ -113,7 +118,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct package service: %w", err)
 	}
-	packageWorkflowService, err := appoperations.NewPackageWorkflowService(packetService, packageService, executionService, workflowStore)
+	packageWorkflowService, err := appoperations.NewPackageWorkflowService(packageService, executionService, workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct package workflow service: %w", err)
 	}
@@ -129,10 +134,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService, featureCompletionWorkflowService)
 	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
-	cutoverService, err := appcutover.NewService(workflowStore)
-	if err != nil {
-		return nil, nil, fmt.Errorf("construct cutover service: %w", err)
-	}
 	cutoverWorkflowService, err := appoperations.NewCutoverWorkflowService(packetService, cutoverService)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct cutover workflow service: %w", err)
