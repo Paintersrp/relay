@@ -78,7 +78,7 @@ func TestOperationRegistryIdentityRejectsEveryPolicyClass(t *testing.T) {
 				t.Fatalf("fixture does not contain %s", test.old)
 			}
 			mutated := bytes.Replace(original, []byte(test.old), []byte(test.new), 1)
-			if _, err := validateRegistryBytes(RawPublicContract(), mutated); err == nil || !strings.Contains(err.Error(), "operation registry") {
+			if _, err := validateRegistryBytes(mutated); err == nil || !strings.Contains(err.Error(), "operation registry") {
 				t.Fatalf("mutation was accepted: %v", err)
 			}
 		})
@@ -307,26 +307,6 @@ func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T
 	}
 	if err := validateSurfaceAction("planner-authoring.v1", "validate_artifact"); err == nil {
 		t.Fatal("planner-authoring accepted validate_artifact")
-	}
-}
-
-func TestSurfaceManifestSHA256Authority(t *testing.T) {
-	want := map[SurfaceContractID]string{
-		"planner-authoring.v1":   "0618add5d538eec9b2300695157439d2bfdf4349ce4684dfc8232a50cdf21a58",
-		"planner-plan.v1":        "9f23d3745a26ac2e60f62aa737532d637b4705b17cf042c7f74b40ad3653d5a2",
-		"planner-execution.v1":   "cee346ea5c41c6407485075db7963d86916b471e702a148e3230ec00b2508951",
-		"auditor-review.v1":      "9ecf7331e5324a97e35917c4817e4f13a231976075735915e32d3def4983dc95",
-		"auditor-audit.v1":       "1c6beea3a467453c978e8cd0353a82be7d2ce12be35eba35df907d9b2a2ecfdb",
-		"auditor-remediation.v1": "a4651845c6c725380f364faed57b648f5941ddda32c9f394c49fc8d1b51ffc03",
-	}
-	for surface, expected := range want {
-		got, ok := SurfaceManifestSHA256(surface)
-		if !ok || got != expected {
-			t.Fatalf("surface %q manifest = %q, %v; want %q, true", surface, got, ok, expected)
-		}
-	}
-	if _, ok := SurfaceManifestSHA256("unknown.v1"); ok {
-		t.Fatal("unknown surface returned a manifest identity")
 	}
 }
 

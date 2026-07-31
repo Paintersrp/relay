@@ -249,7 +249,7 @@ func authorityPublicationCreateInput(t *testing.T, mutationID, packetID, packetA
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, ok := registry.SurfaceManifestSHA256(surface)
+	manifest, ok := registry.RouteContractSHA256(surface)
 	if !ok {
 		t.Fatal("surface manifest is unavailable")
 	}
@@ -287,7 +287,7 @@ func authorityPublicationRefreshInput(t *testing.T, priorPacketID, mutationID, p
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, ok := registry.SurfaceManifestSHA256(surface)
+	manifest, ok := registry.RouteContractSHA256(surface)
 	if !ok {
 		t.Fatal("surface manifest is unavailable")
 	}
@@ -341,7 +341,7 @@ func authorityPublicationCloseInput(t *testing.T, mutationID string) AuthorityPu
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, _ := registry.SurfaceManifestSHA256("planner-plan.v1")
+	manifest, _ := registry.RouteContractSHA256("planner-plan.v1")
 	return AuthorityPublicationInput{
 		PacketID: "opkt-close", RequestIdentity: request, PacketArtifactID: "artifact-close", PacketMediaType: "application/vnd.relay.operation-packet+json;version=1", PacketBytes: []byte("{}\n"),
 		Idempotency: idempotency.RecordSuccessInput{Key: idempotency.MutationKey{SurfaceContractID: "planner-plan.v1", Tool: registry.MutationToolCloseOperationPacket, MutationID: mutationID}, SurfaceManifestSHA256: manifest, Fingerprint: fingerprint},

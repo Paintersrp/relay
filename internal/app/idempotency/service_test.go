@@ -379,7 +379,7 @@ func TestServiceRejectsKeyFingerprintAndStoredResultCorruption(t *testing.T) {
 		t.Fatalf("forged fingerprint = %v", err)
 	}
 
-	manifest, _ := registry.SurfaceManifestSHA256("planner-authoring.v1")
+	manifest, _ := registry.RouteContractSHA256("planner-authoring.v1")
 	validResult, _ := semanticidentity.EncodeResultIdentity("planner-authoring.v1", registry.MutationToolCreateOperationPacket, validPacketResult("packet-1"))
 	row := workflowstore.MCPMutationResult{
 		SurfaceContractID:       string(input.Key.SurfaceContractID),
@@ -437,7 +437,7 @@ func openStore(t *testing.T) *workflowstore.Store {
 
 func validPacketInput(t *testing.T, mutationID string, request semanticidentity.CreateOperationPacket) RecordSuccessInput {
 	t.Helper()
-	manifest, ok := registry.SurfaceManifestSHA256(request.SurfaceContract)
+	manifest, ok := registry.RouteContractSHA256(request.SurfaceContract)
 	if !ok {
 		t.Fatal("missing manifest")
 	}

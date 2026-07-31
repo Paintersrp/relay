@@ -1462,7 +1462,7 @@ func governanceManifestPath(role registry.Role) string {
 }
 
 func mustSurfaceManifest(surface registry.SurfaceContractID) string {
-	value, _ := registry.SurfaceManifestSHA256(surface)
+	value, _ := registry.RouteContractSHA256(surface)
 	return value
 }
 

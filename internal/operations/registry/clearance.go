@@ -88,16 +88,7 @@ func IsStateChangingToolForSurface(surface SurfaceContractID, tool string) bool 
 			return true
 		}
 	}
-	load()
-	if loadErr != nil {
-		return false
-	}
-	tools, ok := loaded.SurfaceTools[surface]
-	if !ok {
-		return false
-	}
-	_, ok = tools[tool]
-	return ok
+	return PublishedToolOnRoute(surface, tool)
 }
 
 func ValidateMutationID(value string) error {

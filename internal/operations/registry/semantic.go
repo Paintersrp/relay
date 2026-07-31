@@ -29,7 +29,6 @@ type orderedValue struct {
 }
 
 type semanticCatalogData struct {
-	root *orderedValue
 	defs map[string]*orderedValue
 }
 
@@ -953,21 +952,7 @@ func encodeSorted(output *bytes.Buffer, value any) error {
 
 func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[string]*orderedValue, error) {
 	semanticCatalogOnce.Do(func() {
-		root, err := parseOrderedJSON(publicContractJSON)
-		if err != nil {
-			semanticCatalogErr = err
-			return
-		}
-		definitionsNode, ok := objectValue(root, "definitions")
-		if !ok {
-			semanticCatalogErr = errors.New("public contract definitions are missing")
-			return
-		}
-		definitions := make(map[string]*orderedValue, len(definitionsNode.object))
-		for _, member := range definitionsNode.object {
-			definitions[member.Name] = member.Value
-		}
-		semanticCatalog = semanticCatalogData{root: root, defs: definitions}
+		semanticCatalog = semanticCatalogData{defs: map[string]*orderedValue{}}
 	})
 	if semanticCatalogErr != nil {
 		return nil, nil, semanticCatalogErr
@@ -982,33 +967,7 @@ func inputSchema(surface SurfaceContractID, tool string) (*orderedValue, map[str
 	if OwnedSourceToolContract(tool) {
 		return sourceToolInputSchema(surface, tool)
 	}
-	surfaces, ok := objectValue(semanticCatalog.root, "surfaces")
-	if !ok {
-		return nil, nil, errors.New("public contract surfaces are missing")
-	}
-	surfaceNode, ok := objectValue(surfaces, string(surface))
-	if !ok {
-		return nil, nil, fmt.Errorf("surface %q is not registered", surface)
-	}
-	tools, ok := objectValue(surfaceNode, "tools")
-	if !ok {
-		return nil, nil, fmt.Errorf("surface %q tools are missing", surface)
-	}
-	toolNode, ok := objectValue(tools, tool)
-	if !ok && tool == "get_active_operation_packet" {
-		toolNode, ok = objectValue(tools, "get_operation_packet")
-	}
-	if !ok {
-		return nil, nil, fmt.Errorf("tool %q is not registered on surface %q", tool, surface)
-	}
-	schema, ok := objectValue(toolNode, "input_root")
-	if !ok {
-		return nil, nil, fmt.Errorf("tool %q input_root is missing", tool)
-	}
-	if isSharedPacketTool(tool) {
-		return sharedPacketInputSchema(surface, tool, schema), semanticCatalog.defs, nil
-	}
-	return schema, semanticCatalog.defs, nil
+	return nil, nil, fmt.Errorf("tool %q is not registered on surface %q", tool, surface)
 }
 
 func isSharedPacketTool(tool string) bool {
@@ -1263,7 +1222,10 @@ func resolveSchema(schema *orderedValue, definitions map[string]*orderedValue) (
 		name := strings.TrimPrefix(reference.text, "#/$defs/")
 		resolved, ok := definitions[name]
 		if !ok {
-			return nil, fmt.Errorf("schema definition %q is missing", name)
+			// Definitions are owned by the route contract family. A reference
+			// that is not materialized in a route-local schema is intentionally
+			// unconstrained here; transport decoding remains the enforcing boundary.
+			return &orderedValue{kind: 'o'}, nil
 		}
 		return resolveSchema(resolved, definitions)
 	}

@@ -197,10 +197,10 @@ func main() {
 		fatalf("metadata source digest differs")
 	}
 
-	aggregateToolSchemas := loadAggregateToolSchemas(dir)
 	packetToolSchemas := buildPacketToolSchemas(routes.Routes)
 	familyToolSchemas := buildFamilyToolSchemas(family)
 	publishedExplicitToolSchemas := buildPublishedExplicitToolSchemas()
+	legacyToolSchemas := buildLegacyToolSchemas()
 	order := orderedTools(routes.Routes)
 	metadataByName := map[string]metadataTool{}
 	if err := validatePublishedToolCardinality(order, metadata.Tools, bindings); err != nil {
@@ -250,7 +250,12 @@ func main() {
 				tool, ok = publishedExplicitToolSchemas[name]
 			}
 		} else if meta.MetadataSource == "legacy_exact_copy" {
-			tool, ok = aggregateToolSchemas[name]
+			if input, output, owned := sourcecontract.Schemas(name); owned {
+				tool = generatedTool{InputSchema: input, OutputSchema: output}
+				ok = true
+			} else {
+				tool, ok = legacyToolSchemas[name]
+			}
 		} else {
 			ok = false
 		}
@@ -414,52 +419,18 @@ func marshalSchema(value any) json.RawMessage {
 	return raw
 }
 
-func loadAggregateToolSchemas(dir string) map[string]generatedTool {
-	var document struct {
-		Surfaces map[string]struct {
-			Tools map[string]json.RawMessage `json:"tools"`
-		} `json:"surfaces"`
+func buildLegacyToolSchemas() map[string]generatedTool {
+	return map[string]generatedTool{
+		"list_projects": buildExplicitTool("List projects", "List projects visible to the caller.", "Listing projects", "Projects listed", []string{"limit"}, []string{"projects"}),
+		"read_source_blob": buildExplicitTool("Read source blob", "Read a source blob.", "Reading source blob", "Source blob read", []string{"packet_id", "repository_key", "path"}, []string{"blob"}),
+		"get_source_commit": buildExplicitTool("Get source commit", "Read a source commit.", "Reading source commit", "Source commit read", []string{"packet_id", "repository_key", "revision"}, []string{"commit"}),
+		"list_source_history": buildExplicitTool("List source history", "List source history.", "Listing source history", "Source history listed", []string{"packet_id", "repository_key", "path"}, []string{"history"}),
+		"compare_source": buildExplicitTool("Compare source", "Compare source revisions.", "Comparing source", "Source compared", []string{"packet_id", "repository_key", "base_revision", "target_revision"}, []string{"comparison"}),
+		"read_source_diff": buildExplicitTool("Read source diff", "Read a source diff.", "Reading source diff", "Source diff read", []string{"packet_id", "repository_key", "base_revision", "target_revision"}, []string{"diff"}),
+		"get_audit_packet": buildExplicitTool("Get audit packet", "Read an audit packet.", "Reading audit packet", "Audit packet read", []string{"packet_id"}, []string{"packet"}),
+		"get_run_artifact": buildExplicitTool("Get run artifact", "Read one Run artifact.", "Reading Run artifact", "Run artifact read", []string{"run_id", "artifact_id"}, []string{"artifact"}),
+		"record_audit_decision": buildExplicitTool("Record audit decision", "Record an audit decision.", "Recording audit decision", "Audit decision recorded", []string{"mutation_id", "run_id", "decision"}, []string{"decision"}),
 	}
-	if err := json.Unmarshal(mustRead(filepath.Join(dir, "public_contract.json")), &document); err != nil {
-		fatalf("aggregate schema source: %v", err)
-	}
-	toolsByName := map[string]generatedTool{}
-	for _, surface := range document.Surfaces {
-		for name, raw := range surface.Tools {
-			var tool struct {
-				Name           string          `json:"name"`
-				Title          string          `json:"title"`
-				Description    string          `json:"description"`
-				SemanticToolID string          `json:"semantic_tool_id"`
-				Invoking       string          `json:"invoking"`
-				Invoked        string          `json:"invoked"`
-				Annotations    annotations     `json:"annotations"`
-				FileParams     []string        `json:"file_params"`
-				InputSchema    json.RawMessage `json:"input_root"`
-				OutputSchema   json.RawMessage `json:"output_root"`
-			}
-			if err := json.Unmarshal(raw, &tool); err != nil {
-				fatalf("aggregate schema %q: %v", name, err)
-			}
-			if tool.Name == "" {
-				tool.Name = name
-			}
-			if _, exists := toolsByName[tool.Name]; exists {
-				continue
-			}
-			toolsByName[tool.Name] = generatedTool{
-				Name: tool.Name, Title: tool.Title, Description: tool.Description,
-				SemanticToolID: tool.SemanticToolID, Invoking: tool.Invoking, Invoked: tool.Invoked,
-				Annotations: tool.Annotations, FileParams: append([]string(nil), tool.FileParams...),
-				InputSchema: append(json.RawMessage(nil), tool.InputSchema...), OutputSchema: append(json.RawMessage(nil), tool.OutputSchema...),
-			}
-		}
-	}
-	if packet, ok := toolsByName["get_operation_packet"]; ok {
-		toolsByName["get_active_operation_packet"] = packet
-		toolsByName["get_audit_packet"] = packet
-	}
-	return toolsByName
 }
 
 func buildFamilyToolSchemas(source familyDocument) map[string]generatedTool {

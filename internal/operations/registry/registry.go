@@ -62,8 +62,6 @@ type OperationDefinition struct {
 
 type registryDocument struct {
 	RegistryVersion            string                                    `json:"registry_version"`
-	SurfaceManifestSHA256      map[SurfaceContractID]string              `json:"-"`
-	SurfaceTools               map[SurfaceContractID]map[string]struct{} `json:"-"`
 	OperationOrder             []OperationID                             `json:"operation_order"`
 	Operations                 map[OperationID]OperationDefinition       `json:"operations"`
 	WorkflowReferenceRank      []WorkflowReferenceKind                   `json:"workflow_reference_rank"`
@@ -73,22 +71,6 @@ type registryDocument struct {
 	SemanticProjectionVersions map[string]string                         `json:"semantic_projection_versions"`
 }
 
-type publicContractEnvelope struct {
-	CatalogVersion string `json:"catalog_version"`
-	Definitions    map[string]struct {
-		Enum []string `json:"enum"`
-	} `json:"definitions"`
-	Surfaces map[string]struct {
-		Role           string                     `json:"role"`
-		Operations     []string                   `json:"operations"`
-		ManifestSHA256 string                     `json:"manifest_sha256"`
-		Tools          map[string]json.RawMessage `json:"tools"`
-	} `json:"surfaces"`
-}
-
-//go:embed public_contract.json
-var publicContractJSON []byte
-
 //go:embed operations.json
 var operationsJSON []byte
 
@@ -97,10 +79,6 @@ var (
 	loaded   registryDocument
 	loadErr  error
 )
-
-func RawPublicContract() []byte {
-	return append([]byte(nil), publicContractJSON...)
-}
 
 func RawRegistryDocument() []byte {
 	return append([]byte(nil), operationsJSON...)
@@ -209,28 +187,6 @@ func PacketOptionalEmptyArrays() []string {
 	return append([]string(nil), loaded.PacketOptionalEmptyArrays...)
 }
 
-func SurfaceManifestSHA256(surface SurfaceContractID) (string, bool) {
-	load()
-	if loadErr != nil {
-		return "", false
-	}
-	value, ok := loaded.SurfaceManifestSHA256[surface]
-	if ok {
-		return value, true
-	}
-	for _, profile := range WayfinderRoleProfiles() {
-		if profile.SurfaceContract == surface {
-			return profile.ManifestSHA256, true
-		}
-	}
-	for _, profile := range TicketRoleProfiles() {
-		if profile.SurfaceContract == surface {
-			return profile.ManifestSHA256, true
-		}
-	}
-	return value, ok
-}
-
 func SemanticProjectionVersion(tool string) (string, bool) {
 	load()
 	if loadErr != nil {
@@ -260,7 +216,7 @@ func load() {
 }
 
 func loadRegistry() error {
-	document, err := validateRegistryBytes(publicContractJSON, operationsJSON)
+	document, err := validateRegistryBytes(operationsJSON)
 	if err != nil {
 		return err
 	}
@@ -268,28 +224,13 @@ func loadRegistry() error {
 	return nil
 }
 
-func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, error) {
-	if len(publicRaw) != PublicContractBytes {
-		return registryDocument{}, fmt.Errorf("public contract byte length %d does not equal %d", len(publicRaw), PublicContractBytes)
-	}
-	publicSum := sha256.Sum256(publicRaw)
-	if got := hex.EncodeToString(publicSum[:]); got != PublicContractSHA256 {
-		return registryDocument{}, fmt.Errorf("public contract sha256 %s does not equal %s", got, PublicContractSHA256)
-	}
+func validateRegistryBytes(registryRaw []byte) (registryDocument, error) {
 	if len(registryRaw) != OperationRegistryBytes {
 		return registryDocument{}, fmt.Errorf("operation registry byte length %d does not equal %d", len(registryRaw), OperationRegistryBytes)
 	}
 	registrySum := sha256.Sum256(registryRaw)
 	if got := hex.EncodeToString(registrySum[:]); got != OperationRegistrySHA256 {
 		return registryDocument{}, fmt.Errorf("operation registry sha256 %s does not equal %s", got, OperationRegistrySHA256)
-	}
-
-	var public publicContractEnvelope
-	if err := json.Unmarshal(publicRaw, &public); err != nil {
-		return registryDocument{}, fmt.Errorf("decode public contract: %w", err)
-	}
-	if public.CatalogVersion != PublicContractVersion {
-		return registryDocument{}, fmt.Errorf("public contract version %q does not equal %q", public.CatalogVersion, PublicContractVersion)
 	}
 
 	var document registryDocument
@@ -303,49 +244,12 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 		return registryDocument{}, errors.New("operation registry order and map cardinality differ")
 	}
 
-	operationEnum, ok := public.Definitions["OperationID"]
-	if !ok {
-		return registryDocument{}, errors.New("public contract is missing OperationID")
-	}
-	if len(operationEnum.Enum) != len(document.OperationOrder) {
-		return registryDocument{}, errors.New("public contract and operation registry cardinality differ")
-	}
-
-	document.SurfaceManifestSHA256 = make(map[SurfaceContractID]string, len(public.Surfaces))
-	document.SurfaceTools = make(map[SurfaceContractID]map[string]struct{}, len(public.Surfaces))
-	publicSurfaceByOperation := make(map[string]string, len(document.OperationOrder))
-	publicRoleByOperation := make(map[string]string, len(document.OperationOrder))
-	for surfaceID, surface := range public.Surfaces {
-		if surface.Role != "planner" && surface.Role != "auditor" {
-			return registryDocument{}, fmt.Errorf("surface %q has invalid role %q", surfaceID, surface.Role)
-		}
-		if len(surface.ManifestSHA256) != 64 {
-			return registryDocument{}, fmt.Errorf("surface %q manifest sha256 is invalid", surfaceID)
-		}
-		document.SurfaceManifestSHA256[SurfaceContractID(surfaceID)] = surface.ManifestSHA256
-		tools := make(map[string]struct{}, len(surface.Tools))
-		for tool := range surface.Tools {
-			tools[tool] = struct{}{}
-		}
-		document.SurfaceTools[SurfaceContractID(surfaceID)] = tools
-		for _, operationID := range surface.Operations {
-			if _, exists := publicSurfaceByOperation[operationID]; exists {
-				return registryDocument{}, fmt.Errorf("operation %q belongs to more than one surface", operationID)
-			}
-			publicSurfaceByOperation[operationID] = surfaceID
-			publicRoleByOperation[operationID] = surface.Role
-		}
-	}
-
 	seen := make(map[OperationID]struct{}, len(document.OperationOrder))
-	for index, operationID := range document.OperationOrder {
+	for _, operationID := range document.OperationOrder {
 		if _, exists := seen[operationID]; exists {
 			return registryDocument{}, fmt.Errorf("operation %q is duplicated in operation_order", operationID)
 		}
 		seen[operationID] = struct{}{}
-		if index >= len(operationEnum.Enum) || operationEnum.Enum[index] != string(operationID) {
-			return registryDocument{}, fmt.Errorf("operation %q does not match public contract order", operationID)
-		}
 		operation, exists := document.Operations[operationID]
 		if !exists {
 			return registryDocument{}, fmt.Errorf("operation %q is missing", operationID)
@@ -353,14 +257,14 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 		if operation.OperationID != operationID {
 			return registryDocument{}, fmt.Errorf("operation map key %q does not equal embedded id %q", operationID, operation.OperationID)
 		}
-		if string(operation.SurfaceContract) != publicSurfaceByOperation[string(operationID)] {
-			return registryDocument{}, fmt.Errorf("operation %q surface %q does not equal public contract surface %q", operationID, operation.SurfaceContract, publicSurfaceByOperation[string(operationID)])
-		}
-		if string(operation.Role) != publicRoleByOperation[string(operationID)] {
-			return registryDocument{}, fmt.Errorf("operation %q role %q does not equal public contract role %q", operationID, operation.Role, publicRoleByOperation[string(operationID)])
-		}
 		if err := validateOperation(operation); err != nil {
 			return registryDocument{}, err
+		}
+		if operation.Status != "legacy" {
+			published, ok := LookupPublishedOperation(operationID)
+			if ok && !samePublishedOperation(operation, published) {
+				return registryDocument{}, fmt.Errorf("operation %q differs from published route authority", operationID)
+			}
 		}
 	}
 
@@ -393,6 +297,35 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 		}
 	}
 	return document, nil
+}
+
+func samePublishedOperation(operation OperationDefinition, published PublishedOperationDefinition) bool {
+	return operation.OperationID == published.OperationID && operation.Role == published.Role && operation.SurfaceContract == published.SurfaceContract
+}
+
+// PublishedToolOnRoute is a thin query over the active route catalog.
+func PublishedToolOnRoute(surface SurfaceContractID, tool string) bool {
+	routes, err := ListRouteDefinitions()
+	if err != nil { return false }
+	for _, route := range routes {
+		if route.Surface != surface { continue }
+		for _, name := range route.Tools { if name == tool { return true } }
+	}
+	return false
+}
+
+// RouteContractSHA256 identifies the active published route for a surface.
+func RouteContractSHA256(surface SurfaceContractID) (string, bool) {
+	routes, err := ListRouteDefinitions()
+	if err != nil { return "", false }
+	for _, route := range routes {
+		if route.Surface != surface { continue }
+		raw, err := json.Marshal(route)
+		if err != nil { return "", false }
+		sum := sha256.Sum256(raw)
+		return hex.EncodeToString(sum[:]), true
+	}
+	return "", false
 }
 
 func decodeStrict(raw []byte, target any) error {

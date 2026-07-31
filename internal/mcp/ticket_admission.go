@@ -37,7 +37,7 @@ func (v TicketFrontierOperationIdentity) SemanticRequestSHA256() (string, error)
 	if !ok {
 		return "", errors.New("unregistered ticket frontier operation identity")
 	}
-	manifestSHA256, ok := registry.SurfaceManifestSHA256(operation.SurfaceContract)
+	manifestSHA256, ok := registry.RouteContractSHA256(operation.SurfaceContract)
 	if !ok {
 		return "", errors.New("ticket surface manifest is unavailable")
 	}

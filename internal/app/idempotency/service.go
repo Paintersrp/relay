@@ -65,7 +65,7 @@ func (s *Service) RecordSuccessInTx(ctx context.Context, tx *workflowstore.Tx, i
 	if err := validateKeyAndFingerprint(input.Key, input.Fingerprint); err != nil {
 		return StoredResult{}, err
 	}
-	currentManifest, ok := registry.SurfaceManifestSHA256(input.Key.SurfaceContractID)
+	currentManifest, ok := registry.RouteContractSHA256(input.Key.SurfaceContractID)
 	if !ok || input.SurfaceManifestSHA256 != currentManifest {
 		return StoredResult{}, appError(ErrorInvalidSemanticIdentity)
 	}
@@ -143,7 +143,7 @@ func resolveRow(key MutationKey, fingerprint semanticidentity.Fingerprint, row w
 	if row.SurfaceContractID != string(key.SurfaceContractID) || row.ToolName != string(key.Tool) || row.MutationID != key.MutationID {
 		return Resolution{}, appError(ErrorCorruptStoredResult)
 	}
-	currentManifest, ok := registry.SurfaceManifestSHA256(key.SurfaceContractID)
+	currentManifest, ok := registry.RouteContractSHA256(key.SurfaceContractID)
 	if !ok || row.SurfaceManifestSHA256 != currentManifest || row.SemanticIdentityVersion == "" || row.SemanticRequestSHA256 == "" {
 		return Resolution{}, appError(ErrorCorruptStoredResult)
 	}
@@ -187,7 +187,7 @@ func verifiedStoredResult(key MutationKey, fingerprint semanticidentity.Fingerpr
 }
 
 func validateKeyAndFingerprint(key MutationKey, fingerprint semanticidentity.Fingerprint) error {
-	if _, ok := registry.SurfaceManifestSHA256(key.SurfaceContractID); !ok {
+	if _, ok := registry.RouteContractSHA256(key.SurfaceContractID); !ok {
 		return appError(ErrorUnknownSurfaceContract)
 	}
 	if !registry.IsStateChangingToolForSurface(key.SurfaceContractID, string(key.Tool)) {

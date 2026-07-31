@@ -64,7 +64,7 @@ func validateAndCanonicalize(input Document) (Document, registry.OperationDefini
 	if input.SurfaceContract != operation.SurfaceContract {
 		return Document{}, registry.OperationDefinition{}, invalid("surface_contract")
 	}
-	manifestSHA, ok := registry.SurfaceManifestSHA256(operation.SurfaceContract)
+	manifestSHA, ok := registry.RouteContractSHA256(operation.SurfaceContract)
 	if !ok || input.SurfaceManifestSHA256 != manifestSHA {
 		return Document{}, registry.OperationDefinition{}, invalid("surface_manifest_sha256")
 	}

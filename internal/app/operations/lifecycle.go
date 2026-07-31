@@ -324,7 +324,7 @@ func (s *LifecycleService) mutationAuthority(mutationID string, identity semanti
 		return semanticidentity.Fingerprint{}, idempotency.MutationKey{}, idempotency.RecordSuccessInput{}, &idempotency.Error{Code: idempotency.ErrorInvalidSemanticIdentity}
 	}
 	key := idempotency.MutationKey{SurfaceContractID: identity.SurfaceContractID(), Tool: identity.MutationTool(), MutationID: mutationID}
-	manifest, ok := registry.SurfaceManifestSHA256(key.SurfaceContractID)
+	manifest, ok := registry.RouteContractSHA256(key.SurfaceContractID)
 	if !ok {
 		return semanticidentity.Fingerprint{}, idempotency.MutationKey{}, idempotency.RecordSuccessInput{}, &idempotency.Error{Code: idempotency.ErrorUnknownSurfaceContract}
 	}

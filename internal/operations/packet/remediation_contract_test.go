@@ -288,7 +288,7 @@ func TestCanonicalPacketConcurrentConstructionAndDefensiveCopies(t *testing.T) {
 }
 
 func goldenDocument(t *testing.T, op registry.OperationDefinition) Document {
-	manifest, ok := registry.SurfaceManifestSHA256(op.SurfaceContract)
+	manifest, ok := registry.RouteContractSHA256(op.SurfaceContract)
 	if !ok {
 		t.Fatal("manifest")
 	}
