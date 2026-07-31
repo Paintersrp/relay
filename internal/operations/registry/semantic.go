@@ -76,7 +76,7 @@ func validateOperationRequest(surface SurfaceContractID, tool string, raw []byte
 		} else {
 			request["inputs"] = request["inputs"]
 		}
-	case "validate_artifact", "submit_plan", "create_run":
+	case "validate_artifact":
 		if err := validateTopLevelClearance(request); err != nil {
 			return nil, OperationDefinition{}, false, requestError("request_semantic_invalid", "$.sensitive_data_clearance")
 		}
@@ -90,10 +90,6 @@ func validateSurfaceAction(surface SurfaceContractID, tool string) error {
 	switch tool {
 	case "validate_artifact":
 		action = "validate_artifact"
-	case "submit_plan":
-		action = "submit_plan"
-	case "create_run":
-		action = "create_run"
 	case "get_run_artifact":
 		action = "get_run_artifact"
 	case "record_audit_decision":

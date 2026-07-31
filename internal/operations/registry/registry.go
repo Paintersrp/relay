@@ -15,12 +15,12 @@ import (
 
 const (
 	PublicContractVersion = "relay.mcp.public-contract.v1"
-	PublicContractBytes   = 301441
-	PublicContractSHA256  = "662b4055b5ae188c52bd8d5114af84cfda9aa0d7e5621586217b3dc38a8c42a4"
+	PublicContractBytes   = 293474
+	PublicContractSHA256  = "b6fe92db413c2dd62a29e596af2d7300081544840c12a6ad0558e0642f6f2f5b"
 
 	RegistryVersion         = "relay.operation-registry.v1"
-	OperationRegistryBytes  = 24150
-	OperationRegistrySHA256 = "6cb73de11e0f8f7f7903b7de0105f9dd139e324f25d71d98059512ff42b4622a"
+	OperationRegistryBytes  = 24007
+	OperationRegistrySHA256 = "4d7e4d7f26f57cbc2cf89129605377fccf0266b3f8836aa4d7ca481beb7cb737"
 )
 
 type Role string
@@ -386,8 +386,6 @@ func validateRegistryBytes(publicRaw, registryRaw []byte) (registryDocument, err
 		"refresh_operation_packet",
 		"close_operation_packet",
 		"validate_artifact",
-		"submit_plan",
-		"create_run",
 		"record_audit_decision",
 	}
 	if len(document.SemanticProjectionVersions) != len(requiredProjectionTools) {

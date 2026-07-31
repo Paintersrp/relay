@@ -11,9 +11,9 @@ Relay accepts canonical JSON. It does not ingest free-form Planner handoffs or o
 1. Register each local repository with a stable `repo_target` and local path.
 2. Optionally create a Project and attach registered repositories.
 3. Submit a canonical Plan named `<feature-slug>.plan.json` to an active Project. Relay validates it, renders the Markdown Plan, and persists the Plan and ordered passes.
-4. Inspect the Plan and pass records in the web application. A Plan is an optional coordination layer; standalone Runs remain supported.
+4. Inspect the Plan and pass records in the web application.
 
-Current Runs are created by approving one selected Ticket Design Brief package with zero or one exact Deterministic Operations artifact. Authored Execution Spec submission is retired; package-linked Runs begin at `setup_ready` without authored execution artifacts.
+Current Runs are created by approving one selected Ticket Design Brief package with zero or one exact Deterministic Operations artifact. Authored Execution Spec submission and standalone or Plan/pass-associated Run creation are retired; package-linked Runs begin at `setup_ready` without authored execution artifacts.
 
 ### Execution
 

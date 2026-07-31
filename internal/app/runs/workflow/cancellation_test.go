@@ -17,18 +17,20 @@ func TestRequestExecutionAttemptCancellationRequiresMatchingRunBeforeMutation(t 
 		t.Fatal(err)
 	}
 	create := func(feature string) workflowstore.Run {
-		result, err := service.CreateRun(ctx, CreateRunInput{
-			FeatureSlug:      feature,
-			RepoTarget:       "relay",
-			Branch:           "main",
-			BaseCommit:       strings.Repeat("a", 40),
-			CanonicalJSON:    []byte("{}\n"),
-			RenderedMarkdown: []byte("# Brief\n"),
+		var run workflowstore.Run
+		err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			var createErr error
+			run, createErr = tx.CreateRun(ctx, workflowstore.CreateRunParams{RunID: feature, FeatureSlug: feature, RepoTarget: "relay", Status: workflowstore.RunStatusCreated, Branch: "main", BaseCommit: strings.Repeat("a", 40)})
+			if createErr != nil {
+				return createErr
+			}
+			run, createErr = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusCreated, workflowstore.RunStatusSetupReady)
+			return createErr
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return result.Run
+		return run
 	}
 	runA := create("run-a")
 	runB := create("run-b")

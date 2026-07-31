@@ -57,16 +57,6 @@ func validateRequestIdentity(identity RequestIdentity) error {
 		return validateRefreshOperationPacket(value)
 	case CloseOperationPacket:
 		return validateCloseOperationPacket(value)
-	case SubmitPlan:
-		if value.MutationTool() != registry.MutationToolSubmitPlan {
-			return ErrInvalidRequestIdentity
-		}
-		return validateCanonicalArtifactMutation(value.CanonicalArtifactMutation)
-	case CreateRun:
-		if value.MutationTool() != registry.MutationToolCreateRun {
-			return ErrInvalidRequestIdentity
-		}
-		return validateCanonicalArtifactMutation(value.CanonicalArtifactMutation)
 	case RecordAuditDecision:
 		return validateRecordAuditDecision(value)
 	default:

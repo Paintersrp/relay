@@ -22,8 +22,6 @@ const (
 	ResultKindCreateOperationPacket  ResultKind = "create_operation_packet_result"
 	ResultKindRefreshOperationPacket ResultKind = "refresh_operation_packet_result"
 	ResultKindCloseOperationPacket   ResultKind = "close_operation_packet_result"
-	ResultKindSubmitPlan             ResultKind = "submit_plan_result"
-	ResultKindCreateRun              ResultKind = "create_run_result"
 	ResultKindRecordAuditDecision    ResultKind = "record_audit_decision_result"
 )
 
@@ -116,48 +114,6 @@ func (CloseOperationPacketResult) ResultKind() ResultKind {
 	return ResultKindCloseOperationPacket
 }
 
-type SubmitPlanResult struct {
-	PlanID         string `json:"plan_id"`
-	ArtifactID     string `json:"artifact_id"`
-	ArtifactSHA256 string `json:"artifact_sha256"`
-	ProjectID      string `json:"project_id"`
-	SubmissionID   string `json:"submission_id"`
-	WorkflowState  string `json:"workflow_state"`
-	Complete       bool   `json:"complete"`
-}
-
-func (SubmitPlanResult) resultIdentity() {}
-func (SubmitPlanResult) MutationTool() registry.MutationTool {
-	return registry.MutationToolSubmitPlan
-}
-func (SubmitPlanResult) ResultKind() ResultKind {
-	return ResultKindSubmitPlan
-}
-
-type BaseRepositoryIdentity struct {
-	RepositoryKey string `json:"repository_key"`
-	CommitOID     string `json:"commit_oid"`
-}
-
-type CreateRunResult struct {
-	RunID            string                   `json:"run_id"`
-	ArtifactID       string                   `json:"artifact_id"`
-	ArtifactSHA256   string                   `json:"artifact_sha256"`
-	OperationID      registry.OperationID     `json:"operation_id"`
-	ProjectID        string                   `json:"project_id"`
-	BaseRepositories []BaseRepositoryIdentity `json:"base_repositories"`
-	InitialState     string                   `json:"initial_state"`
-	Complete         bool                     `json:"complete"`
-}
-
-func (CreateRunResult) resultIdentity() {}
-func (CreateRunResult) MutationTool() registry.MutationTool {
-	return registry.MutationToolCreateRun
-}
-func (CreateRunResult) ResultKind() ResultKind {
-	return ResultKindCreateRun
-}
-
 type RecordAuditDecisionResult struct {
 	AuditDecisionID   string `json:"audit_decision_id"`
 	AuditPacketID     string `json:"audit_packet_id"`
@@ -205,10 +161,6 @@ func DecodeResultIdentity(surface registry.SurfaceContractID, tool registry.Muta
 		target = &RefreshOperationPacketResult{}
 	case registry.MutationToolCloseOperationPacket:
 		target = &CloseOperationPacketResult{}
-	case registry.MutationToolSubmitPlan:
-		target = &SubmitPlanResult{}
-	case registry.MutationToolCreateRun:
-		target = &CreateRunResult{}
 	case registry.MutationToolRecordAuditDecision:
 		target = &RecordAuditDecisionResult{}
 	default:
@@ -241,10 +193,6 @@ func ResultKindForTool(tool registry.MutationTool) ResultKind {
 		return ResultKindRefreshOperationPacket
 	case registry.MutationToolCloseOperationPacket:
 		return ResultKindCloseOperationPacket
-	case registry.MutationToolSubmitPlan:
-		return ResultKindSubmitPlan
-	case registry.MutationToolCreateRun:
-		return ResultKindCreateRun
 	case registry.MutationToolRecordAuditDecision:
 		return ResultKindRecordAuditDecision
 	default:
@@ -268,21 +216,6 @@ func validateResultIdentity(tool registry.MutationTool, identity ResultIdentity)
 		value, ok := identity.(CloseOperationPacketResult)
 		if !ok || !value.Complete || validatePacketSummary(value.Packet) != nil {
 			return ErrInvalidResultIdentity
-		}
-	case registry.MutationToolSubmitPlan:
-		value, ok := identity.(SubmitPlanResult)
-		if !ok || !value.Complete || !validOpaque(value.PlanID) || !validOpaque(value.ArtifactID) || !validSHA256(value.ArtifactSHA256) || !validOpaque(value.ProjectID) || !validOpaque(value.SubmissionID) || !validBounded(value.WorkflowState, 4096) {
-			return ErrInvalidResultIdentity
-		}
-	case registry.MutationToolCreateRun:
-		value, ok := identity.(CreateRunResult)
-		if !ok || !value.Complete || !validOpaque(value.RunID) || !validOpaque(value.ArtifactID) || !validSHA256(value.ArtifactSHA256) || value.OperationID == "" || !validOpaque(value.ProjectID) || len(value.BaseRepositories) < 1 || len(value.BaseRepositories) > 64 || !validBounded(value.InitialState, 4096) {
-			return ErrInvalidResultIdentity
-		}
-		for _, repository := range value.BaseRepositories {
-			if !validRepositoryKey(repository.RepositoryKey) || !validGitOID(repository.CommitOID) {
-				return ErrInvalidResultIdentity
-			}
 		}
 	case registry.MutationToolRecordAuditDecision:
 		value, ok := identity.(RecordAuditDecisionResult)
@@ -315,18 +248,6 @@ func normalizeResultIdentity(identity ResultIdentity) (ResultIdentity, error) {
 	case CloseOperationPacketResult:
 		return value, nil
 	case *CloseOperationPacketResult:
-		if value != nil {
-			return *value, nil
-		}
-	case SubmitPlanResult:
-		return value, nil
-	case *SubmitPlanResult:
-		if value != nil {
-			return *value, nil
-		}
-	case CreateRunResult:
-		return value, nil
-	case *CreateRunResult:
 		if value != nil {
 			return *value, nil
 		}

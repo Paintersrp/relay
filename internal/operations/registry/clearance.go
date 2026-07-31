@@ -49,8 +49,6 @@ const (
 	MutationToolCreateOperationPacket  MutationTool = "create_operation_packet"
 	MutationToolRefreshOperationPacket MutationTool = "refresh_operation_packet"
 	MutationToolCloseOperationPacket   MutationTool = "close_operation_packet"
-	MutationToolSubmitPlan             MutationTool = "submit_plan"
-	MutationToolCreateRun              MutationTool = "create_run"
 	MutationToolRecordAuditDecision    MutationTool = "record_audit_decision"
 )
 
@@ -58,8 +56,6 @@ var stateChangingTools = [...]MutationTool{
 	MutationToolCreateOperationPacket,
 	MutationToolRefreshOperationPacket,
 	MutationToolCloseOperationPacket,
-	MutationToolSubmitPlan,
-	MutationToolCreateRun,
 	MutationToolRecordAuditDecision,
 }
 

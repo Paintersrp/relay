@@ -444,20 +444,10 @@ Each app publishes only its compiled role catalog. `tools/list` exposes only cat
 Aggregate inventories remain profile-specific:
 
 - Planner: `validate_artifact`, `list_projects`, `get_plan`
-- Auditor: `validate_artifact`, `create_run`, `get_audit_packet`, `record_audit_decision`
+- Auditor: `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision`
 - Local operator: the union of Planner and Auditor tools, including `list_projects`
 
-`validate_artifact` is Project-independent. `get_plan` returns compact Project metadata. Plan-creating admission is retired.
-
-Successful `create_run` output includes:
-
-```json
-{
-  "review_url": "http://localhost:3000/runs/run-*/specification"
-}
-```
-
-The URL uses `RELAY_WEB_BASE_URL` when configured.
+`validate_artifact` is Project-independent. `get_plan` returns compact Project metadata. Plan-creating and standalone Run-creating admission are retired; `submit_plan` and `create_run` are not published tools.
 
 ## Removed routes
 

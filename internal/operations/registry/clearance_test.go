@@ -65,8 +65,6 @@ func TestMutationAuthority(t *testing.T) {
 		"create_operation_packet",
 		"refresh_operation_packet",
 		"close_operation_packet",
-		"submit_plan",
-		"create_run",
 		"record_audit_decision",
 	}
 	if got := StateChangingTools(); !reflect.DeepEqual(got, want) {
@@ -87,10 +85,7 @@ func TestMutationAuthority(t *testing.T) {
 		{surface: "planner-authoring.v1", tool: "create_operation_packet"},
 		{surface: "planner-authoring.v1", tool: "refresh_operation_packet"},
 		{surface: "planner-authoring.v1", tool: "close_operation_packet"},
-		{surface: "planner-plan.v1", tool: "submit_plan"},
-		{surface: "planner-execution.v1", tool: "create_run"},
 		{surface: "auditor-audit.v1", tool: "record_audit_decision"},
-		{surface: "auditor-remediation.v1", tool: "create_run"},
 	}
 	for _, membership := range memberships {
 		if !IsStateChangingToolForSurface(membership.surface, membership.tool) {
@@ -101,8 +96,6 @@ func TestMutationAuthority(t *testing.T) {
 		surface SurfaceContractID
 		tool    string
 	}{
-		{surface: "planner-authoring.v1", tool: "submit_plan"},
-		{surface: "auditor-review.v1", tool: "create_run"},
 		{surface: "unknown.v1", tool: "close_operation_packet"},
 		{surface: "planner-plan.v1", tool: "validate_artifact"},
 	} {
@@ -119,44 +112,6 @@ func TestMutationAuthority(t *testing.T) {
 		if err := ValidateMutationID(value); !errors.Is(err, ErrMutationID) {
 			t.Fatalf("invalid mutation id %q: %v", value, err)
 		}
-	}
-}
-
-func TestCanonicalArtifactClearanceSchemaIsClosedAndComplete(t *testing.T) {
-	for _, test := range []struct {
-		surface SurfaceContractID
-		tool    string
-	}{
-		{surface: "planner-plan.v1", tool: "submit_plan"},
-		{surface: "planner-execution.v1", tool: "create_run"},
-		{surface: "auditor-remediation.v1", tool: "create_run"},
-	} {
-		t.Run(string(test.surface)+"/"+test.tool, func(t *testing.T) {
-			baseline := canonicalArtifactClearanceRequest(test.surface)
-			assertClearanceRequestAccepted(t, test.surface, test.tool, baseline)
-
-			missingDeclaration := cloneJSONValue(t, baseline)
-			delete(missingDeclaration["sensitive_data_clearance"].(map[string]any), "declaration")
-			assertClearanceRequestRejected(t, test.surface, test.tool, missingDeclaration)
-
-			partialDeclaration := cloneJSONValue(t, baseline)
-			delete(partialDeclaration["sensitive_data_clearance"].(map[string]any)["declaration"].(map[string]any), "password")
-			assertClearanceRequestRejected(t, test.surface, test.tool, partialDeclaration)
-
-			pluralDeclaration := cloneJSONValue(t, baseline)
-			clearance := pluralDeclaration["sensitive_data_clearance"].(map[string]any)
-			clearance["declarations"] = clearance["declaration"]
-			delete(clearance, "declaration")
-			assertClearanceRequestRejected(t, test.surface, test.tool, pluralDeclaration)
-
-			extraDeclaration := cloneJSONValue(t, baseline)
-			extraDeclaration["sensitive_data_clearance"].(map[string]any)["declaration"].(map[string]any)["other"] = false
-			assertClearanceRequestRejected(t, test.surface, test.tool, extraDeclaration)
-
-			trueDeclaration := cloneJSONValue(t, baseline)
-			trueDeclaration["sensitive_data_clearance"].(map[string]any)["declaration"].(map[string]any)["credential"] = true
-			assertClearanceRequestRejected(t, test.surface, test.tool, trueDeclaration)
-		})
 	}
 }
 

@@ -6,19 +6,7 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-type CreateRunInput struct {
-	FeatureSlug      string
-	RepoTarget       string
-	Branch           string
-	BaseCommit       string
-	CanonicalJSON    []byte
-	RenderedMarkdown []byte
-	PlanID           string
-	PassNumber       int64
-	RemediatesRunID  string
-}
-
-type CreateRunResult struct {
+type CreatePackageRunResult struct {
 	Run       workflowstore.Run
 	Artifacts []workflowstore.Artifact
 }

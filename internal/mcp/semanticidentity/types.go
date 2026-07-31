@@ -198,38 +198,6 @@ type CanonicalArtifactMutation struct {
 	SensitiveDataClearance registry.SensitiveDataClearance `json:"sensitive_data_clearance"`
 }
 
-type SubmitPlan struct{ CanonicalArtifactMutation }
-
-func (SubmitPlan) requestIdentity() {}
-
-func (v SubmitPlan) SurfaceContractID() registry.SurfaceContractID {
-	return v.SurfaceContract
-}
-
-func (SubmitPlan) MutationTool() registry.MutationTool {
-	return registry.MutationToolSubmitPlan
-}
-
-func (SubmitPlan) SemanticIdentityVersion() string {
-	return semanticVersion(registry.MutationToolSubmitPlan)
-}
-
-type CreateRun struct{ CanonicalArtifactMutation }
-
-func (CreateRun) requestIdentity() {}
-
-func (v CreateRun) SurfaceContractID() registry.SurfaceContractID {
-	return v.SurfaceContract
-}
-
-func (CreateRun) MutationTool() registry.MutationTool {
-	return registry.MutationToolCreateRun
-}
-
-func (CreateRun) SemanticIdentityVersion() string {
-	return semanticVersion(registry.MutationToolCreateRun)
-}
-
 type AuditWorkflowScope struct {
 	Kind   string `json:"kind"`
 	PlanID string `json:"plan_id,omitempty"`

@@ -8,15 +8,12 @@ import (
 	"fmt"
 	"strings"
 
-	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
 var (
 	ErrInvalidRunInput          = errors.New("invalid Run input")
 	ErrRepositoryTargetNotFound = errors.New("repository target not found")
-	ErrPlanPassAssociation      = errors.New("Plan/pass association invalid")
-	ErrRemediationAssociation   = errors.New("remediation association invalid")
 )
 
 type IDGenerator interface {
@@ -52,168 +49,19 @@ func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, e
 	return &Service{store: store, ids: ids}, nil
 }
 
-func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRunResult, error) {
-	if err := validateCreateRunInput(input); err != nil {
-		return CreateRunResult{}, err
-	}
-	runID := s.ids.RunID()
-	artifactStem := input.FeatureSlug
-	if input.PlanID != "" {
-		artifactStem = fmt.Sprintf("%s.pass-%d", input.FeatureSlug, input.PassNumber)
-	}
-	batch, err := s.store.ArtifactStore().Begin("runs/" + runID)
-	if err != nil {
-		return CreateRunResult{}, err
-	}
-	canonical, err := batch.Stage(
-		"execution_spec",
-		artifactStem+".execution-spec.json",
-		"application/json",
-		input.CanonicalJSON,
-	)
-	if err != nil {
-		_ = batch.Rollback()
-		return CreateRunResult{}, err
-	}
-	rendered, err := batch.Stage(
-		"executor_brief",
-		artifactStem+".executor-brief.md",
-		"text/markdown",
-		input.RenderedMarkdown,
-	)
-	if err != nil {
-		_ = batch.Rollback()
-		return CreateRunResult{}, err
-	}
-
-	result := CreateRunResult{}
-	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
-		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrRepositoryTargetNotFound, input.RepoTarget)
-		}
-		if err != nil {
-			return err
-		}
-		if registered.RepoTarget != input.RepoTarget {
-			return fmt.Errorf("%w: repository target %q must use registered key casing %q", ErrRepositoryTargetNotFound, input.RepoTarget, registered.RepoTarget)
-		}
-
-		planRowID := sql.NullInt64{}
-		passRowID := sql.NullInt64{}
-		if input.PlanID != "" {
-			plan, err := tx.GetPlanByPlanID(ctx, input.PlanID)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: managed Plan %s was not found", ErrPlanPassAssociation, input.PlanID)
-			}
-			if err != nil {
-				return err
-			}
-			if plan.Status != workflowstore.PlanStatusActive {
-				return fmt.Errorf("%w: managed Plan %s is %s", ErrPlanPassAssociation, input.PlanID, plan.Status)
-			}
-			pass, err := tx.GetPlanPassByPlanAndNumber(ctx, plan.ID, input.PassNumber)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: managed pass %d was not found", ErrPlanPassAssociation, input.PassNumber)
-			}
-			if err != nil {
-				return err
-			}
-			if !strings.EqualFold(pass.RepoTarget, input.RepoTarget) {
-				return fmt.Errorf("%w: managed pass repository %q does not match Run repository %q", ErrPlanPassAssociation, pass.RepoTarget, input.RepoTarget)
-			}
-			switch pass.Status {
-			case workflowstore.PassStatusPlanned:
-				pass, err = tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusPlanned, workflowstore.PassStatusInProgress)
-				if err != nil {
-					return fmt.Errorf("start managed pass %d: %w", input.PassNumber, err)
-				}
-			case workflowstore.PassStatusInProgress:
-			case workflowstore.PassStatusCompleted:
-				return fmt.Errorf("%w: managed pass %d is already completed", ErrPlanPassAssociation, input.PassNumber)
-			default:
-				return fmt.Errorf("%w: managed pass %d has unsupported status %q", ErrPlanPassAssociation, input.PassNumber, pass.Status)
-			}
-			planRowID = sql.NullInt64{Int64: plan.ID, Valid: true}
-			passRowID = sql.NullInt64{Int64: pass.ID, Valid: true}
-		}
-
-		remediatesRowID := sql.NullInt64{}
-		if input.RemediatesRunID != "" {
-			original, err := tx.GetRunByRunID(ctx, input.RemediatesRunID)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: remediation source Run %s was not found", ErrRemediationAssociation, input.RemediatesRunID)
-			}
-			if err != nil {
-				return err
-			}
-			if original.Status != workflowstore.RunStatusNeedsRevision ||
-				!strings.EqualFold(original.RepoTarget, input.RepoTarget) ||
-				original.PlanRowID != planRowID ||
-				original.PlanPassRowID != passRowID {
-				return fmt.Errorf("%w: remediation source Run must be needs_revision with the identical repository and Plan/pass association", ErrRemediationAssociation)
-			}
-			remediatesRowID = sql.NullInt64{Int64: original.ID, Valid: true}
-		}
-
-		run, err := tx.CreateRun(ctx, workflowstore.CreateRunParams{
-			RunID:              runID,
-			FeatureSlug:        input.FeatureSlug,
-			RepoTarget:         input.RepoTarget,
-			PlanRowID:          planRowID,
-			PlanPassRowID:      passRowID,
-			RemediatesRunRowID: remediatesRowID,
-			Status:             workflowstore.RunStatusCreated,
-			Branch:             input.Branch,
-			BaseCommit:         input.BaseCommit,
-			CanonicalSHA256:    canonical.SHA256,
-		})
-		if err != nil {
-			return fmt.Errorf("create run: %w", err)
-		}
-		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusCreated, workflowstore.RunStatusSetupReady)
-		if err != nil {
-			return fmt.Errorf("mark run setup ready: %w", err)
-		}
-		result.Run = run
-
-		for _, staged := range []workflowartifacts.File{canonical, rendered} {
-			artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
-				ArtifactID:   s.ids.ArtifactID(),
-				OwnerType:    workflowstore.ArtifactOwnerRun,
-				RunRowID:     sql.NullInt64{Int64: run.ID, Valid: true},
-				Kind:         staged.Kind,
-				RelativePath: staged.RelativePath,
-				MediaType:    staged.MediaType,
-				SHA256:       staged.SHA256,
-				SizeBytes:    staged.SizeBytes,
-			})
-			if err != nil {
-				return fmt.Errorf("create run artifact metadata: %w", err)
-			}
-			result.Artifacts = append(result.Artifacts, artifact)
-		}
-		return nil
-	})
-	if err != nil {
-		return CreateRunResult{}, err
-	}
-	return result, nil
-}
-
-// CreatePackageRun creates the same normal setup-ready Run as CreateRun, but
-// keeps Plan/pass fields unqualified and lets the package owner atomically
+// CreatePackageRun creates a setup-ready Run for an approved execution package.
+// It keeps Plan/pass fields unqualified and lets the package owner atomically
 // establish its approval and selection-consumption facts in the same commit.
-func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunInput) (CreateRunResult, error) {
+func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunInput) (CreatePackageRunResult, error) {
 	if input.ExecutionPackageRowID < 1 || input.Preflight == nil {
-		return CreateRunResult{}, fmt.Errorf("%w: execution package and preflight are required", ErrInvalidRunInput)
+		return CreatePackageRunResult{}, fmt.Errorf("%w: execution package and preflight are required", ErrInvalidRunInput)
 	}
 	if !validFeatureSlug(input.FeatureSlug) || strings.TrimSpace(input.RepoTarget) != input.RepoTarget || strings.TrimSpace(input.RepoTarget) == "" ||
 		strings.TrimSpace(input.Branch) != input.Branch || strings.TrimSpace(input.Branch) == "" || !validCommit(input.BaseCommit) {
-		return CreateRunResult{}, fmt.Errorf("%w: invalid package Run identity", ErrInvalidRunInput)
+		return CreatePackageRunResult{}, fmt.Errorf("%w: invalid package Run identity", ErrInvalidRunInput)
 	}
 	runID := s.ids.RunID()
-	result := CreateRunResult{Artifacts: make([]workflowstore.Artifact, 0)}
+	result := CreatePackageRunResult{Artifacts: make([]workflowstore.Artifact, 0)}
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -256,7 +104,7 @@ func (s *Service) CreatePackageRun(ctx context.Context, input CreatePackageRunIn
 		return nil
 	})
 	if err != nil {
-		return CreateRunResult{}, err
+		return CreatePackageRunResult{}, err
 	}
 	return result, nil
 }
@@ -532,28 +380,6 @@ func (s *Service) RecordValidationResult(ctx context.Context, runID string, pass
 
 func (s *Service) RecordAuditDecision(context.Context, RecordAuditDecisionInput) (RecordAuditDecisionResult, error) {
 	return RecordAuditDecisionResult{}, fmt.Errorf("workflow audit decisions must be recorded through audits.WorkflowAuditService")
-}
-
-func validateCreateRunInput(input CreateRunInput) error {
-	if !validFeatureSlug(input.FeatureSlug) {
-		return fmt.Errorf("%w: feature slug must be lowercase kebab-case", ErrInvalidRunInput)
-	}
-	if strings.TrimSpace(input.RepoTarget) == "" || strings.TrimSpace(input.RepoTarget) != input.RepoTarget {
-		return fmt.Errorf("%w: repository target is required without outer whitespace", ErrInvalidRunInput)
-	}
-	if strings.TrimSpace(input.Branch) == "" || strings.TrimSpace(input.Branch) != input.Branch {
-		return fmt.Errorf("%w: branch is required without outer whitespace", ErrInvalidRunInput)
-	}
-	if !validCommit(input.BaseCommit) {
-		return fmt.Errorf("%w: base commit must be a lowercase full 40-character SHA", ErrInvalidRunInput)
-	}
-	if len(input.CanonicalJSON) == 0 || len(input.RenderedMarkdown) == 0 {
-		return fmt.Errorf("%w: canonical Execution Spec JSON and rendered Executor Brief are required", ErrInvalidRunInput)
-	}
-	if (input.PlanID == "") != (input.PassNumber == 0) {
-		return fmt.Errorf("%w: Plan ID and pass number must be supplied together", ErrPlanPassAssociation)
-	}
-	return nil
 }
 
 func validFeatureSlug(value string) bool {
