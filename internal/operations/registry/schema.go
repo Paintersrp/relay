@@ -72,8 +72,16 @@ func SpecializeRouteSchema(raw json.RawMessage, surface SurfaceContractID, tool 
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return append(json.RawMessage(nil), raw...)
 	}
-	if !isSharedPacketTool(tool) && !OwnedSourceToolContract(tool) && !schemaHasSurfaceContract(root) {
+	if tool != "list_projects" && !isSharedPacketTool(tool) && !OwnedSourceToolContract(tool) && !schemaHasSurfaceContract(root) {
 		return append(json.RawMessage(nil), raw...)
+	}
+	if tool == "list_projects" {
+		properties, _ := root["properties"].(map[string]any)
+		if properties == nil {
+			properties = map[string]any{}
+			root["properties"] = properties
+		}
+		properties["surface_contract"] = map[string]any{"type": "string"}
 	}
 	root["$id"] = fmt.Sprintf("urn:relay:mcp:%s:%s:%s:v1", surface, tool, schemaDirection(root))
 	specializeRouteSchemaNode(root, string(surface), operations)
