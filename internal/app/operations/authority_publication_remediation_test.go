@@ -130,7 +130,6 @@ func TestAuthorityPublicationRejectsNonPublicationMutationTools(t *testing.T) {
 	ctx := context.Background()
 	service, _ := openAuthorityPublicationRemediationService(t, ctx)
 	for _, input := range []AuthorityPublicationInput{
-		authorityPublicationSubmitPlanInput(t, "mutation-submit-plan"),
 		authorityPublicationCloseInput(t, "mutation-close"),
 	} {
 		if _, err := service.Publish(ctx, input); ErrorCode(err) != CodeAuthorityPublicationConflict {
@@ -333,28 +332,6 @@ func authorityPublicationRefreshInput(t *testing.T, priorPacketID, mutationID, p
 		}, nil
 	}
 	return input
-}
-
-func authorityPublicationSubmitPlanInput(t *testing.T, mutationID string) AuthorityPublicationInput {
-	t.Helper()
-	sha := strings.Repeat("a", 64)
-	request := semanticidentity.SubmitPlan{CanonicalArtifactMutation: semanticidentity.CanonicalArtifactMutation{
-		SurfaceContract: "planner-plan.v1", ExpectedPacketID: "opkt-submit-plan", ArtifactName: "feature.plan.json",
-		MediaType: "application/json", ExpectedSHA256: sha,
-		SensitiveDataClearance: registry.SensitiveDataClearance{PolicyVersion: registry.SensitiveDataClearancePolicyVersion, SubjectSHA256: sha, Confirmed: true},
-	}}
-	fingerprint, err := semanticidentity.BuildFingerprint(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest, _ := registry.SurfaceManifestSHA256("planner-plan.v1")
-	return AuthorityPublicationInput{
-		PacketID: "opkt-submit-plan", RequestIdentity: request, PacketArtifactID: "artifact-submit-plan", PacketMediaType: "application/vnd.relay.operation-packet+json;version=1", PacketBytes: []byte("{}\n"),
-		Idempotency: idempotency.RecordSuccessInput{Key: idempotency.MutationKey{SurfaceContractID: "planner-plan.v1", Tool: registry.MutationToolSubmitPlan, MutationID: mutationID}, SurfaceManifestSHA256: manifest, Fingerprint: fingerprint},
-		Mutation: func(context.Context, *workflowstore.Tx, PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
-			return workflowstore.OperationPacket{}, nil, errors.New("non-publication mutation callback must not run")
-		},
-	}
 }
 
 func authorityPublicationCloseInput(t *testing.T, mutationID string) AuthorityPublicationInput {

@@ -32,7 +32,7 @@ func TestRecordSuccessInTxUsesCallerTransactionWithoutNestedTransaction(t *testi
 	store := openStore(t)
 	wrapped := &countingStore{Store: store}
 	service := mustService(t, wrapped)
-	input := validSubmitInput(t, "mutation-in-tx", validSubmitRequest("feature.plan.json"))
+	input := validPacketInput(t, "mutation-in-tx", validPacketRequest("project-in-tx"))
 
 	var callbacks atomic.Int64
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
@@ -41,9 +41,9 @@ func TestRecordSuccessInTxUsesCallerTransactionWithoutNestedTransaction(t *testi
 			if _, err := tx.CreateRepositoryTarget(ctx, "transaction-owned", t.TempDir()); err != nil {
 				return nil, err
 			}
-			return validSubmitResult("plan-in-tx"), nil
+			return validPacketResult("packet-in-tx"), nil
 		})
-		if err != nil || result.ResultKind != semanticidentity.ResultKindSubmitPlan {
+		if err != nil || result.ResultKind != semanticidentity.ResultKindCreateOperationPacket {
 			t.Fatalf("result = %#v, err=%v", result, err)
 		}
 		return nil
@@ -68,10 +68,10 @@ func TestRecordSuccessInTxRechecksEqualAndConflictingWinners(t *testing.T) {
 	ctx := context.Background()
 	store := openStore(t)
 	service := mustService(t, store)
-	request := validSubmitRequest("feature.plan.json")
-	input := validSubmitInput(t, "mutation-winner", request)
+	request := validPacketRequest("project-winner")
+	input := validPacketInput(t, "mutation-winner", request)
 	if _, _, err := service.RecordSuccess(ctx, input, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
-		return validSubmitResult("plan-winner"), nil
+		return validPacketResult("packet-winner"), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestRecordSuccessInTxRechecksEqualAndConflictingWinners(t *testing.T) {
 	err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		_, err := service.RecordSuccessInTx(ctx, tx, input, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
 			callbacks.Add(1)
-			return validSubmitResult("duplicate"), nil
+			return validPacketResult("packet-duplicate"), nil
 		})
 		return err
 	})
@@ -88,15 +88,15 @@ func TestRecordSuccessInTxRechecksEqualAndConflictingWinners(t *testing.T) {
 		t.Fatalf("equal winner error = %v", err)
 	}
 	result, replay, err := service.ResolveAfterRollback(ctx, input, err)
-	if err != nil || !replay || result.ResultKind != semanticidentity.ResultKindSubmitPlan {
+	if err != nil || !replay || result.ResultKind != semanticidentity.ResultKindCreateOperationPacket {
 		t.Fatalf("equal winner recovery = %#v, %v, %v", result, replay, err)
 	}
 
-	conflict := validSubmitInput(t, "mutation-winner", validSubmitRequest("other.plan.json"))
+	conflict := validPacketInput(t, "mutation-winner", validPacketRequest("project-other"))
 	err = store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		_, err := service.RecordSuccessInTx(ctx, tx, conflict, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
 			callbacks.Add(1)
-			return validSubmitResult("conflict"), nil
+			return validPacketResult("packet-conflict"), nil
 		})
 		return err
 	})
@@ -119,7 +119,7 @@ func TestCommitArtifactBatchCommitsAndRollsBackDomainAndMutationTogether(t *test
 	t.Cleanup(func() { _ = store.Close() })
 	service := mustService(t, store)
 
-	successInput := validSubmitInput(t, "mutation-artifact-success", validSubmitRequest("feature.plan.json"))
+	successInput := validPacketInput(t, "mutation-artifact-success", validPacketRequest("project-artifact-success"))
 	batch, err := store.ArtifactStore().Begin("plans/plan-success")
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestCommitArtifactBatchCommitsAndRollsBackDomainAndMutationTogether(t *test
 			if _, err := tx.CreateRepositoryTarget(ctx, "artifact-success", t.TempDir()); err != nil {
 				return nil, err
 			}
-			return validSubmitResult("plan-artifact"), nil
+			return validPacketResult("packet-artifact"), nil
 		})
 		return err
 	})
@@ -150,7 +150,7 @@ func TestCommitArtifactBatchCommitsAndRollsBackDomainAndMutationTogether(t *test
 		t.Fatalf("mutation row = %v, %v", ok, err)
 	}
 
-	rollbackInput := validSubmitInput(t, "mutation-artifact-rollback", validSubmitRequest("rollback.plan.json"))
+	rollbackInput := validPacketInput(t, "mutation-artifact-rollback", validPacketRequest("project-artifact-rollback"))
 	rollbackBatch, err := store.ArtifactStore().Begin("plans/plan-rollback")
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestCommitArtifactBatchCommitsAndRollsBackDomainAndMutationTogether(t *test
 			if _, err := tx.CreateRepositoryTarget(ctx, "artifact-rollback", t.TempDir()); err != nil {
 				return nil, err
 			}
-			return semanticidentity.CreateRunResult{}, nil
+			return semanticidentity.CloseOperationPacketResult{}, nil
 		})
 		return err
 	})
@@ -192,7 +192,7 @@ func TestResolveReplayConflictRestartAndResponseWriteRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := mustService(t, store)
-	input := validSubmitInput(t, "mutation-replay", validSubmitRequest("feature.plan.json"))
+	input := validPacketInput(t, "mutation-replay", validPacketRequest("project-replay"))
 
 	resolution, err := service.Resolve(ctx, input.Key, input.Fingerprint)
 	if err != nil || resolution.Kind != ResolutionMiss {
@@ -201,9 +201,9 @@ func TestResolveReplayConflictRestartAndResponseWriteRecovery(t *testing.T) {
 	var callbacks atomic.Int64
 	stored, replay, err := service.RecordSuccess(ctx, input, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
 		callbacks.Add(1)
-		return validSubmitResult("plan-replay"), nil
+		return validPacketResult("packet-replay"), nil
 	})
-	if err != nil || replay || stored.ResultKind != semanticidentity.ResultKindSubmitPlan {
+	if err != nil || replay || stored.ResultKind != semanticidentity.ResultKindCreateOperationPacket {
 		t.Fatalf("record = %#v, %v, %v", stored, replay, err)
 	}
 
@@ -221,7 +221,7 @@ func TestResolveReplayConflictRestartAndResponseWriteRecovery(t *testing.T) {
 		t.Fatalf("callbacks=%d preparation=%d", callbacks.Load(), preparationCalls.Load())
 	}
 
-	conflict := validSubmitInput(t, "mutation-replay", validSubmitRequest("other.plan.json"))
+	conflict := validPacketInput(t, "mutation-replay", validPacketRequest("project-other"))
 	resolution, err = service.Resolve(ctx, conflict.Key, conflict.Fingerprint)
 	if err != nil || resolution.Kind != ResolutionConflict || len(resolution.Result.ResultIdentityJSON) != 0 {
 		t.Fatalf("conflict = %#v, %v", resolution, err)
@@ -240,8 +240,8 @@ func TestResolveReplayConflictRestartAndResponseWriteRecovery(t *testing.T) {
 	if err != nil || resolution.Kind != ResolutionReplay {
 		t.Fatalf("restart replay = %#v, %v", resolution, err)
 	}
-	decoded, ok := resolution.Result.ResultIdentity.(semanticidentity.SubmitPlanResult)
-	if !ok || decoded.PlanID != "plan-replay" {
+	decoded, ok := resolution.Result.ResultIdentity.(semanticidentity.CreateOperationPacketResult)
+	if !ok || decoded.Packet.Summary.PacketID != "packet-replay" {
 		t.Fatalf("typed replay = %#v", resolution.Result.ResultIdentity)
 	}
 }
@@ -250,13 +250,13 @@ func TestServiceOwnedTransactionRollbackAndConcurrentWinnerBehavior(t *testing.T
 	ctx := context.Background()
 	store := openStore(t)
 	service := mustService(t, store)
-	input := validSubmitInput(t, "mutation-rollback", validSubmitRequest("feature.plan.json"))
+	input := validPacketInput(t, "mutation-rollback", validPacketRequest("project-rollback"))
 
 	_, _, err := service.RecordSuccess(ctx, input, func(ctx context.Context, tx *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
 		if _, err := tx.CreateRepositoryTarget(ctx, "rollback-target", t.TempDir()); err != nil {
 			return nil, err
 		}
-		return semanticidentity.CreateRunResult{}, nil
+		return semanticidentity.CloseOperationPacketResult{}, nil
 	})
 	if !HasCode(err, ErrorInvalidResultIdentity) {
 		t.Fatalf("invalid result error = %v", err)
@@ -266,7 +266,7 @@ func TestServiceOwnedTransactionRollbackAndConcurrentWinnerBehavior(t *testing.T
 	}
 
 	var callbacks atomic.Int64
-	equalInput := validSubmitInput(t, "mutation-concurrent", validSubmitRequest("feature.plan.json"))
+	equalInput := validPacketInput(t, "mutation-concurrent", validPacketRequest("project-concurrent"))
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	for range 2 {
@@ -275,7 +275,7 @@ func TestServiceOwnedTransactionRollbackAndConcurrentWinnerBehavior(t *testing.T
 			defer wg.Done()
 			_, _, err := service.RecordSuccess(ctx, equalInput, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
 				callbacks.Add(1)
-				return validSubmitResult("plan-concurrent"), nil
+				return validPacketResult("packet-concurrent"), nil
 			})
 			errs <- err
 		}()
@@ -291,8 +291,8 @@ func TestServiceOwnedTransactionRollbackAndConcurrentWinnerBehavior(t *testing.T
 		t.Fatalf("equal callbacks = %d", callbacks.Load())
 	}
 
-	first := validSubmitInput(t, "mutation-conflict", validSubmitRequest("first.plan.json"))
-	second := validSubmitInput(t, "mutation-conflict", validSubmitRequest("second.plan.json"))
+	first := validPacketInput(t, "mutation-conflict", validPacketRequest("project-first"))
+	second := validPacketInput(t, "mutation-conflict", validPacketRequest("project-second"))
 	results := make(chan error, 2)
 	callbacks.Store(0)
 	for index, value := range []RecordSuccessInput{first, second} {
@@ -302,7 +302,7 @@ func TestServiceOwnedTransactionRollbackAndConcurrentWinnerBehavior(t *testing.T
 			defer wg.Done()
 			_, _, err := service.RecordSuccess(ctx, value, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
 				callbacks.Add(1)
-				return validSubmitResult("plan-" + string(rune('a'+index))), nil
+				return validPacketResult("packet-" + string(rune('a'+index))), nil
 			})
 			results <- err
 		}()
@@ -328,18 +328,18 @@ func TestResolveAfterRollbackUsesCommittedWinner(t *testing.T) {
 	ctx := context.Background()
 	store := openStore(t)
 	service := mustService(t, store)
-	input := validSubmitInput(t, "mutation-recover", validSubmitRequest("feature.plan.json"))
+	input := validPacketInput(t, "mutation-recover", validPacketRequest("project-recover"))
 	if _, _, err := service.RecordSuccess(ctx, input, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
-		return validSubmitResult("plan-recover"), nil
+		return validPacketResult("packet-recover"), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	result, replay, err := service.ResolveAfterRollback(ctx, input, appError(ErrorConcurrentWinner))
-	if err != nil || !replay || result.ResultKind != semanticidentity.ResultKindSubmitPlan {
+	if err != nil || !replay || result.ResultKind != semanticidentity.ResultKindCreateOperationPacket {
 		t.Fatalf("recover = %#v, %v, %v", result, replay, err)
 	}
 	conflict := input
-	conflict.Fingerprint = mustFingerprint(t, validSubmitRequest("other.plan.json"))
+	conflict.Fingerprint = mustFingerprint(t, validPacketRequest("project-other"))
 	_, _, err = service.ResolveAfterRollback(ctx, conflict, appError(ErrorConcurrentWinner))
 	if !HasCode(err, ErrorMutationConflict) {
 		t.Fatalf("conflicting winner = %v", err)
@@ -359,18 +359,18 @@ func (corruptStore) WithTx(context.Context, func(*workflowstore.Tx) error) error
 }
 
 func TestServiceRejectsKeyFingerprintAndStoredResultCorruption(t *testing.T) {
-	input := validSubmitInput(t, "mutation-corrupt", validSubmitRequest("feature.plan.json"))
+	input := validPacketInput(t, "mutation-corrupt", validPacketRequest("project-corrupt"))
 	service := mustService(t, corruptStore{})
 
-	_, err := service.Resolve(context.Background(), MutationKey{SurfaceContractID: "unknown.v1", Tool: registry.MutationToolSubmitPlan, MutationID: "mutation-1"}, input.Fingerprint)
+	_, err := service.Resolve(context.Background(), MutationKey{SurfaceContractID: "unknown.v1", Tool: registry.MutationToolCreateOperationPacket, MutationID: "mutation-1"}, input.Fingerprint)
 	if !HasCode(err, ErrorUnknownSurfaceContract) {
 		t.Fatalf("unknown surface = %v", err)
 	}
-	_, err = service.Resolve(context.Background(), MutationKey{SurfaceContractID: "planner-authoring.v1", Tool: registry.MutationToolSubmitPlan, MutationID: "mutation-1"}, input.Fingerprint)
+	_, err = service.Resolve(context.Background(), MutationKey{SurfaceContractID: "planner-authoring.v1", Tool: registry.MutationTool("submit_plan"), MutationID: "mutation-1"}, input.Fingerprint)
 	if !HasCode(err, ErrorUnknownMutationTool) {
 		t.Fatalf("unknown tool = %v", err)
 	}
-	_, err = service.Resolve(context.Background(), MutationKey{SurfaceContractID: "planner-plan.v1", Tool: registry.MutationToolSubmitPlan, MutationID: "bad space"}, input.Fingerprint)
+	_, err = service.Resolve(context.Background(), MutationKey{SurfaceContractID: "planner-authoring.v1", Tool: registry.MutationToolCreateOperationPacket, MutationID: "bad space"}, input.Fingerprint)
 	if !HasCode(err, ErrorInvalidMutationID) {
 		t.Fatalf("invalid mutation id = %v", err)
 	}
@@ -379,8 +379,8 @@ func TestServiceRejectsKeyFingerprintAndStoredResultCorruption(t *testing.T) {
 		t.Fatalf("forged fingerprint = %v", err)
 	}
 
-	manifest, _ := registry.SurfaceManifestSHA256("planner-plan.v1")
-	validResult, _ := semanticidentity.EncodeResultIdentity("planner-plan.v1", registry.MutationToolSubmitPlan, validSubmitResult("plan-1"))
+	manifest, _ := registry.SurfaceManifestSHA256("planner-authoring.v1")
+	validResult, _ := semanticidentity.EncodeResultIdentity("planner-authoring.v1", registry.MutationToolCreateOperationPacket, validPacketResult("packet-1"))
 	row := workflowstore.MCPMutationResult{
 		SurfaceContractID:       string(input.Key.SurfaceContractID),
 		ToolName:                string(input.Key.Tool),
@@ -400,7 +400,7 @@ func TestServiceRejectsKeyFingerprintAndStoredResultCorruption(t *testing.T) {
 	}
 
 	row.ResultSHA256 = validResult.SHA256
-	row.ResultKind = string(semanticidentity.ResultKindCreateRun)
+	row.ResultKind = string(semanticidentity.ResultKindCloseOperationPacket)
 	service = mustService(t, corruptStore{row: row})
 	_, err = service.Resolve(context.Background(), input.Key, input.Fingerprint)
 	if !HasCode(err, ErrorCorruptStoredResult) {
@@ -408,7 +408,7 @@ func TestServiceRejectsKeyFingerprintAndStoredResultCorruption(t *testing.T) {
 	}
 
 	row.ResultKind = string(validResult.Kind)
-	row.ResultIdentityJSON = `{"plan_id":"plan-1","artifact_body":"forbidden"}`
+	row.ResultIdentityJSON = `{"packet":{"summary":{"packet_id":"packet-1"},"artifact_body":"forbidden"}}`
 	row.ResultSHA256 = sha256Hex([]byte(row.ResultIdentityJSON))
 	service = mustService(t, corruptStore{row: row})
 	_, err = service.Resolve(context.Background(), input.Key, input.Fingerprint)
@@ -435,7 +435,7 @@ func openStore(t *testing.T) *workflowstore.Store {
 	return store
 }
 
-func validSubmitInput(t *testing.T, mutationID string, request semanticidentity.SubmitPlan) RecordSuccessInput {
+func validPacketInput(t *testing.T, mutationID string, request semanticidentity.CreateOperationPacket) RecordSuccessInput {
 	t.Helper()
 	manifest, ok := registry.SurfaceManifestSHA256(request.SurfaceContract)
 	if !ok {
@@ -444,7 +444,7 @@ func validSubmitInput(t *testing.T, mutationID string, request semanticidentity.
 	return RecordSuccessInput{
 		Key: MutationKey{
 			SurfaceContractID: request.SurfaceContract,
-			Tool:              registry.MutationToolSubmitPlan,
+			Tool:              registry.MutationToolCreateOperationPacket,
 			MutationID:        mutationID,
 		},
 		SurfaceManifestSHA256: manifest,
@@ -452,27 +452,14 @@ func validSubmitInput(t *testing.T, mutationID string, request semanticidentity.
 	}
 }
 
-func validSubmitRequest(name string) semanticidentity.SubmitPlan {
+func validPacketRequest(projectID string) semanticidentity.CreateOperationPacket {
 	sha := strings.Repeat("a", 64)
-	return semanticidentity.SubmitPlan{CanonicalArtifactMutation: semanticidentity.CanonicalArtifactMutation{
-		SurfaceContract:  "planner-plan.v1",
-		ExpectedPacketID: "packet-1",
-		ArtifactName:     name,
-		MediaType:        "application/json",
-		ExpectedSHA256:   sha,
-		SensitiveDataClearance: registry.SensitiveDataClearance{
-			PolicyVersion: registry.SensitiveDataClearancePolicyVersion,
-			SubjectSHA256: sha,
-			Confirmed:     true,
-		},
-	}}
+	return semanticidentity.CreateOperationPacket{SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", ProjectID: projectID, InputFileCount: 0, Attestations: []semanticidentity.AttestationRequest{{Kind: "confirmed_intent", InputName: "confirmed_intent", SubjectSHA256: sha, Confirmed: true}}}
 }
 
-func validSubmitResult(planID string) semanticidentity.SubmitPlanResult {
-	return semanticidentity.SubmitPlanResult{
-		PlanID: planID, ArtifactID: "artifact-1", ArtifactSHA256: strings.Repeat("a", 64),
-		ProjectID: "project-1", SubmissionID: "submission-1", WorkflowState: "active", Complete: true,
-	}
+func validPacketResult(packetID string) semanticidentity.CreateOperationPacketResult {
+	sha := strings.Repeat("a", 64)
+	return semanticidentity.CreateOperationPacketResult{Packet: semanticidentity.OperationPacketViewIdentity{Summary: semanticidentity.PacketSummaryIdentity{PacketID: packetID, PacketSHA256: sha, SchemaVersion: "relay.operation-packet.v1", Role: "planner", OperationID: "planner.requirements", SurfaceContractID: "planner-authoring.v1", ProjectID: "project-1", ReadinessState: "ready", LifecycleState: "active"}, Document: semanticidentity.PacketDocumentIdentity{ArtifactID: "artifact-1", MediaType: "application/vnd.relay.operation-packet+json;version=1", SHA256: sha}}, SurfaceManifestSHA256: sha, Complete: true}
 }
 
 func mustFingerprint(t *testing.T, identity semanticidentity.RequestIdentity) semanticidentity.Fingerprint {

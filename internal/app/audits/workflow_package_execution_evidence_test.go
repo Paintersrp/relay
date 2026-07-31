@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	workflowpackages "relay/internal/app/packages"
-	workflowruns "relay/internal/app/runs/workflow"
 	"relay/internal/executor"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
@@ -352,17 +351,11 @@ func TestWorkflowPackageExecutionEvidenceRejectsInvalidRunIDWithoutReads(t *test
 
 func TestWorkflowPackageExecutionEvidenceRejectsNonPackageRun(t *testing.T) {
 	fixture := newPackageEvidenceFixture(t, false, "")
-	runs, err := workflowruns.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
-		FeatureSlug:      "audit-test",
-		RepoTarget:       "relay",
-		Branch:           "main",
-		BaseCommit:       strings.Repeat("a", 40),
-		CanonicalJSON:    packageEvidenceExecutionSpec("audit-test", "main", strings.Repeat("a", 40)),
-		RenderedMarkdown: []byte("# Executor Brief\n\nExact task.\n"),
+	var created workflowstore.Run
+	err := fixture.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+		var createErr error
+		created, createErr = tx.CreateRun(context.Background(), workflowstore.CreateRunParams{RunID: "run-audit-non-package", FeatureSlug: "audit-test", RepoTarget: "relay", Status: workflowstore.RunStatusCreated, Branch: "main", BaseCommit: strings.Repeat("a", 40)})
+		return createErr
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -371,7 +364,7 @@ func TestWorkflowPackageExecutionEvidenceRejectsNonPackageRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Load(context.Background(), created.Run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+	if _, err := service.Load(context.Background(), created.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
 		t.Fatalf("non-package Run error = %v", err)
 	}
 }

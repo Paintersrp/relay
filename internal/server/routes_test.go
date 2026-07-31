@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	workflowruns "relay/internal/app/runs/workflow"
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
@@ -128,17 +127,11 @@ func TestWorkflowRuntimeMountsNoCutoverOrPlanWriteRoutes(t *testing.T) {
 
 func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 	store, service := openWorkflowRouteTestStore(t)
-	runService, err := workflowruns.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := runService.CreateRun(context.Background(), workflowruns.CreateRunInput{
-		FeatureSlug:      "route-test",
-		RepoTarget:       "relay",
-		Branch:           "main",
-		BaseCommit:       strings.Repeat("a", 40),
-		CanonicalJSON:    []byte(`{"feature_slug":"route-test"}`),
-		RenderedMarkdown: []byte("# Brief\n"),
+	var created workflowstore.Run
+	err := store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+		var createErr error
+		created, createErr = tx.CreateRun(context.Background(), workflowstore.CreateRunParams{RunID: "run-route-test", FeatureSlug: "route-test", RepoTarget: "relay", Status: workflowstore.RunStatusCreated, Branch: "main", BaseCommit: strings.Repeat("a", 40)})
+		return createErr
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,11 +143,11 @@ func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/"+created.Run.RunID, nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/"+created.RunID, nil))
 	if response.Code != http.StatusFound {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
-	expected := "http://localhost:3000/runs/" + created.Run.RunID + "/specification"
+	expected := "http://localhost:3000/runs/" + created.RunID + "/specification"
 	if response.Header().Get("Location") != expected {
 		t.Fatalf("location = %q, want %q", response.Header().Get("Location"), expected)
 	}

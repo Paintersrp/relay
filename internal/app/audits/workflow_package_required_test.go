@@ -2,6 +2,7 @@ package audits
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	workflowruns "relay/internal/app/runs/workflow"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -34,28 +34,6 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 	if _, err := registry.Register(ctx, "relay", repoPath); err != nil {
 		t.Fatal(err)
 	}
-	runs, err := workflowruns.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := runs.CreateRun(ctx, workflowruns.CreateRunInput{
-		FeatureSlug: "package-required", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40),
-		CanonicalJSON:    packageEvidenceExecutionSpec("package-required", "main", strings.Repeat("a", 40)),
-		RenderedMarkdown: []byte("# Execution Brief\n"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		_, err := tx.TransitionRun(ctx, created.Run.RunID, "setup_ready", "executing")
-		if err != nil {
-			return err
-		}
-		_, err = tx.TransitionRun(ctx, created.Run.RunID, "executing", workflowstore.RunStatusValidating)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
 	var projectID, planID, passID int64
 	if err := store.DB().QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-package-required', 'Package required') RETURNING id`).Scan(&projectID); err != nil {
 		t.Fatal(err)
@@ -75,18 +53,35 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().Exec(`UPDATE runs SET plan_row_id = ?, plan_pass_row_id = ? WHERE id = ?`, planID, passID, created.Run.ID); err != nil {
+	var created workflowstore.Run
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var createErr error
+		created, createErr = tx.CreateRun(ctx, workflowstore.CreateRunParams{RunID: "run-package-required", FeatureSlug: "package-required", RepoTarget: "relay", PlanRowID: sql.NullInt64{Int64: planID, Valid: true}, PlanPassRowID: sql.NullInt64{Int64: passID, Valid: true}, Status: workflowstore.RunStatusCreated, Branch: "main", BaseCommit: strings.Repeat("a", 40), CanonicalSHA256: strings.Repeat("e", 64)})
+		if createErr != nil {
+			return createErr
+		}
+		_, createErr = tx.TransitionRun(ctx, created.RunID, workflowstore.RunStatusCreated, workflowstore.RunStatusSetupReady)
+		if createErr != nil {
+			return createErr
+		}
+		_, createErr = tx.TransitionRun(ctx, created.RunID, workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecuting)
+		if createErr != nil {
+			return createErr
+		}
+		_, createErr = tx.TransitionRun(ctx, created.RunID, workflowstore.RunStatusExecuting, workflowstore.RunStatusValidating)
+		return createErr
+	}); err != nil {
 		t.Fatal(err)
 	}
-	created.Run, err = store.GetRunByRunID(ctx, created.Run.RunID)
+	created, err = store.GetRunByRunID(ctx, created.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	initialState := nonPackageAuditState(t, store, created.Run.RunID)
+	initialState := nonPackageAuditState(t, store, created.RunID)
 	if initialState.run.Status != workflowstore.RunStatusValidating || initialState.plan.Status != workflowstore.PlanStatusActive || initialState.pass.Status != workflowstore.PassStatusInProgress {
 		t.Fatalf("initial lifecycle state = run=%q plan=%q pass=%q, want validating/active/in_progress", initialState.run.Status, initialState.plan.Status, initialState.pass.Status)
 	}
-	runBefore, err := store.GetRunByRunID(ctx, created.Run.RunID)
+	runBefore, err := store.GetRunByRunID(ctx, created.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +99,7 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 	}
 	commit := strings.Repeat("c", 40)
 	decisionInput := RecordWorkflowAuditDecisionInput{
-		RunID: created.Run.RunID, AuditPacketID: "packet", PacketSHA256: strings.Repeat("d", 64),
+		RunID: created.RunID, AuditPacketID: "packet", PacketSHA256: strings.Repeat("d", 64),
 		AuditedCommit: commit, Decision: workflowstore.AuditDecisionAccepted, Rationale: "accepted", OperatorConfirmed: true,
 	}
 	tests := []struct {
@@ -112,13 +107,13 @@ func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testi
 		call func() error
 	}{
 		{name: "Prepare", call: func() error {
-			_, err := service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: created.Run.RunID, AuditedCommit: commit})
+			_, err := service.Prepare(ctx, PrepareWorkflowAuditInput{RunID: created.RunID, AuditedCommit: commit})
 			return err
 		}},
-		{name: "GetStatus", call: func() error { _, err := service.GetStatus(ctx, created.Run.RunID); return err }},
-		{name: "GetCurrentPacket", call: func() error { _, err := service.GetCurrentPacket(ctx, created.Run.RunID); return err }},
+		{name: "GetStatus", call: func() error { _, err := service.GetStatus(ctx, created.RunID); return err }},
+		{name: "GetCurrentPacket", call: func() error { _, err := service.GetCurrentPacket(ctx, created.RunID); return err }},
 		{name: "GetCurrentArtifact", call: func() error {
-			_, err := service.GetCurrentArtifact(ctx, GetWorkflowAuditArtifactInput{RunID: created.Run.RunID, ArtifactReference: "assignment"})
+			_, err := service.GetCurrentArtifact(ctx, GetWorkflowAuditArtifactInput{RunID: created.RunID, ArtifactReference: "assignment"})
 			return err
 		}},
 		{name: "RecordDecision", call: func() error { _, err := service.RecordDecision(ctx, decisionInput); return err }},

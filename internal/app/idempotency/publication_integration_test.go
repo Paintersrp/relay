@@ -17,7 +17,7 @@ func TestRecordSuccessInTxCommitsAndRollsBackWithPublicationTransaction(t *testi
 	store := openStore(t)
 	service := mustService(t, store)
 
-	success := validSubmitInput(t, "mutation-publication-success", validSubmitRequest("feature.plan.json"))
+	success := validPacketInput(t, "mutation-publication-success", validPacketRequest("project-publication-success"))
 	batch, packetFile := publicationBatch(t, store, "publication-idempotency-success")
 	var artifact workflowstore.OperationPacketArtifact
 	var packet workflowstore.OperationPacket
@@ -32,9 +32,9 @@ func TestRecordSuccessInTxCommitsAndRollsBackWithPublicationTransaction(t *testi
 			if err != nil {
 				return nil, err
 			}
-			return validSubmitResult("plan-publication-success"), nil
+			return validPacketResult("packet-publication-success"), nil
 		})
-		if err != nil || stored.ResultKind != semanticidentity.ResultKindSubmitPlan {
+		if err != nil || stored.ResultKind != semanticidentity.ResultKindCreateOperationPacket {
 			return err
 		}
 		result, err := tx.GetMCPMutationResult(ctx, storeKey(success.Key))
@@ -72,7 +72,7 @@ func TestRecordSuccessInTxCommitsAndRollsBackWithPublicationTransaction(t *testi
 		t.Fatal(err)
 	}
 
-	rollback := validSubmitInput(t, "mutation-publication-rollback", validSubmitRequest("rollback.plan.json"))
+	rollback := validPacketInput(t, "mutation-publication-rollback", validPacketRequest("project-publication-rollback"))
 	rollbackBatch, rollbackFile := publicationBatch(t, store, "publication-idempotency-rollback")
 	err = store.CommitOperationPacketPublication(ctx, rollbackBatch, func(tx *workflowstore.Tx) error {
 		rollbackArtifact, err := createPublicationArtifact(ctx, tx, rollbackFile, "artifact-publication-idempotency-rollback")
@@ -84,7 +84,7 @@ func TestRecordSuccessInTxCommitsAndRollsBackWithPublicationTransaction(t *testi
 			if err != nil {
 				return nil, err
 			}
-			return semanticidentity.CreateRunResult{}, nil
+			return semanticidentity.CloseOperationPacketResult{}, nil
 		})
 		return err
 	})
@@ -106,9 +106,9 @@ func TestPublicationConcurrentWinnerResolutionRunsAfterArtifactRollback(t *testi
 	ctx := context.Background()
 	store := openStore(t)
 	service := mustService(t, store)
-	input := validSubmitInput(t, "mutation-publication-winner", validSubmitRequest("feature.plan.json"))
+	input := validPacketInput(t, "mutation-publication-winner", validPacketRequest("project-publication-winner"))
 	if _, _, err := service.RecordSuccess(ctx, input, func(context.Context, *workflowstore.Tx) (semanticidentity.ResultIdentity, error) {
-		return validSubmitResult("plan-winner"), nil
+		return validPacketResult("packet-winner"), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestPublicationConcurrentWinnerResolutionRunsAfterArtifactRollback(t *testi
 		t.Fatalf("loser publication survived rollback: %v", err)
 	}
 	result, replay, err := service.ResolveAfterRollback(ctx, input, err)
-	if err != nil || !replay || result.ResultKind != semanticidentity.ResultKindSubmitPlan {
+	if err != nil || !replay || result.ResultKind != semanticidentity.ResultKindCreateOperationPacket {
 		t.Fatalf("winner recovery = %#v, %v, %v", result, replay, err)
 	}
 }
@@ -162,7 +162,7 @@ func createPublicationArtifact(ctx context.Context, tx *workflowstore.Tx, file w
 func createPublicationPacket(ctx context.Context, tx *workflowstore.Tx, batch *workflowartifacts.PublicationBatch, artifact workflowstore.OperationPacketArtifact, packetID, createdAt string) (workflowstore.OperationPacket, error) {
 	packet, err := tx.CreateOperationPacket(ctx, workflowstore.CreateOperationPacketParams{
 		PacketID: packetID, PacketSHA256: artifact.SHA256, SchemaVersion: workflowstore.OperationPacketSchemaVersion,
-		Role: "planner", OperationID: "planner.plan", SurfaceContractID: "planner-plan.v1", ProjectID: "project-test",
+		Role: "planner", OperationID: "planner.requirements", SurfaceContractID: "planner-authoring.v1", ProjectID: "project-test",
 		ReadinessState: workflowstore.OperationPacketReadinessReady, CreatedAt: createdAt, PacketArtifactRowID: artifact.ID,
 		CoordinatedPublicationID: sql.NullString{String: batch.PublicationID(), Valid: true},
 	})

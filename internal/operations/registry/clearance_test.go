@@ -78,6 +78,14 @@ func TestMutationAuthority(t *testing.T) {
 			t.Fatalf("semantic projection version for %q = %q, %v", tool, version, ok)
 		}
 	}
+	for _, retired := range []string{"submit_plan", "create_run"} {
+		if IsStateChangingTool(retired) {
+			t.Fatalf("retired tool %q is state-changing", retired)
+		}
+		if _, ok := SemanticProjectionVersion(retired); ok {
+			t.Fatalf("retired tool %q has a semantic projection", retired)
+		}
+	}
 	memberships := []struct {
 		surface SurfaceContractID
 		tool    string
