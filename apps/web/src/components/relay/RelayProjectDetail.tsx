@@ -192,7 +192,7 @@ export function RelayProjectDetail({ detail }: RelayProjectDetailProps) {
         </dl>
       </section>
 
-      <RelayProjectPlansPanel project={project} plans={detail.plans} />
+      <RelayProjectPlansPanel plans={detail.plans} />
       <RelayProjectRepositoriesPanel
         projectId={project.projectId}
         repositories={detail.repositories}

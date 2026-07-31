@@ -2,91 +2,12 @@ package executor
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
-
-func TestPackageWorkflowPreparationAdmissionPrecedesDeterministicCoordination(t *testing.T) {
-	fixture := newExecutionAssignmentFixture(t, false, "")
-	seedPackagePreparationCutover(t, fixture.store)
-	previousDeterministic, previousAdaptive := packageWorkflowExecuteDeterministic, packageWorkflowPrepareAdaptive
-	t.Cleanup(func() {
-		packageWorkflowExecuteDeterministic = previousDeterministic
-		packageWorkflowPrepareAdaptive = previousAdaptive
-	})
-	boundaryObserved := false
-	packageWorkflowExecuteDeterministic = func(ctx context.Context, _ *PackageDeterministicExecutionService, _ string) (PackageDeterministicExecutionResult, error) {
-		current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-		if err != nil {
-			return PackageDeterministicExecutionResult{}, err
-		}
-		boundaryObserved = found && current.ExecutionBoundaryStatus == "crossed" && current.FirstNewExecutionRunRowID.Valid && current.FirstNewExecutionRunRowID.Int64 == fixture.run.ID
-		return PackageDeterministicExecutionResult{Outcome: DeterministicOutcomeResult{Outcome: DeterministicOutcome{Outcome: DeterministicOutcomeSummary{Status: string(DeterministicPreflightNotPresent)}}}}, nil
-	}
-	packageWorkflowPrepareAdaptive = func(context.Context, *AdaptiveExecutionAttemptService, AdaptiveExecutionAttemptInput) (AdaptiveExecutionAttemptResult, error) {
-		return AdaptiveExecutionAttemptResult{
-			Mode: EffectiveExecutorBriefAdaptiveNoOperations, AdaptiveDispatchRequired: true,
-			Attempt:       &workflowstore.ExecutionAttempt{ID: 1, RunRowID: fixture.run.ID, AttemptNumber: 1, Adapter: "codex", Model: "model", Status: workflowstore.AttemptStatusPending},
-			InputArtifact: &workflowstore.Artifact{OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: 1, Valid: true}},
-			InputBytes:    []byte("input"),
-		}, nil
-	}
-
-	if _, err := mustPreparePackageWorkflow(t, fixture); err != nil {
-		t.Fatal(err)
-	}
-	if !boundaryObserved {
-		t.Fatal("deterministic coordination began before the package execution boundary was crossed")
-	}
-}
-
-func seedPackagePreparationCutover(t *testing.T, store *workflowstore.Store) {
-	t.Helper()
-	db := store.DB()
-	if _, err := db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`DROP TRIGGER IF EXISTS cutover_activation_insert_guard`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO cutover_activations (cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, rollback_status, roll_forward_status) VALUES ('cutover-package-preparation', 1, 1, 'CUTOVER', 1, 1, ?, 1, 'authority-package-preparation', 1, ?, 'eligible', 'active', '2000-01-01T00:00:00Z', 'open', 'available', 'pending')`, strings.Repeat("a", 64), strings.Repeat("b", 64)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO cutover_current_states (singleton_id, activation_row_id) SELECT 1, id FROM cutover_activations WHERE cutover_activation_id = 'cutover-package-preparation'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO cutover_gateway_configurations (activation_row_id, configuration_sha256, relay_repository, relay_commit_oid, standing_repository, standing_commit_oid) VALUES (1, ?, 'relay', ?, 'standing', ?)`, strings.Repeat("c", 64), strings.Repeat("d", 40), strings.Repeat("e", 40)); err != nil {
-		t.Fatal(err)
-	}
-	for sequence := 1; sequence <= 7; sequence++ {
-		routePath := fmt.Sprintf("/mcp/v1/package-preparation-%d", sequence)
-		if _, err := db.Exec(`INSERT INTO cutover_gateway_routes (activation_row_id, sequence, route_path, role, surface_contract_id, manifest_sha256, authority_commit_oid, authority_blob_oid) VALUES (1, ?, ?, 'planner', ?, ?, ?, ?)`, sequence, routePath, fmt.Sprintf("surface-%d", sequence), strings.Repeat("f", 64), strings.Repeat("1", 40), strings.Repeat("2", 40)); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(`INSERT INTO cutover_gateway_mappings (activation_row_id, sequence, mapping_id, route_path, listener_identity, upstream_identity, health_evidence_sha256, trace_evidence_sha256) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, sequence, fmt.Sprintf("mapping-%d", sequence), routePath, fmt.Sprintf("listener-%d", sequence), fmt.Sprintf("upstream-%d", sequence), strings.Repeat("3", 64), strings.Repeat("4", 64)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, role := range []string{"wayfinder", "planner", "auditor"} {
-		if _, err := db.Exec(`INSERT INTO cutover_gateway_standing_authorities (activation_row_id, role, repository, commit_oid, path, blob_oid, content_sha256) VALUES (1, ?, 'standing', ?, ?, ?, ?)`, role, strings.Repeat("5", 40), "/authority/"+role, strings.Repeat("6", 40), strings.Repeat("7", 64)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for sequence := 1; sequence <= 3; sequence++ {
-		if _, err := db.Exec(`INSERT INTO cutover_gateway_dependency_outcomes (activation_row_id, sequence, ticket_id, ticket_revision, outcome, evidence_sha256) VALUES (1, ?, ?, 1, 'completed_accepted', ?)`, sequence, fmt.Sprintf("ticket-%d", sequence), strings.Repeat("8", 64)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestPackageWorkflowPreparationModeMatrix(t *testing.T) {
 	for _, test := range []struct {

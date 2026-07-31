@@ -1,10 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
 
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { RelayCanonicalPlansRegistry } from "@/components/relay/RelayCanonicalPlansRegistry";
-import { Button } from "@/components/ui/button";
 import { workflowPlansListQueryOptions } from "@/features/relay-plans";
 import { workflowProjectsListQueryOptions } from "@/features/relay-projects";
 
@@ -21,15 +19,7 @@ function PlansListPage() {
   return (
     <AppPageFrame
       title="Plans"
-      description="Canonical Plans organized by Relay Projects."
-      actions={
-        <Button asChild variant="outline" size="sm">
-          <Link to="/plans/new">
-            <Plus className="size-3.5" />
-            Submit Plan
-          </Link>
-        </Button>
-      }
+      description="Historical canonical Plans organized by Relay Projects."
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
     >
       <RelayCanonicalPlansRegistry

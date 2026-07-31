@@ -44,7 +44,7 @@ func TestFinalCanonicalProfileIsolation(t *testing.T) {
 		},
 		{
 			profile:     ToolProfileAuditor,
-			unavailable: []string{"list_projects", "submit_plan", "get_plan"},
+			unavailable: []string{"list_projects", "get_plan"},
 		},
 	}
 	for _, tt := range tests {
@@ -62,7 +62,7 @@ func TestFinalCanonicalProfileIsolation(t *testing.T) {
 
 func TestFinalPlannerCompilerActionsRemainAdvertised(t *testing.T) {
 	definitions := workflowToolDefinitions(ToolProfilePlanner)
-	for _, name := range []string{"validate_artifact", "submit_plan"} {
+	for _, name := range []string{"validate_artifact"} {
 		found := false
 		for _, definition := range definitions {
 			if definition.Name == name {

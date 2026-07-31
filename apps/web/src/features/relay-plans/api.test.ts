@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as planApi from "./api";
 import {
   getWorkflowPlan,
   getWorkflowPlanPass,
   listWorkflowPlans,
-  moveWorkflowPlan,
-  submitWorkflowPlan,
   validateWorkflowPlan,
 } from "./api";
 
@@ -102,96 +101,32 @@ describe("canonical Plan API", () => {
     await expect(getWorkflowPlan("plan-1")).rejects.toThrow(/dependsOn/);
   });
 
-  it("submits exact canonical content with external Project metadata", async () => {
+  it("uses the canonical validation endpoint without any Plan write endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      response(
-        {
-          plan: {
-            planId: "plan-1",
-            featureSlug: "feature",
-            status: "active",
-            canonicalSha256: "a".repeat(64),
-            project: {
-              projectId: "project-1",
-              name: "Relay",
-              status: "active",
-            },
-            createdAt: "2026-07-08T00:00:00Z",
-            updatedAt: "2026-07-08T00:00:00Z",
-          },
-          passes: [
-            {
-              passId: "pass-1",
-              number: 1,
-              name: "First",
-              repoTarget: "relay",
-              status: "planned",
-            },
-          ],
-          artifacts: [],
-        },
-        201,
-      ),
+      response({
+        ok: true,
+        status: "valid",
+        kind: "plan",
+        sha256: "b".repeat(64),
+        diagnostics: [],
+        notices: [],
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const canonicalContent = "{\n  \"schema_version\": \"1.0\"\n}\n";
 
-    await submitWorkflowPlan({
-      projectId: "project-1",
-      fileName: "feature.plan.json",
-      canonicalContent,
-      expectedSha256: "a".repeat(64),
-    });
+    const validation = await validateWorkflowPlan("feature.plan.json", "{}");
 
-    const request = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toEqual({
-      projectId: "project-1",
-      fileName: "feature.plan.json",
-      canonicalContent,
-      expectedSha256: "a".repeat(64),
-    });
-  });
-
-  it("uses canonical validation and atomic movement endpoints", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        response({
-          ok: true,
-          status: "valid",
-          kind: "plan",
-          sha256: "b".repeat(64),
-          diagnostics: [],
-          notices: [],
-        }),
-      )
-      .mockResolvedValueOnce(
-        response({
-          planId: "plan-1",
-          featureSlug: "feature",
-          status: "active",
-          canonicalSha256: "b".repeat(64),
-          project: {
-            projectId: "project-2",
-            name: "Destination",
-            status: "active",
-          },
-          createdAt: "2026-07-08T00:00:00Z",
-          updatedAt: "2026-07-08T00:01:00Z",
-        }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await validateWorkflowPlan("feature.plan.json", "{}");
-    const moved = await moveWorkflowPlan("plan-1", { projectId: "project-2" });
-
+    expect(validation.sha256).toBe("b".repeat(64));
     expect(fetchMock.mock.calls[0][0]).toContain(
       "/api/canonical-artifacts/validate",
     );
-    expect(fetchMock.mock.calls[1][0]).toContain(
-      "/api/plans/plan-1/project",
-    );
-    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("PATCH");
-    expect(moved.project.projectId).toBe("project-2");
+    expect(fetchMock.mock.calls).toHaveLength(1);
+  });
+
+  // Legacy Plan write admission is retired: the client exposes no Plan
+  // submission or Plan movement operation.
+  it("exports no Plan submission or Plan movement operation", () => {
+    expect(Object.keys(planApi)).not.toContain("submitWorkflowPlan");
+    expect(Object.keys(planApi)).not.toContain("moveWorkflowPlan");
   });
 });

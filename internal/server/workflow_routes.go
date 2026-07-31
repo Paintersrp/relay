@@ -12,7 +12,6 @@ import (
 	artifactsapi "relay/internal/api/artifacts"
 	auditsapi "relay/internal/api/audits"
 	canonicalapi "relay/internal/api/canonical"
-	cutoverapi "relay/internal/api/cutover"
 	featuresapi "relay/internal/api/features"
 	packagesapi "relay/internal/api/packages"
 	plansapi "relay/internal/api/plans"
@@ -22,11 +21,9 @@ import (
 	"relay/internal/api/shared"
 	ticketsapi "relay/internal/api/tickets"
 	appaudits "relay/internal/app/audits"
-	appcutover "relay/internal/app/cutover"
 	appfeatures "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	apppackages "relay/internal/app/packages"
-	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
 	apptickets "relay/internal/app/tickets"
@@ -69,16 +66,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct project service: %w", err)
 	}
-	cutoverService, err := appcutover.NewService(workflowStore)
-	if err != nil {
-		return nil, nil, fmt.Errorf("construct cutover service: %w", err)
-	}
-	legacyGate := appcutover.NewLegacyGate(cutoverService)
-	planMutationService, err := workflowplans.NewServiceWithGate(workflowStore, legacyGate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("construct plan mutation service: %w", err)
-	}
-	submissionService, err := workflowsubmissions.NewServiceWithGate(workflowStore, legacyGate)
+	submissionService, err := workflowsubmissions.NewService(workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct submission service: %w", err)
 	}
@@ -125,7 +113,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
 	projectHandler := projectsapi.NewWorkflowHandler(projectService)
-	canonicalHandler := canonicalapi.NewWorkflowHandler(submissionService, planMutationService)
+	canonicalHandler := canonicalapi.NewWorkflowHandler(submissionService)
 	planHandler := plansapi.NewWorkflowHandler(readService)
 	runHandler := runsapi.NewWorkflowReadHandler(readService)
 	executionHandler := runsapi.NewWorkflowExecutionHandler(executionService)
@@ -134,11 +122,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService, featureCompletionWorkflowService)
 	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
-	cutoverWorkflowService, err := appoperations.NewCutoverWorkflowService(packetService, cutoverService)
-	if err != nil {
-		return nil, nil, fmt.Errorf("construct cutover workflow service: %w", err)
-	}
-	cutoverHandler := cutoverapi.NewWorkflowHandler(cutoverService, cutoverWorkflowService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -154,7 +137,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	}
 
 	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log, sourceVaultReader))
-	router.Handle("/mcp", newCutoverAggregateHandler(cutoverService, mcp.NewHTTPHandler(mcpServer, log)))
+	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
 	for _, current := range mcpHandlers {
 		router.Handle(current.Path, current.Handler)
 	}
@@ -172,7 +155,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 		featuresapi.MountWorkspaceRoutes(api, featureWorkspaceHandler)
 		ticketsapi.MountWorkflowRoutes(api, ticketHandler)
 		packagesapi.MountWorkflowRoutes(api, packageHandler)
-		cutoverapi.MountWorkflowRoutes(api, cutoverHandler)
 		api.HandleFunc("/*", workflowJSONNotFound)
 	})
 
@@ -243,30 +225,4 @@ func workflowJSONNotFound(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = w.Write([]byte(`{"error":"NOT_FOUND","message":"API route not found"}`))
-}
-
-type legacyAdmissionState interface {
-	IsLegacyAdmissionClosed(context.Context) (bool, error)
-}
-
-type cutoverAggregateHandler struct {
-	state legacyAdmissionState
-	next  http.Handler
-}
-
-func newCutoverAggregateHandler(state legacyAdmissionState, next http.Handler) http.Handler {
-	return cutoverAggregateHandler{state: state, next: next}
-}
-
-func (handler cutoverAggregateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	closed, err := handler.state.IsLegacyAdmissionClosed(r.Context())
-	if err != nil {
-		shared.Error(w, http.StatusServiceUnavailable, "CUTOVER_STATE_UNAVAILABLE", "Cutover admission state is unavailable")
-		return
-	}
-	if closed {
-		shared.Error(w, http.StatusConflict, "LEGACY_ADMISSION_CLOSED", "Legacy MCP admission is closed")
-		return
-	}
-	handler.next.ServeHTTP(w, r)
 }

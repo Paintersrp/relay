@@ -11,9 +11,6 @@ import {
   type WorkflowJsonRecord,
 } from "@/features/workflow-api";
 import type {
-  MoveWorkflowPlanRequest,
-  SubmitWorkflowPlanRequest,
-  SubmitWorkflowPlanResponse,
   WorkflowArtifactReference,
   WorkflowCanonicalValidation,
   WorkflowPlanDetail,
@@ -255,35 +252,6 @@ function parseDiagnostics(
   );
 }
 
-function parseSubmittedPlan(
-  value: unknown,
-  method: WorkflowHttpMethod,
-  path: string,
-): SubmitWorkflowPlanResponse["plan"] {
-  const record = asWorkflowRecord(value, method, path, "plan");
-  return {
-    planId: requiredWorkflowString(record, "planId", method, path, "plan"),
-    featureSlug: requiredWorkflowString(record, "featureSlug", method, path, "plan"),
-    status: enumValue<WorkflowPlanStatus>(
-      record.status,
-      ["active", "completed"],
-      method,
-      path,
-      "plan.status",
-    ),
-    canonicalSha256: requiredWorkflowString(
-      record,
-      "canonicalSha256",
-      method,
-      path,
-      "plan",
-    ),
-    project: parseProject(record.project, method, path, "plan.project"),
-    createdAt: requiredWorkflowString(record, "createdAt", method, path, "plan"),
-    updatedAt: requiredWorkflowString(record, "updatedAt", method, path, "plan"),
-  };
-}
-
 export async function listWorkflowPlans(
   filters: WorkflowPlanListFilters = {},
 ): Promise<WorkflowPlanListResponse> {
@@ -376,83 +344,4 @@ export async function validateWorkflowPlan(
     diagnostics: parseDiagnostics(record, "diagnostics", "POST", path),
     notices: parseDiagnostics(record, "notices", "POST", path),
   };
-}
-
-export async function submitWorkflowPlan(
-  request: SubmitWorkflowPlanRequest,
-): Promise<SubmitWorkflowPlanResponse> {
-  const path = "/api/plans";
-  const record = asWorkflowRecord(
-    await requestWorkflowJson<unknown>("POST", path, request),
-    "POST",
-    path,
-    "response",
-  );
-  return {
-    plan: parseSubmittedPlan(record.plan, "POST", path),
-    passes: requiredWorkflowArray(record, "passes", "POST", path, "response").map(
-      (entry, index) => {
-        const pass = asWorkflowRecord(entry, "POST", path, `passes[${index}]`);
-        return {
-          passId: requiredWorkflowString(
-            pass,
-            "passId",
-            "POST",
-            path,
-            `passes[${index}]`,
-          ),
-          number: requiredWorkflowInteger(
-            pass,
-            "number",
-            "POST",
-            path,
-            `passes[${index}]`,
-            1,
-          ),
-          name: requiredWorkflowString(
-            pass,
-            "name",
-            "POST",
-            path,
-            `passes[${index}]`,
-          ),
-          repoTarget: requiredWorkflowString(
-            pass,
-            "repoTarget",
-            "POST",
-            path,
-            `passes[${index}]`,
-          ),
-          status: enumValue<WorkflowPlanPassStatus>(
-            pass.status,
-            ["planned", "in_progress", "completed"],
-            "POST",
-            path,
-            `passes[${index}].status`,
-          ),
-        };
-      },
-    ),
-    artifacts: requiredWorkflowArray(
-      record,
-      "artifacts",
-      "POST",
-      path,
-      "response",
-    ).map((entry, index) =>
-      parseArtifact(entry, "POST", path, `artifacts[${index}]`),
-    ),
-  };
-}
-
-export async function moveWorkflowPlan(
-  planId: string,
-  request: MoveWorkflowPlanRequest,
-): Promise<SubmitWorkflowPlanResponse["plan"]> {
-  const path = `/api/plans/${encodeURIComponent(planId)}/project`;
-  return parseSubmittedPlan(
-    await requestWorkflowJson<unknown>("PATCH", path, request),
-    "PATCH",
-    path,
-  );
 }

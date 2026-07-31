@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	workflowplans "relay/internal/app/plans/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -42,38 +41,13 @@ func TestWorkflowReadModelsExposeCanonicalPlanAndNonNilCollections(t *testing.T)
 		t.Fatal(err)
 	}
 
-	plans, err := workflowplans.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := plans.CreatePlan(ctx, workflowplans.CreatePlanInput{
-		ProjectID:        project.ProjectID,
-		FeatureSlug:      "relay-specification-workflow-pivot",
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Plan\n"),
-		Repositories: []workflowplans.RepositoryTargetInput{
-			{
-				RepoTarget:         "relay",
-				Branch:             "main",
-				PlanningBaseCommit: strings.Repeat("a", 40),
-			},
-		},
-		Passes: []workflowplans.PassInput{
-			{Number: 1, Name: "Pass", RepoTarget: "relay"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(created.Passes) != 1 {
-		t.Fatalf("created passes = %d, want 1", len(created.Passes))
-	}
+	createdPlan, createdPass := seedHistoricalPlan(t, ctx, store, project.ID, "plan-read-model-contract", "relay-specification-workflow-pivot")
 
 	service, err := NewService(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail, err := service.GetPlan(ctx, created.Plan.PlanID)
+	detail, err := service.GetPlan(ctx, createdPlan.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +67,7 @@ func TestWorkflowReadModelsExposeCanonicalPlanAndNonNilCollections(t *testing.T)
 		t.Fatalf("Plan detail runs = %#v, want non-nil empty collection", detail.Passes[0].Runs)
 	}
 
-	pass, err := service.GetPlanPass(ctx, created.Plan.PlanID, created.Passes[0].PassID)
+	pass, err := service.GetPlanPass(ctx, createdPlan.PlanID, createdPass.PassID)
 	if err != nil {
 		t.Fatal(err)
 	}

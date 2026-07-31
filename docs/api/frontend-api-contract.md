@@ -206,21 +206,6 @@ Returns:
 }
 ```
 
-### `POST /api/plans`
-
-Request:
-
-```json
-{
-  "projectId": "project-*",
-  "fileName": "feature.plan.json",
-  "canonicalContent": "{...}\n",
-  "expectedSha256": "64 lowercase hex characters"
-}
-```
-
-The exact UTF-8 bytes of `canonicalContent` are hash-checked and compiled through the same application service used by MCP. The destination Project must be active. Project metadata is stored separately from canonical Plan JSON.
-
 ### `GET /api/plans/{planId}`
 
 Returns:
@@ -234,23 +219,11 @@ Returns:
 
 Canonical Plan JSON and rendered Plan Markdown are retrieved only through the artifact content endpoint.
 
-### `PATCH /api/plans/{planId}/project`
-
-Request:
-
-```json
-{
-  "projectId": "project-*"
-}
-```
-
-Moves the Plan atomically to an active Project without changing canonical artifacts, passes, Runs, or audit evidence.
-
 ### `GET /api/plans/{planId}/passes/{passId}`
 
 Returns one pass with dependency IDs and associated Run summaries.
 
-No Project review settings, Plan Attempt, legacy Plan Seed orchestration, next-pass-work, or next-audit-work HTTP route exists.
+Plan and Pass presentation is read-only. No Plan-creating or Plan-mutating HTTP route exists, and no Project review settings, Plan Attempt, legacy Plan Seed orchestration, next-pass-work, or next-audit-work HTTP route exists.
 
 ## Runs
 
@@ -456,75 +429,6 @@ Audit decisions are recorded through the canonical Auditor MCP tool and require 
 
 The former local-audit, project-audit, audit submit, approve, request-revision, commit-message, and close routes do not exist.
 
-## Cutover
-
-The cutover API exposes ticket-oriented admission lifecycle state and mutations. All mutation endpoints require the cutover to be in the correct state.
-
-### `GET /api/cutover/state`
-
-Returns the current cutover mode:
-
-```json
-{
-  "active": true,
-  "state": {
-    "activationId": "cutover-*",
-    "status": "active",
-    "boundaryStatus": "open",
-    "rollbackStatus": "available",
-    "rollForwardStatus": "pending"
-  }
-}
-```
-
-When no activation is current, returns `{"active": false}` without a `state` property.
-
-### `GET /api/cutover/activations/{activationId}/readiness`
-
-Returns bounded readiness evidence for one activation: prerequisites, obligations, roll-forward criteria, and recorded evidence.
-
-### `GET /api/cutover/history`
-
-Returns all activation records ordered by creation time.
-
-### `POST /api/cutover/activate`
-
-Request:
-
-```json
-{
-  "activationId": "cutover-*"
-}
-```
-
-Atomically activates a prepared cutover when all evidence is complete. Returns `200` with the activated state or `409` when not ready.
-
-### `POST /api/cutover/rollback`
-
-Request:
-
-```json
-{
-  "activationId": "cutover-*"
-}
-```
-
-Rolls back an active, pre-boundary activation. Returns `200` or `409` when rollback is blocked.
-
-### `POST /api/cutover/roll-forward-evidence`
-
-Request:
-
-```json
-{
-  "activationId": "cutover-*",
-  "criterionSequence": 1,
-  "evidence": "..."
-}
-```
-
-Records one roll-forward evidence item. The cutover completes roll-forward when all criteria have evidence.
-
 ## MCP
 
 The ChatGPT-facing HTTP role apps are:
@@ -535,15 +439,15 @@ The ChatGPT-facing HTTP role apps are:
 
 Each app publishes only its compiled role catalog. `tools/list` exposes only catalog advertised names; collisions are deterministic aliases statically bound to one immutable internal route and authority identity. A request cannot select another route, role, or authority. The generated and tested inventory is built by `BuildMCPAppSurfaceManifests`.
 
-`POST /mcp` remains the aggregate compatibility surface for profile-selected behavior, but it returns `409` while a cutover activation is active. It is not a role-app connector URL. The former seven `/mcp/v1/...` endpoints are removed and return `404`.
+`POST /mcp` remains the aggregate compatibility surface for profile-selected behavior and is mounted unconditionally. It is not a role-app connector URL. The former seven `/mcp/v1/...` endpoints are removed and return `404`.
 
 Aggregate inventories remain profile-specific:
 
-- Planner: `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run`
+- Planner: `validate_artifact`, `list_projects`, `get_plan`
 - Auditor: `validate_artifact`, `create_run`, `get_audit_packet`, `record_audit_decision`
 - Local operator: the union of Planner and Auditor tools, including `list_projects`
 
-`submit_plan` requires external `project_id`. `validate_artifact` and `create_run` remain Project-independent. `get_plan` returns compact Project metadata.
+`validate_artifact` is Project-independent. `get_plan` returns compact Project metadata. Plan-creating admission is retired.
 
 Successful `create_run` output includes:
 

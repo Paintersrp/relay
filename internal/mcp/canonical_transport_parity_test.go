@@ -2,24 +2,19 @@ package mcp
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	apicanonical "relay/internal/api/canonical"
-	workflowplans "relay/internal/app/plans/workflow"
-	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type transportFixture struct {
 	harness *canonicalTestHarness
-	project workflowstore.Project
 	router  http.Handler
 }
 
@@ -27,63 +22,13 @@ func newTransportFixture(t *testing.T) *transportFixture {
 	t.Helper()
 	harness := newCanonicalTestHarness(t, ToolProfilePlanner)
 	harness.registerRepo(t, "relay")
-	projects, err := workflowprojects.NewService(harness.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err := projects.CreateProject(context.Background(), workflowprojects.CreateProjectInput{Name: "Relay"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	canonicalService, err := workflowsubmissions.NewService(harness.store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	planService, err := workflowplans.NewService(harness.store)
-	if err != nil {
-		t.Fatal(err)
-	}
 	router := chi.NewRouter()
-	apicanonical.MountWorkflowRoutes(router, apicanonical.NewWorkflowHandler(canonicalService, planService))
-	return &transportFixture{harness: harness, project: project, router: router}
-}
-
-func (f *transportFixture) submitPlanThroughMCP(t *testing.T, fileID string) planOutput {
-	t.Helper()
-	data := canonicalPlanBytes("relay")
-	ref := f.harness.put(fileID, "canonical-test.plan.json", data)
-	result := f.harness.server.HandleSubmitPlan(canonicalArgs(t, artifactSubmissionArgs{
-		ProjectID:      f.project.ProjectID,
-		ArtifactFile:   ref,
-		ExpectedSHA256: canonicalTestSHA(data),
-	}))
-	if result.IsError {
-		t.Fatalf("MCP submit Plan failed: %s", canonicalToolText(t, result))
-	}
-	var output planOutput
-	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &output); err != nil {
-		t.Fatal(err)
-	}
-	return output
-}
-
-func (f *transportFixture) submitPlanThroughHTTP(t *testing.T) map[string]any {
-	t.Helper()
-	data := canonicalPlanBytes("relay")
-	response := f.requestJSON(t, http.MethodPost, "/plans", map[string]any{
-		"projectId":        f.project.ProjectID,
-		"fileName":         "canonical-test.plan.json",
-		"canonicalContent": string(data),
-		"expectedSha256":   canonicalTestSHA(data),
-	})
-	if response.Code != http.StatusCreated {
-		t.Fatalf("HTTP submit Plan failed: %d %s", response.Code, response.Body.String())
-	}
-	var output map[string]any
-	if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
-		t.Fatal(err)
-	}
-	return output
+	apicanonical.MountWorkflowRoutes(router, apicanonical.NewWorkflowHandler(canonicalService))
+	return &transportFixture{harness: harness, router: router}
 }
 
 func (f *transportFixture) requestJSON(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
@@ -99,7 +44,7 @@ func (f *transportFixture) requestJSON(t *testing.T, method, path string, body a
 	return response
 }
 
-func TestCanonicalMCPAndHTTPValidationAndPlanSubmissionParity(t *testing.T) {
+func TestCanonicalMCPAndHTTPValidationParity(t *testing.T) {
 	mcpFixture := newTransportFixture(t)
 	httpFixture := newTransportFixture(t)
 	data := canonicalPlanBytes("relay")
@@ -139,22 +84,33 @@ func TestCanonicalMCPAndHTTPValidationAndPlanSubmissionParity(t *testing.T) {
 		len(mcpValidation.Notices) != len(httpValidationOutput.Notices) {
 		t.Fatalf("validation parity mismatch: MCP=%+v HTTP=%+v", mcpValidation, httpValidationOutput)
 	}
+}
 
-	mcpPlan := mcpFixture.submitPlanThroughMCP(t, "parity-plan")
-	httpPlan := httpFixture.submitPlanThroughHTTP(t)
-	httpPlanValue, ok := httpPlan["plan"].(map[string]any)
-	if !ok {
-		t.Fatalf("HTTP Plan response missing plan: %+v", httpPlan)
+// Legacy Plan write admission is retired on both transports: neither the HTTP
+// canonical router nor the aggregate MCP surface exposes a Plan-creating
+// operation, and validation leaves no durable Plan state.
+func TestCanonicalTransportsExposeNoPlanSubmissionParity(t *testing.T) {
+	fixture := newTransportFixture(t)
+	data := canonicalPlanBytes("relay")
+
+	response := fixture.requestJSON(t, http.MethodPost, "/plans", map[string]any{
+		"projectId":        "project-canonical-tests",
+		"fileName":         "canonical-test.plan.json",
+		"canonicalContent": string(data),
+		"expectedSha256":   canonicalTestSHA(data),
+	})
+	if response.Code != http.StatusNotFound && response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("HTTP Plan submission is still mounted: %d %s", response.Code, response.Body.String())
 	}
-	httpPasses, _ := httpPlan["passes"].([]any)
-	httpArtifacts, _ := httpPlan["artifacts"].([]any)
-	httpProject, _ := httpPlanValue["project"].(map[string]any)
-	if mcpPlan.Project.ProjectID != mcpFixture.project.ProjectID ||
-		httpProject["projectId"] != httpFixture.project.ProjectID ||
-		mcpPlan.Plan.FeatureSlug != httpPlanValue["featureSlug"] ||
-		mcpPlan.Plan.Status != httpPlanValue["status"] ||
-		len(mcpPlan.Passes) != len(httpPasses) ||
-		len(mcpPlan.Artifacts) != len(httpArtifacts) {
-		t.Fatalf("submission parity mismatch: MCP=%+v HTTP=%+v", mcpPlan, httpPlan)
+
+	ref := fixture.harness.put("parity-retired", "canonical-test.plan.json", data)
+	validated := fixture.harness.server.HandleValidateArtifact(canonicalArgs(t, artifactArgs{ArtifactFile: ref}))
+	if validated.IsError {
+		t.Fatalf("MCP validation failed: %s", canonicalToolText(t, validated))
+	}
+	for _, table := range []string{"plans", "plan_passes", "runs", "artifacts"} {
+		if got := workflowRowCount(t, fixture.harness.store, table); got != 0 {
+			t.Fatalf("%s rows = %d, want 0", table, got)
+		}
 	}
 }

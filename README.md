@@ -45,7 +45,7 @@ The TanStack Start application in `apps/web` is normally available at `http://lo
 | --- | --- |
 | `/` | Workflow overview |
 | `/projects`, `/projects/new`, `/projects/{projectId}` | Project registry, repositories, notes, and associated Plans |
-| `/plans`, `/plans/new` | Plan registry and canonical Plan submission |
+| `/plans` | Read-only registry of historical Plans |
 | `/plans/{planId}` | Plan and pass overview |
 | `/plans/{planId}/passes/{passId}` | Pass detail and associated Runs |
 | `/runs`, `/runs/new` | Run registry and selected-package guidance |
@@ -61,7 +61,7 @@ Relay has one aggregate compatibility registry over stdio (`cmd/mcpserver`) and 
 
 | Aggregate compatibility profile | Tools |
 | --- | --- |
-| `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan` |
+| `planner` | `validate_artifact`, `list_projects`, `get_plan` |
 | `auditor` | `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
 | `local_operator` | Ordered union of the Planner and Auditor profiles |
 
@@ -93,34 +93,6 @@ npm run chatgpt-mcp:stop:all
 
 `start:all` is the normal daily startup command. Single-profile commands remain supported as compatibility commands. For setup, diagnostics, and tunnel details, see [docs/chatgpt-mcp-local.md](docs/chatgpt-mcp-local.md).
 
-
-## Ticket-oriented cutover
-
-Relay's ordinary admission transitions from legacy Plan/Run submission to ticket-oriented admission through one guarded application-owned cutover.
-
-### Activation prerequisites
-
-Before activation the operator must ensure:
-- The exact Transition Plan ticket and authority revision are current in the workspace.
-- Every declared prerequisite has recorded evidence.
-- Every activation obligation has recorded evidence.
-- Roll-forward criteria are declared.
-
-### New-work admission
-
-After activation, new legacy Plan submissions and managed Plan/pass Run creation are rejected. All new ordinary work enters through the ticket-oriented pipeline using delivery tickets, execution packages, and mutation leases.
-
-### Historical reads
-
-Historical Plan, pass, and Run reads remain available. In-progress legacy Runs continue to completion. Remediation of eligible persisted legacy Runs is always permitted regardless of cutover state.
-
-### Rollback boundary
-
-Rollback is available only while the cutover is active and the execution boundary is open. Once the first ticket-oriented Run crosses the boundary, the cutover becomes one-way and rollback is permanently forbidden.
-
-### Safe roll-forward
-
-The operator records evidence for each declared roll-forward criterion. When all criteria are satisfied, the cutover completes roll-forward.
 
 ## Persistence
 

@@ -23,7 +23,7 @@ func (f *fakeFeatureCompletionOwner) Complete(_ context.Context, input featureap
 	return featureapp.CompletionResult{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: input.WorkspaceID}}, nil
 }
 
-func TestFeatureCompletionDelegatesDirectlyAfterCutover(t *testing.T) {
+func TestFeatureCompletionDelegatesDirectly(t *testing.T) {
 	owner := &fakeFeatureCompletionOwner{}
 	service, err := NewFeatureCompletionWorkflowService(owner)
 	if err != nil {

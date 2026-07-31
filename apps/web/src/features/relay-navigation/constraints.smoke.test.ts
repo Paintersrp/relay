@@ -274,19 +274,20 @@ describe("Task 13.5 — architecture-boundary constraints", () => {
     ).toBe(false);
   });
 
-  it("keeps the Command_Palette action set closed to New Run / New Plan (Req 4.10)", () => {
-    // Runtime: the built action entries expose exactly new-run and new-plan.
-    const ids = buildActionEntries({ onNewRun: () => {}, onNewPlan: () => {} })
+  it("keeps the Command_Palette action set closed to New Run (Req 4.10)", () => {
+    // Runtime: the built action entries expose exactly new-run. Legacy Plan
+    // submission is retired, so no Plan-creating action entry exists.
+    const ids = buildActionEntries({ onNewRun: () => {} })
       .map((entry) => (entry.kind === "action" ? entry.id : entry.kind))
       .sort();
-    expect(ids).toEqual(["new-plan", "new-run"]);
+    expect(ids).toEqual(["new-run"]);
 
     // Type-level: the CommandEntry `action` variant's id union is frozen.
     const typesSrc = stripComments(readFileSync(typesFile, "utf8"));
     const actionUnion = /kind:\s*"action";\s*id:\s*([^;]+);/.exec(typesSrc);
     expect(actionUnion, "CommandEntry action variant not found").not.toBeNull();
     const literals = Array.from(actionUnion![1].matchAll(/"([^"]+)"/g)).map((m) => m[1]).sort();
-    expect(literals).toEqual(["new-plan", "new-run"]);
+    expect(literals).toEqual(["new-run"]);
 
     // No lifecycle-mutating action id may appear in the action variant.
     const forbiddenActionIds = [

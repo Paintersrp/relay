@@ -11,7 +11,6 @@ import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { workflowPlanDetailQueryOptions } from "@/features/relay-plans";
-import { workflowProjectsListQueryOptions } from "@/features/relay-projects";
 
 export const Route = createFileRoute("/plans/$planId")({
   component: PlanDetailPage,
@@ -24,9 +23,6 @@ export function PlanDetailPage() {
   });
   const isPassDetailRoute = pathname.startsWith(`/plans/${planId}/passes/`);
   const planQuery = useQuery(workflowPlanDetailQueryOptions(planId));
-  const projectsQuery = useQuery(
-    workflowProjectsListQueryOptions({ status: "active", limit: 100 }),
-  );
   const shellClassName =
     "mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5";
 
@@ -34,7 +30,7 @@ export function PlanDetailPage() {
 
   return (
     <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">
-      {planQuery.isLoading || projectsQuery.isLoading ? (
+      {planQuery.isLoading ? (
         <div className={shellClassName}>
           <Skeleton className="h-40 w-full rounded" />
           <Skeleton className="h-72 w-full rounded" />
@@ -63,40 +59,9 @@ export function PlanDetailPage() {
         </div>
       ) : null}
 
-      {!planQuery.isLoading &&
-      !planQuery.error &&
-      projectsQuery.isError ? (
+      {!planQuery.isLoading && !planQuery.error && planQuery.data ? (
         <div className={shellClassName}>
-          <RelayStateSurface
-            tone="danger"
-            title="Destination Projects failed to load"
-            description="Relay loaded the Plan but could not load active destination Projects. Plan movement is unavailable because its required context failed, not because there are no eligible destinations."
-            metadata={`Plan ID: ${planId}`}
-            action={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void projectsQuery.refetch()}
-              >
-                <RefreshCw className="size-3.5" />
-                Retry Projects
-              </Button>
-            }
-          />
-        </div>
-      ) : null}
-
-      {!planQuery.isLoading &&
-      !projectsQuery.isLoading &&
-      !planQuery.error &&
-      !projectsQuery.error &&
-      planQuery.data ? (
-        <div className={shellClassName}>
-          <RelayCanonicalPlanDetail
-            detail={planQuery.data}
-            activeProjects={projectsQuery.data?.projects ?? []}
-          />
+          <RelayCanonicalPlanDetail detail={planQuery.data} />
         </div>
       ) : null}
     </section>

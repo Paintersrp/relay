@@ -13,9 +13,9 @@ func TestToolsListCanonicalProfilesAreExactAndSchemasAreBounded(t *testing.T) {
 		profile ToolProfile
 		want    []string
 	}{
-		{name: "planner", profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"}},
+		{name: "planner", profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "get_plan"}},
 		{name: "auditor", profile: ToolProfileAuditor, want: []string{"validate_artifact", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
-		{name: "local operator falls back to planner", profile: ToolProfile("local_operator"), want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"}},
+		{name: "local operator falls back to planner", profile: ToolProfile("local_operator"), want: []string{"validate_artifact", "list_projects", "get_plan"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -35,7 +35,7 @@ func TestToolsListCanonicalProfilesAreExactAndSchemasAreBounded(t *testing.T) {
 				if schema["type"] != "object" {
 					t.Fatalf("tool %q top-level schema type = %v", tool.Name, schema["type"])
 				}
-				if tool.Name == "validate_artifact" || tool.Name == "submit_plan" {
+				if tool.Name == "validate_artifact" {
 					params, ok := tool.Meta["openai/fileParams"].([]any)
 					if !ok || !reflect.DeepEqual(params, []any{"artifact_file"}) {
 						t.Fatalf("tool %q file params = %#v", tool.Name, tool.Meta["openai/fileParams"])

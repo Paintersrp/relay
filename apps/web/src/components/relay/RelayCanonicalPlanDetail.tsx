@@ -1,64 +1,21 @@
-import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Loader2, MoveRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { RelayArtifactViewer } from "@/components/relay/RelayArtifactViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  moveWorkflowPlan,
-  workflowPlanKeys,
-  type WorkflowPlanDetail,
-} from "@/features/relay-plans";
-import type { WorkflowProject } from "@/features/relay-projects";
-import { RelayApiError } from "@/features/relay-runs";
+import type { WorkflowPlanDetail } from "@/features/relay-plans";
 
 interface RelayCanonicalPlanDetailProps {
   detail: WorkflowPlanDetail;
-  activeProjects: WorkflowProject[];
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof RelayApiError) {
-    return error.errorShape?.message || error.message;
-  }
-  return error instanceof Error ? error.message : "Plan move failed.";
-}
-
+// Read-only presentation of a historical Plan. Legacy Plan writes are retired:
+// this surface exposes no Plan mutation control and authorizes no execution.
 export function RelayCanonicalPlanDetail({
   detail,
-  activeProjects,
 }: RelayCanonicalPlanDetailProps) {
-  const queryClient = useQueryClient();
-  const [moveOpen, setMoveOpen] = React.useState(false);
-  const [destinationProjectId, setDestinationProjectId] = React.useState("");
-  const [mutationError, setMutationError] = React.useState<string | null>(null);
   const plan = detail.plan;
-  const destinations = activeProjects.filter(
-    (project) => project.projectId !== plan.project.projectId,
-  );
-
-  const moveMutation = useMutation({
-    mutationFn: () =>
-      moveWorkflowPlan(plan.planId, { projectId: destinationProjectId }),
-    onSuccess: () => {
-      setMoveOpen(false);
-      setDestinationProjectId("");
-      setMutationError(null);
-      void queryClient.invalidateQueries({ queryKey: workflowPlanKeys.all });
-    },
-    onError: (error) => setMutationError(errorMessage(error)),
-  });
 
   return (
     <div className="space-y-5">
@@ -92,19 +49,9 @@ export function RelayCanonicalPlanDetail({
               {plan.planId} · {plan.canonicalSha256}
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={destinations.length === 0}
-            onClick={() => {
-              setMutationError(null);
-              setMoveOpen(true);
-            }}
-          >
-            <MoveRight className="size-4" />
-            Move Plan
-          </Button>
+          <Badge variant="secondary" className="self-start">
+            Historical record
+          </Badge>
         </div>
       </section>
 
@@ -114,14 +61,11 @@ export function RelayCanonicalPlanDetail({
         </header>
         <div className="divide-y divide-[var(--relay-row-border)]">
           {detail.passes.map((pass) => (
-            <div
-              key={pass.passId}
-              className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-            >
+            <div key={pass.passId} className="px-5 py-4">
               <Link
                 to="/plans/$planId/passes/$passId"
                 params={{ planId: plan.planId, passId: pass.passId }}
-                className="min-w-0 hover:underline"
+                className="block min-w-0 hover:underline"
               >
                 <p className="font-medium">
                   Pass {pass.number}: {pass.name}
@@ -130,19 +74,6 @@ export function RelayCanonicalPlanDetail({
                   {pass.passId} · {pass.repoTarget} · {pass.status}
                 </p>
               </Link>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  to="/execution-packages/new"
-                  search={{
-                    planId: plan.planId,
-                    passId: pass.passId,
-                    passNumber: pass.number,
-                  }}
-                >
-                  Create Managed Run
-                  <ArrowRight className="size-3.5" />
-                </Link>
-              </Button>
             </div>
           ))}
         </div>
@@ -172,71 +103,6 @@ export function RelayCanonicalPlanDetail({
           ))}
         </div>
       </section>
-
-      <Dialog
-        open={moveOpen}
-        onOpenChange={(open) => {
-          if (!moveMutation.isPending) setMoveOpen(open);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move Plan to another Project</DialogTitle>
-            <DialogDescription>
-              This changes Relay organizational metadata only.
-            </DialogDescription>
-          </DialogHeader>
-          {mutationError ? (
-            <div
-              role="alert"
-              className="rounded border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              {mutationError}
-            </div>
-          ) : null}
-          <div className="space-y-1.5 py-3">
-            <Label htmlFor="move-plan-project">
-              Active destination Project
-            </Label>
-            <select
-              id="move-plan-project"
-              value={destinationProjectId}
-              onChange={(event) =>
-                setDestinationProjectId(event.target.value)
-              }
-              disabled={moveMutation.isPending}
-              className="h-9 w-full rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 text-sm"
-            >
-              <option value="">Select a Project</option>
-              {destinations.map((project) => (
-                <option key={project.projectId} value={project.projectId}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={moveMutation.isPending}
-              onClick={() => setMoveOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={!destinationProjectId || moveMutation.isPending}
-              onClick={() => moveMutation.mutate()}
-            >
-              {moveMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : null}
-              Move Plan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

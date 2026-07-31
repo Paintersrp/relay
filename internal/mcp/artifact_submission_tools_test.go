@@ -246,23 +246,50 @@ func artifactFileCount(t *testing.T, root string) int {
 	return count
 }
 
-func submitCanonicalTestPlan(t *testing.T, h *canonicalTestHarness, repoTarget string) planOutput {
+// seedCanonicalTestPlan writes one historical Plan and Pass directly through
+// the store. Legacy Plan write admission is retired, so the MCP surface has no
+// Plan-creating tool.
+func (h *canonicalTestHarness) seedCanonicalTestPlan(t *testing.T, repoTarget string) (workflowstore.Plan, workflowstore.PlanPass) {
 	t.Helper()
-	data := canonicalPlanBytes(repoTarget)
-	ref := h.put("plan-"+repoTarget, "canonical-test.plan.json", data)
-	result := h.server.HandleSubmitPlan(canonicalArgs(t, artifactSubmissionArgs{
-		ProjectID:      h.createProject(t).ProjectID,
-		ArtifactFile:   ref,
-		ExpectedSHA256: canonicalTestSHA(data),
-	}))
-	if result.IsError {
-		t.Fatalf("MCP submit Plan failed: %s", canonicalToolText(t, result))
-	}
-	var out planOutput
-	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
+	ctx := context.Background()
+	project := h.createProject(t)
+	var plan workflowstore.Plan
+	var pass workflowstore.PlanPass
+	if err := h.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		stored, err := tx.GetProjectByProjectID(ctx, project.ProjectID)
+		if err != nil {
+			return err
+		}
+		plan, err = tx.CreatePlan(ctx, workflowstore.CreatePlanParams{
+			ProjectRowID:    stored.ID,
+			PlanID:          "plan-canonical-test",
+			FeatureSlug:     "canonical-test",
+			CanonicalSHA256: strings.Repeat("a", 64),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.CreatePlanRepositoryTarget(ctx, workflowstore.CreatePlanRepositoryTargetParams{
+			PlanRowID:          plan.ID,
+			Sequence:           1,
+			RepoTarget:         repoTarget,
+			Branch:             "main",
+			PlanningBaseCommit: strings.Repeat("a", 40),
+		}); err != nil {
+			return err
+		}
+		pass, err = tx.CreatePlanPass(ctx, workflowstore.CreatePlanPassParams{
+			PassID:     "pass-canonical-test",
+			PlanRowID:  plan.ID,
+			PassNumber: 1,
+			Name:       "Foundation",
+			RepoTarget: repoTarget,
+		})
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
-	return out
+	return plan, pass
 }
 
 func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
@@ -272,12 +299,12 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 	}{
 		{
 			profile: ToolProfilePlanner,
-			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"},
+			want:    []string{"validate_artifact", "list_projects", "get_plan"},
 		},
 		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
 		{
 			profile: ToolProfile("local_operator"),
-			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan"},
+			want:    []string{"validate_artifact", "list_projects", "get_plan"},
 		},
 	}
 	for _, tt := range tests {
@@ -356,17 +383,12 @@ func TestValidateArtifactSupportsAuthoredMarkdownWithoutAdmission(t *testing.T) 
 	}
 }
 
-func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
+func TestGetPlanReturnsBoundedMetadataWithoutArtifactBodies(t *testing.T) {
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	h.registerRepo(t, "relay")
-	submitted := submitCanonicalTestPlan(t, h, "relay")
-	if !submitted.OK || submitted.Project.ProjectID == "" || submitted.Plan.Status != workflowstore.PlanStatusActive || len(submitted.Passes) != 1 || len(submitted.Artifacts) != 2 {
-		t.Fatalf("unexpected Plan output: %+v", submitted)
-	}
-	if submitted.Passes[0].Status != workflowstore.PassStatusPlanned {
-		t.Fatalf("pass status = %q", submitted.Passes[0].Status)
-	}
-	result := h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: submitted.Plan.PlanID}))
+	plan, pass := h.seedCanonicalTestPlan(t, "relay")
+
+	result := h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: plan.PlanID}))
 	if result.IsError {
 		t.Fatal(canonicalToolText(t, result))
 	}
@@ -374,13 +396,43 @@ func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{canonicalToolText(t, result), canonicalToolText(t, h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: submitted.Plan.PlanID})))} {
-		if strings.Contains(text, "Canonical Plan context") || strings.Contains(text, `"repo_targets"`) {
-			t.Fatalf("Plan response leaked artifact body: %s", text)
+	if !got.OK || got.Plan.PlanID != plan.PlanID || got.Plan.Status != workflowstore.PlanStatusActive {
+		t.Fatalf("Plan output = %+v", got)
+	}
+	if len(got.Passes) != 1 || got.Passes[0].PassID != pass.PassID || got.Passes[0].Status != workflowstore.PassStatusPlanned {
+		t.Fatalf("pass output = %+v", got.Passes)
+	}
+	text := canonicalToolText(t, result)
+	if strings.Contains(text, "Canonical Plan context") || strings.Contains(text, `"repo_targets"`) {
+		t.Fatalf("Plan response leaked artifact body: %s", text)
+	}
+}
+
+// Legacy Plan write admission is retired: no profile publishes a Plan-creating
+// tool, and the aggregate dispatcher rejects the retired tool name.
+func TestSubmitPlanToolIsRetiredAcrossProfilesAndDispatch(t *testing.T) {
+	for _, profile := range []ToolProfile{ToolProfilePlanner, ToolProfileAuditor, ToolProfile("local_operator")} {
+		for _, name := range toolNames(workflowToolDefinitions(profile)) {
+			if name == "submit_plan" {
+				t.Fatalf("profile %q still publishes submit_plan", profile)
+			}
 		}
 	}
-
-	result = h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: "plan-missing"}))
+	h := newCanonicalTestHarness(t, ToolProfilePlanner)
+	response := h.server.handleLine(mustMarshal(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params":  map[string]any{"name": "submit_plan", "arguments": map[string]any{}},
+	}))
+	if response.Error == nil || response.Error.Code != CodeMethodNotFound {
+		t.Fatalf("submit_plan dispatch = %+v", response)
+	}
+	for _, table := range []string{"plans", "plan_passes", "runs", "artifacts"} {
+		if got := workflowRowCount(t, h.store, table); got != 0 {
+			t.Fatalf("%s rows = %d, want 0", table, got)
+		}
+	}
 }
 
 func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
@@ -406,23 +458,5 @@ func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
 		workflowRowCount(t, h.store, "plan_passes") != beforePasses ||
 		workflowRowCount(t, h.store, "artifacts") != beforeArtifacts {
 		t.Fatal("missing Plan lookup mutated workflow state")
-	}
-}
-
-func TestSubmitPlanMapsUnavailableCutoverState(t *testing.T) {
-	h := newCanonicalTestHarness(t, ToolProfilePlanner)
-	data := canonicalPlanBytes("relay")
-	ref := h.put("cutover-unavailable", "canonical-test.plan.json", data)
-	project := h.createProject(t)
-	if err := h.store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	result := h.server.HandleSubmitPlan(canonicalArgs(t, artifactSubmissionArgs{
-		ProjectID:      project.ProjectID,
-		ArtifactFile:   ref,
-		ExpectedSHA256: canonicalTestSHA(data),
-	}))
-	if code := workflowBlockerCode(t, result); code != "cutover_state_unavailable" {
-		t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 	}
 }

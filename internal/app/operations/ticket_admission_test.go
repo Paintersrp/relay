@@ -49,7 +49,7 @@ func (f *fakeTicketWorkflowOwner) Select(_ context.Context, _ tickets.SelectInpu
 	return tickets.SelectionResult{}, nil
 }
 
-func TestTicketWorkflowMutationsDelegateDirectlyAfterCutover(t *testing.T) {
+func TestTicketWorkflowMutationsDelegateDirectly(t *testing.T) {
 	owner := &fakeTicketWorkflowOwner{}
 	service, err := NewTicketWorkflowService(nil, owner)
 	if err != nil {

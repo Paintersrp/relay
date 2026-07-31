@@ -240,7 +240,6 @@ const REQ_10_1_ROUTES: ReadonlyArray<{ pattern: string; nav: string }> = [
   { pattern: "/runs/$runId/execute", nav: "/runs/run-1/execute" },
   { pattern: "/runs/$runId/audit", nav: "/runs/run-1/audit" },
   { pattern: "/plans", nav: "/plans" },
-  { pattern: "/plans/new", nav: "/plans/new" },
   { pattern: "/plans/$planId", nav: "/plans/plan-1" },
   { pattern: "/plans/$planId/passes/$passId", nav: "/plans/plan-1/passes/pass-1" },
   { pattern: "/projects", nav: "/projects" },

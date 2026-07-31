@@ -7,20 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	appcutover "relay/internal/app/cutover"
-	workflowplans "relay/internal/app/plans/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
 	"relay/internal/speccompiler"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type fakeCanonicalService struct {
 	validation     workflowsubmissions.ValidationResult
-	plan           workflowsubmissions.SubmitPlanResult
 	lastValidation workflowsubmissions.ValidationInput
-	lastPlan       workflowsubmissions.SubmitPlanInput
 	err            error
 }
 
@@ -29,27 +24,13 @@ func (f *fakeCanonicalService) ValidateArtifact(_ context.Context, input workflo
 	return f.validation, f.err
 }
 
-func (f *fakeCanonicalService) SubmitPlan(_ context.Context, input workflowsubmissions.SubmitPlanInput) (workflowsubmissions.SubmitPlanResult, error) {
-	f.lastPlan = input
-	return f.plan, f.err
-}
-
-type fakePlanMover struct {
-	result workflowplans.MovePlanResult
-	err    error
-}
-
-func (f *fakePlanMover) MovePlan(context.Context, workflowplans.MovePlanInput) (workflowplans.MovePlanResult, error) {
-	return f.result, f.err
-}
-
-func canonicalRouter(service WorkflowCanonicalService, mover WorkflowPlanMover) http.Handler {
+func canonicalRouter(service WorkflowCanonicalService) http.Handler {
 	router := chi.NewRouter()
-	MountWorkflowRoutes(router, NewWorkflowHandler(service, mover))
+	MountWorkflowRoutes(router, NewWorkflowHandler(service))
 	return router
 }
 
-func TestCanonicalHTTPRoutesPreserveExactCanonicalIdentityInputs(t *testing.T) {
+func TestCanonicalHTTPValidationPreservesExactCanonicalIdentityInputs(t *testing.T) {
 	service := &fakeCanonicalService{
 		validation: workflowsubmissions.ValidationResult{
 			OK:          true,
@@ -59,12 +40,8 @@ func TestCanonicalHTTPRoutesPreserveExactCanonicalIdentityInputs(t *testing.T) {
 			Diagnostics: []speccompiler.Diagnostic{},
 			Notices:     []speccompiler.Diagnostic{},
 		},
-		plan: workflowsubmissions.SubmitPlanResult{
-			Project: workflowstore.Project{ProjectID: "project-test", Name: "Relay", Status: workflowstore.ProjectStatusActive},
-			Plan:    workflowstore.Plan{PlanID: "plan-test", FeatureSlug: "feature", Status: workflowstore.PlanStatusActive},
-		},
 	}
-	handler := canonicalRouter(service, &fakePlanMover{})
+	handler := canonicalRouter(service)
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(
@@ -81,26 +58,11 @@ func TestCanonicalHTTPRoutesPreserveExactCanonicalIdentityInputs(t *testing.T) {
 		strings.Contains(response.Body.String(), `"notices":null`) {
 		t.Fatalf("validation response collections = %s", response.Body.String())
 	}
-
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(
-		http.MethodPost,
-		"/plans",
-		strings.NewReader(`{"projectId":"project-test","fileName":"feature.plan.json ","canonicalContent":"{}","expectedSha256":" `+strings.Repeat("a", 64)+`"}`),
-	))
-	if response.Code != http.StatusCreated {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-	if service.lastPlan.DisplayName != "feature.plan.json " ||
-		service.lastPlan.ExpectedSHA256 != " "+strings.Repeat("a", 64) {
-		t.Fatalf("Plan input was normalized: %+v", service.lastPlan)
-	}
-
 }
 
 func TestCanonicalHTTPValidationDoesNotAcceptExpectedHashField(t *testing.T) {
 	response := httptest.NewRecorder()
-	canonicalRouter(&fakeCanonicalService{}, &fakePlanMover{}).ServeHTTP(response, httptest.NewRequest(
+	canonicalRouter(&fakeCanonicalService{}).ServeHTTP(response, httptest.NewRequest(
 		http.MethodPost,
 		"/canonical-artifacts/validate",
 		strings.NewReader(`{"fileName":"feature.plan.json","canonicalContent":"{}","expectedSha256":"`+strings.Repeat("a", 64)+`"}`),
@@ -123,7 +85,7 @@ func TestCanonicalHTTPApplicationErrorsHaveStableClassifications(t *testing.T) {
 				Code:    workflowsubmissions.ErrorCompilerRejected,
 				Message: "rejected",
 				Diagnostics: []speccompiler.Diagnostic{
-					speccompiler.Diagnostic{Code: "invalid_json", Message: "invalid"},
+					{Code: "invalid_json", Message: "invalid"},
 				},
 			},
 			status: http.StatusUnprocessableEntity,
@@ -132,17 +94,15 @@ func TestCanonicalHTTPApplicationErrorsHaveStableClassifications(t *testing.T) {
 		{name: "hash", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorInvalidExpectedHash, Message: "invalid"}, status: http.StatusBadRequest, code: "INVALID_EXPECTED_HASH"},
 		{name: "association", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorSelectedPassFilename, Message: "invalid"}, status: http.StatusBadRequest, code: "ASSOCIATION_INVALID"},
 		{name: "repository", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorRepositoryNotFound, Message: "missing"}, status: http.StatusNotFound, code: "UNKNOWN_REPOSITORY"},
-		{name: "legacy admission closed", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorLegacyAdmissionClosed, Message: "closed"}, status: http.StatusConflict, code: "LEGACY_ADMISSION_CLOSED"},
-		{name: "cutover unavailable", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorCutoverStateUnavailable, Message: "unavailable"}, status: http.StatusServiceUnavailable, code: "CUTOVER_STATE_UNAVAILABLE"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			service := &fakeCanonicalService{err: test.application}
 			response := httptest.NewRecorder()
-			canonicalRouter(service, &fakePlanMover{}).ServeHTTP(response, httptest.NewRequest(
+			canonicalRouter(service).ServeHTTP(response, httptest.NewRequest(
 				http.MethodPost,
-				"/plans",
-				strings.NewReader(`{"projectId":"project-test","fileName":"feature.plan.json","canonicalContent":"{}","expectedSha256":"`+strings.Repeat("a", 64)+`"}`),
+				"/canonical-artifacts/validate",
+				strings.NewReader(`{"fileName":"feature.plan.json","canonicalContent":"{}"}`),
 			))
 			if response.Code != test.status || !strings.Contains(response.Body.String(), `"`+test.code+`"`) {
 				t.Fatalf("response = %d %s", response.Code, response.Body.String())
@@ -151,46 +111,23 @@ func TestCanonicalHTTPApplicationErrorsHaveStableClassifications(t *testing.T) {
 	}
 }
 
-func TestMovePlanUsesCommittedAggregateWithoutStoreRead(t *testing.T) {
-	mover := &fakePlanMover{
-		result: workflowplans.MovePlanResult{
-			Project: workflowstore.Project{ProjectID: "project-destination", Name: "Destination", Status: workflowstore.ProjectStatusActive},
-			Plan:    workflowstore.Plan{PlanID: "plan-test", FeatureSlug: "feature", Status: workflowstore.PlanStatusActive},
-		},
-	}
-	response := httptest.NewRecorder()
-	canonicalRouter(&fakeCanonicalService{}, mover).ServeHTTP(response, httptest.NewRequest(
-		http.MethodPatch,
-		"/plans/plan-test/project",
-		strings.NewReader(`{"projectId":"project-destination"}`),
-	))
-	if response.Code != http.StatusOK ||
-		!strings.Contains(response.Body.String(), `"projectId":"project-destination"`) {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-}
-
-func TestMovePlanMapsCutoverGateErrors(t *testing.T) {
-	tests := []struct {
-		name   string
-		err    error
-		status int
-		code   string
+// Legacy Plan write admission is retired: the canonical router mounts exactly
+// one validation route and no Plan-creating or Plan-mutating route.
+func TestCanonicalRouterMountsNoPlanWriteRoutes(t *testing.T) {
+	handler := canonicalRouter(&fakeCanonicalService{})
+	retired := []struct {
+		method string
+		path   string
+		body   string
 	}{
-		{name: "legacy admission closed", err: appcutover.ErrLegacyAdmissionClosed, status: http.StatusConflict, code: "LEGACY_ADMISSION_CLOSED"},
-		{name: "cutover unavailable", err: workflowplans.ErrCutoverStateUnavailable, status: http.StatusServiceUnavailable, code: "CUTOVER_STATE_UNAVAILABLE"},
+		{http.MethodPost, "/plans", `{"projectId":"project-test","fileName":"feature.plan.json","canonicalContent":"{}","expectedSha256":"` + strings.Repeat("a", 64) + `"}`},
+		{http.MethodPatch, "/plans/plan-test/project", `{"projectId":"project-destination"}`},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			response := httptest.NewRecorder()
-			canonicalRouter(&fakeCanonicalService{}, &fakePlanMover{err: tt.err}).ServeHTTP(response, httptest.NewRequest(
-				http.MethodPatch,
-				"/plans/plan-test/project",
-				strings.NewReader(`{"projectId":"project-destination"}`),
-			))
-			if response.Code != tt.status || !strings.Contains(response.Body.String(), `"`+tt.code+`"`) {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
-			}
-		})
+	for _, current := range retired {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(current.method, current.path, strings.NewReader(current.body)))
+		if response.Code != http.StatusNotFound && response.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s is still mounted: %d %s", current.method, current.path, response.Code, response.Body.String())
+		}
 	}
 }

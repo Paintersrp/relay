@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	workflowplans "relay/internal/app/plans/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -50,21 +49,6 @@ func (ids *sequenceIDs) AuditDecisionID() string {
 	return value
 }
 
-type planIDs struct {
-	passIndex     int
-	artifactIndex int
-}
-
-func (ids *planIDs) PlanID() string { return "plan-run-tests" }
-func (ids *planIDs) PassID() string {
-	ids.passIndex++
-	return fmt.Sprintf("pass-run-tests-%d", ids.passIndex)
-}
-func (ids *planIDs) ArtifactID() string {
-	ids.artifactIndex++
-	return fmt.Sprintf("artifact-plan-run-tests-%d", ids.artifactIndex)
-}
-
 func TestCreateManagedAndStandaloneRuns(t *testing.T) {
 	ctx := context.Background()
 	store, root := openRunTestStore(t)
@@ -84,7 +68,7 @@ func TestCreateManagedAndStandaloneRuns(t *testing.T) {
 		BaseCommit:       strings.Repeat("a", 40),
 		CanonicalJSON:    canonical,
 		RenderedMarkdown: brief,
-		PlanID:           plan.Plan.PlanID,
+		PlanID:           plan.PlanID,
 		PassNumber:       1,
 	})
 	if err != nil {
@@ -93,7 +77,7 @@ func TestCreateManagedAndStandaloneRuns(t *testing.T) {
 	if managed.Run.Status != workflowstore.RunStatusSetupReady || !managed.Run.PlanRowID.Valid || !managed.Run.PlanPassRowID.Valid {
 		t.Fatalf("unexpected managed run: %+v", managed.Run)
 	}
-	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +135,7 @@ func TestCreateRunRejectsMismatchedAssociationAndInvalidRemediation(t *testing.T
 		BaseCommit:       strings.Repeat("a", 40),
 		CanonicalJSON:    []byte("{}\n"),
 		RenderedMarkdown: []byte("# Brief\n"),
-		PlanID:           plan.Plan.PlanID,
+		PlanID:           plan.PlanID,
 		PassNumber:       1,
 	}
 	mismatch := baseInput
@@ -159,7 +143,7 @@ func TestCreateRunRejectsMismatchedAssociationAndInvalidRemediation(t *testing.T
 	if _, err := service.CreateRun(ctx, mismatch); err == nil {
 		t.Fatal("mismatched Plan/pass/repository association was accepted")
 	}
-	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +235,7 @@ func TestFailedAndTimedOutAttemptsCanEnterValidationAndRemediation(t *testing.T)
 				BaseCommit:       strings.Repeat("a", 40),
 				CanonicalJSON:    []byte("{}\n"),
 				RenderedMarkdown: []byte("# Brief\n"),
-				PlanID:           plan.Plan.PlanID,
+				PlanID:           plan.PlanID,
 				PassNumber:       1,
 			}
 			original, err := service.CreateRun(ctx, baseInput)
@@ -298,7 +282,7 @@ func TestFailedAndTimedOutAttemptsCanEnterValidationAndRemediation(t *testing.T)
 			if remediation.Run.PlanRowID != original.Run.PlanRowID || remediation.Run.PlanPassRowID != original.Run.PlanPassRowID {
 				t.Fatalf("remediation association changed: original=%+v remediation=%+v", original.Run, remediation.Run)
 			}
-			pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+			pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.ID, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -327,7 +311,7 @@ func TestRecordAuditDecisionLegacyPathIsDisabled(t *testing.T) {
 		BaseCommit:       strings.Repeat("a", 40),
 		CanonicalJSON:    []byte("{}\n"),
 		RenderedMarkdown: []byte("# Brief\n"),
-		PlanID:           plan.Plan.PlanID,
+		PlanID:           plan.PlanID,
 		PassNumber:       1,
 	})
 	if err != nil {
@@ -360,11 +344,11 @@ func TestRecordAuditDecisionLegacyPathIsDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	currentPlan, err := store.GetPlanByPlanID(ctx, plan.Plan.PlanID)
+	currentPlan, err := store.GetPlanByPlanID(ctx, plan.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,14 +378,14 @@ func TestCreateRunFailuresLeaveNoRunArtifactsOrPassTransition(t *testing.T) {
 			BaseCommit:       strings.Repeat("a", 40),
 			CanonicalJSON:    []byte("{}\n"),
 			RenderedMarkdown: []byte("# Brief\n"),
-			PlanID:           plan.Plan.PlanID,
+			PlanID:           plan.PlanID,
 			PassNumber:       1,
 		})
 		if err == nil {
 			t.Fatal("expected duplicate artifact ID failure")
 		}
 		assertRunTableCount(t, store.DB(), "runs", 0)
-		pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+		pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.ID, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -429,14 +413,14 @@ func TestCreateRunFailuresLeaveNoRunArtifactsOrPassTransition(t *testing.T) {
 			BaseCommit:       strings.Repeat("a", 40),
 			CanonicalJSON:    []byte("{}\n"),
 			RenderedMarkdown: []byte("# Brief\n"),
-			PlanID:           plan.Plan.PlanID,
+			PlanID:           plan.PlanID,
 			PassNumber:       1,
 		})
 		if err == nil {
 			t.Fatal("expected promotion failure")
 		}
 		assertRunTableCount(t, store.DB(), "runs", 0)
-		pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+		pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.ID, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -467,42 +451,50 @@ func registerRunTestRepo(t *testing.T, ctx context.Context, store *workflowstore
 	}
 }
 
-func createRunTestPlan(t *testing.T, ctx context.Context, store *workflowstore.Store) workflowplans.CreatePlanResult {
+// createRunTestPlan seeds one historical Plan and Pass directly through the
+// store. Legacy Plan write admission is retired, so no application service
+// creates Plans.
+func createRunTestPlan(t *testing.T, ctx context.Context, store *workflowstore.Store) workflowstore.Plan {
 	t.Helper()
-	var project workflowstore.Project
+	var plan workflowstore.Plan
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		var err error
-		project, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
+		project, err := tx.CreateProject(ctx, workflowstore.CreateProjectParams{
 			ProjectID: "project-run-tests",
 			Name:      "Run tests",
+		})
+		if err != nil {
+			return err
+		}
+		plan, err = tx.CreatePlan(ctx, workflowstore.CreatePlanParams{
+			ProjectRowID:    project.ID,
+			PlanID:          "plan-run-tests",
+			FeatureSlug:     "feature",
+			CanonicalSHA256: strings.Repeat("a", 64),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.CreatePlanRepositoryTarget(ctx, workflowstore.CreatePlanRepositoryTargetParams{
+			PlanRowID:          plan.ID,
+			Sequence:           1,
+			RepoTarget:         "relay",
+			Branch:             "main",
+			PlanningBaseCommit: strings.Repeat("a", 40),
+		}); err != nil {
+			return err
+		}
+		_, err = tx.CreatePlanPass(ctx, workflowstore.CreatePlanPassParams{
+			PassID:     "pass-run-tests-1",
+			PlanRowID:  plan.ID,
+			PassNumber: 1,
+			Name:       "Pass",
+			RepoTarget: "relay",
 		})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	service, err := workflowplans.NewServiceWithIDs(store, &planIDs{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := service.CreatePlan(ctx, workflowplans.CreatePlanInput{
-		ProjectID:        project.ProjectID,
-		FeatureSlug:      "feature",
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Plan\n"),
-		Repositories: []workflowplans.RepositoryTargetInput{
-			{
-				RepoTarget:         "relay",
-				Branch:             "main",
-				PlanningBaseCommit: strings.Repeat("a", 40),
-			}},
-		Passes: []workflowplans.PassInput{
-			{Number: 1, Name: "Pass", RepoTarget: "relay"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return result
+	return plan
 }
 
 func newRunTestService(t *testing.T, store *workflowstore.Store, ids *sequenceIDs) *Service {
@@ -586,73 +578,6 @@ func assertNoRunFiles(t *testing.T, root string) {
 		return nil
 	})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
-	}
-}
-
-func TestBeginExecutionAttemptRollsBackWhenCutoverQualificationFails(t *testing.T) {
-	ctx := context.Background()
-	store, _ := openRunTestStore(t)
-	registerRunTestRepo(t, ctx, store, "relay")
-	service := newRunTestService(t, store, &sequenceIDs{
-		runIDs:      []string{"run-cutover-qualification"},
-		attemptIDs:  []string{"attempt-must-not-exist"},
-		artifactIDs: []string{"artifact-cutover-1", "artifact-cutover-2"},
-	})
-	created, err := service.CreateRun(ctx, CreateRunInput{
-		FeatureSlug: "feature", RepoTarget: "relay", Branch: "main",
-		BaseCommit: strings.Repeat("a", 40), CanonicalJSON: []byte("{}\n"),
-		RenderedMarkdown: []byte("# Brief\n"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	seedActiveCutoverForRunTest(t, store)
-	if _, err := service.BeginExecutionAttempt(ctx, BeginExecutionAttemptInput{
-		RunID: created.Run.RunID, Adapter: "opencode_go", Model: "test-model",
-	}); err == nil {
-		t.Fatal("non-package Run crossed an active open cutover")
-	}
-	current, err := store.GetRunByRunID(ctx, created.Run.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.Status != workflowstore.RunStatusSetupReady {
-		t.Fatalf("failed crossing left Run in %q", current.Status)
-	}
-	assertRunTableCount(t, store.DB(), "execution_attempts", 0)
-}
-
-func seedActiveCutoverForRunTest(t *testing.T, store *workflowstore.Store) {
-	t.Helper()
-	database := store.DB()
-	if _, err := database.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`DROP TRIGGER IF EXISTS cutover_activation_insert_guard`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`
-INSERT INTO cutover_activations (
-    cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id,
-    transition_plan_ticket_id, transition_plan_ticket_revision,
-    transition_plan_authority_layer_row_id, transition_plan_sha256,
-    authority_revision_row_id, authority_revision_id, authority_revision_number,
-    authority_sha256, rollback_eligibility, activation_status, activated_at,
-    execution_boundary_status, rollback_status, roll_forward_status
-) VALUES (
-    'cutover-run-test', 1, 1, 'AGGREGATE-CUTOVER', 2, 1, ?,
-    1, 'authority-run-test', 1, ?, 'eligible', 'active',
-    '2000-01-01T00:00:00.000000000Z', 'open', 'available', 'pending'
-)`, strings.Repeat("b", 64), strings.Repeat("c", 64)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`
-INSERT INTO cutover_current_states (singleton_id, activation_row_id)
-SELECT 1, id FROM cutover_activations WHERE cutover_activation_id = 'cutover-run-test'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		t.Fatal(err)
 	}
 }

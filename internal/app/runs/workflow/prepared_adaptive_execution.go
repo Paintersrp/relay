@@ -97,9 +97,6 @@ func (s *Service) BeginPreparedAdaptiveExecution(ctx context.Context, input Begi
 			if err != nil {
 				return err
 			}
-			if err := tx.AttemptCrossCutoverBoundaryForRun(ctx, run.ID, run.ExecutionPackageRowID); err != nil {
-				return err
-			}
 			attempt, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusPending, workflowstore.AttemptStatusRunning, input.RunningResultJSON)
 			if err != nil {
 				return err

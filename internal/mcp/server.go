@@ -25,7 +25,6 @@ type Server struct {
 	surfaceHandlers map[string]surfaceDispatch
 }
 
-// Cutover tools are compiled from the operation registry and delegate to the shared application workflow service.
 // NewServer constructs an MCP server with the exact workflow profile registry.
 func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	var d *MCPDeps
@@ -292,8 +291,6 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleValidateArtifact(args)
 	case "list_projects":
 		result = s.HandleListProjects(args)
-	case "submit_plan":
-		result = s.HandleSubmitPlan(args)
 	case "get_plan":
 		result = s.HandleGetPlan(args)
 	case "get_audit_packet":

@@ -36,7 +36,7 @@ func (fakeMutationLeaseReconciler) ReconcileMutationLease(context.Context, strin
 	return executor.WorkflowMutationLeaseReconcileResult{Released: true}, nil
 }
 
-func TestPackageWorkflowPrepareDelegatesDirectlyAfterCutover(t *testing.T) {
+func TestPackageWorkflowPrepareDelegatesDirectly(t *testing.T) {
 	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.sqlite"), filepath.Join(t.TempDir(), "artifacts"))
 	if err != nil {
 		t.Fatal(err)

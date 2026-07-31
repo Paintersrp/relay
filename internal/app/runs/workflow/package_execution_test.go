@@ -17,16 +17,16 @@ type packageAdmissionFixture struct {
 	plainRun   workflowstore.Run
 }
 
-func newPackageAdmissionFixture(t *testing.T, withCutover bool) *packageAdmissionFixture {
+func newPackageAdmissionFixture(t *testing.T) *packageAdmissionFixture {
 	t.Helper()
 	ctx := context.Background()
 	store, _ := openRunTestStore(t)
 	registerRunTestRepo(t, ctx, store, "relay")
 	baseCommit := strings.Repeat("a", 40)
 
-	// This fixture only needs the package/run identity and the cutover table;
-	// the package composition contract is owned by the package service tests.
-	// Disable those insert guards while creating the minimal durable fixture.
+	// This fixture only needs the package/run identity; the package
+	// composition contract is owned by the package service tests. Disable
+	// those insert guards while creating the minimal durable fixture.
 	db := store.DB()
 	for _, query := range []string{
 		"PRAGMA foreign_keys = OFF",
@@ -61,70 +61,6 @@ func newPackageAdmissionFixture(t *testing.T, withCutover bool) *packageAdmissio
     ) VALUES ('run-plain-admission', 'admission', 'relay', 'setup_ready', 'main', ?)`, baseCommit); err != nil {
 		t.Fatal(err)
 	}
-	if withCutover {
-		for _, query := range []string{
-			"DROP TRIGGER IF EXISTS cutover_activation_insert_guard",
-			"DROP TRIGGER IF EXISTS cutover_activation_state_guard",
-		} {
-			if _, err := db.Exec(query); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if _, err := db.Exec(`INSERT INTO cutover_activations (
-            id, cutover_activation_id, workspace_row_id,
-            transition_plan_ticket_revision_row_id, transition_plan_ticket_id,
-            transition_plan_ticket_revision, transition_plan_authority_layer_row_id,
-            transition_plan_sha256, authority_revision_row_id, authority_revision_id,
-            authority_revision_number, authority_sha256, rollback_eligibility,
-            activation_status, activated_at, execution_boundary_status,
-            rollback_status, roll_forward_status
-        ) VALUES (1, 'cutover-admission', 1, 1, 'ticket-admission', 1, 1, ?, 1,
-                  'authority-admission', 1, ?, 'eligible', 'active',
-                  '2000-01-01T00:00:00Z', 'open', 'available', 'pending')`,
-			strings.Repeat("f", 64), strings.Repeat("1", 64)); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(`INSERT INTO cutover_current_states (singleton_id, activation_row_id) VALUES (1, 1)`); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(`INSERT INTO cutover_gateway_configurations (
-            activation_row_id, configuration_sha256, relay_repository, relay_commit_oid,
-            standing_repository, standing_commit_oid
-        ) VALUES (1, ?, 'relay', ?, 'standing', ?)`, strings.Repeat("2", 64), strings.Repeat("3", 40), strings.Repeat("4", 40)); err != nil {
-			t.Fatal(err)
-		}
-		for sequence := 1; sequence <= 7; sequence++ {
-			routePath := fmt.Sprintf("/mcp/v1/route-%d", sequence)
-			if _, err := db.Exec(`INSERT INTO cutover_gateway_routes (
-                activation_row_id, sequence, route_path, role, surface_contract_id,
-                manifest_sha256, authority_commit_oid, authority_blob_oid
-            ) VALUES (1, ?, ?, 'planner', ?, ?, ?, ?)`, sequence, routePath,
-				fmt.Sprintf("surface-%d", sequence), strings.Repeat("5", 64), strings.Repeat("6", 40), strings.Repeat("7", 40)); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := db.Exec(`INSERT INTO cutover_gateway_mappings (
-                activation_row_id, sequence, mapping_id, route_path, listener_identity,
-                upstream_identity, health_evidence_sha256, trace_evidence_sha256
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`, sequence, fmt.Sprintf("mapping-%d", sequence), routePath,
-				fmt.Sprintf("listener-%d", sequence), fmt.Sprintf("upstream-%d", sequence), strings.Repeat("8", 64), strings.Repeat("9", 64)); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, role := range []string{"wayfinder", "planner", "auditor"} {
-			if _, err := db.Exec(`INSERT INTO cutover_gateway_standing_authorities (
-                activation_row_id, role, repository, commit_oid, path, blob_oid, content_sha256
-            ) VALUES (1, ?, 'standing', ?, ?, ?, ?)`, role, strings.Repeat("a", 40), "/authority/"+role, strings.Repeat("b", 40), strings.Repeat("c", 64)); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for sequence := 1; sequence <= 3; sequence++ {
-			if _, err := db.Exec(`INSERT INTO cutover_gateway_dependency_outcomes (
-                activation_row_id, sequence, ticket_id, ticket_revision, outcome, evidence_sha256
-            ) VALUES (1, ?, ?, 1, 'completed_accepted', ?)`, sequence, fmt.Sprintf("ticket-%d", sequence), strings.Repeat("d", 64)); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +82,7 @@ func newPackageAdmissionFixture(t *testing.T, withCutover bool) *packageAdmissio
 
 func TestAdmitPackageExecution(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 
 	before := fixture.packageRun
 	admitted, err := fixture.service.AdmitPackageExecution(ctx, before.RunID)
@@ -155,13 +91,6 @@ func TestAdmitPackageExecution(t *testing.T) {
 	}
 	if admitted.ID != before.ID || admitted.RunID != before.RunID || admitted.Status != workflowstore.RunStatusSetupReady {
 		t.Fatalf("admitted Run = %#v, before = %#v", admitted, before)
-	}
-	current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found {
-		t.Fatalf("current cutover activation: found=%v err=%v", found, err)
-	}
-	if current.ExecutionBoundaryStatus != "crossed" || !current.FirstNewExecutionRunRowID.Valid || current.FirstNewExecutionRunRowID.Int64 != before.ID {
-		t.Fatalf("cutover evidence = %#v", current)
 	}
 	assertPackageAdmissionSideEffects(t, fixture.store, before)
 
@@ -172,16 +101,12 @@ func TestAdmitPackageExecution(t *testing.T) {
 	if repeated.ID != admitted.ID || repeated.RunID != admitted.RunID || repeated.Status != admitted.Status {
 		t.Fatalf("repeated admission = %#v, first = %#v", repeated, admitted)
 	}
-	currentAgain, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found || currentAgain.FirstNewExecutionRunRowID.Int64 != current.FirstNewExecutionRunRowID.Int64 {
-		t.Fatalf("repeated cutover evidence = found=%v activation=%#v err=%v", found, currentAgain, err)
-	}
 	assertPackageAdmissionSideEffects(t, fixture.store, before)
 }
 
 func TestAdmitPackageExecutionConcurrent(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 	start := make(chan struct{})
 	results := make(chan struct {
 		run workflowstore.Run
@@ -207,16 +132,12 @@ func TestAdmitPackageExecutionConcurrent(t *testing.T) {
 			t.Fatalf("concurrent admission = %#v", result.run)
 		}
 	}
-	current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found || current.ExecutionBoundaryStatus != "crossed" || current.FirstNewExecutionRunRowID.Int64 != fixture.packageRun.ID {
-		t.Fatalf("concurrent cutover evidence = found=%v activation=%#v err=%v", found, current, err)
-	}
 	assertPackageAdmissionSideEffects(t, fixture.store, fixture.packageRun)
 }
 
 func TestAdmitPackageExecutionAcceptsExecuting(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 	if _, err := fixture.store.DB().Exec("UPDATE runs SET status = 'executing' WHERE run_id = ?", fixture.packageRun.RunID); err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +153,7 @@ func TestAdmitPackageExecutionAcceptsExecuting(t *testing.T) {
 
 func TestAdmitPackageExecutionRejectsInvalidInputAndStates(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, false)
+	fixture := newPackageAdmissionFixture(t)
 	for _, runID := range []string{"", " ", " run-package-admission", "run-package-admission "} {
 		if _, err := fixture.service.AdmitPackageExecution(ctx, runID); err == nil {
 			t.Fatalf("invalid Run ID %q was accepted", runID)
@@ -285,39 +206,6 @@ func TestAdmitPackageExecutionRejectsInvalidInputAndStates(t *testing.T) {
 	}
 }
 
-func TestAdmitPackageExecutionRollsBackBoundaryFailure(t *testing.T) {
-	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
-	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_admission_boundary
-        BEFORE UPDATE OF execution_boundary_status ON cutover_activations
-        BEGIN SELECT RAISE(ABORT, 'forced package admission boundary failure'); END`); err != nil {
-		t.Fatal(err)
-	}
-	before, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found {
-		t.Fatalf("current cutover before failure: found=%v err=%v", found, err)
-	}
-
-	if _, err := fixture.service.AdmitPackageExecution(ctx, fixture.packageRun.RunID); err == nil {
-		t.Fatal("boundary failure was ignored")
-	}
-	after, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found {
-		t.Fatalf("current cutover after failure: found=%v err=%v", found, err)
-	}
-	if after.ExecutionBoundaryStatus != before.ExecutionBoundaryStatus || after.RollbackStatus != before.RollbackStatus || after.FirstNewExecutionRunRowID.Valid {
-		t.Fatalf("boundary failure changed cutover state: before=%#v after=%#v", before, after)
-	}
-	run, err := fixture.store.GetRunByRunID(ctx, fixture.packageRun.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if run.Status != workflowstore.RunStatusSetupReady {
-		t.Fatalf("boundary failure changed Run status to %q", run.Status)
-	}
-	assertPackageAdmissionSideEffects(t, fixture.store, fixture.packageRun)
-}
-
 func assertPackageAdmissionSideEffects(t *testing.T, store *workflowstore.Store, run workflowstore.Run) {
 	t.Helper()
 	attempts, err := store.ListExecutionAttemptsByRun(context.Background(), run.ID)
@@ -348,7 +236,7 @@ func TestAdmitPackageExecutionRequiresAvailableService(t *testing.T) {
 
 func TestCompletePackageDeterministicExecution(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 
 	completed, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
 	if err != nil {
@@ -357,19 +245,12 @@ func TestCompletePackageDeterministicExecution(t *testing.T) {
 	if completed.ID != fixture.packageRun.ID || completed.RunID != fixture.packageRun.RunID || completed.Status != workflowstore.RunStatusValidating {
 		t.Fatalf("completed Run = %#v, before = %#v", completed, fixture.packageRun)
 	}
-	current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found {
-		t.Fatalf("current cutover activation: found=%v err=%v", found, err)
-	}
-	if current.ExecutionBoundaryStatus != "crossed" || !current.FirstNewExecutionRunRowID.Valid || current.FirstNewExecutionRunRowID.Int64 != fixture.packageRun.ID {
-		t.Fatalf("cutover evidence = %#v", current)
-	}
 	assertPackageAdmissionSideEffects(t, fixture.store, fixture.packageRun)
 }
 
 func TestCompletePackageDeterministicExecutionIsIdempotent(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 
 	first, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID)
 	if err != nil {
@@ -387,7 +268,7 @@ func TestCompletePackageDeterministicExecutionIsIdempotent(t *testing.T) {
 
 func TestCompletePackageDeterministicExecutionConcurrentIsIdempotent(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 	start := make(chan struct{})
 	results := make(chan struct {
 		run workflowstore.Run
@@ -418,7 +299,7 @@ func TestCompletePackageDeterministicExecutionConcurrentIsIdempotent(t *testing.
 
 func TestCompletePackageDeterministicExecutionAcceptsValidating(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 	if _, err := fixture.store.DB().Exec("DROP TRIGGER IF EXISTS run_status_transition_guard"); err != nil {
 		t.Fatal(err)
 	}
@@ -433,15 +314,11 @@ func TestCompletePackageDeterministicExecutionAcceptsValidating(t *testing.T) {
 	if completed.ID != fixture.packageRun.ID || completed.Status != workflowstore.RunStatusValidating {
 		t.Fatalf("validating readback = %#v", completed)
 	}
-	current, found, err := fixture.store.GetCurrentCutoverActivation(ctx)
-	if err != nil || !found || current.ExecutionBoundaryStatus != "crossed" {
-		t.Fatalf("validating cutover evidence: found=%v activation=%#v err=%v", found, current, err)
-	}
 }
 
 func TestCompletePackageDeterministicExecutionRejectsInvalidInputAndStates(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, false)
+	fixture := newPackageAdmissionFixture(t)
 	if _, err := fixture.store.DB().Exec("DROP TRIGGER IF EXISTS run_status_transition_guard"); err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +370,7 @@ func TestCompletePackageDeterministicExecutionRejectsExecutionAttempts(t *testin
 	for _, terminal := range []bool{false, true} {
 		t.Run(map[bool]string{false: "pending", true: "terminal"}[terminal], func(t *testing.T) {
 			ctx := context.Background()
-			fixture := newPackageAdmissionFixture(t, false)
+			fixture := newPackageAdmissionFixture(t)
 			createPackageExecutionAttempt(t, ctx, fixture.store, fixture.packageRun, terminal)
 
 			if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
@@ -514,7 +391,7 @@ func TestCompletePackageDeterministicExecutionRejectsActiveLeasesUnchanged(t *te
 	for _, certainty := range []string{workflowstore.RepositoryBranchMutationLeaseCertaintyCertain, workflowstore.RepositoryBranchMutationLeaseCertaintyUncertain} {
 		t.Run(certainty, func(t *testing.T) {
 			ctx := context.Background()
-			fixture := newPackageAdmissionFixture(t, false)
+			fixture := newPackageAdmissionFixture(t)
 			lease, err := fixture.service.AcquireRunMutationLease(ctx, fixture.packageRun.RunID)
 			if err != nil {
 				t.Fatal(err)
@@ -548,25 +425,9 @@ func TestCompletePackageDeterministicExecutionRejectsActiveLeasesUnchanged(t *te
 	}
 }
 
-func TestCompletePackageDeterministicExecutionRollsBackCutoverFailure(t *testing.T) {
-	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
-	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_finalization_boundary
-        BEFORE UPDATE OF execution_boundary_status ON cutover_activations
-        BEGIN SELECT RAISE(ABORT, 'forced package finalization boundary failure'); END`); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := fixture.service.CompletePackageDeterministicExecution(ctx, fixture.packageRun.RunID); err == nil {
-		t.Fatal("cutover failure was ignored")
-	}
-	assertPackageFinalizationRunStatus(t, fixture.store, fixture.packageRun.RunID, workflowstore.RunStatusSetupReady)
-	assertPackageFinalizationCutoverOpen(t, fixture.store)
-}
-
 func TestCompletePackageDeterministicExecutionRollsBackFirstTransitionFailure(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_finalization_first_transition
         BEFORE UPDATE OF status ON runs WHEN OLD.status = 'setup_ready' AND NEW.status = 'executing'
         BEGIN SELECT RAISE(ABORT, 'forced package finalization first transition failure'); END`); err != nil {
@@ -577,12 +438,11 @@ func TestCompletePackageDeterministicExecutionRollsBackFirstTransitionFailure(t 
 		t.Fatal("first transition failure was ignored")
 	}
 	assertPackageFinalizationRunStatus(t, fixture.store, fixture.packageRun.RunID, workflowstore.RunStatusSetupReady)
-	assertPackageFinalizationCutoverOpen(t, fixture.store)
 }
 
 func TestCompletePackageDeterministicExecutionRollsBackSecondTransitionFailure(t *testing.T) {
 	ctx := context.Background()
-	fixture := newPackageAdmissionFixture(t, true)
+	fixture := newPackageAdmissionFixture(t)
 	if _, err := fixture.store.DB().Exec(`CREATE TRIGGER fail_package_finalization_second_transition
         BEFORE UPDATE OF status ON runs WHEN OLD.status = 'executing' AND NEW.status = 'validating'
         BEGIN SELECT RAISE(ABORT, 'forced package finalization second transition failure'); END`); err != nil {
@@ -593,7 +453,6 @@ func TestCompletePackageDeterministicExecutionRollsBackSecondTransitionFailure(t
 		t.Fatal("second transition failure was ignored")
 	}
 	assertPackageFinalizationRunStatus(t, fixture.store, fixture.packageRun.RunID, workflowstore.RunStatusSetupReady)
-	assertPackageFinalizationCutoverOpen(t, fixture.store)
 }
 
 func createPackageExecutionAttempt(t *testing.T, ctx context.Context, store *workflowstore.Store, run workflowstore.Run, terminal bool) {
@@ -640,16 +499,5 @@ func assertPackageFinalizationRunStatus(t *testing.T, store *workflowstore.Store
 	}
 	if run.Status != want {
 		t.Fatalf("Run status = %q, want %q", run.Status, want)
-	}
-}
-
-func assertPackageFinalizationCutoverOpen(t *testing.T, store *workflowstore.Store) {
-	t.Helper()
-	current, found, err := store.GetCurrentCutoverActivation(context.Background())
-	if err != nil || !found {
-		t.Fatalf("current cutover activation: found=%v err=%v", found, err)
-	}
-	if current.ExecutionBoundaryStatus != "open" || current.FirstNewExecutionRunRowID.Valid {
-		t.Fatalf("cutover changed after rollback: %#v", current)
 	}
 }

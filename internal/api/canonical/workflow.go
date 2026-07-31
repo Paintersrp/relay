@@ -1,3 +1,6 @@
+// Package canonical exposes the browser-facing canonical artifact validation
+// endpoint. Legacy Plan submission and Plan mutation are retired; no route in
+// this package creates or changes a Plan.
 package canonical
 
 import (
@@ -6,29 +9,19 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 
 	"relay/internal/api/shared"
-	appcutover "relay/internal/app/cutover"
-	workflowplans "relay/internal/app/plans/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type WorkflowCanonicalService interface {
 	ValidateArtifact(context.Context, workflowsubmissions.ValidationInput) (workflowsubmissions.ValidationResult, error)
-	SubmitPlan(context.Context, workflowsubmissions.SubmitPlanInput) (workflowsubmissions.SubmitPlanResult, error)
-}
-
-type WorkflowPlanMover interface {
-	MovePlan(context.Context, workflowplans.MovePlanInput) (workflowplans.MovePlanResult, error)
 }
 
 type WorkflowHandler struct {
 	canonical WorkflowCanonicalService
-	plans     WorkflowPlanMover
 }
 
 type browserValidationRequest struct {
@@ -36,54 +29,8 @@ type browserValidationRequest struct {
 	CanonicalContent string `json:"canonicalContent"`
 }
 
-type submitPlanRequest struct {
-	ProjectID        string `json:"projectId"`
-	FileName         string `json:"fileName"`
-	CanonicalContent string `json:"canonicalContent"`
-	ExpectedSHA256   string `json:"expectedSha256"`
-}
-
-type movePlanRequest struct {
-	ProjectID string `json:"projectId"`
-}
-
-type projectReferenceResponse struct {
-	ProjectID string `json:"projectId"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-}
-
-type planResponse struct {
-	PlanID          string                   `json:"planId"`
-	FeatureSlug     string                   `json:"featureSlug"`
-	Status          string                   `json:"status"`
-	CanonicalSHA256 string                   `json:"canonicalSha256"`
-	Project         projectReferenceResponse `json:"project"`
-	CreatedAt       string                   `json:"createdAt"`
-	UpdatedAt       string                   `json:"updatedAt"`
-}
-
-type passResponse struct {
-	PassID     string `json:"passId"`
-	Number     int64  `json:"number"`
-	Name       string `json:"name"`
-	RepoTarget string `json:"repoTarget"`
-	Status     string `json:"status"`
-}
-
-type artifactResponse struct {
-	ArtifactID string `json:"artifactId"`
-	OwnerType  string `json:"ownerType"`
-	Kind       string `json:"kind"`
-	MediaType  string `json:"mediaType"`
-	SHA256     string `json:"sha256"`
-	SizeBytes  int64  `json:"sizeBytes"`
-	CreatedAt  string `json:"createdAt"`
-	ContentURL string `json:"contentUrl"`
-}
-
-func NewWorkflowHandler(canonical WorkflowCanonicalService, plans WorkflowPlanMover) *WorkflowHandler {
-	return &WorkflowHandler{canonical: canonical, plans: plans}
+func NewWorkflowHandler(canonical WorkflowCanonicalService) *WorkflowHandler {
+	return &WorkflowHandler{canonical: canonical}
 }
 
 func (h *WorkflowHandler) ValidateArtifact(w http.ResponseWriter, r *http.Request) {
@@ -110,93 +57,6 @@ func (h *WorkflowHandler) ValidateArtifact(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (h *WorkflowHandler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
-	var request submitPlanRequest
-	if err := decodeStrict(r, &request); err != nil {
-		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid Plan submission request")
-		return
-	}
-	result, err := h.canonical.SubmitPlan(r.Context(), workflowsubmissions.SubmitPlanInput{
-		ProjectID:      request.ProjectID,
-		DisplayName:    request.FileName,
-		ExpectedSHA256: request.ExpectedSHA256,
-		CanonicalBytes: []byte(request.CanonicalContent),
-	})
-	if err != nil {
-		writeCanonicalError(w, err)
-		return
-	}
-	passes := make([]passResponse, 0, len(result.Passes))
-	for _, value := range result.Passes {
-		passes = append(passes, passDTO(value))
-	}
-	artifacts := make([]artifactResponse, 0, len(result.Artifacts))
-	for _, value := range result.Artifacts {
-		artifacts = append(artifacts, artifactDTO(value))
-	}
-	shared.JSON(w, http.StatusCreated, map[string]any{
-		"plan":      planDTO(result.Plan, result.Project),
-		"passes":    passes,
-		"artifacts": artifacts,
-	})
-}
-
-func (h *WorkflowHandler) MovePlan(w http.ResponseWriter, r *http.Request) {
-	var request movePlanRequest
-	if err := decodeStrict(r, &request); err != nil {
-		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid Plan move request")
-		return
-	}
-	result, err := h.plans.MovePlan(r.Context(), workflowplans.MovePlanInput{
-		PlanID:    chi.URLParam(r, "planID"),
-		ProjectID: request.ProjectID,
-	})
-	if err != nil {
-		writePlanMoveError(w, err)
-		return
-	}
-	shared.JSON(w, http.StatusOK, planDTO(result.Plan, result.Project))
-}
-
-func planDTO(plan workflowstore.Plan, project workflowstore.Project) planResponse {
-	return planResponse{
-		PlanID:          plan.PlanID,
-		FeatureSlug:     plan.FeatureSlug,
-		Status:          plan.Status,
-		CanonicalSHA256: plan.CanonicalSHA256,
-		Project: projectReferenceResponse{
-			ProjectID: project.ProjectID,
-			Name:      project.Name,
-			Status:    project.Status,
-		},
-		CreatedAt: plan.CreatedAt,
-		UpdatedAt: plan.UpdatedAt,
-	}
-}
-
-func passDTO(value workflowstore.PlanPass) passResponse {
-	return passResponse{
-		PassID:     value.PassID,
-		Number:     value.PassNumber,
-		Name:       value.Name,
-		RepoTarget: value.RepoTarget,
-		Status:     value.Status,
-	}
-}
-
-func artifactDTO(value workflowstore.Artifact) artifactResponse {
-	return artifactResponse{
-		ArtifactID: value.ArtifactID,
-		OwnerType:  value.OwnerType,
-		Kind:       value.Kind,
-		MediaType:  value.MediaType,
-		SHA256:     value.SHA256,
-		SizeBytes:  value.SizeBytes,
-		CreatedAt:  value.CreatedAt,
-		ContentURL: "/api/artifacts/" + url.PathEscape(value.ArtifactID) + "/content",
-	}
-}
-
 func decodeStrict(r *http.Request, destination any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -213,7 +73,7 @@ func decodeStrict(r *http.Request, destination any) error {
 func writeCanonicalError(w http.ResponseWriter, err error) {
 	application, ok := workflowsubmissions.AsApplicationError(err)
 	if !ok {
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Canonical submission failed")
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Canonical validation failed")
 		return
 	}
 	switch application.Code {
@@ -240,36 +100,13 @@ func writeCanonicalError(w http.ResponseWriter, err error) {
 		workflowsubmissions.ErrorSelectedPassFilename,
 		workflowsubmissions.ErrorRemediationAssociation:
 		shared.Error(w, http.StatusBadRequest, "ASSOCIATION_INVALID", application.Message)
-	case workflowsubmissions.ErrorLegacyAdmissionClosed:
-		shared.Error(w, http.StatusConflict, "LEGACY_ADMISSION_CLOSED", application.Message)
-	case workflowsubmissions.ErrorCutoverStateUnavailable:
-		shared.Error(w, http.StatusServiceUnavailable, "CUTOVER_STATE_UNAVAILABLE", application.Message)
 	case workflowsubmissions.ErrorPersistence:
 		shared.Error(w, http.StatusInternalServerError, "PERSISTENCE_FAILED", application.Message)
 	default:
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Canonical submission failed")
-	}
-}
-
-func writePlanMoveError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, appcutover.ErrLegacyAdmissionClosed):
-		shared.Error(w, http.StatusConflict, "LEGACY_ADMISSION_CLOSED", "Legacy Plan mutation is closed")
-	case errors.Is(err, workflowplans.ErrCutoverStateUnavailable):
-		shared.Error(w, http.StatusServiceUnavailable, "CUTOVER_STATE_UNAVAILABLE", "Cutover admission state is unavailable")
-	case errors.Is(err, workflowplans.ErrProjectNotFound):
-		shared.Error(w, http.StatusNotFound, "PROJECT_NOT_FOUND", "Destination Project was not found")
-	case errors.Is(err, workflowplans.ErrProjectArchived):
-		shared.Error(w, http.StatusConflict, "PROJECT_ARCHIVED", "Only active Projects may receive Plans")
-	case errors.Is(err, workflowplans.ErrPlanNotFound):
-		shared.Error(w, http.StatusNotFound, "PLAN_NOT_FOUND", "Plan was not found")
-	default:
-		shared.Error(w, http.StatusInternalServerError, "PERSISTENCE_FAILED", "Plan move failed")
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Canonical validation failed")
 	}
 }
 
 func MountWorkflowRoutes(r chi.Router, handler *WorkflowHandler) {
 	r.Post("/canonical-artifacts/validate", handler.ValidateArtifact)
-	r.Post("/plans", handler.SubmitPlan)
-	r.Patch("/plans/{planID}/project", handler.MovePlan)
 }

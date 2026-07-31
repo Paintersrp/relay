@@ -117,15 +117,12 @@ export function CommandPalette({ open, onOpenChange, className }: CommandPalette
   const { recents } = useShellData();
   const [query, setQuery] = React.useState("");
 
-  // The action set is CLOSED to exactly New Run and New Plan (Req 4.3, 4.10).
-  // Both navigate to their existing "new" routes; neither mutates run lifecycle.
+  // The action set is CLOSED to exactly New Run (Req 4.3, 4.10). It navigates
+  // to the existing "new" route and does not mutate run lifecycle.
   const handlers = React.useMemo(
     () => ({
       onNewRun: () => {
         void navigate({ to: "/execution-packages/new" });
-      },
-      onNewPlan: () => {
-        void navigate({ to: "/plans/new" });
       },
     }),
     [navigate],

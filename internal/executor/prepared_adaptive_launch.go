@@ -32,7 +32,7 @@ type PreparedAdaptiveLaunchResult struct {
 }
 
 // LaunchPreparedAdaptive admits exactly one prepared package attempt and
-// launches only when that admission newly crossed the durable cutover.
+// launches only when that admission newly changed the durable execution state.
 func (s *Execution) LaunchPreparedAdaptive(ctx context.Context, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 	if s == nil || s.store == nil || s.runs == nil || s.adaptiveAdmission == nil {
 		return PreparedAdaptiveLaunchResult{}, fmt.Errorf("prepared adaptive launch service is unavailable")

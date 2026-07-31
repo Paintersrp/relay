@@ -2,11 +2,8 @@ package mcp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
@@ -22,18 +19,6 @@ const (
 	submissionBlockerAssociationInvalid = "association_invalid"
 	submissionBlockerArtifactKind       = "artifact_kind_mismatch"
 )
-
-var artifactFileSchema = json.RawMessage(`{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["download_url", "file_id", "file_name"],
-  "properties": {
-    "download_url": {"type": "string", "format": "uri"},
-    "file_id": {"type": "string", "minLength": 1},
-    "mime_type": {"type": "string"},
-    "file_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.plan\\.json$"}
-  }
-}`)
 
 var validationArtifactFileSchema = json.RawMessage(`{
   "type": "object",
@@ -54,17 +39,6 @@ var validateArtifactSchema = json.RawMessage(`{
   "properties": {"artifact_file": ` + string(validationArtifactFileSchema) + `}
 }`)
 
-var submitPlanSchema = json.RawMessage(`{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["project_id", "artifact_file", "expected_sha256"],
-  "properties": {
-    "project_id": {"type": "string", "minLength": 1},
-    "artifact_file": ` + string(artifactFileSchema) + `,
-    "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-  }
-}`)
-
 var getPlanSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
@@ -79,12 +53,6 @@ var (
 		InputSchema: validateArtifactSchema,
 		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
 	}
-	ToolSubmitPlan = ToolDefinition{
-		Name:        "submit_plan",
-		Description: "Submit one canonical Plan JSON file to an active Relay Project after exact SHA-256 verification and deterministic recompilation. Creates Plan, Pass, and artifact metadata atomically.",
-		InputSchema: submitPlanSchema,
-		Meta:        map[string]any{"openai/fileParams": []string{"artifact_file"}},
-	}
 	ToolGetPlan = ToolDefinition{
 		Name:        "get_plan",
 		Description: "Read bounded Project, Plan, Pass, and artifact metadata without returning canonical JSON or rendered Markdown bodies.",
@@ -94,12 +62,6 @@ var (
 
 type artifactArgs struct {
 	ArtifactFile ChatGPTFileReference `json:"artifact_file"`
-}
-
-type artifactSubmissionArgs struct {
-	ProjectID      string               `json:"project_id,omitempty"`
-	ArtifactFile   ChatGPTFileReference `json:"artifact_file"`
-	ExpectedSHA256 string               `json:"expected_sha256"`
 }
 
 type getPlanArgs struct {
@@ -159,9 +121,9 @@ func workflowToolDefinitions(profile ToolProfile) []ToolDefinition {
 	case ToolProfileAuditor:
 		return []ToolDefinition{ToolValidateArtifact, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
 	case ToolProfilePlanner:
-		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan}
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolGetPlan}
 	default:
-		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetPlan}
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolGetPlan}
 	}
 }
 
@@ -211,42 +173,6 @@ func (s *Server) HandleValidateArtifact(rawArgs json.RawMessage) ToolCallResult 
 	})
 }
 
-func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
-	if s.workflowStore() == nil {
-		return workflowBlocked("submit_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
-	}
-	var input artifactSubmissionArgs
-	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return workflowBlocked("submit_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "submit_plan", nil)
-	}
-	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
-	if fetchErr != nil {
-		return toolBlockedResult("submit_plan", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
-	}
-	provenance := exactArtifactProvenance(content, input.ExpectedSHA256)
-	service, err := s.submissionService()
-	if err != nil {
-		return workflowBlocked("submit_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
-	}
-	result, err := service.SubmitPlan(context.Background(), workflowsubmissions.SubmitPlanInput{
-		ProjectID:      input.ProjectID,
-		DisplayName:    content.DisplayName,
-		ExpectedSHA256: input.ExpectedSHA256,
-		CanonicalBytes: content.Bytes,
-	})
-	if err != nil {
-		return submissionApplicationBlocked("submit_plan", err, provenance)
-	}
-	return workflowOK(planOutput{
-		OK:        true,
-		Tool:      "submit_plan",
-		Project:   projectOut(result.Project),
-		Plan:      planOut(result.Plan),
-		Passes:    passOut(result.Passes),
-		Artifacts: artifactOut(result.Artifacts),
-	})
-}
-
 func (s *Server) HandleGetPlan(rawArgs json.RawMessage) ToolCallResult {
 	if s.workflowStore() == nil {
 		return workflowBlocked("get_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
@@ -286,43 +212,6 @@ func workflowOK(out any) ToolCallResult {
 		Content:           []ContentBlock{{Type: "text", Text: text}},
 		StructuredContent: out,
 	}
-}
-
-func artifactKind(displayName string) string {
-	return workflowsubmissions.ArtifactKind(displayName)
-}
-
-func exactArtifactProvenance(content FileParameterContent, expectedSHA string) ExactSubmissionProvenance {
-	out := exactSubmissionProvenance(content.Bytes, expectedSHA, "file_parameter", content.DisplayName)
-	out.ArtifactIdentity.ArtifactKind = artifactKind(content.DisplayName)
-	out.ArtifactIdentity.DisplayName = safeArtifactDisplayName(content.DisplayName, "artifact.json")
-	return out
-}
-
-func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName string) ExactSubmissionProvenance {
-	submittedSHA := sha256Hex(data)
-	status := "not_supplied"
-	if strings.TrimSpace(expectedSHA) != "" {
-		status = "mismatched"
-		if expectedSHA == submittedSHA {
-			status = "matched"
-		}
-	}
-	return ExactSubmissionProvenance{
-		SubmittedSHA256: submittedSHA,
-		ExpectedSHA256:  strings.TrimSpace(expectedSHA),
-		SHAMatchStatus:  status,
-		SourceMode:      sourceMode,
-		ArtifactIdentity: SubmittedArtifactIdentity{
-			DisplayName: safeArtifactDisplayName(displayName, "artifact.json"),
-			ByteCount:   int64(len(data)),
-		},
-	}
-}
-
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }
 
 func artifactFileParameterBlocker(err *FileParameterError) MCPBlocker {

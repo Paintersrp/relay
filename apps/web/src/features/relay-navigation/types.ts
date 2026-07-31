@@ -74,9 +74,10 @@ export type CommandEntry =
       to: string;
       params: Record<string, string>;
     }
-  | { kind: "action"; id: "new-run" | "new-plan"; label: string; run: () => void };
-// The "action" entry set is frozen/closed to exactly "new-run" and "new-plan"
-// (Requirement 4.3). No lifecycle-mutating run action is or may be added as a
+  | { kind: "action"; id: "new-run"; label: string; run: () => void };
+// The "action" entry set is frozen/closed to exactly "new-run" (Requirement
+// 4.3). Legacy Plan submission is retired, so no Plan-creating action entry
+// exists. No lifecycle-mutating run action is or may be added as a
 // CommandEntry (Requirement 4.10).
 
 // ------------------------------------------------------------

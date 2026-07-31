@@ -1,24 +1,19 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import type {
-  WorkflowProject,
-  WorkflowProjectPlanSummary,
-} from "@/features/relay-projects";
+import type { WorkflowProjectPlanSummary } from "@/features/relay-projects";
 
 interface RelayProjectPlansPanelProps {
-  project: WorkflowProject;
   plans: WorkflowProjectPlanSummary[];
 }
 
+// Read-only presentation of the historical Plans organized by a Project.
+// Legacy Plan submission is retired, so this panel offers no submission entry
+// point regardless of Project status.
 export function RelayProjectPlansPanel({
-  project,
   plans,
 }: RelayProjectPlansPanelProps) {
-  const planSearch = { projectId: project.projectId };
-
   return (
     <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-5 py-3">
@@ -30,18 +25,6 @@ export function RelayProjectPlansPanel({
             Plans are organized by this Project without giving it authority over canonical content or execution.
           </p>
         </div>
-        {project.status === "active" ? (
-          <Button asChild size="sm">
-            <Link to="/plans/new" search={planSearch}>
-              <Plus className="size-3.5" />
-              Submit Plan
-            </Link>
-          </Button>
-        ) : (
-          <span className="max-w-xs text-right text-xs text-muted-foreground">
-            Restore this Project before submitting or moving another Plan into it.
-          </span>
-        )}
       </div>
 
       {plans.length === 0 ? (

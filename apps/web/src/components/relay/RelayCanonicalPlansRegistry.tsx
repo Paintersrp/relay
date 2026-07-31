@@ -4,7 +4,6 @@ import { ChevronRight } from "lucide-react";
 
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { WorkflowProject } from "@/features/relay-projects";
 import type {
@@ -107,12 +106,7 @@ export function RelayCanonicalPlansRegistry({
           <RelayStateSurface
             tone="empty"
             title="No Plans match"
-            description="Choose another Project or status filter, or submit a canonical Plan."
-            action={
-              <Button asChild size="sm" variant="outline">
-                <Link to="/plans/new">Submit Plan</Link>
-              </Button>
-            }
+            description="Choose another Project or status filter."
           />
         </div>
       ) : (

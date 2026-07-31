@@ -10,9 +10,9 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-// TicketFrontierReadRequest is the only packet-authorized Ticket request that
-// remains after the local-operator cutover. Ticket mutations are direct domain
-// operations and never pass through this boundary.
+// TicketFrontierReadRequest is the only packet-authorized Ticket request.
+// Ticket mutations are direct domain operations and never pass through this
+// boundary.
 type TicketFrontierReadRequest struct {
 	PacketID string
 	TicketID string

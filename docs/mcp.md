@@ -8,7 +8,7 @@ Relay has one aggregate compatibility surface and three ChatGPT-facing role apps
 
 `cmd/mcpserver` opens the profile-selected aggregate registry over newline-delimited JSON-RPC 2.0 on stdin/stdout. `scripts/local/relay-mcp-stdio.mjs` is the supported local launcher and includes an executable self-test for initialization, ping, paginated `tools/list`, exact ordered inventory, and OpenAI file-parameter metadata.
 
-`cmd/relay` also serves aggregate `POST /mcp` on the normal Relay daemon, which defaults to `http://localhost:8080`. The aggregate surface is not a role-app connector URL: it returns HTTP `409` while a cutover activation is active. It remains separate from the three role apps and does not close or redirect them.
+`cmd/relay` also serves aggregate `POST /mcp` on the normal Relay daemon, which defaults to `http://localhost:8080`. The aggregate surface is not a role-app connector URL. It remains separate from the three role apps and does not close or redirect them.
 
 ### Role-app HTTP
 
@@ -128,15 +128,15 @@ Segments rotate at eight mebibytes. Trace persistence failure leaves the authori
 
 | Profile | Ordered tools |
 | --- | --- |
-| `planner` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan` |
+| `planner` | `validate_artifact`, `list_projects`, `get_plan` |
 | `auditor` | `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
-| `local_operator` | `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
+| `local_operator` | `validate_artifact`, `list_projects`, `get_plan`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
 
 A tool outside the active aggregate profile is not registered and returns JSON-RPC method-not-found when called. The server registers the selected definitions before dispatch, so every advertised name reaches one canonical handler branch.
 
 ## File parameters
 
-`validate_artifact` and `submit_plan` advertise one OpenAI file parameter named `artifact_file`. It contains:
+`validate_artifact` advertises one OpenAI file parameter named `artifact_file`. It contains:
 
 - `download_url` — bounded HTTPS source URL;
 - `file_id` — nonempty external file identity;
@@ -165,13 +165,11 @@ Validates one canonical Plan or Deterministic Operations JSON artifact, or autho
 
 Returns bounded Project metadata for operator selection. It does not create or mutate Projects, infer a Project from repository state, or expose Project notes as hidden planning context.
 
-### `submit_plan`
+### Plan admission
 
-**Profiles:** Planner, local operator.
-
-**Required input:** `project_id`, `artifact_file`, and lowercase 64-character `expected_sha256`.
-
-Downloads and verifies one approved canonical Plan, recompiles it deterministically, and atomically creates the Plan, passes, repository associations, canonical source artifact, and rendered Plan artifact under the selected active Project. Project selection is external metadata and never changes canonical Plan bytes.
+Authored `submit_plan` admission is retired. No MCP tool creates or changes a
+Plan or Pass; ordinary work enters through delivery tickets and execution
+packages.
 
 ### `get_plan`
 
@@ -216,12 +214,6 @@ Returns bounded UTF-8 content for an audit-declared Run artifact. The audit serv
 - `operator_confirmed: true`.
 
 The action records one decision only against the exact current packet and audited commit. Acceptance completes the Run and managed pass; revision returns the Run to revision. Stale packets, mismatched hashes, conflicting audit state, or missing operator confirmation block before mutation.
-
-## Cutover tools
-
-Cutover readiness, prepare, activate, rollback, history, boundary, and roll-forward operations expose retained exact authority through the operation registry. Each mutation requires the exact Transition Plan ticket, authority revision, and workspace association present at preparation.
-
-The MCP surface delegates to the same `internal/app/cutover` service used by HTTP. No direct store bypass is possible.
 
 ## JSON-RPC behavior
 

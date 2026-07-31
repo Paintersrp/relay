@@ -2,262 +2,86 @@ package workflowplans
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	appcutover "relay/internal/app/cutover"
 	workflowstore "relay/internal/store/workflow"
 )
 
-type sequenceIDs struct {
-	planID        string
-	passIDs       []string
-	artifactBase  string
-	passIndex     int
-	artifactIndex int
-}
-
-func (ids *sequenceIDs) PlanID() string {
-	return ids.planID
-}
-
-func (ids *sequenceIDs) PassID() string {
-	value := ids.passIDs[ids.passIndex]
-	ids.passIndex++
-	return value
-}
-
-func (ids *sequenceIDs) ArtifactID() string {
-	ids.artifactIndex++
-	return fmt.Sprintf("%s-%d", ids.artifactBase, ids.artifactIndex)
-}
-
-func TestCreatePlanPersistsCanonicalArtifactsAndDependencies(t *testing.T) {
-	ctx := context.Background()
-	store, root := openPlanTestStore(t)
-	registerPlanTestRepo(t, ctx, store, "relay")
-	service, err := NewServiceWithIDs(store, &sequenceIDs{
-		planID:       "plan-test",
-		passIDs:      []string{"pass-one", "pass-two"},
-		artifactBase: "artifact-plan",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	canonical := []byte("{\"feature_slug\":\"feature\"}\n")
-	rendered := []byte("# Plan of Passes\n")
-	result, err := service.CreatePlan(ctx, CreatePlanInput{
-		ProjectID:        createPlanTestProject(t, ctx, store),
-		FeatureSlug:      "feature",
-		CanonicalJSON:    canonical,
-		RenderedMarkdown: rendered,
-		Repositories: []RepositoryTargetInput{
-			{
-				RepoTarget:         "relay",
-				Branch:             "feat/simplification",
-				PlanningBaseCommit: strings.Repeat("a", 40),
-			}},
-		Passes: []PassInput{
-			{Number: 1, Name: "Foundation", RepoTarget: "relay"},
-			{Number: 2, Name: "Integration", RepoTarget: "relay", DependsOn: []int64{1}},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Plan.PlanID != "plan-test" || result.Plan.Status != workflowstore.PlanStatusActive {
-		t.Fatalf("unexpected plan: %+v", result.Plan)
-	}
-	if len(result.Passes) != 2 || result.Passes[0].Status != workflowstore.PassStatusPlanned || result.Passes[1].Status != workflowstore.PassStatusPlanned {
-		t.Fatalf("unexpected passes: %+v", result.Passes)
-	}
-	if len(result.Artifacts) != 2 {
-		t.Fatalf("unexpected artifacts: %+v", result.Artifacts)
-	}
-	for _, expected := range []struct {
-		path string
-		data []byte
-	}{
-		{path: filepath.Join(root, "artifacts", "plans", "plan-test", "feature.plan.json"), data: canonical},
-		{path: filepath.Join(root, "artifacts", "plans", "plan-test", "feature.plan.md"), data: rendered},
-	} {
-		data, err := os.ReadFile(expected.path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(data) != string(expected.data) {
-			t.Fatalf("artifact %s changed: got %q want %q", expected.path, data, expected.data)
-		}
-	}
-
-	var dependencyCount int64
-	if err := store.DB().QueryRow(`
-SELECT COUNT(*)
-FROM plan_pass_dependencies
-WHERE pass_row_id = ? AND depends_on_pass_row_id = ?`,
-		result.Passes[1].ID,
-		result.Passes[0].ID,
-	).Scan(&dependencyCount); err != nil {
-		t.Fatal(err)
-	}
-	if dependencyCount != 1 {
-		t.Fatalf("dependency count = %d, want 1", dependencyCount)
-	}
-}
-
-func TestCreatePlanDatabaseFailureLeavesNoRecordsOrArtifacts(t *testing.T) {
-	ctx := context.Background()
-	store, root := openPlanTestStore(t)
-	registerPlanTestRepo(t, ctx, store, "relay")
-	service, err := NewServiceWithIDs(store, &sequenceIDs{
-		planID:       "plan-rollback",
-		passIDs:      []string{"duplicate-pass", "duplicate-pass"},
-		artifactBase: "artifact-rollback",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = service.CreatePlan(ctx, CreatePlanInput{
-		ProjectID:        createPlanTestProject(t, ctx, store),
-		FeatureSlug:      "feature",
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Plan\n"),
-		Repositories: []RepositoryTargetInput{
-			{
-				RepoTarget:         "relay",
-				Branch:             "main",
-				PlanningBaseCommit: strings.Repeat("a", 40),
-			}},
-		Passes: []PassInput{
-			{Number: 1, Name: "One", RepoTarget: "relay"},
-			{Number: 2, Name: "Two", RepoTarget: "relay"},
-		},
-	})
-	if err == nil {
-		t.Fatal("expected duplicate generated pass ID to fail")
-	}
-	assertTableCount(t, store.DB(), "plans", 0)
-	assertNoRegularFiles(t, filepath.Join(root, "artifacts"))
-}
-
-func TestCreatePlanPromotionFailureRollsBackDatabase(t *testing.T) {
-	ctx := context.Background()
-	store, root := openPlanTestStore(t)
-	registerPlanTestRepo(t, ctx, store, "relay")
-	service, err := NewServiceWithIDs(store, &sequenceIDs{
-		planID:       "plan-promotion-failure",
-		passIDs:      []string{"pass-one"},
-		artifactBase: "artifact-promotion",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "artifacts", "plans"), []byte("block directory"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = service.CreatePlan(ctx, CreatePlanInput{
-		ProjectID:        createPlanTestProject(t, ctx, store),
-		FeatureSlug:      "feature",
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Plan\n"),
-		Repositories: []RepositoryTargetInput{
-			{
-				RepoTarget:         "relay",
-				Branch:             "main",
-				PlanningBaseCommit: strings.Repeat("a", 40),
-			}},
-		Passes: []PassInput{
-			{Number: 1, Name: "One", RepoTarget: "relay"},
-		},
-	})
-	if err == nil {
-		t.Fatal("expected artifact promotion failure")
-	}
-	assertTableCount(t, store.DB(), "plans", 0)
-}
-
-func TestMovePlanRequiresActiveDestinationAndPreservesArtifacts(t *testing.T) {
+// Plan and Pass writes are retired. The service keeps exactly one read-only
+// presentation operation for historical records.
+func TestGetPlanProjectsHistoricalPlanWithoutWriteAdmission(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openPlanTestStore(t)
 	registerPlanTestRepo(t, ctx, store, "relay")
-	sourceID := createPlanTestProject(t, ctx, store)
-	var destination workflowstore.Project
-	var archived workflowstore.Project
+	projectID := createPlanTestProject(t, ctx, store)
+
+	var plan workflowstore.Plan
+	var pass workflowstore.PlanPass
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		var err error
-		destination, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
-			ProjectID: "project-destination",
-			Name:      "Destination",
+		project, err := tx.GetProjectByProjectID(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		plan, err = tx.CreatePlan(ctx, workflowstore.CreatePlanParams{
+			ProjectRowID:    project.ID,
+			PlanID:          "plan-historical",
+			FeatureSlug:     "feature",
+			CanonicalSHA256: strings.Repeat("a", 64),
 		})
 		if err != nil {
 			return err
 		}
-		archived, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
-			ProjectID: "project-archived",
-			Name:      "Archived",
-		})
-		if err != nil {
+		if _, err := tx.CreatePlanRepositoryTarget(ctx, workflowstore.CreatePlanRepositoryTargetParams{
+			PlanRowID:          plan.ID,
+			Sequence:           1,
+			RepoTarget:         "relay",
+			Branch:             "main",
+			PlanningBaseCommit: strings.Repeat("b", 40),
+		}); err != nil {
 			return err
 		}
-		archived, err = tx.TransitionProjectStatus(ctx, archived.ProjectID, workflowstore.ProjectStatusActive, workflowstore.ProjectStatusArchived)
+		pass, err = tx.CreatePlanPass(ctx, workflowstore.CreatePlanPassParams{
+			PassID:     "pass-historical",
+			PlanRowID:  plan.ID,
+			PassNumber: 1,
+			Name:       "Foundation",
+			RepoTarget: "relay",
+		})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewServiceWithIDs(store, &sequenceIDs{
-		planID:       "plan-move",
-		passIDs:      []string{"pass-move"},
-		artifactBase: "artifact-move",
-	})
+
+	service, err := NewService(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreatePlan(ctx, CreatePlanInput{
-		ProjectID:        sourceID,
-		FeatureSlug:      "feature",
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Plan\n"),
-		Repositories: []RepositoryTargetInput{
-			RepositoryTargetInput{
-				RepoTarget: "relay", Branch: "main", PlanningBaseCommit: strings.Repeat("a", 40),
-			},
-		},
-		Passes: []PassInput{
-			PassInput{Number: 1, Name: "One", RepoTarget: "relay"},
-		},
-	})
+	result, err := service.GetPlan(ctx, plan.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifactCount := len(created.Artifacts)
-	moved, err := service.MovePlan(ctx, MovePlanInput{PlanID: created.Plan.PlanID, ProjectID: destination.ProjectID})
+	if result.Plan.PlanID != plan.PlanID || result.Project.ProjectID != projectID {
+		t.Fatalf("plan projection = %+v / %+v", result.Plan, result.Project)
+	}
+	if len(result.Passes) != 1 || result.Passes[0].PassID != pass.PassID {
+		t.Fatalf("pass projection = %+v", result.Passes)
+	}
+}
+
+func TestGetPlanRejectsUnknownAndBlankPlanID(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openPlanTestStore(t)
+	service, err := NewService(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.Plan.ProjectRowID != destination.ID || moved.Project.ProjectID != destination.ProjectID {
-		t.Fatalf("move result = %+v", moved)
-	}
-	artifacts, err := store.ListArtifactsByPlan(ctx, moved.Plan.ID)
-	if err != nil || len(artifacts) != artifactCount {
-		t.Fatalf("artifacts = %+v, error = %v", artifacts, err)
-	}
-	if _, err := service.MovePlan(ctx, MovePlanInput{PlanID: moved.Plan.PlanID, ProjectID: archived.ProjectID}); !errors.Is(err, ErrProjectArchived) {
-		t.Fatalf("error = %v", err)
-	}
-	current, err := store.GetPlanByPlanID(ctx, moved.Plan.PlanID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.ProjectRowID != destination.ID {
-		t.Fatalf("failed move changed Project row to %d", current.ProjectRowID)
+	for _, planID := range []string{"", "plan-missing"} {
+		if _, err := service.GetPlan(ctx, planID); !errors.Is(err, ErrPlanNotFound) {
+			t.Fatalf("GetPlan(%q) error = %v", planID, err)
+		}
 	}
 }
 
@@ -296,83 +120,5 @@ func registerPlanTestRepo(t *testing.T, ctx context.Context, store *workflowstor
 		return err
 	}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func assertTableCount(t *testing.T, db *sql.DB, table string, want int64) {
-	t.Helper()
-	var got int64
-	if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got != want {
-		t.Fatalf("table %s count = %d, want %d", table, got, want)
-	}
-}
-
-func assertNoRegularFiles(t *testing.T, root string) {
-	t.Helper()
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if entry.Type().IsRegular() {
-			return fmt.Errorf("unexpected durable file %s", path)
-		}
-		return nil
-	})
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
-	}
-}
-
-type staticPlanMutationGate struct {
-	decision appcutover.LegacyGateDecision
-	err      error
-}
-
-func (g staticPlanMutationGate) AllowPlanMutation(context.Context) (appcutover.LegacyGateDecision, error) {
-	return g.decision, g.err
-}
-
-func TestPlanMutationsMapCutoverOutcomesBeforePlanLookup(t *testing.T) {
-	store, _ := openPlanTestStore(t)
-	ctx := context.Background()
-
-	tests := []struct {
-		name    string
-		gate    staticPlanMutationGate
-		want    error
-		notWant error
-	}{
-		{
-			name:    "legacy admission closed",
-			gate:    staticPlanMutationGate{decision: appcutover.LegacyGateDecision{Allowed: false}},
-			want:    appcutover.ErrLegacyAdmissionClosed,
-			notWant: ErrPlanNotFound,
-		},
-		{
-			name:    "cutover state unavailable",
-			gate:    staticPlanMutationGate{err: errors.New("cutover state read failed")},
-			want:    ErrCutoverStateUnavailable,
-			notWant: ErrPlanNotFound,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service, err := NewServiceWithIDsAndGate(store, &sequenceIDs{}, tt.gate)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := service.CreatePlan(ctx, CreatePlanInput{}); !errors.Is(err, tt.want) || errors.Is(err, tt.notWant) {
-				t.Fatalf("CreatePlan error = %v", err)
-			}
-			if _, err := service.MovePlan(ctx, MovePlanInput{}); !errors.Is(err, tt.want) || errors.Is(err, tt.notWant) {
-				t.Fatalf("MovePlan error = %v", err)
-			}
-		})
 	}
 }

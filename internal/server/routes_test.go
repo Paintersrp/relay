@@ -85,6 +85,47 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 	_ = service
 }
 
+// The cutover control plane is removed and legacy Plan write admission is
+// retired: the workflow runtime mounts no cutover endpoint and no route capable
+// of creating or changing a Plan. The aggregate MCP route stays mounted and
+// unconditional, with no admission-state wrapper in front of it.
+func TestWorkflowRuntimeMountsNoCutoverOrPlanWriteRoutes(t *testing.T) {
+	store, _ := openWorkflowRouteTestStore(t)
+	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", &sourcevault.Manager{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, request := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/cutover/state"},
+		{http.MethodGet, "/api/cutover/history"},
+		{http.MethodGet, "/api/cutover/readiness"},
+		{http.MethodPost, "/api/cutover/prepare"},
+		{http.MethodPost, "/api/cutover/activate"},
+		{http.MethodPost, "/api/cutover/rollback"},
+		{http.MethodPost, "/api/cutover/roll-forward"},
+		{http.MethodPost, "/api/cutover/execution-boundary"},
+		{http.MethodPost, "/api/plans"},
+		{http.MethodPatch, "/api/plans/plan-test/project"},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))
+		if response.Code != http.StatusNotFound && response.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s => %d %s", request.method, request.path, response.Code, response.Body.String())
+		}
+	}
+
+	// The aggregate MCP route answers without consulting any admission state.
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	if response.Code == http.StatusNotFound || response.Code == http.StatusConflict || response.Code == http.StatusServiceUnavailable {
+		t.Fatalf("aggregate MCP route => %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 	store, service := openWorkflowRouteTestStore(t)
 	runService, err := workflowruns.NewService(store)

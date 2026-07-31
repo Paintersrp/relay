@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as CutoverRouteImport } from './routes/cutover'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RunsIndexRouteImport } from './routes/runs/index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories/index'
@@ -19,7 +18,6 @@ import { Route as RunsNewRouteImport } from './routes/runs/new'
 import { Route as RunsRunIdRouteImport } from './routes/runs/$runId'
 import { Route as ProjectsNewRouteImport } from './routes/projects/new'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
-import { Route as PlansNewRouteImport } from './routes/plans/new'
 import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
 import { Route as FeatureWorkspacesNewRouteImport } from './routes/feature-workspaces/new'
 import { Route as FeatureWorkspacesWorkspaceIdRouteImport } from './routes/feature-workspaces/$workspaceId'
@@ -32,11 +30,6 @@ import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
 import { Route as FeatureWorkspacesWorkspaceIdTicketsRouteImport } from './routes/feature-workspaces/$workspaceId.tickets'
 import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId.passes.$passId'
 
-const CutoverRoute = CutoverRouteImport.update({
-  id: '/cutover',
-  path: '/cutover',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -80,11 +73,6 @@ const ProjectsNewRoute = ProjectsNewRouteImport.update({
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   id: '/projects/$projectId',
   path: '/projects/$projectId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlansNewRoute = PlansNewRouteImport.update({
-  id: '/plans/new',
-  path: '/plans/new',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlansPlanIdRoute = PlansPlanIdRouteImport.update({
@@ -148,13 +136,11 @@ const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/cutover': typeof CutoverRoute
   '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
   '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
-  '/plans/new': typeof PlansNewRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
@@ -172,13 +158,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/cutover': typeof CutoverRoute
   '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
   '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
-  '/plans/new': typeof PlansNewRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/new': typeof RunsNewRoute
@@ -196,13 +180,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/cutover': typeof CutoverRoute
   '/execution-packages/$packageId': typeof ExecutionPackagesPackageIdRoute
   '/execution-packages/new': typeof ExecutionPackagesNewRoute
   '/feature-workspaces/$workspaceId': typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   '/feature-workspaces/new': typeof FeatureWorkspacesNewRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
-  '/plans/new': typeof PlansNewRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
@@ -222,13 +204,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/cutover'
     | '/execution-packages/$packageId'
     | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
     | '/feature-workspaces/new'
     | '/plans/$planId'
-    | '/plans/new'
     | '/projects/$projectId'
     | '/projects/new'
     | '/runs/$runId'
@@ -246,13 +226,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/cutover'
     | '/execution-packages/$packageId'
     | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
     | '/feature-workspaces/new'
     | '/plans/$planId'
-    | '/plans/new'
     | '/projects/$projectId'
     | '/projects/new'
     | '/runs/new'
@@ -269,13 +247,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/cutover'
     | '/execution-packages/$packageId'
     | '/execution-packages/new'
     | '/feature-workspaces/$workspaceId'
     | '/feature-workspaces/new'
     | '/plans/$planId'
-    | '/plans/new'
     | '/projects/$projectId'
     | '/projects/new'
     | '/runs/$runId'
@@ -294,13 +270,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  CutoverRoute: typeof CutoverRoute
   ExecutionPackagesPackageIdRoute: typeof ExecutionPackagesPackageIdRoute
   ExecutionPackagesNewRoute: typeof ExecutionPackagesNewRoute
   FeatureWorkspacesWorkspaceIdRoute: typeof FeatureWorkspacesWorkspaceIdRouteWithChildren
   FeatureWorkspacesNewRoute: typeof FeatureWorkspacesNewRoute
   PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
-  PlansNewRoute: typeof PlansNewRoute
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   ProjectsNewRoute: typeof ProjectsNewRoute
   RunsRunIdRoute: typeof RunsRunIdRouteWithChildren
@@ -313,13 +287,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/cutover': {
-      id: '/cutover'
-      path: '/cutover'
-      fullPath: '/cutover'
-      preLoaderRoute: typeof CutoverRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -381,13 +348,6 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId'
       preLoaderRoute: typeof ProjectsProjectIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/plans/new': {
-      id: '/plans/new'
-      path: '/plans/new'
-      fullPath: '/plans/new'
-      preLoaderRoute: typeof PlansNewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plans/$planId': {
@@ -517,14 +477,12 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  CutoverRoute: CutoverRoute,
   ExecutionPackagesPackageIdRoute: ExecutionPackagesPackageIdRoute,
   ExecutionPackagesNewRoute: ExecutionPackagesNewRoute,
   FeatureWorkspacesWorkspaceIdRoute:
     FeatureWorkspacesWorkspaceIdRouteWithChildren,
   FeatureWorkspacesNewRoute: FeatureWorkspacesNewRoute,
   PlansPlanIdRoute: PlansPlanIdRouteWithChildren,
-  PlansNewRoute: PlansNewRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ProjectsNewRoute: ProjectsNewRoute,
   RunsRunIdRoute: RunsRunIdRouteWithChildren,

@@ -113,7 +113,6 @@ function assertNewestSelection(input: RecentEntityInput[], returned: CommandEntr
 
 const noopHandlers: CommandActionHandlers = {
   onNewRun: () => {},
-  onNewPlan: () => {},
 };
 
 // ------------------------------------------------------------

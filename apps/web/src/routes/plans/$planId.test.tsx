@@ -6,19 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   planRefetch: vi.fn(),
-  projectRefetch: vi.fn(),
   useQuery: vi.fn(),
-  planDetail: vi.fn(
-    ({ detail, activeProjects }: { detail: any; activeProjects: any[] }) => (
-      <div
-        data-testid="canonical-plan-detail"
-        data-plan-id={detail.plan.planId}
-        data-project-count={activeProjects.length}
-      >
-        Plan detail
-      </div>
-    ),
-  ),
+  planDetail: vi.fn(({ detail }: { detail: any }) => (
+    <div data-testid="canonical-plan-detail" data-plan-id={detail.plan.planId}>
+      Plan detail
+    </div>
+  )),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -41,10 +34,6 @@ vi.mock("@/components/relay/RelayCanonicalPlanDetail", () => ({
 
 vi.mock("@/features/relay-plans", () => ({
   workflowPlanDetailQueryOptions: () => ({ queryKey: ["plan"] }),
-}));
-
-vi.mock("@/features/relay-projects", () => ({
-  workflowProjectsListQueryOptions: () => ({ queryKey: ["projects"] }),
 }));
 
 import { PlanDetailPage } from "./$planId";
@@ -85,39 +74,21 @@ const planDetail = {
   artifacts: [],
 };
 
-const activeProject = {
-  projectId: "project-1",
-  name: "Relay",
-  description: "",
-  status: "active",
-  createdAt: "2026-07-08T00:00:00Z",
-  updatedAt: "2026-07-08T00:00:00Z",
-};
-
 describe("PlanDetailPage canonical read state", () => {
   beforeEach(() => {
     mocks.planRefetch.mockReset();
-    mocks.projectRefetch.mockReset();
     mocks.useQuery.mockReset();
     mocks.planDetail.mockClear();
   });
 
   it("renders normalized Plan detail with concrete empty pass collections", () => {
-    mocks.useQuery
-      .mockReturnValueOnce({
-        data: planDetail,
-        isLoading: false,
-        isError: false,
-        error: null,
-        refetch: mocks.planRefetch,
-      })
-      .mockReturnValueOnce({
-        data: { projects: [activeProject], count: 1 },
-        isLoading: false,
-        isError: false,
-        error: null,
-        refetch: mocks.projectRefetch,
-      });
+    mocks.useQuery.mockReturnValue({
+      data: planDetail,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mocks.planRefetch,
+    });
 
     render(<PlanDetailPage />);
 
@@ -125,49 +96,31 @@ describe("PlanDetailPage canonical read state", () => {
       "data-plan-id",
       "plan-1",
     );
-    expect(screen.getByTestId("canonical-plan-detail")).toHaveAttribute(
-      "data-project-count",
-      "1",
-    );
     expect(mocks.planDetail.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        detail: planDetail,
-        activeProjects: [activeProject],
-      }),
+      expect.objectContaining({ detail: planDetail }),
     );
   });
 
-  it("shows a recoverable destination-Project error instead of an empty movement set", async () => {
+  // Plan movement is retired, so the route loads only the Plan itself and needs
+  // no destination-Project context to render.
+  it("recovers from a Plan read failure without any destination-Project context", async () => {
     const user = userEvent.setup();
-    mocks.useQuery
-      .mockReturnValueOnce({
-        data: {
-          plan: { planId: "plan-1" },
-          passes: [],
-          repositories: [],
-          artifacts: [],
-        },
-        isLoading: false,
-        error: null,
-        refetch: mocks.planRefetch,
-      })
-      .mockReturnValueOnce({
-        data: undefined,
-        isLoading: false,
-        isError: true,
-        error: new Error("Project service unavailable"),
-        refetch: mocks.projectRefetch,
-      });
+    mocks.useQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("Plan service unavailable"),
+      refetch: mocks.planRefetch,
+    });
 
     render(<PlanDetailPage />);
 
-    expect(
-      screen.getByText("Destination Projects failed to load"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/required context failed/)).toBeInTheDocument();
+    expect(screen.getByText("Plan failed to load")).toBeInTheDocument();
+    expect(screen.queryByText("Destination Projects failed to load")).toBeNull();
     expect(screen.queryByText("Plan detail")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Retry Projects" }));
-    expect(mocks.projectRefetch).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Retry Plan" }));
+    expect(mocks.planRefetch).toHaveBeenCalledTimes(1);
+    expect(mocks.useQuery).toHaveBeenCalledTimes(1);
   });
 });

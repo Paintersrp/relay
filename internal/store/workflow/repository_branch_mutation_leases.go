@@ -22,7 +22,7 @@ const (
 
 // RepositoryBranchMutationLease is the durable, repository-and-branch scoped
 // exclusion record. It is intentionally exposed through the store boundary so
-// execution, later packet, and cutover owners share one lifecycle.
+// execution and later packet owners share one lifecycle.
 type (
 	RepositoryBranchMutationLease = workflowgenerated.RepositoryBranchMutationLease
 

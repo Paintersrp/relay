@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	workflowplans "relay/internal/app/plans/workflow"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -38,27 +37,7 @@ func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	plans, err := workflowplans.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	createdPlan, err := plans.CreatePlan(ctx, workflowplans.CreatePlanInput{
-		ProjectID:        project.ProjectID,
-		FeatureSlug:      "project-read-model",
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Plan\n"),
-		Repositories: []workflowplans.RepositoryTargetInput{
-			workflowplans.RepositoryTargetInput{
-				RepoTarget: "relay", Branch: "main", PlanningBaseCommit: strings.Repeat("a", 40),
-			},
-		},
-		Passes: []workflowplans.PassInput{
-			workflowplans.PassInput{Number: 1, Name: "Pass", RepoTarget: "relay"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	createdPlan, _ := seedHistoricalPlan(t, ctx, store, project.ID, "plan-read-model", "project-read-model")
 	runs, err := workflowruns.NewService(store)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +49,7 @@ func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T
 		BaseCommit:       strings.Repeat("a", 40),
 		CanonicalJSON:    []byte("{}\n"),
 		RenderedMarkdown: []byte("# Brief\n"),
-		PlanID:           createdPlan.Plan.PlanID,
+		PlanID:           createdPlan.PlanID,
 		PassNumber:       1,
 	})
 	if err != nil {
@@ -87,7 +66,7 @@ func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	planDetail, err := service.GetPlan(ctx, createdPlan.Plan.PlanID)
+	planDetail, err := service.GetPlan(ctx, createdPlan.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,4 +82,45 @@ func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T
 		runDetail.Summary.Project.Status != workflowstore.ProjectStatusArchived {
 		t.Fatalf("Run Project = %+v", runDetail.Summary.Project)
 	}
+}
+
+// seedHistoricalPlan writes one historical Plan, repository target, and Pass
+// directly through the store. Legacy Plan write admission is retired, so no
+// application service creates Plans.
+func seedHistoricalPlan(t *testing.T, ctx context.Context, store *workflowstore.Store, projectRowID int64, planID, featureSlug string) (workflowstore.Plan, workflowstore.PlanPass) {
+	t.Helper()
+	var plan workflowstore.Plan
+	var pass workflowstore.PlanPass
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var err error
+		plan, err = tx.CreatePlan(ctx, workflowstore.CreatePlanParams{
+			ProjectRowID:    projectRowID,
+			PlanID:          planID,
+			FeatureSlug:     featureSlug,
+			CanonicalSHA256: strings.Repeat("a", 64),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.CreatePlanRepositoryTarget(ctx, workflowstore.CreatePlanRepositoryTargetParams{
+			PlanRowID:          plan.ID,
+			Sequence:           1,
+			RepoTarget:         "relay",
+			Branch:             "main",
+			PlanningBaseCommit: strings.Repeat("a", 40),
+		}); err != nil {
+			return err
+		}
+		pass, err = tx.CreatePlanPass(ctx, workflowstore.CreatePlanPassParams{
+			PassID:     "pass-" + planID,
+			PlanRowID:  plan.ID,
+			PassNumber: 1,
+			Name:       "Pass",
+			RepoTarget: "relay",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return plan, pass
 }

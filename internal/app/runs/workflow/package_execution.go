@@ -10,8 +10,8 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-// AdmitPackageExecution crosses the execution boundary for an eligible
-// package-linked Run without advancing its Run lifecycle or creating any
+// AdmitPackageExecution verifies that a package-linked Run is eligible for
+// execution without advancing its Run lifecycle or creating any
 // execution-owned rows.
 func (s *Service) AdmitPackageExecution(ctx context.Context, runID string) (workflowstore.Run, error) {
 	if s == nil || s.store == nil {
@@ -36,13 +36,7 @@ func (s *Service) AdmitPackageExecution(ctx context.Context, runID string) (work
 			return fmt.Errorf("package Run admission requires setup_ready or executing Run, got %q", run.Status)
 		}
 
-		if err := tx.AttemptCrossCutoverBoundaryForRun(ctx, run.ID, run.ExecutionPackageRowID); err != nil {
-			return fmt.Errorf("cross package execution cutover boundary: %w", err)
-		}
-		admitted, err = tx.GetRunByRunID(ctx, runID)
-		if err != nil {
-			return fmt.Errorf("reload admitted package Run: %w", err)
-		}
+		admitted = run
 		return nil
 	})
 	if err != nil {
@@ -85,10 +79,6 @@ func (s *Service) CompletePackageDeterministicExecution(ctx context.Context, run
 			return fmt.Errorf("deterministic package finalization requires no active repository/branch mutation lease")
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("check active repository/branch mutation lease: %w", err)
-		}
-
-		if err := tx.AttemptCrossCutoverBoundaryForRun(ctx, run.ID, run.ExecutionPackageRowID); err != nil {
-			return fmt.Errorf("cross package execution cutover boundary: %w", err)
 		}
 
 		switch run.Status {

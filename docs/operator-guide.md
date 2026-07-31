@@ -61,9 +61,10 @@ A Project is an organizational container. It does not alter canonical artifact b
 
 Source reads remain bound to the repository revision retained by the packet, even if the local branch or working repository later advances. Public role-app tool names may be generated surface-qualified aliases; use the public advertised aliases returned by Wayfinder `tools/list`. `/mcp/v1/wayfinder/...` paths are internal route identities, not connector URLs. See [mcp.md](mcp.md) for the exact discovery sequence and public aliases.
 
-## Submit a Plan
+## Read a historical Plan
 
-Use `/plans/new` or the Planner/`local_operator` MCP profile.
+Plan submission is retired. `/plans` and the Planner/`local_operator`
+`get_plan` tool present existing Plan records read-only.
 
 A canonical Plan:
 

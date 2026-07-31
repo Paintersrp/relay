@@ -226,14 +226,6 @@ func TestBeginPreparedAdaptiveExecutionRollsBackEachStage(t *testing.T) {
 			},
 		},
 		{
-			name: "cutover crossing",
-			prepare: func(t *testing.T, fixture *preparedAdaptiveFixture) {
-				t.Helper()
-				seedPreparedAdaptiveCutover(t, fixture.store)
-				createAdmissionFailureTrigger(t, fixture.store, "cutover_activations", "BEFORE UPDATE OF execution_boundary_status", "NEW.cutover_activation_id = 'cutover-prepared-adaptive'", "fail cutover crossing")
-			},
-		},
-		{
 			name: "attempt transition",
 			prepare: func(t *testing.T, fixture *preparedAdaptiveFixture) {
 				t.Helper()
@@ -449,26 +441,6 @@ func createAdmissionFailureTrigger(t *testing.T, store *workflowstore.Store, tab
 	name := "fail_prepared_admission_" + strings.ReplaceAll(strings.ReplaceAll(table, "_", ""), "-", "")
 	query := fmt.Sprintf("CREATE TRIGGER %s %s ON %s WHEN %s BEGIN SELECT RAISE(ABORT, '%s'); END", name, timing, table, condition, message)
 	if _, err := store.DB().Exec(query); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func seedPreparedAdaptiveCutover(t *testing.T, store *workflowstore.Store) {
-	t.Helper()
-	db := store.DB()
-	if _, err := db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`DROP TRIGGER IF EXISTS cutover_activation_insert_guard`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO cutover_activations (cutover_activation_id, workspace_row_id, transition_plan_ticket_revision_row_id, transition_plan_ticket_id, transition_plan_ticket_revision, transition_plan_authority_layer_row_id, transition_plan_sha256, authority_revision_row_id, authority_revision_id, authority_revision_number, authority_sha256, rollback_eligibility, activation_status, activated_at, execution_boundary_status, rollback_status, roll_forward_status) VALUES ('cutover-prepared-adaptive', 1, 1, 'CUTOVER', 1, 1, ?, 1, 'authority-prepared-adaptive', 1, ?, 'eligible', 'active', '2000-01-01T00:00:00Z', 'open', 'available', 'pending')`, strings.Repeat("a", 64), strings.Repeat("b", 64)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO cutover_current_states (singleton_id, activation_row_id) SELECT 1, id FROM cutover_activations WHERE cutover_activation_id = 'cutover-prepared-adaptive'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		t.Fatal(err)
 	}
 }

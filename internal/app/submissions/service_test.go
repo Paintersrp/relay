@@ -9,12 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	appcutover "relay/internal/app/cutover"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
 )
 
 type submissionFixture struct {
@@ -56,21 +54,6 @@ func newSubmissionFixture(t *testing.T) *submissionFixture {
 		t.Fatal(err)
 	}
 	return &submissionFixture{store: store, root: root, service: service, project: project}
-}
-
-func (f *submissionFixture) submitPlan(t *testing.T) SubmitPlanResult {
-	t.Helper()
-	data := canonicalPlanBytes("relay")
-	result, err := f.service.SubmitPlan(context.Background(), SubmitPlanInput{
-		ProjectID:      f.project.ProjectID,
-		DisplayName:    "canonical-service.plan.json",
-		ExpectedSHA256: SHA256(data),
-		CanonicalBytes: data,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return result
 }
 
 func TestValidateArtifactPreservesCanonicalIdentityWithoutWorkflowStorage(t *testing.T) {
@@ -163,17 +146,26 @@ func TestValidateArtifactValidatesAuthoredMarkdownWithoutAdmission(t *testing.T)
 	}
 }
 
-func TestAuthoredMarkdownCannotBeAdmittedAsPlan(t *testing.T) {
+// Legacy Plan submission is retired: validating a well-formed canonical Plan
+// creates no Plan, Pass, Run, artifact row, or durable artifact file.
+func TestValidatingCanonicalPlanAdmitsNoPlan(t *testing.T) {
 	fixture := newSubmissionFixture(t)
-	ticketBrief := []byte(testfixtures.TicketDesignBrief)
-	_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-		ProjectID:      fixture.project.ProjectID,
-		DisplayName:    "relay.ticket-P2-T5.r1.design-brief.md",
-		ExpectedSHA256: SHA256(ticketBrief),
-		CanonicalBytes: ticketBrief,
+	data := canonicalPlanBytes("relay")
+	result, err := fixture.service.ValidateArtifact(context.Background(), ValidationInput{
+		DisplayName:    "canonical-service.plan.json",
+		CanonicalBytes: data,
 	})
-	assertApplicationCode(t, err, ErrorInvalidArtifactKind)
-	assertNoPlanSubmission(t, fixture)
+	if err != nil || !result.OK || result.Kind != "plan" {
+		t.Fatalf("validation result = %+v, error = %v", result, err)
+	}
+	for _, table := range []string{"plans", "plan_passes", "plan_repository_targets", "runs", "artifacts"} {
+		if got := tableCount(t, fixture.store, table); got != 0 {
+			t.Fatalf("%s rows = %d, want 0", table, got)
+		}
+	}
+	if got := regularFileCount(t, filepath.Join(fixture.root, "artifacts")); got != 0 {
+		t.Fatalf("durable artifact files = %d, want 0", got)
+	}
 }
 
 func assertDiagnosticsMatch(
@@ -223,113 +215,14 @@ func TestBoundedDiagnosticsPreservesOrderAndLimit(t *testing.T) {
 	}
 }
 
-func TestPlanSubmissionReturnsCommittedProjectAggregate(t *testing.T) {
-	fixture := newSubmissionFixture(t)
-	result := fixture.submitPlan(t)
-	if result.Project.ProjectID != fixture.project.ProjectID ||
-		result.Plan.ProjectRowID != fixture.project.ID ||
-		len(result.Passes) != 1 ||
-		len(result.Artifacts) != 2 {
-		t.Fatalf("Plan result = %+v", result)
-	}
-}
-
-func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
-	t.Run("whitespace padded hash is malformed", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		data := canonicalPlanBytes("relay")
-		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-			ProjectID:      fixture.project.ProjectID,
-			DisplayName:    "canonical-service.plan.json",
-			ExpectedSHA256: " " + SHA256(data),
-			CanonicalBytes: data,
-		})
-		assertApplicationCode(t, err, ErrorInvalidExpectedHash)
-		assertNoPlanSubmission(t, fixture)
-	})
-
-	t.Run("whitespace padded filename is compiler rejected", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		data := canonicalPlanBytes("relay")
-		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-			ProjectID:      fixture.project.ProjectID,
-			DisplayName:    " canonical-service.plan.json",
-			ExpectedSHA256: SHA256(data),
-			CanonicalBytes: data,
-		})
-		assertApplicationCode(t, err, ErrorCompilerRejected)
-		assertNoPlanSubmission(t, fixture)
-	})
-
-	t.Run("missing Project", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		data := canonicalPlanBytes("relay")
-		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-			ProjectID:      "project-missing",
-			DisplayName:    "canonical-service.plan.json",
-			ExpectedSHA256: SHA256(data),
-			CanonicalBytes: data,
-		})
-		assertApplicationCode(t, err, ErrorProjectNotFound)
-		assertNoPlanSubmission(t, fixture)
-	})
-
-	t.Run("archived Project", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		projects, _ := workflowprojects.NewService(fixture.store)
-		if _, err := projects.ArchiveProject(context.Background(), fixture.project.ProjectID); err != nil {
-			t.Fatal(err)
-		}
-		data := canonicalPlanBytes("relay")
-		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-			ProjectID:      fixture.project.ProjectID,
-			DisplayName:    "canonical-service.plan.json",
-			ExpectedSHA256: SHA256(data),
-			CanonicalBytes: data,
-		})
-		assertApplicationCode(t, err, ErrorProjectArchived)
-		assertNoPlanSubmission(t, fixture)
-	})
-
-	t.Run("unknown repository", func(t *testing.T) {
-		fixture := newSubmissionFixture(t)
-		data := canonicalPlanBytes("missing")
-		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-			ProjectID:      fixture.project.ProjectID,
-			DisplayName:    "canonical-service.plan.json",
-			ExpectedSHA256: SHA256(data),
-			CanonicalBytes: data,
-		})
-		assertApplicationCode(t, err, ErrorRepositoryNotFound)
-		assertNoPlanSubmission(t, fixture)
-	})
-}
-
-func assertApplicationCode(t *testing.T, err error, expected ErrorCode) {
-	t.Helper()
-	application, ok := AsApplicationError(err)
-	if !ok || application.Code != expected {
-		t.Fatalf("error = %#v, want code %q", err, expected)
-	}
-}
-
-func assertNoPlanSubmission(t *testing.T, fixture *submissionFixture) {
-	t.Helper()
-	if tableCount(t, fixture.store, "plans") != 0 ||
-		tableCount(t, fixture.store, "artifacts") != 0 ||
-		regularFileCount(t, filepath.Join(fixture.root, "artifacts")) != 0 {
-		t.Fatal("failed Plan submission created durable state")
-	}
-}
-
 func canonicalPlanBytes(repoTarget string) []byte {
 	return []byte(fmt.Sprintf(`{
   "schema_version": "1.0",
   "feature_slug": "canonical-service",
-  "goal": "Test canonical Plan submission.",
+  "goal": "Test canonical Plan validation.",
   "context": "Canonical service test context.",
   "scope": {
-    "in_scope": ["Persist the Plan."],
+    "in_scope": ["Validate the Plan."],
     "out_of_scope": ["Do not execute it."]
   },
   "repo_targets": [{
@@ -389,57 +282,4 @@ func regularFileCount(t *testing.T, root string) int {
 		t.Fatal(err)
 	}
 	return count
-}
-
-type staticSubmissionGate struct {
-	newPlanDecision  appcutover.LegacyGateDecision
-	newPlanErr       error
-	mutationDecision appcutover.LegacyGateDecision
-	mutationErr      error
-}
-
-func (g staticSubmissionGate) AllowNewPlan(context.Context) (appcutover.LegacyGateDecision, error) {
-	return g.newPlanDecision, g.newPlanErr
-}
-
-func (g staticSubmissionGate) AllowPlanMutation(context.Context) (appcutover.LegacyGateDecision, error) {
-	return g.mutationDecision, g.mutationErr
-}
-
-func TestSubmitPlanMapsCutoverGateOutcomes(t *testing.T) {
-	tests := []struct {
-		name string
-		gate staticSubmissionGate
-		want ErrorCode
-	}{
-		{
-			name: "legacy admission closed",
-			gate: staticSubmissionGate{newPlanDecision: appcutover.LegacyGateDecision{Allowed: false}},
-			want: ErrorLegacyAdmissionClosed,
-		},
-		{
-			name: "cutover state unavailable",
-			gate: staticSubmissionGate{newPlanErr: errors.New("cutover state read failed")},
-			want: ErrorCutoverStateUnavailable,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fixture := newSubmissionFixture(t)
-			service, err := NewServiceWithGate(fixture.store, tt.gate)
-			if err != nil {
-				t.Fatal(err)
-			}
-			fixture.service = service
-			data := canonicalPlanBytes("relay")
-			_, err = fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
-				ProjectID:      fixture.project.ProjectID,
-				DisplayName:    "canonical-service.plan.json",
-				ExpectedSHA256: SHA256(data),
-				CanonicalBytes: data,
-			})
-			assertApplicationCode(t, err, tt.want)
-			assertNoPlanSubmission(t, fixture)
-		})
-	}
 }

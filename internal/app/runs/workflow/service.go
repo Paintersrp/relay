@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	appcutover "relay/internal/app/cutover"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -35,45 +34,27 @@ func (defaultIDGenerator) ArtifactID() string         { return workflowstore.New
 func (defaultIDGenerator) AuditDecisionID() string    { return workflowstore.NewAuditDecisionID() }
 
 type Service struct {
-	store       *workflowstore.Store
-	ids         IDGenerator
-	cutoverGate *appcutover.LegacyGate
+	store *workflowstore.Store
+	ids   IDGenerator
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})
 }
 
-func NewServiceWithGate(store *workflowstore.Store, gate *appcutover.LegacyGate) (*Service, error) {
-	return NewServiceWithIDsAndGate(store, defaultIDGenerator{}, gate)
-}
-
-func NewServiceWithIDsAndGate(store *workflowstore.Store, ids IDGenerator, gate *appcutover.LegacyGate) (*Service, error) {
+func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
 	if ids == nil {
 		return nil, fmt.Errorf("workflow ID generator is required")
 	}
-	return &Service{store: store, ids: ids, cutoverGate: gate}, nil
-}
-
-func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
-	return NewServiceWithIDsAndGate(store, ids, nil)
+	return &Service{store: store, ids: ids}, nil
 }
 
 func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRunResult, error) {
 	if err := validateCreateRunInput(input); err != nil {
 		return CreateRunResult{}, err
-	}
-	if s.cutoverGate != nil && input.PlanID != "" {
-		decision, err := s.cutoverGate.AllowNewManagedRun(ctx)
-		if err != nil {
-			return CreateRunResult{}, fmt.Errorf("cutover service unavailable: %w", err)
-		}
-		if !decision.Allowed {
-			return CreateRunResult{}, fmt.Errorf("%w: legacy Run admission is closed; use ticket-oriented admission", ErrPlanPassAssociation)
-		}
 	}
 	runID := s.ids.RunID()
 	artifactStem := input.FeatureSlug
@@ -296,15 +277,12 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		default:
 			return fmt.Errorf("run %q cannot start execution from status %q", run.RunID, run.Status)
 		}
-		// The Run transition, first cutover crossing, and attempt creation commit together.
-		// Any crossing failure rolls the Run back to its prior persisted status and
-		// prevents an executor adapter from receiving an attempt.
+		// The Run transition and attempt creation commit together. Any failure
+		// rolls the Run back to its prior persisted status and prevents an
+		// executor adapter from receiving an attempt.
 		run, err = tx.TransitionRun(ctx, run.RunID, run.Status, workflowstore.RunStatusExecuting)
 		if err != nil {
 			return fmt.Errorf("start run execution: %w", err)
-		}
-		if err := tx.AttemptCrossCutoverBoundaryForRun(ctx, run.ID, run.ExecutionPackageRowID); err != nil {
-			return fmt.Errorf("cross cutover boundary: %w", err)
 		}
 		number, err := tx.NextExecutionAttemptNumber(ctx, run.ID)
 		if err != nil {

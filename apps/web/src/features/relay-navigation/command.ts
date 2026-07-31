@@ -5,12 +5,13 @@
 // Pure, React-free logic for the Command_Palette. This module owns:
 //   - the primary-domain navigation entries (Projects, Plans, Runs),
 //   - the recents builder (5 newest per entity group by `updatedAt` desc),
-//   - the CLOSED action-entry set (exactly New Run and New Plan), and
+//   - the CLOSED action-entry set (exactly New Run), and
 //   - `filterCommandEntries(query, entries)` (case-insensitive substring on
 //     the visible label).
 //
-// The action-entry set is frozen to exactly "new-run" and "new-plan"
-// (Requirement 4.3). This module does NOT and MUST NOT expose any
+// The action-entry set is frozen to exactly "new-run" (Requirement 4.3).
+// Legacy Plan submission is retired, so no Plan-creating action entry exists.
+// This module does NOT and MUST NOT expose any
 // lifecycle-mutating Run action entry — approve intake, prepare/compile,
 // render brief, approve brief, dispatch executor, cancel executor, validate,
 // repair validation, generate audit, approve audit, request revision, close
@@ -134,23 +135,21 @@ export function buildRecentEntries(corpora: RecentEntityCorpora): CommandEntry[]
 
 /**
  * Callbacks wired by the palette component to execute each action entry. The
- * action set is closed to exactly New Run and New Plan; there is no handler for
- * any lifecycle-mutating Run action (Requirement 4.3, 4.10).
+ * action set is closed to exactly New Run; there is no handler for any
+ * lifecycle-mutating Run action (Requirement 4.3, 4.10).
  */
 export interface CommandActionHandlers {
   onNewRun: () => void;
-  onNewPlan: () => void;
 }
 
 /**
- * Builds the CLOSED action-entry set: exactly New Run (`new-run`) and New Plan
- * (`new-plan`), in that order, and no others (Requirement 4.3). No
- * lifecycle-mutating Run action entry is or may be added here (Req 4.10).
+ * Builds the CLOSED action-entry set: exactly New Run (`new-run`) and no
+ * others (Requirement 4.3). No lifecycle-mutating Run action entry is or may
+ * be added here (Req 4.10).
  */
 export function buildActionEntries(handlers: CommandActionHandlers): CommandEntry[] {
   return [
     { kind: "action", id: "new-run", label: "New Run", run: handlers.onNewRun },
-    { kind: "action", id: "new-plan", label: "New Plan", run: handlers.onNewPlan },
   ];
 }
 
@@ -161,7 +160,7 @@ export function buildActionEntries(handlers: CommandActionHandlers): CommandEntr
 /**
  * Assembles the full command-entry registry in stable order: the three
  * primary-domain navigation entries (always present), then the per-group
- * recents (Req 4.2), then the closed New Run / New Plan action set (Req 4.3).
+ * recents (Req 4.2), then the closed New Run action set (Req 4.3).
  */
 export function buildCommandEntries(
   corpora: RecentEntityCorpora,
