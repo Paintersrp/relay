@@ -9,8 +9,8 @@ import (
 )
 
 // The published request and response contract for the packet-authorized source
-// read tools is owned here. Every other source tool keeps the legacy aggregate
-// schema copied from public_contract.json.
+// read tools is owned here. The remaining source tools are owned by the
+// registry's explicit structured schema source.
 const (
 	ToolListTree = "list_source_tree"
 	ToolSearch   = "search_source"

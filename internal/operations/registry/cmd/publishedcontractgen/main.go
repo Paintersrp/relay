@@ -18,6 +18,7 @@ const (
 	routesSource     = "published_routes.source.json"
 	familySource     = "published_family_tools.source.json"
 	metadataSource   = "published_tool_metadata.source.json"
+	schemasSource    = "published_tool_schemas.source.json"
 	bindingsSource   = "published_runtime_bindings.source.json"
 	operationsOutput = "published_operations.json"
 	publicOutput     = "published_public_contract.json"
@@ -76,13 +77,22 @@ type routeTool struct {
 }
 
 type metadataDocument struct {
-	SchemaVersion           string          `json:"schema_version"`
-	MetadataPropertyOrder   []string        `json:"metadata_property_order"`
-	AnnotationPropertyOrder []string        `json:"annotation_property_order"`
-	InheritanceRule         json.RawMessage `json:"inheritance_rule"`
-	LegacyExactCopyTools    []string        `json:"legacy_exact_copy_tools"`
-	PublishedExplicitTools  []string        `json:"published_explicit_tools"`
-	Tools                   []metadataTool  `json:"tools"`
+	SchemaVersion           string         `json:"schema_version"`
+	MetadataPropertyOrder   []string       `json:"metadata_property_order"`
+	AnnotationPropertyOrder []string       `json:"annotation_property_order"`
+	Tools                   []metadataTool `json:"tools"`
+}
+type schemaDocument struct {
+	SchemaVersion string                `json:"schema_version"`
+	Tools         map[string]schemaTool `json:"tools"`
+}
+type schemaTool struct {
+	Title        string          `json:"title"`
+	Description  string          `json:"description"`
+	Invoking     string          `json:"invoking"`
+	Invoked      string          `json:"invoked"`
+	InputSchema  json.RawMessage `json:"input_schema"`
+	OutputSchema json.RawMessage `json:"output_schema"`
 }
 type metadataTool struct {
 	Name            string      `json:"name"`
@@ -177,15 +187,18 @@ func main() {
 	familyRaw := mustRead(filepath.Join(dir, familySource))
 	metadataRaw := mustRead(filepath.Join(dir, metadataSource))
 	bindingsRaw := mustRead(filepath.Join(dir, bindingsSource))
+	schemasRaw := mustRead(filepath.Join(dir, schemasSource))
 
 	var routes routeDocument
 	var family familyDocument
 	var metadata metadataDocument
 	var bindings bindingDocument
+	var schemas schemaDocument
 	decodeStrict(routesRaw, &routes)
 	decodeStrict(familyRaw, &family)
 	decodeStrict(metadataRaw, &metadata)
 	decodeStrict(bindingsRaw, &bindings)
+	decodeStrict(schemasRaw, &schemas)
 
 	if digest(operationsRaw) != routes.OperationContractSHA256 {
 		fatalf("operation source digest differs")
@@ -199,8 +212,7 @@ func main() {
 
 	packetToolSchemas := buildPacketToolSchemas(routes.Routes)
 	familyToolSchemas := buildFamilyToolSchemas(family)
-	publishedExplicitToolSchemas := buildPublishedExplicitToolSchemas()
-	legacyToolSchemas := buildLegacyToolSchemas()
+	explicitToolSchemas := buildExplicitToolSchemas(schemas)
 	order := orderedTools(routes.Routes)
 	metadataByName := map[string]metadataTool{}
 	if err := validatePublishedToolCardinality(order, metadata.Tools, bindings); err != nil {
@@ -241,23 +253,16 @@ func main() {
 			fatalf("route metadata %q differs", name)
 		}
 		var tool generatedTool
-		if meta.MetadataSource == "published_explicit" {
+		tool, ok = explicitToolSchemas[name]
+		if !ok {
 			tool, ok = packetToolSchemas[name]
-			if !ok {
-				tool, ok = familyToolSchemas[name]
-			}
-			if !ok {
-				tool, ok = publishedExplicitToolSchemas[name]
-			}
-		} else if meta.MetadataSource == "legacy_exact_copy" {
-			if input, output, owned := sourcecontract.Schemas(name); owned {
-				tool = generatedTool{InputSchema: input, OutputSchema: output}
-				ok = true
-			} else {
-				tool, ok = legacyToolSchemas[name]
-			}
-		} else {
-			ok = false
+		}
+		if !ok {
+			tool, ok = familyToolSchemas[name]
+		}
+		if input, output, owned := sourcecontract.Schemas(name); owned {
+			tool = generatedTool{InputSchema: input, OutputSchema: output}
+			ok = true
 		}
 		if !ok {
 			fatalf("schema %q missing", name)
@@ -275,7 +280,7 @@ func main() {
 		tool.OperationID = meta.OperationID
 		tool.Annotations = meta.Annotations
 		tool.FileParams = append([]string(nil), meta.FileParams...)
-		tool.MetadataSource = meta.MetadataSource
+		tool.MetadataSource = "published_explicit"
 		tool.SchemaOwner = meta.SchemaOwner
 		tool.DispatcherOwner = meta.DispatcherOwner
 		tool.Adapter = bind.Adapter
@@ -419,18 +424,15 @@ func marshalSchema(value any) json.RawMessage {
 	return raw
 }
 
-func buildLegacyToolSchemas() map[string]generatedTool {
-	return map[string]generatedTool{
-		"list_projects": buildExplicitTool("List projects", "List projects visible to the caller.", "Listing projects", "Projects listed", []string{"limit"}, []string{"projects"}),
-		"read_source_blob": buildExplicitTool("Read source blob", "Read a source blob.", "Reading source blob", "Source blob read", []string{"packet_id", "repository_key", "path"}, []string{"blob"}),
-		"get_source_commit": buildExplicitTool("Get source commit", "Read a source commit.", "Reading source commit", "Source commit read", []string{"packet_id", "repository_key", "revision"}, []string{"commit"}),
-		"list_source_history": buildExplicitTool("List source history", "List source history.", "Listing source history", "Source history listed", []string{"packet_id", "repository_key", "path"}, []string{"history"}),
-		"compare_source": buildExplicitTool("Compare source", "Compare source revisions.", "Comparing source", "Source compared", []string{"packet_id", "repository_key", "base_revision", "target_revision"}, []string{"comparison"}),
-		"read_source_diff": buildExplicitTool("Read source diff", "Read a source diff.", "Reading source diff", "Source diff read", []string{"packet_id", "repository_key", "base_revision", "target_revision"}, []string{"diff"}),
-		"get_audit_packet": buildExplicitTool("Get audit packet", "Read an audit packet.", "Reading audit packet", "Audit packet read", []string{"packet_id"}, []string{"packet"}),
-		"get_run_artifact": buildExplicitTool("Get run artifact", "Read one Run artifact.", "Reading Run artifact", "Run artifact read", []string{"run_id", "artifact_id"}, []string{"artifact"}),
-		"record_audit_decision": buildExplicitTool("Record audit decision", "Record an audit decision.", "Recording audit decision", "Audit decision recorded", []string{"mutation_id", "run_id", "decision"}, []string{"decision"}),
+func buildExplicitToolSchemas(source schemaDocument) map[string]generatedTool {
+	result := make(map[string]generatedTool, len(source.Tools))
+	for name, tool := range source.Tools {
+		if len(tool.InputSchema) == 0 || len(tool.OutputSchema) == 0 {
+			fatalf("explicit schema %q is empty", name)
+		}
+		result[name] = generatedTool{Title: tool.Title, Description: tool.Description, Invoking: tool.Invoking, Invoked: tool.Invoked, InputSchema: tool.InputSchema, OutputSchema: tool.OutputSchema}
 	}
+	return result
 }
 
 func buildFamilyToolSchemas(source familyDocument) map[string]generatedTool {
@@ -441,24 +443,6 @@ func buildFamilyToolSchemas(source familyDocument) map[string]generatedTool {
 	return toolsByName
 }
 
-func buildPublishedExplicitToolSchemas() map[string]generatedTool {
-	return map[string]generatedTool{
-		"create_workspace":          buildExplicitTool("Create workspace", "Create one Feature Workspace for an existing Project and feature slug.", "Creating workspace", "Workspace created", []string{"project_id", "feature_slug"}, []string{"workspace"}),
-		"admit_workspace_input":     buildExplicitTool("Admit workspace input", "Admit one exact input into a Feature Workspace.", "Admitting input", "Input admitted", []string{"workspace_id", "expected_version", "sequence", "name", "role", "source_kind", "source_reference", "files"}, []string{"input", "workspace"}),
-		"add_workspace_destination": buildExplicitTool("Add workspace destination", "Add one destination or fog entry to a Feature Workspace.", "Adding destination", "Destination added", []string{"workspace_id", "expected_version", "sequence", "kind", "key", "repo_target"}, []string{"destination", "workspace"}),
-		"route_workspace":           buildExplicitTool("Route workspace", "Record the next Feature Workspace route state.", "Routing workspace", "Workspace routed", []string{"workspace_id", "expected_version", "sequence", "state", "ticket_id"}, []string{"route", "workspace"}),
-		"create_discovery_ticket":   buildExplicitTool("Create discovery ticket", "Create one Wayfinder discovery ticket and exact dependencies.", "Creating discovery ticket", "Discovery ticket created", []string{"workspace_id", "expected_version", "ticket_key", "subject", "depends_on_ticket_ids", "dependency_kind"}, []string{"ticket", "workspace"}),
-		"resolve_discovery_ticket":  buildExplicitTool("Resolve discovery ticket", "Resolve, reject, or defer one exact discovery ticket.", "Resolving discovery ticket", "Discovery ticket resolved", []string{"workspace_id", "expected_version", "ticket_id", "expected_ticket_version", "resolution_sequence", "resolution_kind", "artifact_sha256"}, []string{"resolution", "ticket", "workspace"}),
-		"attach_investigation":      buildExplicitTool("Attach investigation", "Attach exact source, artifact, or dependency investigation evidence.", "Attaching investigation", "Investigation attached", []string{"workspace_id", "expected_version", "ticket_id", "sequence", "kind", "artifact_sha256"}, []string{"investigation", "workspace"}),
-		"read_ticket_frontier":      buildExplicitTool("Read ticket frontier", "Read one current Delivery Ticket revision and readiness.", "Reading ticket frontier", "Ticket frontier ready", []string{"packet_id", "ticket_id"}, []string{"ticket", "revision", "members", "dependencies", "approvals", "readiness"}),
-		"get_audit_effects":         buildExplicitTool("Get audit effects", "Read persisted ticket effects for one recorded decision.", "Reading audit effects", "Audit effects ready", []string{"packet_id", "audit_decision_id"}, []string{"audit_decision", "ticket_revision_decisions", "ticket_satisfactions", "remediation_seeds"}),
-		"get_remediation_seed":      buildExplicitTool("Get remediation seed", "Read one exact remediation seed and findings.", "Reading remediation seed", "Remediation seed ready", []string{"packet_id", "remediation_seed_id"}, []string{"remediation_seed", "material_findings"}),
-	}
-}
-
-func buildExplicitTool(title, description, invoking, invoked string, input, output []string) generatedTool {
-	return generatedTool{Title: title, Description: description, Invoking: invoking, Invoked: invoked, InputSchema: buildMinimalSchema(title+" input", input), OutputSchema: buildMinimalSchema(title+" output", output)}
-}
 func buildMinimalSchema(title string, required []string) json.RawMessage {
 	props := map[string]any{}
 	for _, name := range required {
