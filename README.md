@@ -1,23 +1,22 @@
 # Relay
 
-Relay is a local-first workflow application for turning canonical Plans and approved Ticket Design Brief packages into tracked implementation Runs. It provides a React operator workbench, a Go API and execution service, profile-gated MCP tools, SQLite workflow state, and filesystem-backed evidence artifacts.
+Relay is a local-first workflow application for turning approved Ticket Design Brief packages into tracked implementation Runs. It provides a React operator workbench, a Go API and execution service, profile-gated MCP tools, SQLite workflow state, and filesystem-backed evidence artifacts.
 
 Relay accepts canonical JSON. It does not ingest free-form Planner handoffs or operate the retired handoff, context-packet, Plan Seed, refactor-backlog, local-audit, or generated-reference pipelines.
 
 ## Workflow
 
-### Projects, repositories, and Plans
+### Projects, repositories, and historical records
 
 1. Register each local repository with a stable `repo_target` and local path.
 2. Optionally create a Project and attach registered repositories.
-3. Submit a canonical Plan named `<feature-slug>.plan.json` to an active Project. Relay validates it, renders the Markdown Plan, and persists the Plan and ordered passes.
-4. Inspect the Plan and pass records in the web application.
+3. Inspect retained historical Plan and pass records in the web application when they are relevant to a prior Run.
 
 Current Runs are created by approving one selected Ticket Design Brief package with zero or one exact Deterministic Operations artifact. Authored Execution Spec submission and standalone or Plan/pass-associated Run creation are retired; package-linked Runs begin at `setup_ready` without authored execution artifacts.
 
 ### Execution
 
-Execution startup for package-linked Runs is deferred until deterministic preflight and execution-assignment support is implemented.
+The active workflow is: Delivery Ticket revision → revision approval → selection → complete Ticket Design Brief → optional Deterministic Operations → package preparation → package approval → package-linked Run → execution and validation → audit → optional remediation.
 
 Execution is deterministic-first:
 
@@ -31,7 +30,7 @@ The current adapters are OpenCode Go (`opencode_go`), Codex (`codex`), Antigravi
 
 ### Validation and audit
 
-The package Ticket Design Brief is the authored semantic authority. Deterministic preflight, validation extraction, and audit packet construction are deferred to the next execution task.
+The package Ticket Design Brief is the authored semantic authority. Deterministic preflight, validation extraction, and audit packet construction are active package-linked capabilities.
 
 For an audit-ready Run, Relay prepares an audit packet against a full audited commit SHA. Packet preparation resolves the selected implementation actor, verifies repository evidence, captures the audited commit diff, and persists a content-addressed packet. Packet freshness, artifact ownership, size, and SHA-256 are rechecked on readback and decision submission.
 
