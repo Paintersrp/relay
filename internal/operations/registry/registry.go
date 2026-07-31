@@ -15,8 +15,8 @@ import (
 
 const (
 	RegistryVersion         = "relay.operation-registry.v1"
-	OperationRegistryBytes  = 24007
-	OperationRegistrySHA256 = "4d7e4d7f26f57cbc2cf89129605377fccf0266b3f8836aa4d7ca481beb7cb737"
+	OperationRegistryBytes  = 952
+	OperationRegistrySHA256 = "8b42903ba06090e8dacb0e673c9cdfa480c97cb5ab1404d17de79be0c580dc0b"
 )
 
 type Role string
@@ -49,6 +49,7 @@ type OperationDefinition struct {
 	OutputKind               string                    `json:"output_kind"`
 	OutputPersistence        string                    `json:"output_persistence"`
 	RequiredInputs           []InputSlotDefinition     `json:"required_inputs"`
+	OptionalInputs           []InputSlotDefinition     `json:"optional_inputs"`
 	ConditionalRefreshInputs []InputSlotDefinition     `json:"conditional_refresh_inputs"`
 	DerivedInputs            []InputSlotDefinition     `json:"derived_inputs"`
 	WorkflowReferenceKinds   []WorkflowReferenceKind   `json:"workflow_reference_kinds"`
@@ -61,14 +62,14 @@ type OperationDefinition struct {
 }
 
 type registryDocument struct {
-	RegistryVersion            string                                    `json:"registry_version"`
-	OperationOrder             []OperationID                             `json:"operation_order"`
-	Operations                 map[OperationID]OperationDefinition       `json:"operations"`
-	WorkflowReferenceRank      []WorkflowReferenceKind                   `json:"workflow_reference_rank"`
-	AttestationRank            []AttestationKind                         `json:"attestation_rank"`
-	TransportExcludedKeys      []string                                  `json:"transport_excluded_keys"`
-	PacketOptionalEmptyArrays  []string                                  `json:"packet_optional_empty_arrays"`
-	SemanticProjectionVersions map[string]string                         `json:"semantic_projection_versions"`
+	RegistryVersion            string                              `json:"registry_version"`
+	OperationOrder             []OperationID                       `json:"operation_order"`
+	Operations                 map[OperationID]OperationDefinition `json:"operations"`
+	WorkflowReferenceRank      []WorkflowReferenceKind             `json:"workflow_reference_rank"`
+	AttestationRank            []AttestationKind                   `json:"attestation_rank"`
+	TransportExcludedKeys      []string                            `json:"transport_excluded_keys"`
+	PacketOptionalEmptyArrays  []string                            `json:"packet_optional_empty_arrays"`
+	SemanticProjectionVersions map[string]string                   `json:"semantic_projection_versions"`
 }
 
 //go:embed operations.json
@@ -94,13 +95,13 @@ func All() ([]OperationDefinition, error) {
 	if loadErr != nil {
 		return nil, loadErr
 	}
-	out := make([]OperationDefinition, 0, len(loaded.OperationOrder))
-	for _, id := range loaded.OperationOrder {
-		op := loaded.Operations[id]
-		if op.Status == "legacy" {
-			continue
-		}
-		out = append(out, cloneOperation(op))
+	published, err := ListPublishedOperations()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OperationDefinition, 0, len(published))
+	for _, operation := range published {
+		out = append(out, publishedOperationAsLegacy(operation))
 	}
 	return out, nil
 }
@@ -110,22 +111,8 @@ func Lookup(id OperationID) (OperationDefinition, bool) {
 	if loadErr != nil {
 		return OperationDefinition{}, false
 	}
-	value, ok := loaded.Operations[id]
-	if ok {
-		return cloneOperation(value), true
-	}
 	if published, ok := LookupPublishedOperation(id); ok {
 		return publishedOperationAsLegacy(published), true
-	}
-	for _, operation := range WayfinderOperations() {
-		if operation.OperationID == id {
-			return operation, true
-		}
-	}
-	for _, operation := range TicketOperations() {
-		if operation.OperationID == id {
-			return operation, true
-		}
 	}
 	return OperationDefinition{}, false
 }
@@ -135,21 +122,14 @@ func OperationsForSurface(surface SurfaceContractID) ([]OperationDefinition, err
 	if loadErr != nil {
 		return nil, loadErr
 	}
+	published, err := ListPublishedOperations()
+	if err != nil {
+		return nil, err
+	}
 	out := make([]OperationDefinition, 0)
-	for _, id := range loaded.OperationOrder {
-		op := loaded.Operations[id]
-		if op.SurfaceContract == surface {
-			out = append(out, cloneOperation(op))
-		}
-	}
-	for _, operation := range WayfinderOperations() {
+	for _, operation := range published {
 		if operation.SurfaceContract == surface {
-			out = append(out, operation)
-		}
-	}
-	for _, operation := range TicketOperations() {
-		if operation.SurfaceContract == surface {
-			out = append(out, operation)
+			out = append(out, publishedOperationAsLegacy(operation))
 		}
 	}
 	return out, nil
@@ -285,7 +265,6 @@ func validateRegistryBytes(registryRaw []byte) (registryDocument, error) {
 		"create_operation_packet",
 		"refresh_operation_packet",
 		"close_operation_packet",
-		"validate_artifact",
 		"record_audit_decision",
 	}
 	if len(document.SemanticProjectionVersions) != len(requiredProjectionTools) {
@@ -306,10 +285,18 @@ func samePublishedOperation(operation OperationDefinition, published PublishedOp
 // PublishedToolOnRoute is a thin query over the active route catalog.
 func PublishedToolOnRoute(surface SurfaceContractID, tool string) bool {
 	routes, err := ListRouteDefinitions()
-	if err != nil { return false }
+	if err != nil {
+		return false
+	}
 	for _, route := range routes {
-		if route.Surface != surface { continue }
-		for _, name := range route.Tools { if name == tool { return true } }
+		if route.Surface != surface {
+			continue
+		}
+		for _, name := range route.Tools {
+			if name == tool {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -317,11 +304,17 @@ func PublishedToolOnRoute(surface SurfaceContractID, tool string) bool {
 // RouteContractSHA256 identifies the active published route for a surface.
 func RouteContractSHA256(surface SurfaceContractID) (string, bool) {
 	routes, err := ListRouteDefinitions()
-	if err != nil { return "", false }
+	if err != nil {
+		return "", false
+	}
 	for _, route := range routes {
-		if route.Surface != surface { continue }
+		if route.Surface != surface {
+			continue
+		}
 		raw, err := json.Marshal(route)
-		if err != nil { return "", false }
+		if err != nil {
+			return "", false
+		}
 		sum := sha256.Sum256(raw)
 		return hex.EncodeToString(sum[:]), true
 	}
@@ -412,6 +405,7 @@ func validateUniqueStrings(label string, values []string) error {
 
 func cloneOperation(value OperationDefinition) OperationDefinition {
 	value.RequiredInputs = cloneSlots(value.RequiredInputs)
+	value.OptionalInputs = cloneSlots(value.OptionalInputs)
 	value.ConditionalRefreshInputs = cloneSlots(value.ConditionalRefreshInputs)
 	value.DerivedInputs = cloneSlots(value.DerivedInputs)
 	value.WorkflowReferenceKinds = append([]WorkflowReferenceKind(nil), value.WorkflowReferenceKinds...)

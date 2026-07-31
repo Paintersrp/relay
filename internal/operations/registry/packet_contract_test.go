@@ -74,7 +74,4 @@ func TestWayfinderDiscoveryRequestContractsResolveWithoutWarmup(t *testing.T) {
 		t.Fatal("unknown packet request field was accepted")
 	}
 
-	if err := ValidateOperationRequest("planner-plan.v1", "validate_artifact", artifactRequest("https://files.example/one", "file-one")); err != nil {
-		t.Fatalf("planner compatibility request changed: %v", err)
-	}
 }

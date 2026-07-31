@@ -41,7 +41,7 @@ func publishedOperationAsLegacy(value PublishedOperationDefinition) OperationDef
 	return OperationDefinition{
 		OperationID: value.OperationID, Role: value.Role, SurfaceContract: value.SurfaceContract,
 		ManifestDomain: value.ManifestDomain, OutputKind: value.OutputKind, OutputPersistence: value.OutputPersistence,
-		RequiredInputs: clonePublishedSlots(value.RequiredInputs), ConditionalRefreshInputs: clonePublishedSlots(value.ConditionalRefreshInputs), DerivedInputs: clonePublishedSlots(value.DerivedInputs),
+		RequiredInputs: clonePublishedSlots(value.RequiredInputs), OptionalInputs: clonePublishedSlots(value.OptionalInputs), ConditionalRefreshInputs: clonePublishedSlots(value.ConditionalRefreshInputs), DerivedInputs: clonePublishedSlots(value.DerivedInputs),
 		WorkflowReferenceKinds: append([]WorkflowReferenceKind(nil), value.WorkflowReferenceKinds...), ComparisonAnchorPurposes: append([]AnchorPurpose(nil), value.ComparisonAnchorPurposes...),
 		SourcePolicy: value.SourcePolicy, HistoricalAuthority: value.HistoricalAuthority, AllowedNonSourceActions: append([]AllowedAction(nil), value.AllowedNonSourceActions...), PacketSemanticProjection: value.PacketSemanticProjection,
 	}

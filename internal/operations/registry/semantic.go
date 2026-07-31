@@ -75,10 +75,6 @@ func validateOperationRequest(surface SurfaceContractID, tool string, raw []byte
 		} else {
 			request["inputs"] = request["inputs"]
 		}
-	case "validate_artifact":
-		if err := validateTopLevelClearance(request); err != nil {
-			return nil, OperationDefinition{}, false, requestError("request_semantic_invalid", "$.sensitive_data_clearance")
-		}
 	case "close_operation_packet", "record_audit_decision":
 	}
 	return request, operation, hasOperation, nil
@@ -87,8 +83,6 @@ func validateOperationRequest(surface SurfaceContractID, tool string, raw []byte
 func validateSurfaceAction(surface SurfaceContractID, tool string) error {
 	var action AllowedAction
 	switch tool {
-	case "validate_artifact":
-		action = "validate_artifact"
 	case "get_run_artifact":
 		action = "get_run_artifact"
 	case "record_audit_decision":
@@ -239,6 +233,7 @@ func normalizePacketRequest(tool string, operation OperationDefinition, request 
 	}
 
 	slots := append([]InputSlotDefinition(nil), operation.RequiredInputs...)
+	slots = append(slots, operation.OptionalInputs...)
 	conditionalPresent := false
 	for _, candidate := range operation.ConditionalRefreshInputs {
 		if objectArrayContains(inputs, "input_name", candidate.InputName) {
@@ -1091,8 +1086,8 @@ func refSchema(name string) *orderedValue {
 func surfaceContractSchema() *orderedValue {
 	return stringEnumSchema([]string{
 		"wayfinder-workspace.v1", "wayfinder-discovery.v1", "wayfinder-investigation.v1",
-		"planner-authoring.v1", "planner-plan.v1", "planner-execution.v1",
-		"auditor-review.v1", "auditor-audit.v1", "auditor-remediation.v1",
+		"planner-authoring.v1", "planner-ticket-frontier.v1",
+		"auditor-review.v1", "auditor-audit.v1",
 	})
 }
 
@@ -1249,7 +1244,7 @@ func encodeBySchema(output *bytes.Buffer, value any, schema *orderedValue, defin
 	case map[string]any:
 		properties, ok := objectValue(resolved, "properties")
 		if !ok {
-			return errors.New("object schema has no properties")
+			return encodeSorted(output, typed)
 		}
 		propertySchemas := make(map[string]*orderedValue, len(properties.object))
 		for _, member := range properties.object {

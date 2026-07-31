@@ -19,17 +19,21 @@ func TestRegistryMatchesPublicContractAndPinnedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(operations) != 13 {
-		t.Fatalf("operation count = %d, want 13", len(operations))
+	if len(operations) != 17 {
+		t.Fatalf("operation count = %d, want 17", len(operations))
 	}
-	if operations[0].OperationID != "planner.requirements" {
+	if operations[0].OperationID != "wayfinder.workspace" {
 		t.Fatalf("first operation = %q", operations[0].OperationID)
 	}
 	if operations[len(operations)-1].OperationID != "auditor.audit" {
 		t.Fatalf("last operation = %q", operations[len(operations)-1].OperationID)
 	}
 
-	operations[0].RequiredInputs[0].InputName = "mutated"
+	for index := range operations {
+		if operations[index].OperationID == "planner.requirements" {
+			operations[index].RequiredInputs[0].InputName = "mutated"
+		}
+	}
 	reloaded, ok := Lookup("planner.requirements")
 	if !ok {
 		t.Fatal("planner.requirements missing")
@@ -54,23 +58,8 @@ func TestOperationRegistryIdentityRejectsEveryPolicyClass(t *testing.T) {
 		old  string
 		new  string
 	}{
-		{"manifest_domain", `"manifest_domain":"requirements"`, `"manifest_domain":"design"`},
-		{"output_kind", `"output_kind":"requirements_markdown"`, `"output_kind":"design_markdown"`},
-		{"output_persistence", `"output_persistence":"chat_unrecorded"`, `"output_persistence":"relay_artifact"`},
-		{"required_input", `"input_name":"confirmed_intent"`, `"input_name":"approved_design"`},
-		{"conditional_input", `"input_name":"reviewed_candidate"`, `"input_name":"approved_design"`},
-		{"derived_input", `"input_name":"current_audit_packet"`, `"input_name":"approved_plan"`},
-		{"input_role", `"input_role":"authority"`, `"input_role":"candidate"`},
-		{"attestation_kind", `"attestation_kind":"confirmed_intent"`, `"attestation_kind":"approved_artifact"`},
-		{"source_kind", `"allowed_source_kinds":["inline_text"]`, `"allowed_source_kinds":["uploaded_file"]`},
-		{"workflow_record_policy", `"workflow_record_policy":"none"`, `"workflow_record_policy":"artifact"`},
-		{"workflow_reference", `"workflow_reference_kinds":["plan","pass"]`, `"workflow_reference_kinds":["plan"]`},
-		{"comparison_anchor", `"comparison_anchor_purposes":["operator_supplied_comparison","reviewed_source_basis"]`, `"comparison_anchor_purposes":["operator_supplied_comparison"]`},
-		{"source_policy", `"source_policy":"current_clean_project_optional_source"`, `"source_policy":"current_project_source_required"`},
-		{"historical_authority", `"historical_authority":"none"`, `"historical_authority":"packet_bound"`},
-		{"allowed_action", `"allowed_non_source_actions":["validate_artifact"]`, `"allowed_non_source_actions":[]`},
-		{"packet_projection", `"packet_semantic_projection":"relay.semantic.operation-packet-request.v1"`, `"packet_semantic_projection":"relay.semantic.operation-packet-request.v2"`},
-		{"tool_projection", `"create_operation_packet":"relay.semantic.create-operation-packet.v1"`, `"create_operation_packet":"relay.semantic.create-operation-packet.v2"`},
+		{"semantic_projection", `"create_operation_packet":"relay.semantic.create-operation-packet.v1"`, `"create_operation_packet":"relay.semantic.create-operation-packet.v2"`},
+		{"transport_exclusion", `"download_url"`, `"download_url_changed"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -102,14 +91,14 @@ func TestOperationRegistryStrictDecodeRejectsUnknownProperties(t *testing.T) {
 }
 
 func TestSemanticRequestBasisCanonicalizesOperationCollections(t *testing.T) {
-	first := plannerPlanRequest(false)
-	second := plannerPlanRequest(true)
+	first := plannerAuthoringRequest(false)
+	second := plannerAuthoringRequest(true)
 
-	firstBasis, err := SemanticRequestBasis("planner-plan.v1", "create_operation_packet", first)
+	firstBasis, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondBasis, err := SemanticRequestBasis("planner-plan.v1", "create_operation_packet", second)
+	secondBasis, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,14 +117,14 @@ func TestSemanticRequestBasisCanonicalizesOperationCollections(t *testing.T) {
 }
 
 func TestSemanticRequestBasisExcludesArtifactTransportIdentity(t *testing.T) {
-	first := artifactRequest("https://files.example/one", "file-one")
-	second := artifactRequest("https://files.example/two", "file-two")
+	first := packetRequestWithTransport("https://files.example/one", "file-one")
+	second := packetRequestWithTransport("https://files.example/two", "file-two")
 
-	firstBasis, err := SemanticRequestBasis("planner-plan.v1", "validate_artifact", first)
+	firstBasis, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondBasis, err := SemanticRequestBasis("planner-plan.v1", "validate_artifact", second)
+	secondBasis, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +137,7 @@ func TestSemanticRequestBasisExcludesArtifactTransportIdentity(t *testing.T) {
 }
 
 func TestValidateRequestRejectsExactSchemaViolations(t *testing.T) {
-	validArtifact := artifactRequest("https://files.example/one", "file-one")
-	validPacket := plannerPlanRequest(false)
+	validPacket := plannerAuthoringRequest(false)
 	tests := []struct {
 		name    string
 		surface SurfaceContractID
@@ -157,17 +145,13 @@ func TestValidateRequestRejectsExactSchemaViolations(t *testing.T) {
 		raw     []byte
 		code    string
 	}{
-		{"missing_required", "planner-plan.v1", "validate_artifact", mutateObject(t, validArtifact, func(value map[string]any) { delete(value, "artifact_file") }), "request_required_missing"},
-		{"surface_const", "planner-plan.v1", "validate_artifact", mutateObject(t, validArtifact, func(value map[string]any) { value["surface_contract"] = "planner-authoring.v1" }), "request_const_invalid"},
-		{"explicit_null", "planner-plan.v1", "validate_artifact", mutateObject(t, validArtifact, func(value map[string]any) { value["artifact_name"] = nil }), "request_type_invalid"},
-		{"opaque_id_min_length", "planner-plan.v1", "validate_artifact", mutateObject(t, validArtifact, func(value map[string]any) { value["expected_packet_id"] = "" }), "request_string_too_short"},
-		{"artifact_name_pattern", "planner-plan.v1", "validate_artifact", mutateObject(t, validArtifact, func(value map[string]any) { value["artifact_name"] = "bad/name" }), "request_pattern_invalid"},
-		{"media_type_pattern", "planner-plan.v1", "validate_artifact", mutateObject(t, validArtifact, func(value map[string]any) { value["media_type"] = "not-a-media-type" }), "request_pattern_invalid"},
+		{"missing_required", "planner-authoring.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) { delete(value, "project_id") }), "request_required_missing"},
+		{"surface_const", "planner-authoring.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) { value["surface_contract"] = "auditor-review.v1" }), "request_const_invalid"},
+		{"explicit_null", "planner-authoring.v1", "list_projects", []byte(`{"surface_contract":"planner-authoring.v1","limit":null}`), "request_type_invalid"},
 		{"numeric_minimum", "planner-authoring.v1", "list_projects", []byte(`{"surface_contract":"planner-authoring.v1","limit":0}`), "request_number_too_small"},
 		{"numeric_maximum", "planner-authoring.v1", "list_projects", []byte(`{"surface_contract":"planner-authoring.v1","limit":101}`), "request_number_too_large"},
-		{"operation_enum", "planner-plan.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) { value["operation_id"] = "auditor.audit" }), "request_enum_invalid"},
-		{"malformed_union", "planner-plan.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) { value["inputs"].([]any)[0].(map[string]any)["source"] = map[string]any{} }), "request_union_invalid"},
-		{"array_maximum", "planner-plan.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) {
+		{"operation_enum", "planner-authoring.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) { value["operation_id"] = "auditor.audit" }), "request_enum_invalid"},
+		{"array_maximum", "planner-authoring.v1", "create_operation_packet", mutateObject(t, validPacket, func(value map[string]any) {
 			files := make([]any, 65)
 			for index := range files {
 				files[index] = map[string]any{"download_url": "https://files.example/item", "file_id": "file", "mime_type": "application/json", "file_name": "item.json"}
@@ -186,7 +170,7 @@ func TestValidateRequestRejectsExactSchemaViolations(t *testing.T) {
 
 func TestSemanticRequestBasisRejectsDuplicateAndOperationDisallowedValues(t *testing.T) {
 	var request map[string]any
-	if err := json.Unmarshal(plannerPlanRequest(false), &request); err != nil {
+	if err := json.Unmarshal(plannerAuthoringRequest(false), &request); err != nil {
 		t.Fatal(err)
 	}
 	inputs := request["inputs"].([]any)
@@ -195,24 +179,24 @@ func TestSemanticRequestBasisRejectsDuplicateAndOperationDisallowedValues(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SemanticRequestBasis("planner-plan.v1", "create_operation_packet", raw); err == nil || err.Error() != "request_semantic_invalid:$" {
+	if _, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", raw); err == nil || err.Error() != "request_semantic_invalid:$" {
 		t.Fatalf("duplicate input error = %v", err)
 	}
 
-	disallowed := mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
+	disallowed := mutateObject(t, plannerAuthoringRequest(false), func(value map[string]any) {
 		value["workflow_references"] = []any{map[string]any{"kind": "run", "run_id": "run-1"}}
 	})
-	if _, err := SemanticRequestBasis("planner-plan.v1", "create_operation_packet", disallowed); err == nil || err.Error() != "request_semantic_invalid:$" {
+	if _, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", disallowed); err == nil || err.Error() != "request_semantic_invalid:$" {
 		t.Fatalf("operation-disallowed reference error = %v", err)
 	}
 }
 
 func TestRequestErrorsDoNotEchoUnboundedCallerValues(t *testing.T) {
 	marker := strings.Repeat("caller-secret-marker", 200)
-	raw := mutateObject(t, artifactRequest("https://files.example/one", "file-one"), func(value map[string]any) {
+	raw := mutateObject(t, plannerAuthoringRequest(false), func(value map[string]any) {
 		value[marker] = marker
 	})
-	_, err := ValidateRequest("planner-plan.v1", "validate_artifact", raw)
+	_, err := ValidateRequest("planner-authoring.v1", "create_operation_packet", raw)
 	if err == nil {
 		t.Fatal("unknown property was accepted")
 	}
@@ -222,7 +206,7 @@ func TestRequestErrorsDoNotEchoUnboundedCallerValues(t *testing.T) {
 }
 
 func TestConcurrentRegistrySchemaAndSemanticReadsAreDeterministic(t *testing.T) {
-	expectedBasis, err := SemanticRequestBasis("planner-plan.v1", "create_operation_packet", plannerPlanRequest(false))
+	expectedBasis, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", plannerAuthoringRequest(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,13 +224,17 @@ func TestConcurrentRegistrySchemaAndSemanticReadsAreDeterministic(t *testing.T) 
 					errorsOut <- err
 					return
 				}
-				operations[0].RequiredInputs[0].InputName = "caller-mutation"
+				for index := range operations {
+					if operations[index].OperationID == "planner.requirements" {
+						operations[index].RequiredInputs[0].InputName = "caller-mutation"
+					}
+				}
 				operation, ok := Lookup("planner.requirements")
 				if !ok || operation.RequiredInputs[0].InputName != "confirmed_intent" {
 					errorsOut <- &RequestError{Code: "registry_copy_mutated"}
 					return
 				}
-				basis, err := SemanticRequestBasis("planner-plan.v1", "create_operation_packet", plannerPlanRequest(iteration%2 == 1))
+				basis, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", plannerAuthoringRequest(iteration%2 == 1))
 				if err != nil {
 					errorsOut <- err
 					return
@@ -272,19 +260,19 @@ func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T
 	}{
 		{
 			name: "operation_disallowed_reference",
-			raw: mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
+			raw: mutateObject(t, plannerAuthoringRequest(false), func(value map[string]any) {
 				value["workflow_references"] = []any{map[string]any{"kind": "run", "run_id": "run-1"}}
 			}),
 		},
 		{
 			name: "source_kind_branch_mismatch",
-			raw: mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
-				value["inputs"].([]any)[0].(map[string]any)["source"] = map[string]any{"text": "requirements"}
+			raw: mutateObject(t, plannerAuthoringRequest(false), func(value map[string]any) {
+				value["inputs"].([]any)[1].(map[string]any)["source"] = map[string]any{"text": "requirements"}
 			}),
 		},
 		{
 			name: "workflow_record_digest_mismatch",
-			raw: mutateObject(t, plannerPlanRequest(false), func(value map[string]any) {
+			raw: mutateObject(t, plannerAuthoringRequest(false), func(value map[string]any) {
 				input := value["inputs"].([]any)[0].(map[string]any)
 				input["source_kind"] = "workflow_record"
 				input["source"] = map[string]any{
@@ -300,13 +288,10 @@ func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := ValidateOperationRequest("planner-plan.v1", "create_operation_packet", test.raw); err == nil || err.Error() != "request_semantic_invalid:$" {
+			if err := ValidateOperationRequest("planner-authoring.v1", "create_operation_packet", test.raw); err == nil || err.Error() != "request_semantic_invalid:$" {
 				t.Fatalf("operation validation error = %v", err)
 			}
 		})
-	}
-	if err := validateSurfaceAction("planner-authoring.v1", "validate_artifact"); err == nil {
-		t.Fatal("planner-authoring accepted validate_artifact")
 	}
 }
 
@@ -326,47 +311,34 @@ func mutateObject(t *testing.T, raw []byte, mutate func(map[string]any)) []byte 
 	return encoded
 }
 
-func plannerPlanRequest(reverse bool) []byte {
+func plannerAuthoringRequest(reverse bool) []byte {
 	shaA := strings.Repeat("a", 64)
 	shaB := strings.Repeat("b", 64)
-	shaC := strings.Repeat("c", 64)
 	inputs := []any{
-		input("approved_requirements", "relay_artifact", "requirements.md", "text/markdown", shaA, map[string]any{"artifact_id": "artifact-requirements"}),
-		input("approved_design", "relay_artifact", "design.md", "text/markdown", shaB, map[string]any{"artifact_id": "artifact-design"}),
-		input("plan_mode_selection", "inline_text", "mode.txt", "text/plain", shaC, map[string]any{"text": "plan"}),
+		input("confirmed_intent", "inline_text", "intent.txt", "text/plain", shaA, map[string]any{"text": "implement current behavior"}),
+		input("wayfinder_transfer", "uploaded_file", "handoff.md", "text/markdown", shaB, map[string]any{"file_index": 0}),
 	}
 	attestations := []any{
-		map[string]any{"kind": "approved_artifact", "input_name": "approved_requirements", "subject_sha256": shaA, "approved": true},
-		clearance("approved_requirements", shaA),
-		map[string]any{"kind": "approved_artifact", "input_name": "approved_design", "subject_sha256": shaB, "approved": true},
-		clearance("approved_design", shaB),
-		map[string]any{"kind": "execution_mode_selection", "input_name": "plan_mode_selection", "selected_mode": "plan"},
-		clearance("plan_mode_selection", shaC),
-	}
-	revisions := []any{
-		map[string]any{"repository_key": "zeta", "commit_oid": strings.Repeat("d", 40)},
-		map[string]any{"repository_key": "alpha", "commit_oid": strings.Repeat("e", 40)},
-	}
-	anchors := []any{
-		map[string]any{"repository_key": "zeta", "anchor_name": "later", "purpose": "reviewed_source_basis", "commit_oid": strings.Repeat("f", 40), "expected_tree_oid": strings.Repeat("1", 40)},
-		map[string]any{"repository_key": "alpha", "anchor_name": "base", "purpose": "operator_supplied_comparison", "commit_oid": strings.Repeat("2", 40), "expected_tree_oid": strings.Repeat("3", 40)},
+		map[string]any{"kind": "confirmed_intent", "input_name": "confirmed_intent", "subject_sha256": shaA},
+		clearance("confirmed_intent", shaA),
+		map[string]any{"kind": "exact_evidence", "input_name": "wayfinder_transfer", "subject_sha256": shaB},
+		clearance("wayfinder_transfer", shaB),
 	}
 	if reverse {
 		reverseAny(inputs)
 		reverseAny(attestations)
-		reverseAny(revisions)
-		reverseAny(anchors)
 	}
 	request := map[string]any{
-		"surface_contract":    "planner-plan.v1",
+		"surface_contract":    "planner-authoring.v1",
 		"mutation_id":         "mutation-1",
-		"operation_id":        "planner.plan",
+		"operation_id":        "planner.requirements",
 		"project_id":          "project-1",
+		"input_files":         []any{map[string]any{"download_url": "https://files.example/one", "file_id": "file-one", "mime_type": "text/markdown", "file_name": "handoff.md"}},
 		"inputs":              inputs,
 		"workflow_references": []any{},
 		"attestations":        attestations,
-		"primary_revisions":   revisions,
-		"comparison_anchors":  anchors,
+		"primary_revisions":   []any{},
+		"comparison_anchors":  []any{},
 	}
 	raw, err := json.Marshal(request)
 	if err != nil {
@@ -375,32 +347,26 @@ func plannerPlanRequest(reverse bool) []byte {
 	return raw
 }
 
-func artifactRequest(downloadURL, fileID string) []byte {
-	sha := strings.Repeat("a", 64)
-	request := map[string]any{
-		"surface_contract":   "planner-plan.v1",
-		"expected_packet_id": "packet-1",
-		"artifact_file": map[string]any{
-			"download_url": downloadURL,
-			"file_id":      fileID,
-			"mime_type":    "application/json",
-			"file_name":    "plan.json",
-		},
-		"artifact_name":   "plan.json",
-		"media_type":      "application/json",
-		"expected_sha256": sha,
-		"sensitive_data_clearance": map[string]any{
-			"policy_version": "relay.canonical-artifact-sensitive-data.v1",
-			"subject_sha256": sha,
-			"declaration":    clearanceDeclaration(),
-			"confirmed":      true,
-		},
+func packetRequestWithTransport(downloadURL, fileID string) []byte {
+	return mutateObjectForRequest(plannerAuthoringRequest(false), func(value map[string]any) {
+		file := value["input_files"].([]any)[0].(map[string]any)
+		file["download_url"] = downloadURL
+		file["file_id"] = fileID
+		file["file_name"] = "temporary-handoff-name.md"
+	})
+}
+
+func mutateObjectForRequest(raw []byte, mutate func(map[string]any)) []byte {
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		panic(err)
 	}
-	raw, err := json.Marshal(request)
+	mutate(value)
+	encoded, err := json.Marshal(value)
 	if err != nil {
 		panic(err)
 	}
-	return raw
+	return encoded
 }
 
 func input(name, sourceKind, displayName, mediaType, sha string, source map[string]any) map[string]any {

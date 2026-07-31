@@ -105,7 +105,7 @@ func TestMutationAuthority(t *testing.T) {
 		tool    string
 	}{
 		{surface: "unknown.v1", tool: "close_operation_packet"},
-		{surface: "planner-plan.v1", tool: "validate_artifact"},
+		{surface: "planner-authoring.v1", tool: "record_audit_decision"},
 	} {
 		if IsStateChangingToolForSurface(invalid.surface, invalid.tool) {
 			t.Fatalf("unexpected surface tool %s.%s", invalid.surface, invalid.tool)
