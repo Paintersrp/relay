@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	workflowruns "relay/internal/app/runs/workflow"
 	"relay/internal/pipeline"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
@@ -51,113 +50,60 @@ func (a *captureAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
 }
 
 type workflowFixture struct {
-	store   *workflowstore.Store
-	runs    *workflowruns.Service
-	service *Execution
-	run     workflowstore.Run
-	brief   []byte
-	adapter *captureAdapter
+	store    *workflowstore.Store
+	service  *Execution
+	run      workflowstore.Run
+	adapter  *captureAdapter
+	repoPath string
 }
 
 func newWorkflowFixture(t *testing.T) *workflowFixture {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	repoPath := filepath.Join(root, "repo")
-	if err := os.MkdirAll(repoPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repoPath, "source.txt"), []byte("source\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := workflowrepos.NewRegistry(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := registry.Register(context.Background(), "relay", repoPath); err != nil {
-		t.Fatal(err)
-	}
-	runs, err := workflowruns.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	brief := []byte("# Executor Brief\n\nUse the exact approved task.\n")
-	created, err := runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
-		FeatureSlug: "workflow-execution-test",
-		RepoTarget:  "relay",
-		Branch:      "feat/simplification",
-		BaseCommit:  strings.Repeat("a", 40),
-		CanonicalJSON: []byte(`{
-  "schema_version": "2.0",
-  "feature_slug": "workflow-execution-test",
-  "repo_target": "relay",
-  "branch": "feat/simplification",
-  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "goal": "Exercise ordinary full model execution.",
-  "context": "The canonical declaration is valid but outside the bounded deterministic rename surface.",
-  "scope": {
-    "in_scope": ["Execute one model-owned rename replacement."],
-    "out_of_scope": ["No unrelated behavior."]
-  },
-  "steps": [
-    {
-      "number": 1,
-      "goal": "Replace a file through model-owned rename content.",
-      "substeps": [
-        {
-          "number": 1,
-          "instruction": "Rename the source and replace its content.",
-          "files": [
-            {
-              "path": "source.txt",
-              "destination_path": "target.txt",
-              "operation": "rename",
-              "purpose": "Keep the fixture on the full model path.",
-              "implementation": {
-                "content": "target\n"
-              }
-            }
-          ],
-          "completion_criteria": ["The model-owned rename is complete."]
-        }
-      ],
-      "completion_criteria": ["The declaration is complete."]
-    }
-  ],
-  "validation": {
-    "commands": [
-      {
-        "command": "go test ./internal/executor",
-        "expected": "The focused executor tests pass."
-      }
-    ]
-  },
-  "completion_criteria": ["The ordinary full model attempt completes."]
-}
-`),
-		RenderedMarkdown: brief,
-	})
-	if err != nil {
+	packageFixture := newExecutionAssignmentFixture(t, false, "")
+	if err := os.WriteFile(filepath.Join(packageFixture.repoPath, "source.txt"), []byte("source\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	adapter := &captureAdapter{id: AdapterOpenCodeGo}
-	service, err := NewExecution(store, nil, "relay-test", newUnavailableSourceVaultReader())
+	service, err := NewExecution(packageFixture.store, nil, "relay-test", packageFixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		return workflowrepos.ExecutionPreflightResult{OK: true}
 	}
-	service.adapterFactory = func(string) (ExecutorAdapter, error) { return adapter, nil }
+	service.adapterFactory = func(value string) (ExecutorAdapter, error) {
+		adapter.id = AdapterID(value)
+		return adapter, nil
+	}
 	service.invocationPreflight = func(ExecutorInvocation) ExecutorPreflightResult {
 		return ExecutorPreflightResult{OK: true}
 	}
 	service.launch = func(fn func()) { fn() }
-	return &workflowFixture{store: store, runs: runs, service: service, run: created.Run, brief: brief, adapter: adapter}
+	return &workflowFixture{store: packageFixture.store, service: service, run: packageFixture.run, adapter: adapter, repoPath: packageFixture.repoPath}
+}
+
+// newLegacyWorkflowFixture seeds an unlinked historical Run for retirement checks only.
+func newLegacyWorkflowFixture(t *testing.T) *workflowFixture {
+	t.Helper()
+	fixture := newWorkflowFixture(t)
+	if err := fixture.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+		legacy, err := tx.CreateRun(context.Background(), workflowstore.CreateRunParams{
+			RunID:       "run-legacy-execution",
+			FeatureSlug: "legacy-execution-test",
+			RepoTarget:  "relay",
+			Status:      workflowstore.RunStatusCreated,
+			Branch:      "main",
+			BaseCommit:  strings.Repeat("a", 40),
+		})
+		if err == nil {
+			legacy, err = tx.TransitionRun(context.Background(), legacy.RunID, workflowstore.RunStatusCreated, workflowstore.RunStatusSetupReady)
+			fixture.run = legacy
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return fixture
 }
 
 func successfulRunner(_ context.Context, _ string, _ string, _ []string, stdin string, _ time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, _ pipeline.ProcessController) pipeline.AgentCommandRunResult {
@@ -178,45 +124,6 @@ func successfulRunner(_ context.Context, _ string, _ string, _ []string, stdin s
 		ProcessIdentity:     identity,
 		IdentityAvailable:   true,
 		TerminationVerified: true,
-	}
-}
-
-func TestWorkflowOperationalRetryStaysOnSameRun(t *testing.T) {
-	fixture := newWorkflowFixture(t)
-	fail := true
-	fixture.service.runner = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, controller pipeline.ProcessController) pipeline.AgentCommandRunResult {
-		if fail {
-			if callbacks.OnProcessStarted != nil {
-				_ = callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 102, StartedAt: "1", Platform: "linux"})
-			}
-			if callbacks.OnStdout != nil {
-				callbacks.OnStdout([]byte("STATUS: BLOCKED\n"))
-			}
-			return pipeline.AgentCommandRunResult{ExitCode: 1, Stdout: "STATUS: BLOCKED\n", StartedAt: time.Now(), FinishedAt: time.Now(), TerminationVerified: true}
-		}
-		return successfulRunner(ctx, workDir, binary, args, stdin, timeout, callbacks, controller)
-	}
-	first, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: fixture.run.RunID, Adapter: "codex", Model: "first-model"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fail = false
-	second, err := fixture.service.Start(context.Background(), WorkflowStartInput{RunID: fixture.run.RunID, Adapter: "kiro_cli", Model: "second-model"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), fixture.run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(attempts) != 2 || attempts[0].AttemptID != first.Attempt.AttemptID || attempts[1].AttemptID != second.Attempt.AttemptID {
-		t.Fatalf("attempt history = %+v", attempts)
-	}
-	if attempts[0].Status != workflowstore.AttemptStatusFailed || attempts[1].Status != workflowstore.AttemptStatusSucceeded {
-		t.Fatalf("attempt statuses = %q, %q", attempts[0].Status, attempts[1].Status)
-	}
-	if attempts[0].Adapter != "codex" || attempts[1].Adapter != "kiro_cli" {
-		t.Fatalf("attempt adapters were not preserved: %+v", attempts)
 	}
 }
 

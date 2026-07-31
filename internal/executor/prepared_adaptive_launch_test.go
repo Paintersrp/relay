@@ -125,7 +125,7 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 			adapter.mu.Lock()
 			request := adapter.requests[0]
 			adapter.mu.Unlock()
-			if request.BriefContent != string(effective.Bytes) || request.SelectedModel != "prepared-model" || request.BriefPath != filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(effective.Artifact.RelativePath)) || request.RepoPath != "C:/relay" || !strings.HasSuffix(request.ResultPath, filepath.Join(fixture.run.RunID, prepared.Attempt.AttemptID, "executor-result.tmp")) {
+			if request.BriefContent != string(effective.Bytes) || request.SelectedModel != "prepared-model" || request.BriefPath != filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(effective.Artifact.RelativePath)) || request.RepoPath != fixture.repoPath || !strings.HasSuffix(request.ResultPath, filepath.Join(fixture.run.RunID, prepared.Attempt.AttemptID, "executor-result.tmp")) {
 				t.Fatalf("adapter request=%#v", request)
 			}
 			artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), attempt.ID)

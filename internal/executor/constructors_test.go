@@ -6,8 +6,12 @@ import (
 	"log/slog"
 	"reflect"
 	"testing"
+	"time"
 
 	executionpackages "relay/internal/app/packages"
+	"relay/internal/applier"
+	"relay/internal/pipeline"
+	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -164,8 +168,7 @@ func TestPackagePreparationFailsClosedWithMissingRetainedTicket(t *testing.T) {
 }
 
 func TestExecutionLegacyNonPackageStartAvoidsPackagePath(t *testing.T) {
-	fixture := newWorkflowFixture(t)
-	fixture.service.runner = successfulRunner
+	fixture := newLegacyWorkflowFixture(t)
 	packagePathTaken := false
 	withPackageWorkflowStartSeams(t,
 		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
@@ -177,13 +180,30 @@ func TestExecutionLegacyNonPackageStartAvoidsPackagePath(t *testing.T) {
 			return PackageWorkflowDispatchResult{}, errors.New("package path should not be taken")
 		},
 	)
+	fixture.service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
+		t.Fatal("legacy Run entered repository preflight")
+		return workflowrepos.ExecutionPreflightResult{}
+	}
+	fixture.service.applier = func(context.Context, applier.Input) (applier.Result, error) {
+		t.Fatal("legacy Run invoked deterministic applier")
+		return applier.Result{}, nil
+	}
+	fixture.service.adapterFactory = func(string) (ExecutorAdapter, error) {
+		t.Fatal("legacy Run built an executor adapter")
+		return nil, nil
+	}
+	fixture.service.launch = func(func()) { t.Fatal("legacy Run launched an executor process") }
+	fixture.service.runner = func(context.Context, string, string, []string, string, time.Duration, pipeline.AgentCommandStreamCallbacks, pipeline.ProcessController) pipeline.AgentCommandRunResult {
+		t.Fatal("legacy Run launched a model process")
+		return pipeline.AgentCommandRunResult{}
+	}
 	_, err := fixture.service.Start(context.Background(), WorkflowStartInput{
 		RunID:   fixture.run.RunID,
 		Adapter: "opencode_go",
 		Model:   "test-model",
 	})
-	if err == nil {
-		t.Fatal("expected legacy path to encounter the deterministic applier stub")
+	if !errors.Is(err, ErrLegacyExecutionRetired) {
+		t.Fatalf("error = %v, want ErrLegacyExecutionRetired", err)
 	}
 	if packagePathTaken {
 		t.Fatal("non-package run took the package path")

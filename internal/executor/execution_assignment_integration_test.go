@@ -31,6 +31,7 @@ type executionAssignmentFixture struct {
 	operations         executionpackages.ArtifactInput
 	assignmentFilename string
 	sourceVaultReader  *stubSourceVaultReader
+	repoPath           string
 }
 
 func TestPrepareExecutionAssignmentPersistsBriefOnlyArtifact(t *testing.T) {
@@ -346,6 +347,10 @@ func newExecutionAssignmentFixture(t *testing.T, withOperations bool, coverage s
 func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bool, coverage string, authoredOperations []byte) *executionAssignmentFixture {
 	t.Helper()
 	root := t.TempDir()
+	repoPath := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
 	if err != nil {
 		t.Fatal(err)
@@ -385,7 +390,7 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 	if err := db.QueryRowContext(ctx, `INSERT INTO projects (project_id, name) VALUES ('project-package', 'Package') RETURNING id`).Scan(&projectID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('relay', 'C:/relay', 'refs/heads/main', 1)`); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('relay', ?, 'refs/heads/main', 1)`, repoPath); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, `INSERT INTO source_vaults (vault_id, repo_target, relative_path) VALUES ('vault-package', 'relay', 'vaults/package') RETURNING id`).Scan(&vaultID); err != nil {
@@ -440,6 +445,7 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 		operations:         executionpackages.ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: sha256Hex(operationsBytes)},
 		assignmentFilename: "checkout.ticket-P2-T2.r1.execution-assignment.json",
 		sourceVaultReader:  reader,
+		repoPath:           repoPath,
 	}
 	input := executionpackages.PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: fixture.brief}
 	if withOperations {
@@ -453,6 +459,9 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 	approved, err := packageService.Approve(ctx, executionpackages.ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve package"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !approved.Run.ExecutionPackageRowID.Valid || !approved.Run.PackageApprovalRowID.Valid || approved.Run.Status != workflowstore.RunStatusSetupReady {
+		t.Fatalf("approved Run = %#v", approved.Run)
 	}
 	fixture.run = approved.Run
 	fixture.packageID = prepared.Package.PackageID

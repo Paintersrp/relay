@@ -274,7 +274,7 @@ func TestWorkflowStartPackageUnavailableFailsClosed(t *testing.T) {
 }
 
 func TestWorkflowStartLegacyRunRetiredBeforeExecutionSideEffects(t *testing.T) {
-	fixture := newWorkflowFixture(t)
+	fixture := newLegacyWorkflowFixture(t)
 	if _, err := fixture.store.DB().ExecContext(context.Background(), "PRAGMA foreign_keys = OFF"); err != nil {
 		t.Fatal(err)
 	}
