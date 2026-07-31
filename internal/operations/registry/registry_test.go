@@ -68,7 +68,7 @@ func TestOperationRegistryIdentityRejectsEveryPolicyClass(t *testing.T) {
 		{"comparison_anchor", `"comparison_anchor_purposes":["operator_supplied_comparison","reviewed_source_basis"]`, `"comparison_anchor_purposes":["operator_supplied_comparison"]`},
 		{"source_policy", `"source_policy":"current_clean_project_optional_source"`, `"source_policy":"current_project_source_required"`},
 		{"historical_authority", `"historical_authority":"none"`, `"historical_authority":"packet_bound"`},
-		{"allowed_action", `"allowed_non_source_actions":["validate_artifact","submit_plan"]`, `"allowed_non_source_actions":["validate_artifact"]`},
+		{"allowed_action", `"allowed_non_source_actions":["validate_artifact"]`, `"allowed_non_source_actions":[]`},
 		{"packet_projection", `"packet_semantic_projection":"relay.semantic.operation-packet-request.v1"`, `"packet_semantic_projection":"relay.semantic.operation-packet-request.v2"`},
 		{"tool_projection", `"create_operation_packet":"relay.semantic.create-operation-packet.v1"`, `"create_operation_packet":"relay.semantic.create-operation-packet.v2"`},
 	}

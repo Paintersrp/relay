@@ -128,9 +128,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.RealIP)
 
-	if err := mcp.ValidateCompiledSurfaceCatalog(); err != nil {
-		return nil, nil, fmt.Errorf("validate MCP surface catalog: %w", err)
-	}
 	mcpRoutes, err := mcpRouteDescriptors(mcpHandlers)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct MCP route descriptors: %w", err)

@@ -10,12 +10,12 @@ import (
 
 func TestCorrectedPublicContractIdentityAndRefreshSchemas(t *testing.T) {
 	publicRaw := RawPublicContract()
-	if len(publicRaw) != 301441 {
-		t.Fatalf("public contract bytes = %d, want 301441", len(publicRaw))
+	if len(publicRaw) != PublicContractBytes {
+		t.Fatalf("public contract bytes = %d, want %d", len(publicRaw), PublicContractBytes)
 	}
 	publicSum := sha256.Sum256(publicRaw)
-	if got := hex.EncodeToString(publicSum[:]); got != "662b4055b5ae188c52bd8d5114af84cfda9aa0d7e5621586217b3dc38a8c42a4" {
-		t.Fatalf("public contract sha256 = %s", got)
+	if got := hex.EncodeToString(publicSum[:]); got != PublicContractSHA256 {
+		t.Fatalf("public contract sha256 = %s, want %s", got, PublicContractSHA256)
 	}
 	if len(publicRaw) == 0 || publicRaw[len(publicRaw)-1] == '\n' {
 		t.Fatal("public contract must be compact JSON without a final line feed")
@@ -25,12 +25,12 @@ func TestCorrectedPublicContractIdentityAndRefreshSchemas(t *testing.T) {
 	}
 
 	registryRaw := RawRegistryDocument()
-	if len(registryRaw) != 24150 {
-		t.Fatalf("operation registry bytes = %d, want 24150", len(registryRaw))
+	if len(registryRaw) != OperationRegistryBytes {
+		t.Fatalf("operation registry bytes = %d, want %d", len(registryRaw), OperationRegistryBytes)
 	}
 	registrySum := sha256.Sum256(registryRaw)
-	if got := hex.EncodeToString(registrySum[:]); got != "6cb73de11e0f8f7f7903b7de0105f9dd139e324f25d71d98059512ff42b4622a" {
-		t.Fatalf("operation registry sha256 = %s", got)
+	if got := hex.EncodeToString(registrySum[:]); got != OperationRegistrySHA256 {
+		t.Fatalf("operation registry sha256 = %s, want %s", got, OperationRegistrySHA256)
 	}
 
 	expectedManifests := map[SurfaceContractID]string{
