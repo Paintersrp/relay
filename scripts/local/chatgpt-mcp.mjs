@@ -32,7 +32,6 @@ const ENV_PATH = join(REPO_ROOT, ".env");
 const ENV_LOCAL_PATH = join(REPO_ROOT, ".env.local");
 const ENV_FILE_PATHS = [ENV_PATH, ENV_LOCAL_PATH];
 const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
-const DEFAULT_PROFILE = "relay-mcp";
 const DEFAULT_RELAY_BASE_URL = "http://127.0.0.1:8080";
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -196,8 +195,6 @@ function getConfig() {
     envPath: ENV_PATH,
     envLocalPath: ENV_LOCAL_PATH,
     envExamplePath: ENV_EXAMPLE_PATH,
-    tunnelProfile: process.env.TUNNEL_PROFILE || DEFAULT_PROFILE,
-    tunnelId: process.env.TUNNEL_ID || "",
     relayBaseUrl,
     relayCommand: process.env.RELAY_MCP_RELAY_COMMAND || DEFAULT_RELAY_COMMAND,
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || "",
@@ -1301,10 +1298,6 @@ function runTunnelClient(command, args, controlPlaneApiKey) {
     if (result.signal) throw new ValidationError(`tunnel-client exited due to signal ${result.signal}.`);
     return result.code;
   });
-}
-
-function requireConfiguredTunnelId(config) {
-  if (!isConfiguredTunnelId(config.tunnelId)) throw new ValidationError("TUNNEL_ID is required for init. Set it in .env, .env.local, or the process environment.");
 }
 
 function requireConfiguredApiKey(config, commandName) {

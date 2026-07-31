@@ -83,7 +83,7 @@ func runWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T, upgraded b
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := NewServerForRoute(nil, nil, manifest, handlers)
+	server, err := NewServerForRoute(nil, manifest, handlers)
 	if err != nil {
 		t.Fatal(err)
 	}

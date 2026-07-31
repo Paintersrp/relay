@@ -15,7 +15,7 @@ type ToolHandler struct {
 	Handle SurfaceHandler
 }
 
-func NewServerForRoute(log *slog.Logger, deps *MCPDeps, manifest routecontracts.RouteManifest, handlers []ToolHandler) (*Server, error) {
+func NewServerForRoute(log *slog.Logger, manifest routecontracts.RouteManifest, handlers []ToolHandler) (*Server, error) {
 	if len(manifest.Tools) == 0 || len(handlers) != len(manifest.Tools) {
 		return nil, fmt.Errorf("MCP_DISPATCHER_MISSING: %s", manifest.RoutePath)
 	}
@@ -35,12 +35,12 @@ func NewServerForRoute(log *slog.Logger, deps *MCPDeps, manifest routecontracts.
 		}
 		definitions[i] = routeToolDefinition(tool.Name, tool.Description, tool, manifest, "", "")
 	}
-	return &Server{log: log, deps: deps, tools: definitions, surfaceHandlers: dispatch}, nil
+	return &Server{log: log, tools: definitions, surfaceHandlers: dispatch}, nil
 }
 
 // NewServerForAppSurface exposes one role-level catalog while every dispatch
 // remains bound to one immutable internal route registration.
-func NewServerForAppSurface(log *slog.Logger, deps *MCPDeps, surface routecontracts.AppSurfaceManifest, registrations []AppToolRegistration) (*Server, error) {
+func NewServerForAppSurface(log *slog.Logger, surface routecontracts.AppSurfaceManifest, registrations []AppToolRegistration) (*Server, error) {
 	if len(surface.MemberRoutes) == 0 || len(surface.Tools) == 0 || len(registrations) != len(surface.Tools) || surface.ManifestSHA256 == "" {
 		return nil, fmt.Errorf("MCP_APP_SURFACE_SERVER_INVALID: %s", surface.Surface)
 	}
@@ -75,7 +75,7 @@ func NewServerForAppSurface(log *slog.Logger, deps *MCPDeps, surface routecontra
 			string(registration.PublicSurface), registration.InternalToolName,
 		))
 	}
-	return &Server{log: log, deps: deps, tools: definitions, surfaceHandlers: dispatch}, nil
+	return &Server{log: log, tools: definitions, surfaceHandlers: dispatch}, nil
 }
 
 func routeToolDefinition(name, description string, tool routecontracts.ToolManifest, manifest routecontracts.RouteManifest, publicSurface, internalToolName string) ToolDefinition {

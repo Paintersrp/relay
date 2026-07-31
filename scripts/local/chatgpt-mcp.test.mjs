@@ -131,6 +131,12 @@ test("aggregate config requires three distinct tunnel_ plus 32 lowercase hexadec
   assert.equal(validateAggregateConfig(duplicate).filter((error) => /duplicate tunnel ID/u.test(error)).length, 2);
 });
 
+test("aggregate config has no retired single-profile tunnel settings", () => {
+  const config = getConfig();
+  assert.equal(Object.hasOwn(config, "tunnelProfile"), false);
+  assert.equal(Object.hasOwn(config, "tunnelId"), false);
+});
+
 test("aggregate role endpoints keep protected Relay URLs separate from exact private ingress targets", () => {
   const names = ["RELAY_MCP_BASE_URL", "RELAY_MCP_INGRESS_WAYFINDER_ADDR", "RELAY_MCP_INGRESS_PLANNER_ADDR", "RELAY_MCP_INGRESS_AUDITOR_ADDR"];
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));

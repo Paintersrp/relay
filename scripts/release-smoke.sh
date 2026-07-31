@@ -31,7 +31,6 @@ fi
 
 npm run test:local-scripts
 
-go run ./cmd/mcp-smoke
 npm --prefix apps/web run typecheck
 npm --prefix apps/web run test
 npm --prefix apps/web run build

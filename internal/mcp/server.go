@@ -17,7 +17,6 @@ const toolsListPageSize = 16
 // Server is an MCP JSON-RPC application bound to one compiled role surface.
 type Server struct {
 	log             *slog.Logger
-	deps            *MCPDeps
 	tools           []ToolDefinition
 	surfaceHandlers map[string]surfaceDispatch
 }

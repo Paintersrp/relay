@@ -20,7 +20,7 @@ func TestRouteServerUsesOnlyExactRouteHandlers(t *testing.T) {
 		name := tool.Name
 		handlers[i] = ToolHandler{Name: name, Handle: func(json.RawMessage) ToolCallResult { return workflowOK(map[string]any{"tool": name}) }}
 	}
-	server, err := NewServerForRoute(nil, nil, manifest, handlers)
+	server, err := NewServerForRoute(nil, manifest, handlers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		server, err := NewServerForAppSurface(nil, nil, surface, registrations)
+		server, err := NewServerForAppSurface(nil, surface, registrations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T
 		if surface.Surface == routecontracts.AppSurfaceWayfinder {
 			invalid := append([]AppToolRegistration(nil), registrations...)
 			invalid[0].StandingAuthority.Path += ".unexpected"
-			if _, err := NewServerForAppSurface(nil, nil, surface, invalid); err == nil {
+			if _, err := NewServerForAppSurface(nil, surface, invalid); err == nil {
 				t.Fatal("server accepted a standing-authority mismatch")
 			}
 		}

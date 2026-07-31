@@ -61,7 +61,7 @@ func BuildHandlers(store *workflowstore.Store, policy mcpcomposition.Services, l
 		if err != nil {
 			return nil, err
 		}
-		application, err := mcp.NewServerForAppSurface(log, mcp.NewWorkflowDepsFromEnv(store, log, policy.Vaults), surface, registrations)
+		application, err := mcp.NewServerForAppSurface(log, surface, registrations)
 		if err != nil {
 			return nil, err
 		}
