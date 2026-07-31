@@ -67,7 +67,7 @@ func TestSourceToolPublishedContractAndStrictDecoderAgree(t *testing.T) {
 	for _, expectation := range sourceContractExpectations() {
 		t.Run(expectation.tool, func(t *testing.T) {
 			tool := sourceToolManifest(t, manifest, expectation.tool)
-			if !registry.OwnedSourceToolContract(tool.Name) || tool.SchemaOwner != "internal/operations/registry/source_tool_contract.go" {
+			if !registry.OwnedSourceToolContract(tool.Name) || tool.SchemaOwner != "contracts/source" {
 				t.Fatalf("%s schema ownership = %q", tool.Name, tool.SchemaOwner)
 			}
 			schema := sourceSchemaObject(t, tool.InputSchema)
