@@ -15,8 +15,8 @@ This delegates to `scripts/release-smoke.sh`, which performs:
 1. `sqlc` generation;
 2. focused workflow, API, server, executor, and MCP tests;
 3. root local-script guardrails;
-4. real stdio MCP self-tests for `planner`, `auditor`, and `local_operator` against isolated temporary workflow stores;
-5. canonical `local_operator` MCP smoke;
+4. role-app MCP route and generated-catalog tests against isolated workflow stores;
+5. role-app connector smoke;
 6. web typechecking, tests, and production build;
 7. the complete Go test graph;
 8. Go vet;
@@ -41,14 +41,12 @@ These cover canonical profiles, strict schemas, registration and dispatch, trans
 make mcp-smoke
 ```
 
-This builds the retained stdio server and exercises the canonical eight-action `local_operator` workflow.
+This verifies the retained role-app connector workflow.
 
 ### Real launcher self-test
 
 ```bash
-RELAY_MCP_PROFILE=planner node scripts/local/relay-mcp-stdio.mjs --self-test
-RELAY_MCP_PROFILE=auditor node scripts/local/relay-mcp-stdio.mjs --self-test
-RELAY_MCP_PROFILE=local_operator node scripts/local/relay-mcp-stdio.mjs --self-test
+npm run chatgpt-mcp:doctor:all
 ```
 
 Use temporary `RELAY_WORKFLOW_DB_PATH` and `RELAY_WORKFLOW_ARTIFACTS_DIR` values when running these outside the release gate and isolation matters.

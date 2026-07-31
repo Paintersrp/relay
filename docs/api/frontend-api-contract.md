@@ -1,468 +1,68 @@
-# Relay Frontend API Contract
+# Frontend API contract
 
-## Runtime boundary
+The Go daemon is the runtime authority for Feature Workspaces, repository targets, Delivery Tickets and revisions, selections, execution packages and approvals, package-linked Runs, execution attempts, audit decisions, remediation evidence, and retained historical records.
 
-The Go daemon is the only backend authority for Projects, repository targets, Plans, Runs, execution attempts, artifacts, audit packets, audit decisions, and lifecycle transitions.
+Plans and passes remain presentation-only historical endpoints. There is no active Plan or pass creation or mutation path. `POST /api/runs` is retired: package approval is the only active Run-creation path.
 
-The React workbench uses this JSON API only. The backend exposes no handoff intake, prepare, brief-approval, project-scoped planning, source/context, seed, Plan Attempt, refactor-backlog, or legacy closeout routes.
+## Active workflow routes
 
-Default development addresses:
-
-- Backend: `http://localhost:8080`
-- Frontend: `http://localhost:3000`
-- Frontend backend configuration: `VITE_RELAY_API_BASE_URL`
-- Backend frontend configuration: `RELAY_WEB_BASE_URL`
-
-All IDs in paths are Relay string identities such as `project-*`, `note-*`, `plan-*`, `pass-*`, `run-*`, `attempt-*`, and `artifact-*`. Numeric legacy IDs are not accepted.
-
-## Workflow stages
-
-Every Run exposes its exact durable `status` and one derived `stage`.
-
-| Run status | Stage |
+| Route | Purpose |
 | --- | --- |
-| `created` | `specification` |
-| `setup_ready` | `specification` |
-| `executing` | `execute` |
-| `execution_failed` | `execute` |
-| `cancelled` | `execute` |
-| `validating` | `audit` |
-| `validation_failed` | `audit` |
-| `audit_ready` | `audit` |
-| `needs_revision` | `audit` |
-| `completed` | `audit` |
+| `GET /api/feature-workspaces/{workspaceID}` | Feature Workspace detail |
+| `POST /api/feature-workspaces/{workspaceID}/tickets/{ticketID}/revisions` | Publish a Ticket revision |
+| `POST /api/delivery-tickets/{ticketID}/approvals` | Approve an exact Ticket revision |
+| `POST /api/feature-workspaces/{workspaceID}/tickets/selection` | Create a selection |
+| `POST /api/execution-packages` | Prepare a package |
+| `GET /api/execution-packages/{packageID}` | Read package guidance |
+| `POST /api/execution-packages/{packageID}/approvals` | Approve a package and create its Run |
+| `GET /api/runs` | List Runs |
+| `GET /api/runs/{runID}` | Run detail |
+| `GET /api/runs/{runID}/specification` | Historical specification review surface |
+| `POST /api/runs/{runID}/attempts` | Start package execution |
+| `GET /api/runs/{runID}/attempts` | List attempts |
+| `GET /api/runs/{runID}/attempts/{attemptID}` | Attempt detail |
+| `POST /api/runs/{runID}/attempts/{attemptID}/cancel` | Cancel attempt |
+| `POST /api/runs/{runID}/attempts/{attemptID}/reconcile` | Reconcile attempt |
+| `GET /api/runs/{runID}/audit/status` | Audit status |
+| `POST /api/runs/{runID}/audit/prepare` | Prepare audit packet |
+| `GET /api/runs/{runID}/audit/packet` | Read current audit packet |
+| `POST /api/runs/{runID}/audit/decision` | Retained HTTP transport route; not an active operator decision path |
 
-Unknown or legacy statuses are errors. They do not fall back to another stage.
+Audit decisions are recorded through the Auditor role app. The HTTP audit decision handler is not an active operator path.
 
-The non-API route `GET /runs/{runId}` redirects to:
+## Run response DTOs
 
-```text
-${RELAY_WEB_BASE_URL}/runs/{runId}/{stage}
-```
-
-A newly created Run therefore opens at `/specification`.
-
-## List bounds
-
-- Project, Plan, and Run lists default to 50 items.
-- Project, Plan, and Run lists are capped at 100 items.
-- A Run detail exposes at most the 50 most recent execution attempts.
-- Artifact content defaults to 64 KiB and is capped at 64 KiB per request.
-- Artifact bodies are never embedded in Plan, Run, execution-attempt, or audit metadata responses.
-
-## Global repository targets
-
-### `GET /api/repositories`
-
-Returns:
+`GET /api/runs` returns `{ "items": [...], "count": number }`. Each item uses these JSON properties:
 
 ```json
 {
-  "items": [
-    {
-      "repoTarget": "relay",
-      "localPath": "D:\\Code\\relay",
-      "createdAt": "2026-07-06T00:00:00Z",
-      "updatedAt": "2026-07-06T00:00:00Z"
-    }
-  ],
-  "count": 1
+  "runId": "...",
+  "featureSlug": "...",
+  "repoTarget": "...",
+  "status": "...",
+  "stage": "...",
+  "branch": "...",
+  "baseCommit": "...",
+  "canonicalSha256": "...",
+  "createdAt": "...",
+  "updatedAt": "..."
 }
 ```
 
-### `POST /api/repositories`
+Optional summary properties are `planId`, `passId`, `passNumber`, `project`, `remediatesRunId`, `completedAt`, `latestAttempt`, `currentPacket`, and `latestDecision`. Plan and pass references are historical compatibility data, not active execution authority.
 
-Request:
+`GET /api/runs/{runID}` returns `run`, `attempts`, and `artifacts`. An attempt has `attemptId`, `attemptNumber`, `adapter`, `model`, `status`, `createdAt`, `startedAt`, `finishedAt`, `cancellationRequestedAt`, and `artifacts`; detailed attempt responses also contain `runId`, `result`, `liveStdout`, `liveStderr`, `liveStdoutTruncated`, `liveStderrTruncated`, `liveStdoutBytes`, and `liveStderrBytes`.
 
-```json
-{
-  "repoTarget": "relay",
-  "localPath": "D:\\Code\\relay"
-}
-```
+`GET /api/runs/{runID}/specification` currently returns `run`, `executionSpec`, and `executorBrief`, with optional `plan`, `pass`, and `remediatesRunId`. These names are retained historical-review DTO properties. They do not mean an active package Run has authored execution-spec, executor-brief, or Plan/pass authority.
 
-Repository targets are globally unique case-insensitive keys. The local path must resolve to an existing directory.
-
-### `GET /api/repositories/{repoTarget}`
-
-Returns one repository target or `404 NOT_FOUND`.
-
-Project repository routes create or remove non-owning references to these global targets; they never copy repository configuration.
-
-
-## Projects
-
-Projects are lightweight organizational records. They contain attached Plan references, non-owning repository references, and bounded Notes.
-
-### `GET /api/projects`
-
-Optional query parameters:
-
-- `status=active|archived`
-- `limit=1..100`
-
-Returns compact Projects with repository and note counts.
-
-### `POST /api/projects`
-
-Request:
-
-```json
-{
-  "name": "Relay",
-  "description": "Primary Relay workflow work."
-}
-```
-
-Returns `201 Created` with the created active Project.
-
-### `GET /api/projects/{projectId}`
-
-Returns one Project with repository references and bounded Notes.
-
-### `PATCH /api/projects/{projectId}`
-
-Updates Project name, description, or status. Archived Projects remain readable.
-
-### `POST /api/projects/{projectId}/repositories`
-
-Request:
-
-```json
-{
-  "repoTarget": "relay"
-}
-```
-
-Attaches an existing global repository target to the Project as a non-owning case-insensitive reference.
-
-### `DELETE /api/projects/{projectId}/repositories/{repoTarget}`
-
-Removes the non-owning Project repository reference.
-
-### `POST /api/projects/{projectId}/notes`
-
-Request:
-
-```json
-{
-  "title": "Future cleanup",
-  "body": "Review remaining legacy cleanup."
-}
-```
-
-Creates an open Project Note.
-
-### `PATCH /api/projects/{projectId}/notes/{noteId}`
-
-Updates title, body, or `status=open|done`.
-
-## Canonical browser validation
-
-### `POST /api/canonical-artifacts/validate`
-
-Request:
-
-```json
-{
-  "fileName": "feature.plan.json",
-  "canonicalContent": "{...}\n"
-}
-```
-
-Returns the computed hash, artifact kind, bounded compiler diagnostics, and notices without creating database rows or artifact files. Validation does not accept an expected hash. Canonical basenames and mutation `expectedSha256` values are validated exactly and are not whitespace-normalized.
-
-## Plans
-
-### `GET /api/plans`
-
-Optional query parameters:
-
-- `status=active|completed`
-- `projectId=project-*`
-- `limit=1..100`
-
-Returns:
-
-```json
-{
-  "items": [
-    {
-      "planId": "plan-*",
-      "project": {"projectId": "project-*", "name": "Relay", "status": "active"},
-      "featureSlug": "feature",
-      "status": "active",
-      "canonicalSha256": "64 lowercase hex characters",
-      "createdAt": "ISO-8601",
-      "updatedAt": "ISO-8601",
-      "passCount": 3,
-      "completedPassCount": 1,
-      "inProgressPassCount": 1,
-      "plannedPassCount": 1,
-      "currentPassId": "pass-*"
-    }
-  ],
-  "count": 1
-}
-```
-
-### `GET /api/plans/{planId}`
-
-Returns:
-
-- bounded Plan summary;
-- ordered repository targets;
-- ordered passes;
-- dependency pass IDs;
-- associated Run summaries;
-- Plan artifact metadata with explicit `contentUrl`.
-
-Canonical Plan JSON and rendered Plan Markdown are retrieved only through the artifact content endpoint.
-
-### `GET /api/plans/{planId}/passes/{passId}`
-
-Returns one pass with dependency IDs and associated Run summaries.
-
-Plan and Pass presentation is read-only. No Plan-creating or Plan-mutating HTTP route exists, and no Project review settings, Plan Attempt, legacy Plan Seed orchestration, next-pass-work, or next-audit-work HTTP route exists.
-
-## Runs
-
-### `GET /api/runs`
-
-Optional query parameters:
-
-- `status=<exact workflow Run status>`
-- `planId=plan-*`
-- `passId=pass-*` only when `planId` is also supplied
-- `limit=1..100`
-
-Returns:
-
-```json
-{
-  "items": [
-    {
-      "runId": "run-*",
-      "featureSlug": "feature",
-      "repoTarget": "relay",
-      "status": "setup_ready",
-      "stage": "specification",
-      "branch": "main",
-      "baseCommit": "40 lowercase hex characters",
-      "canonicalSha256": "64 lowercase hex characters",
-      "planId": "plan-*",
-      "passId": "pass-*",
-      "passNumber": 1,
-      "project": {"projectId": "project-*", "name": "Relay", "status": "active"},
-      "remediatesRunId": "run-*",
-      "createdAt": "ISO-8601",
-      "updatedAt": "ISO-8601",
-      "latestAttempt": {},
-      "currentPacket": {},
-      "latestDecision": {}
-    }
-  ],
-  "count": 1
-}
-```
-
-Optional properties are omitted when not applicable.
-
-`POST /api/runs` is retired. Runs are created only by approving an exact selected package through the execution-package workflow.
-
-### `GET /api/runs/{runId}`
-
-Returns:
-
-```json
-{
-  "run": {},
-  "attempts": [],
-  "artifacts": []
-}
-```
-
-Run-owned artifacts and attempt-owned evidence are metadata only. Every artifact includes an explicit `/api/artifacts/{artifactId}/content` URL.
-
-### `GET /api/runs/{runId}/specification`
-
-Returns the Specification review projection:
-
-```json
-{
-  "run": {},
-  "executionSpec": {
-    "artifactId": "artifact-*",
-    "kind": "execution_spec",
-    "contentUrl": "/api/artifacts/artifact-*/content"
-  },
-  "executorBrief": {
-    "artifactId": "artifact-*",
-    "kind": "executor_brief",
-    "contentUrl": "/api/artifacts/artifact-*/content"
-  },
-  "plan": {
-    "planId": "plan-*",
-    "featureSlug": "feature",
-    "status": "active"
-  },
-  "pass": {
-    "passId": "pass-*",
-    "number": 1,
-    "name": "Pass name",
-    "repoTarget": "relay",
-    "status": "in_progress"
-  },
-  "remediatesRunId": "run-*"
-}
-```
-
-Plan, pass, and remediation properties are omitted for unmanaged ordinary Runs.
-
-## Execution attempts
-
-### `POST /api/runs/{runId}/attempts`
-
-Request:
-
-```json
-{
-  "adapter": "codex",
-  "model": "model-id"
-}
-```
-
-Performs read-only repository and executor preflight before creating the immutable attempt. Returns `202 Accepted`.
-
-### `GET /api/runs/{runId}/attempts`
-
-Returns:
-
-```json
-{
-  "items": [],
-  "count": 0
-}
-```
-
-At most 50 attempts are returned.
-
-### `GET /api/runs/{runId}/attempts/{attemptId}`
-
-Returns the bounded attempt projection, artifact metadata, and bounded live stdout/stderr tails. Runtime owner IDs, process identities, and command previews are excluded.
-
-### `POST /api/runs/{runId}/attempts/{attemptId}/cancel`
-
-Requests cancellation for the matching Run and attempt.
-
-### `POST /api/runs/{runId}/attempts/{attemptId}/reconcile`
-
-Reopens durable process ownership and resolves cleanup-pending execution state.
-
-The former `/api/workflow/runs/...` prefix does not exist.
-
-## Artifacts
-
-### `GET /api/artifacts/{artifactId}`
-
-Returns metadata only:
-
-```json
-{
-  "artifactId": "artifact-*",
-  "ownerType": "run",
-  "kind": "executor_brief",
-  "mediaType": "text/markdown",
-  "sha256": "64 lowercase hex characters",
-  "sizeBytes": 123,
-  "createdAt": "ISO-8601",
-  "contentUrl": "/api/artifacts/artifact-*/content"
-}
-```
-
-Filesystem paths are not returned.
-
-### `GET /api/artifacts/{artifactId}/content`
-
-Optional query parameters:
-
-- `offset`, default `0`
-- `limit`, default and maximum `65536`
-
-The daemon verifies the artifact's exact size and SHA-256 before returning content.
-
-Response:
-
-```json
-{
-  "artifact": {},
-  "offset": 0,
-  "byteCount": 65536,
-  "encoding": "utf-8",
-  "content": "bounded content",
-  "truncated": true,
-  "nextOffset": 65536
-}
-```
-
-`encoding` is `utf-8` when the returned bytes are valid UTF-8 and `base64` otherwise. `nextOffset` is omitted when no further bytes remain.
+Execution admission returns `success` and `preflight`; it may return `applier`, `run`, or `attempt` according to the effective mode. Required validation commands come from the approved assignment and structured results remain in attempt-owned `execution_evidence`.
 
 ## Audit
 
-### `POST /api/runs/{runId}/audit/prepare`
+Audit status returns `runId`, `runStatus`, and where available `currentPacket`, `latestPacket`, and `decision`. Packet metadata uses `auditPacketId`, `implementationActorKind`, `auditedCommit`, `packetSha256`, `status`, `staleReason`, `createdAt`, and `supersededAt`.
 
-Request:
+Packet preparation binds the approved package authority, exact Ticket revision, execution evidence, retained authority, repository evidence, and audited commit. Packet readback rechecks stored bytes, ownership, digest, current execution evidence, and repository evidence. Stale or superseded packets cannot receive decisions. `needs_revision` produces immutable remediation evidence; remediation returns through the standard Ticket revision, approval, package, and Run lifecycle.
 
-```json
-{
-  "auditedCommit": "40 lowercase hex characters"
-}
-```
+## MCP boundary
 
-Validates the exact clean local commit range and creates or returns the current immutable audit packet.
-
-### `GET /api/runs/{runId}/audit/status`
-
-Returns current packet, latest packet, and recorded decision metadata using camel-case fields. Packet bodies remain available only through their artifact `contentUrl`.
-
-Audit decisions are recorded through the canonical Auditor MCP tool and require exact packet identity plus explicit operator confirmation.
-
-The former local-audit, project-audit, audit submit, approve, request-revision, commit-message, and close routes do not exist.
-
-## MCP
-
-The ChatGPT-facing HTTP role apps are:
-
-- `POST /mcp/wayfinder`
-- `POST /mcp/planner`
-- `POST /mcp/auditor`
-
-Each app publishes only its compiled role catalog. `tools/list` exposes only catalog advertised names; collisions are deterministic aliases statically bound to one immutable internal route and authority identity. A request cannot select another route, role, or authority. The generated and tested inventory is built by `BuildMCPAppSurfaceManifests`.
-
-`POST /mcp` remains the aggregate compatibility surface for profile-selected behavior and is mounted unconditionally. It is not a role-app connector URL. The former seven `/mcp/v1/...` endpoints are removed and return `404`.
-
-Aggregate inventories remain profile-specific:
-
-- Planner: `validate_artifact`, `list_projects`, `get_plan`
-- Auditor: `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision`
-- Local operator: the union of Planner and Auditor tools, including `list_projects`
-
-`validate_artifact` is Project-independent. `get_plan` returns compact Project metadata. Plan-creating and standalone Run-creating admission are retired; `submit_plan` and `create_run` are not published tools.
-
-## Removed routes
-
-The daemon returns `404 NOT_FOUND` for every obsolete workflow route, including:
-
-- `/api/runs/{legacyNumericId}/approve-intake`
-- `/api/runs/{legacyNumericId}/prepare`
-- `/api/runs/{legacyNumericId}/render-brief`
-- `/api/runs/{legacyNumericId}/approve-brief`
-- `/api/runs/{legacyNumericId}/execute`
-- `/api/runs/{legacyNumericId}/validate`
-- `/api/audits/local...`
-- `/api/workflow/runs...`
-- `/handoffs`
-- `/handoffs/new`
-- `/settings/repos...`
-
-No removed route redirects or translates into the new workflow.
+The public connector routes are `POST /mcp/wayfinder`, `POST /mcp/planner`, and `POST /mcp/auditor`. Each role app exposes only its fixed compiled generated catalog. The `/mcp/v1/...` values are internal route identities, not public URLs; request data cannot select another role or internal route.

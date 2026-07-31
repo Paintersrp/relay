@@ -1,270 +1,37 @@
 # Relay MCP
 
-Relay has one aggregate compatibility surface and three ChatGPT-facing role apps. The role apps compile from the seven immutable internal route manifests without changing their route path, handler ownership, schemas, manifest digest, or standing-authority binding.
+Relay publishes three public role-app MCP surfaces:
 
-## Transports
-
-### Stdio and aggregate HTTP
-
-`cmd/mcpserver` opens the profile-selected aggregate registry over newline-delimited JSON-RPC 2.0 on stdin/stdout. `scripts/local/relay-mcp-stdio.mjs` is the supported local launcher and includes an executable self-test for initialization, ping, paginated `tools/list`, exact ordered inventory, and OpenAI file-parameter metadata.
-
-`cmd/relay` also serves aggregate `POST /mcp` on the normal Relay daemon, which defaults to `http://localhost:8080`. The aggregate surface is not a role-app connector URL. It remains separate from the three role apps and does not close or redirect them.
-
-### Role-app HTTP
-
-Use exactly one of these role-level app URLs for a ChatGPT HTTP connector:
-
-| Public app surface | HTTP endpoint | Compiled internal route members |
+| Role app | Public endpoint | Compiled internal routes |
 | --- | --- | --- |
 | Wayfinder | `POST /mcp/wayfinder` | 3 |
 | Planner | `POST /mcp/planner` | 2 |
 | Auditor | `POST /mcp/auditor` | 2 |
 
-Methods other than POST return HTTP 405. When `RELAY_MCP_AUTH_TOKEN` is configured, each endpoint requires `Authorization: Bearer <token>`. An empty token leaves the endpoint unauthenticated and emits a warning; that mode is only for loopback connector proof. `RELAY_MCP_DISABLE_AUTH=true` explicitly disables enforcement for local development and is not production exposure guidance.
+Each role app compiles its fixed internal routes, handlers, standing authority, and generated tool catalog. `BuildMCPAppSurfaceManifests` is the generated, tested catalog authority; documentation does not maintain a duplicate tool inventory.
 
-The seven former `/mcp/v1/...` routes are removed and return HTTP `404`; no legacy route redirects to a role app.
+The seven `/mcp/v1/...` values are internal route identities. They are not public connector URLs. A connector calls its role-app URL, and request data cannot select another role, an internal route, an internal tool name, or authority context. Private ingress listeners likewise accept only the fixed route for their role.
 
-Wayfinder compiles these three internal route manifests:
+The role-specific private ingress mappings are:
 
-- `/mcp/v1/wayfinder/workspace`;
-- `/mcp/v1/wayfinder/discovery`;
-- `/mcp/v1/wayfinder/investigation`.
+| Role | Role-app route | Default listener |
+| --- | --- | --- |
+| Wayfinder | `/mcp/wayfinder` | `127.0.0.1:18101` |
+| Planner | `/mcp/planner` | `127.0.0.1:18102` |
+| Auditor | `/mcp/auditor` | `127.0.0.1:18103` |
 
-They are internal route identities, not public connector URLs. Clients call the role app at `POST /mcp/wayfinder`; request content cannot select an internal route or another role.
+HTTP MCP accepts POST JSON-RPC. When configured, role-app authentication uses the Relay MCP bearer token. A connector should use the generated public advertised names from that app's `tools/list` response.
 
-### Generated catalog and inventory
+## Role responsibilities
 
-`BuildMCPAppSurfaceManifests` is the single generated and tested inventory table for the public role apps. Each `AppSurfaceManifest.Tools` row maps these identities without hand-maintained aliases:
+Wayfinder provides route-bound operation packets and packet-authorized retained-source investigation. Planner owns Ticket and package authoring in its fixed role surface. Auditor owns audit packet review and audit decisions in its fixed role surface.
 
-| Public app surface | Public advertised tool name | Internal tool name | Internal route path | Surface contract |
-| --- | --- | --- | --- | --- |
-| `AppSurfaceManifest.Surface` | `AppToolManifest.AdvertisedName` | `AppToolManifest.InternalToolName` | `AppToolManifest.InternalRoutePath` | `AppToolManifest.SurfaceContract` |
+The `*:all` local tunnel commands supervise all three role registrations together. This is multi-role registration orchestration, not a fourth MCP transport or connector URL.
 
-Only `AdvertisedName` is exposed as the MCP tool name in that app's `tools/list`. If an internal tool name collides within one role app, its public name is the deterministic catalog alias `<surface-contract-with-dots-replaced-by-hyphens>__<internal-tool-name>`; otherwise it remains the internal tool name. Public aliases are catalog-only: a request cannot select a route, a role, an internal name, or authority context. Each alias is statically bound to exactly one compiled internal route and its standing authority. The route-contract tests build and verify every generated inventory row, including public name, internal name, route path, surface contract, manifest digest, and authority identity.
+## Workflow authority
 
-## Wayfinder operation packets
+The active lifecycle is Ticket revision, exact approval, selection, complete Ticket Design Brief, optional Deterministic Operations, package preparation, package approval, package-linked Run, execution and validation, audit, and optional remediation. Plans and passes are retained read-only history and have no active mutation or execution authority.
 
-The route-bound packet tools establish and read the authority for an operation. They cannot select another surface contract through request data.
+The Design Brief is the complete semantic authority. Deterministic Operations are optional exact-execution data. Required validation commands come from the approved assignment, flow into execution admission and launch, and remain in attempt-owned `execution_evidence`.
 
-- `get_active_operation_packet` looks up the active packet by project, operation ID, and route-bound surface contract.
-- `create_operation_packet` creates a complete immutable packet for the route-bound operation. It does not require a prior packet ID and returns a structured packet view containing the direct packet ID.
-- `refresh_operation_packet` creates a replacement for the supplied active packet rather than mutating the prior packet.
-- `close_operation_packet` closes the supplied active packet while retaining packet evidence.
-- `read_operation_input` returns bounded exact bytes and identity metadata for an input bound to an active or retained packet.
-- `list_operation_repositories` returns the packet-bound repository and revision authority, including the primary revision and authorized comparison anchors.
-
-## Packet-authorized source reads
-
-A valid operation packet authorizes one repository binding and exact retained source revision. The tools may investigate any relevant repository-relative path inside that retained source-vault closure. Packet authority is repository-and-revision scoped: packet inputs and comparison anchors are not ordinary path allowlists. Reads use retained source-vault authority, not the current working tree or a newer branch tip. Unbound repositories, absolute paths, and traversal paths are rejected; results and continuations are bounded and deterministic.
-
-- `list_source_tree` lists the root or a nested directory in the primary packet revision. It can traverse recursively, orders repository-relative entries deterministically, and uses a bounded limit with a continuation cursor.
-- `search_source` performs exact literal search in text-literal or byte-literal mode, optionally below repository-relative prefixes. It has bounded object and byte examination budgets, deterministic matches and continuation, and can use a packet-authorized comparison-anchor revision. It is not semantic, fuzzy, vector, or regular-expression search.
-- `read_source_text` reads an exact repository-relative text file from the primary revision or a packet-authorized comparison-anchor revision. It supports offset, limit, and continuation, preserves exact text bytes within the current text-projection contract, and rejects directories and unsupported binary text projections. Raw binary reading belongs to `read_source_blob`.
-
-### Cold-start Wayfinder discovery
-
-Through the public Wayfinder role app at `POST /mcp/wayfinder`, a discovery client uses the generated public advertised aliases in this sequence. Each alias is statically bound to `wayfinder-discovery.v1`; request content does not select the route.
-
-```text
-wayfinder-discovery-v1__list_projects
-→ wayfinder-discovery-v1__create_operation_packet
-→ wayfinder-discovery-v1__get_active_operation_packet
-→ wayfinder-discovery-v1__list_operation_repositories
-→ wayfinder-discovery-v1__list_source_tree
-→ wayfinder-discovery-v1__search_source
-→ wayfinder-discovery-v1__read_source_text
-```
-
-The identities flow as:
-
-```text
-wayfinder-discovery-v1__list_projects.project_id
-→ wayfinder-discovery-v1__create_operation_packet.project_id
-
-wayfinder-discovery-v1__create_operation_packet.packet_id
-→ compare with the returned active packet from wayfinder-discovery-v1__get_active_operation_packet
-→ supply to wayfinder-discovery-v1__list_operation_repositories and the three discovery source calls
-
-wayfinder-discovery-v1__list_operation_repositories.repository_key
-→ the three discovery source calls
-```
-
-## Private role-app ingress
-
-`cmd/relay` supervises three isolated private listeners, each forwarding to one fixed role-app URL on the main Relay daemon. Request content cannot select another upstream, another app, an internal route, or aggregate `/mcp`.
-
-| Mapping | Role-app route | Listener override | Default |
-| --- | --- | --- | --- |
-| `wayfinder` | `/mcp/wayfinder` | `RELAY_MCP_INGRESS_WAYFINDER_ADDR` | `127.0.0.1:18101` |
-| `planner` | `/mcp/planner` | `RELAY_MCP_INGRESS_PLANNER_ADDR` | `127.0.0.1:18102` |
-| `auditor` | `/mcp/auditor` | `RELAY_MCP_INGRESS_AUDITOR_ADDR` | `127.0.0.1:18103` |
-
-Listener overrides accept only loopback, RFC 1918 private IPv4, or IPv6 unique-local IP literals with nonzero ports. Hostnames, wildcard, unspecified, public, link-local, multicast, and port-zero addresses are rejected.
-
-`RELAY_MCP_INGRESS_UPSTREAM_BASE_URL` optionally replaces the default `http://127.0.0.1:<Relay port>` private upstream base. It must use `http` or `https`, an IP-literal private or loopback host, an explicit nonzero port, and no path, query, fragment, or user information. Relay appends the fixed role-app route for each mapping.
-
-Each listener accepts only `POST` to its exact role-app route and `GET /healthz`. A mapping probes its fixed upstream route independently, reports only bounded health metadata, and restarts independently. One listener, upstream, trace, or client failure cannot redirect to another app, stop another mapping, or stop the main Relay daemon.
-
-### Local-hop bearer
-
-`RELAY_MCP_INGRESS_UPSTREAM_BEARER_TOKEN` optionally configures the bearer used from private ingress to the main Relay handler. The ingress always removes client `Authorization`; when configured, it injects exactly one upstream bearer. Startup output reports only whether a bearer is configured. The value is never included in health, traces, errors, descriptors, tool arguments, responses, or logs.
-
-### Metadata traces
-
-`RELAY_MCP_TRACE_DIR` selects the trace root; the default is `data/transport/mcp-traces`. Each mapping writes independent canonical JSON Lines segments with directory mode `0700` and file mode `0600`.
-
-A trace contains route and request identities, allowlisted source identities, byte counts, the SHA-256 of exact response bytes attempted downstream, completion classification, bounded outcome and error classes, and downstream write evidence. It never stores request or response bodies, source content, artifacts, conversations, mutation payloads, credentials, authorization, signed URLs, raw cursors, raw paths, or protected diagnostics.
-
-Retention is the earlier of:
-
-- `RELAY_MCP_TRACE_MAX_AGE`, default and maximum `336h`, minimum `1h`;
-- `RELAY_MCP_TRACE_MAX_BYTES`, default and maximum `104857600`, minimum `1048576`.
-
-Segments rotate at eight mebibytes. Trace persistence failure leaves the authoritative MCP response unchanged and marks only that mapping unhealthy.
-
-## Aggregate profiles
-
-`RELAY_MCP_PROFILE` controls only the aggregate stdio and `/mcp` surfaces. It accepts exactly `planner`, `auditor`, or `local_operator`. Missing or invalid input fails closed to `planner`.
-
-| Profile | Ordered tools |
-| --- | --- |
-| `planner` | `validate_artifact`, `list_projects`, `get_plan` |
-| `auditor` | `validate_artifact`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
-| `local_operator` | `validate_artifact`, `list_projects`, `get_plan`, `get_audit_packet`, `get_run_artifact`, `record_audit_decision` |
-
-A tool outside the active aggregate profile is not registered and returns JSON-RPC method-not-found when called. The server registers the selected definitions before dispatch, so every advertised name reaches one canonical handler branch.
-
-## File parameters
-
-`validate_artifact` advertises one OpenAI file parameter named `artifact_file`. It contains:
-
-- `download_url` — bounded HTTPS source URL;
-- `file_id` — nonempty external file identity;
-- `file_name` — a canonical `.plan.json` or `.deterministic-operations.json` basename;
-- optional `mime_type`.
-
-For `validate_artifact`, the accepted filename forms also include `.requirements.md`, `.design.md`, and ticket-qualified `.design-brief.md`; package admission uses the selected-package API.
-
-The fetcher retrieves exact bytes, rejects unsafe or unsupported references, and never returns signed download URLs in tool output. Submission actions compare the downloaded bytes with the required `expected_sha256` before durable mutation.
-
-## Actions
-
-### `validate_artifact`
-
-**Profiles:** Planner, Auditor, local operator.
-
-**Input:** `artifact_file`.
-
-Validates one canonical Plan or Deterministic Operations JSON artifact, or authored Requirements, Shared Design, or Ticket Design Brief Markdown artifact, by exact downloaded bytes. Markdown validation checks only required headings: it does not score or interpret content. It returns the computed SHA-256, artifact kind, bounded diagnostics, and notices. It does not persist the artifact, admit a ticket, or return its body.
-
-### `list_projects`
-
-**Profiles:** Planner, local operator.
-
-**Input:** bounded status and limit filters. Planner workflows use `status: "active"` and an explicit limit.
-
-Returns bounded Project metadata for operator selection. It does not create or mutate Projects, infer a Project from repository state, or expose Project notes as hidden planning context.
-
-### Plan admission
-
-Authored `submit_plan` admission is retired. No MCP tool creates or changes a
-Plan or Pass; ordinary work enters through delivery tickets and execution
-packages.
-
-### `get_plan`
-
-**Profiles:** Planner, local operator.
-
-**Required input:** `plan_id`.
-
-Returns bounded Project, Plan, pass, and artifact metadata. It does not return canonical Plan JSON or rendered Markdown bodies.
-
-### Run admission
-
-Authored `create_run` admission is retired. Exact selected-package preparation and approval create one setup-ready Run without authored execution artifacts.
-
-### `get_audit_packet`
-
-**Profiles:** Auditor, local operator.
-
-**Required input:** `run_id`.
-
-Returns the current authoritative audit packet for one Run. Readback revalidates packet freshness against the selected execution attempt and current local repository. The output includes packet identity, packet SHA-256, audited commit, Run status, and the bounded packet body.
-
-### `get_run_artifact`
-
-**Profiles:** Auditor, local operator.
-
-**Required identity:** `run_id` and an `artifact_reference` declared by the current audit packet.
-
-Returns bounded UTF-8 content for an audit-declared Run artifact. The audit service verifies packet declaration, attempt ownership, safe paths, size, SHA-256, and supported content. It is not generic filesystem or repository access.
-
-### `record_audit_decision`
-
-**Profiles:** Auditor, local operator.
-
-**Required input:**
-
-- `run_id`;
-- `audit_packet_id`;
-- lowercase 64-character `packet_sha256`;
-- full lowercase 40-character `audited_commit`;
-- `decision`, exactly `accepted` or `needs_revision`;
-- `rationale`;
-- `operator_confirmed: true`.
-
-The action records one decision only against the exact current packet and audited commit. Acceptance completes the Run and managed pass; revision returns the Run to revision. Stale packets, mismatched hashes, conflicting audit state, or missing operator confirmation block before mutation.
-
-## JSON-RPC behavior
-
-The server supports:
-
-- `initialize`;
-- `notifications/initialized` as a notification;
-- `ping`;
-- paginated `tools/list`;
-- `tools/call`.
-
-Aggregate `tools/list` preserves profile order. Role-app `tools/list` exposes only its deterministic advertised catalog. Unknown JSON-RPC methods and unregistered tool names return method-not-found. Invalid parameters use strict schemas with `additionalProperties: false` where defined.
-
-Tool results distinguish successful workflow output from blocked business state. Blockers are bounded, omit secret values and absolute local paths, and identify recoverability and the affected field or resource.
-
-## Safety boundaries
-
-Relay MCP does not expose:
-
-- arbitrary host-filesystem access;
-- unrestricted source access outside packet authority;
-- shell execution;
-- Git mutation;
-- caller-selected arbitrary commits or repositories;
-- executor dispatch or validation-result recording;
-- Project mutation;
-- automatic pass selection;
-- historical compatibility actions.
-
-Relay provides bounded packet-authorized retained-source reads, not arbitrary filesystem or Git access. The canonical runtime has no handoff, context-broker, Plan Seed, refactor-backlog, local-audit, intent-drift, closeout, or generated-reference action surface.
-
-## Validation
-
-Use the current repository-owned checks:
-
-```bash
-go test ./internal/mcp -run 'Trace'
-go test ./internal/transport/transporttrace
-go test ./internal/transport/mcpingress
-go test ./internal/server -run 'MCPIngress|MCPRoutes'
-go test ./cmd/relay -run 'PrivateMCPIngress'
-make mcp-test
-make mcp-smoke
-npm run test:local-scripts
-npm run release:smoke
-```
-
-For a separately running authenticated HTTP daemon, use one role app:
-
-```bash
-make mcp-http-smoke RELAY_MCP_URL=http://localhost:8080/mcp/planner RELAY_MCP_AUTH_TOKEN=dev-token
-```
-
-See [smoke.md](smoke.md) for the complete validation matrix and [chatgpt-mcp-local.md](chatgpt-mcp-local.md) for secure local tunnel setup.
+Audit packets bind package approval, the exact Ticket revision, execution evidence, retained authority, repository evidence, and audited commit. Readback rechecks stored bytes, ownership, digest, current execution evidence, and repository evidence. Stale or superseded packets cannot receive decisions. The Auditor may attribute findings to `implementation`, `governing_package`, or `both`; `needs_revision` creates immutable remediation evidence for fresh-context Planner work without the prior Executor transcript.

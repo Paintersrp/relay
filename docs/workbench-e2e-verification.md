@@ -176,7 +176,7 @@ Full code-path audit of all audit/close handler mutations:
 ## 7. Test Results (Full)
 
 ```
-relay/cmd/mcpserver                     [no test files]
+relay/retired-stdio-mcp                 [no test files]
 relay/cmd/relay                         [no test files]
 relay/internal/api                      ok  14.952s
 relay/internal/artifacts                [no test files]
