@@ -14,18 +14,22 @@ func newMCPRouteTestHandler(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
 	for _, surface := range surfaces.Surfaces {
 		mux.HandleFunc(surface.PublicPath, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	}
 	return mux
 }
 
-func TestMCPRoutesPublishOnlyRoleAppsBesideAggregate(t *testing.T) {
+func TestMCPRoutesPublishOnlyRoleApps(t *testing.T) {
 	handler := newMCPRouteTestHandler(t)
-	for _, path := range []string{"/mcp", "/mcp/wayfinder", "/mcp/planner", "/mcp/auditor"} {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(method, "/mcp", nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s /mcp status=%d, want 404", method, response.Code)
+		}
+	}
+	for _, path := range []string{"/mcp/wayfinder", "/mcp/planner", "/mcp/auditor"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
 		if response.Code == http.StatusNotFound {

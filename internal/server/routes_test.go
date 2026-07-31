@@ -86,8 +86,7 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 
 // The cutover control plane is removed and legacy Plan write admission is
 // retired: the workflow runtime mounts no cutover endpoint and no route capable
-// of creating or changing a Plan. The aggregate MCP route stays mounted and
-// unconditional, with no admission-state wrapper in front of it.
+// of creating or changing a Plan.
 func TestWorkflowRuntimeMountsNoCutoverOrPlanWriteRoutes(t *testing.T) {
 	store, _ := openWorkflowRouteTestStore(t)
 	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", &sourcevault.Manager{})
@@ -117,11 +116,11 @@ func TestWorkflowRuntimeMountsNoCutoverOrPlanWriteRoutes(t *testing.T) {
 		}
 	}
 
-	// The aggregate MCP route answers without consulting any admission state.
+	// The retired aggregate MCP route is unavailable.
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp", nil))
-	if response.Code == http.StatusNotFound || response.Code == http.StatusConflict || response.Code == http.StatusServiceUnavailable {
-		t.Fatalf("aggregate MCP route => %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("POST /mcp => %d %s, want 404", response.Code, response.Body.String())
 	}
 }
 

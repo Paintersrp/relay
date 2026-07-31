@@ -31,10 +31,6 @@ fi
 
 npm run test:local-scripts
 
-for profile in planner auditor local_operator; do
-  RELAY_WORKFLOW_DB_PATH="$validation_tmpdir/$profile.sqlite"     RELAY_WORKFLOW_ARTIFACTS_DIR="$validation_tmpdir/$profile-artifacts"     RELAY_MCP_PROFILE="$profile"     node scripts/local/relay-mcp-stdio.mjs --self-test
-done
-
 go run ./cmd/mcp-smoke
 npm --prefix apps/web run typecheck
 npm --prefix apps/web run test

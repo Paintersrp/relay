@@ -1481,10 +1481,10 @@ test("alias migration stops the persisted alias before connecting its replacemen
   });
 });
 
-test("package help keeps aggregate and single-profile commands stable", async () => {
+test("package help lists the role-app supervision commands", async () => {
   const result = await execFileAsync(npm, ["run", "chatgpt-mcp:help"], { cwd: root, env: baseEnvironment, shell: process.platform === "win32" });
   const output = `${result.stdout}\n${result.stderr}`;
-  for (const command of ["chatgpt-mcp:init", "chatgpt-mcp:doctor", "chatgpt-mcp:init:all", "chatgpt-mcp:doctor:all", "chatgpt-mcp:start:all", "chatgpt-mcp:stop:all", "chatgpt-mcp:status:all"]) assert.ok(output.includes(command));
+  for (const command of ["chatgpt-mcp:init:all", "chatgpt-mcp:doctor:all", "chatgpt-mcp:start:all", "chatgpt-mcp:stop:all", "chatgpt-mcp:status:all"]) assert.ok(output.includes(command));
   assert.doesNotMatch(output, /HEALTH_ADDR|1820[123]/u);
 });
 

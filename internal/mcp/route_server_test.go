@@ -36,6 +36,34 @@ func TestRouteServerUsesOnlyExactRouteHandlers(t *testing.T) {
 	}
 }
 
+func collectAllTools(t *testing.T, server *Server, params ToolsListParams) ToolsListResult {
+	t.Helper()
+	var all ToolsListResult
+	for {
+		rawParams, err := json.Marshal(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := server.handleToolsList(Request{ID: json.RawMessage(`1`), Params: rawParams})
+		if response.Error != nil {
+			t.Fatal(response.Error)
+		}
+		encoded, err := json.Marshal(response.Result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var page ToolsListResult
+		if err := json.Unmarshal(encoded, &page); err != nil {
+			t.Fatal(err)
+		}
+		all.Tools = append(all.Tools, page.Tools...)
+		if page.NextCursor == "" {
+			return all
+		}
+		params.Cursor = page.NextCursor
+	}
+}
+
 func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T) {
 	routes, err := routecontracts.BuildMCPRouteManifests()
 	if err != nil {

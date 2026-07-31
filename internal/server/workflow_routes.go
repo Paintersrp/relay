@@ -30,7 +30,6 @@ import (
 	appwayfinder "relay/internal/app/wayfinder"
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
-	"relay/internal/mcp"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 
@@ -133,8 +132,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 		return nil, nil, fmt.Errorf("construct MCP route descriptors: %w", err)
 	}
 
-	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log, sourceVaultReader))
-	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
 	for _, current := range mcpHandlers {
 		router.Handle(current.Path, current.Handler)
 	}

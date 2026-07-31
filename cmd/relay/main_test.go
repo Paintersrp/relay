@@ -73,9 +73,13 @@ func TestPrivateMCPIngressRoutesTraceAndFailureIsolation(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 3 * time.Second}
-	mainResponse := postRPC(t, client, runtime.MainURL+"/mcp", "upstream-secret", mcp.Request{JSONRPC: mcp.JSONRPCVersion, ID: json.RawMessage(`1`), Method: "ping"})
-	if mainResponse.Error != nil {
-		t.Fatalf("aggregate ping=%#v", mainResponse.Error)
+	mainResponse, err := client.Post(runtime.MainURL+"/mcp", "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mainResponse.Body.Close()
+	if mainResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("POST /mcp status=%d, want 404", mainResponse.StatusCode)
 	}
 
 	surfaces, err := routecontracts.BuildMCPAppSurfaceManifests()

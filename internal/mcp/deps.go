@@ -8,11 +8,10 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-// MCPDeps contains only the dependencies used by the active Planner and Auditor tool profiles.
+// MCPDeps contains dependencies shared by the role-specific MCP applications.
 type MCPDeps struct {
 	WorkflowStore        *workflowstore.Store
 	Log                  *slog.Logger
-	ToolProfile          ToolProfile
 	ArtifactFileFetcher  ArtifactFileParameterFetcher
 	WorkflowAuditService WorkflowAuditToolService
 }
@@ -27,7 +26,6 @@ func NewWorkflowDepsFromEnv(workflowStore *workflowstore.Store, log *slog.Logger
 	return &MCPDeps{
 		WorkflowStore:        workflowStore,
 		Log:                  log,
-		ToolProfile:          ToolProfileFromEnv(log),
 		ArtifactFileFetcher:  fetcher,
 		WorkflowAuditService: auditService,
 	}

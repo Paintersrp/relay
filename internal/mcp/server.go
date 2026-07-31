@@ -1,14 +1,12 @@
-// Package mcp serves the canonical Relay JSON-RPC tool registry over stdio and HTTP.
+// Package mcp serves role-specific Relay JSON-RPC tool registries over HTTP.
 // It exposes no shell, arbitrary file, or git-mutation tooling, and no legacy
 // compatibility surface. File-bearing tools retrieve one bounded HTTPS
 // canonical artifact and verify exact bytes before persistence.
 package mcp
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -16,39 +14,12 @@ import (
 
 const toolsListPageSize = 16
 
-// Server is the MCP stdio server. It reads newline-delimited JSON-RPC 2.0
-// requests from r and writes responses to w.
+// Server is an MCP JSON-RPC application bound to one compiled role surface.
 type Server struct {
 	log             *slog.Logger
 	deps            *MCPDeps
 	tools           []ToolDefinition
 	surfaceHandlers map[string]surfaceDispatch
-}
-
-// NewServer constructs an MCP server with the exact workflow profile registry.
-func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
-	var d *MCPDeps
-	if len(deps) > 0 {
-		d = deps[0]
-	}
-	s := &Server{log: log, deps: d}
-	s.tools = s.profileToolDefinitions()
-	return s
-}
-
-func (s *Server) activeProfile() ToolProfile {
-	if s == nil || s.deps == nil {
-		return ToolProfilePlanner
-	}
-	profile, ok := NormalizeToolProfile(string(s.deps.ToolProfile))
-	if !ok {
-		return ToolProfilePlanner
-	}
-	return profile
-}
-
-func (s *Server) profileToolDefinitions() []ToolDefinition {
-	return workflowToolDefinitions(s.activeProfile())
 }
 
 // toolRegistered checks if a tool is in the registry.
@@ -59,29 +30,6 @@ func (s *Server) toolRegistered(name string) bool {
 		}
 	}
 	return false
-}
-
-// Serve reads JSON-RPC 2.0 requests from r and writes responses to w until r
-// is closed. Each request and response is a single line of JSON.
-func (s *Server) Serve(r io.Reader, w io.Writer) error {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
-	enc := json.NewEncoder(w)
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		resp, skip := s.handleLineWithSkip(line)
-		if skip {
-			continue
-		}
-		if err := enc.Encode(resp); err != nil {
-			return fmt.Errorf("encode response: %w", err)
-		}
-	}
-	return scanner.Err()
 }
 
 // handleLine dispatches a single JSON-RPC 2.0 request line.
@@ -285,23 +233,5 @@ func (s *Server) handleToolsCall(req Request) Response {
 		return okResponse(req.ID, result)
 	}
 
-	var result ToolCallResult
-	switch params.Name {
-	case "validate_artifact":
-		result = s.HandleValidateArtifact(args)
-	case "list_projects":
-		result = s.HandleListProjects(args)
-	case "get_plan":
-		result = s.HandleGetPlan(args)
-	case "get_audit_packet":
-		result = s.HandleGetWorkflowAuditPacket(args)
-	case "get_run_artifact":
-		result = s.HandleGetRunArtifact(args)
-	case "record_audit_decision":
-		result = s.HandleRecordWorkflowAuditDecision(args)
-	default:
-		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-	}
-
-	return okResponse(req.ID, result)
+	return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 }

@@ -34,9 +34,6 @@ const ENV_FILE_PATHS = [ENV_PATH, ENV_LOCAL_PATH];
 const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
 const DEFAULT_PROFILE = "relay-mcp";
 const DEFAULT_RELAY_BASE_URL = "http://127.0.0.1:8080";
-const DEFAULT_RELAY_MCP_URL = `${DEFAULT_RELAY_BASE_URL}/mcp/planner`;
-const DEFAULT_TUNNEL_MCP_TRANSPORT = "stdio";
-const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = "127.0.0.1:18200";
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const RELAY_LISTENER_PROBE_TIMEOUT_MS = 1_000;
@@ -47,15 +44,6 @@ const DEFAULT_STATE_FILE = join(
   "chatgpt-mcp-all.json",
 );
 const DEFAULT_RELAY_COMMAND = "go run ./cmd/relay";
-const DEFAULT_RELAY_MCP_PROFILE = "planner";
-const ALLOWED_RELAY_MCP_PROFILES = new Set(["planner", "auditor", "local_operator"]);
-const RELAY_MCP_STDIO_LAUNCHER_PATH = join(
-  REPO_ROOT,
-  "scripts",
-  "local",
-  "relay-mcp-stdio.mjs",
-);
-const ALLOWED_TUNNEL_MCP_TRANSPORTS = new Set(["stdio", "http"]);
 const NATIVE_RUNTIME_CAPABILITIES =
   "runtimes connect/list/status/stop/rm (tunnel-client 0.0.9+)";
 
@@ -114,8 +102,6 @@ function main() {
   const [command = "help", ...restArgs] = process.argv.slice(2);
   const options = parseOptions(restArgs);
   const config = getConfig();
-  process.env.RELAY_MCP_PROFILE = config.relayMcpProfile;
-
   runCommand(command, config, options).then(
     (exitCode) => {
       process.exitCode = exitCode;
@@ -170,17 +156,6 @@ function stripMatchingQuotes(value) {
   return value;
 }
 
-function normalizeRelayMcpProfile(raw) {
-  const profile = String(raw || DEFAULT_RELAY_MCP_PROFILE).trim().toLowerCase();
-  if (ALLOWED_RELAY_MCP_PROFILES.has(profile)) {
-    return profile;
-  }
-  console.error(
-    `Unsupported RELAY_MCP_PROFILE ${JSON.stringify(profile)}; defaulting to planner.`,
-  );
-  return DEFAULT_RELAY_MCP_PROFILE;
-}
-
 function parseOptions(args) {
   const options = { skipRelayCheck: false };
   for (const arg of args) {
@@ -194,14 +169,6 @@ function parseOptions(args) {
 }
 
 function getConfig() {
-  const tunnelMcpTransport =
-    process.env.TUNNEL_MCP_TRANSPORT || DEFAULT_TUNNEL_MCP_TRANSPORT;
-  if (!ALLOWED_TUNNEL_MCP_TRANSPORTS.has(tunnelMcpTransport)) {
-    throw new ValidationError(
-      `TUNNEL_MCP_TRANSPORT must be one of: ${Array.from(ALLOWED_TUNNEL_MCP_TRANSPORTS).join(", ")}`,
-    );
-  }
-
   const relayBaseUrl = stripTrailingSlash(
     process.env.RELAY_MCP_BASE_URL || DEFAULT_RELAY_BASE_URL,
   );
@@ -231,21 +198,12 @@ function getConfig() {
     envExamplePath: ENV_EXAMPLE_PATH,
     tunnelProfile: process.env.TUNNEL_PROFILE || DEFAULT_PROFILE,
     tunnelId: process.env.TUNNEL_ID || "",
-    tunnelMcpTransport,
-    relayMcpUrl: process.env.RELAY_MCP_URL || DEFAULT_RELAY_MCP_URL,
     relayBaseUrl,
     relayCommand: process.env.RELAY_MCP_RELAY_COMMAND || DEFAULT_RELAY_COMMAND,
-    relayMcpStdioCommand:
-      process.env.RELAY_MCP_STDIO_COMMAND || buildDefaultRelayMcpCommand(),
-    relayMcpStdioLauncherPath: RELAY_MCP_STDIO_LAUNCHER_PATH,
-    relayMcpProfile: normalizeRelayMcpProfile(process.env.RELAY_MCP_PROFILE),
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || "",
     tunnelClientArgs: parseCommandLine(process.env.TUNNEL_CLIENT_ARGS || ""),
-    tunnelClientProfileDir: process.env.RELAY_MCP_PROFILE_DIR || "",
+    tunnelClientProfileDir: process.env.RELAY_MCP_TUNNEL_PROFILE_DIR || "",
     controlPlaneApiKey: process.env.CONTROL_PLANE_API_KEY || "",
-    tunnelHealthListenAddr:
-      process.env.TUNNEL_HEALTH_LISTEN_ADDR ||
-      DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR,
     startupTimeoutMs: parsePositiveInteger(
       process.env.RELAY_MCP_STARTUP_TIMEOUT_MS,
       DEFAULT_STARTUP_TIMEOUT_MS,
@@ -264,12 +222,6 @@ async function runCommand(command, config, options) {
     case "help":
       printHelp(config);
       return 0;
-    case "init":
-      return runInit(config, options);
-    case "start":
-      return runStart(config, options);
-    case "doctor":
-      return runDoctor(config, options);
     case "init:all":
       return runInitAll(config);
     case "start:all":
@@ -288,7 +240,7 @@ async function runCommand(command, config, options) {
 function printHelp(config) {
   console.log("ChatGPT Local MCP Tunnel");
   console.log("");
-  console.log("Aggregate topology: one Relay daemon, three tunnel IDs, three ChatGPT apps.");
+  console.log("Role-app topology: one Relay daemon, three tunnel IDs, three ChatGPT apps.");
   console.log("Native runtime supervision: enabled");
   console.log(`Installed capability required: ${NATIVE_RUNTIME_CAPABILITIES}`);
   console.log("");
@@ -300,9 +252,6 @@ function printHelp(config) {
   console.log("  stop:     npm run chatgpt-mcp:stop:all");
   console.log("");
   console.log("Commands:");
-  console.log("  npm run chatgpt-mcp:init");
-  console.log("  npm run chatgpt-mcp:start");
-  console.log("  npm run chatgpt-mcp:doctor");
   console.log("  npm run chatgpt-mcp:help");
   console.log("  npm run chatgpt-mcp:init:all");
   console.log("  npm run chatgpt-mcp:doctor:all");
@@ -314,12 +263,11 @@ function printHelp(config) {
   console.log(`Protected Relay base URL: ${config.relayBaseUrl} (port 8080 by default)`);
   for (const role of config.roles) console.log(`${role.label} private ingress: ${role.ingressAddress}; tunnel target: ${role.tunnelEndpoint}`);
   console.log("Private ingress listeners inject the protected Relay bearer; tunnel-client never connects directly to protected /mcp/* endpoints.");
-  console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
-  console.log(`Aggregate state file: ${config.stateFile}`);
+  console.log(`Role-app state file: ${config.stateFile}`);
   console.log("The three ChatGPT app registrations must select three distinct tunnel IDs.");
-  console.log("Native runtimes generate their own ephemeral loopback health URLs; no aggregate health ports are configured.");
+  console.log("Native runtimes generate their own ephemeral loopback health URLs.");
   console.log("Process environment overrides .env.local, which overrides .env, which overrides defaults.");
-  console.log("Override names: RELAY_MCP_RELAY_COMMAND, RELAY_MCP_BASE_URL, RELAY_MCP_INGRESS_*_ADDR, RELAY_MCP_*_PROFILE, RELAY_MCP_*_ALIAS, RELAY_MCP_STARTUP_TIMEOUT_MS, RELAY_MCP_PROFILE_DIR, and TUNNEL_CLIENT_PATH.");
+  console.log("Override names: RELAY_MCP_RELAY_COMMAND, RELAY_MCP_BASE_URL, RELAY_MCP_INGRESS_*_ADDR, RELAY_MCP_*_PROFILE, RELAY_MCP_*_ALIAS, RELAY_MCP_STARTUP_TIMEOUT_MS, RELAY_MCP_TUNNEL_PROFILE_DIR, and TUNNEL_CLIENT_PATH.");
 }
 
 function validateAggregateConfig(config) {
@@ -1355,64 +1303,6 @@ function runTunnelClient(command, args, controlPlaneApiKey) {
   });
 }
 
-async function runInit(config, options) {
-  requireConfiguredTunnelId(config);
-  requireConfiguredApiKey(config, "init");
-  const tunnelClient = resolveTunnelClient(config);
-  if (config.tunnelMcpTransport === "http" && !options.skipRelayCheck) await assertRelayReachable(config.relayMcpUrl);
-  const initArgs = ["init", "--force", "--profile", config.tunnelProfile, "--tunnel-id", config.tunnelId];
-  if (config.tunnelMcpTransport === "stdio") initArgs.push("--mcp-command", config.relayMcpStdioCommand);
-  else initArgs.push("--mcp-server-url", config.relayMcpUrl);
-  let exitCode = await runTunnelClient(tunnelClient, [...config.tunnelClientArgs, ...initArgs], config.controlPlaneApiKey);
-  if (exitCode !== 0) return exitCode;
-  return runTunnelClient(tunnelClient, [...config.tunnelClientArgs, "doctor", "--profile", config.tunnelProfile, "--explain", "--health.listen-addr", config.tunnelHealthListenAddr], config.controlPlaneApiKey);
-}
-
-async function runStart(config, options) {
-  requireConfiguredApiKey(config, "start");
-  const tunnelClient = resolveTunnelClient(config);
-  if (config.tunnelMcpTransport === "http" && !options.skipRelayCheck) await assertRelayReachable(config.relayMcpUrl);
-  console.log(`command: start\nprofile: ${config.tunnelProfile}\nMCP transport: ${config.tunnelMcpTransport}`);
-  console.log(`tunnel ID configured: ${isConfiguredTunnelId(config.tunnelId) ? "yes" : "no"}`);
-  return runTunnelClient(tunnelClient, [...config.tunnelClientArgs, "run", "--profile", config.tunnelProfile, "--health.listen-addr", config.tunnelHealthListenAddr], config.controlPlaneApiKey);
-}
-
-async function runDoctor(config, options) {
-  const diagnostics = {
-    envPathPresent: existsSync(config.envPath),
-    envLocalPathPresent: existsSync(config.envLocalPath),
-    tunnelIdConfigured: isConfiguredTunnelId(config.tunnelId),
-    controlPlaneApiKeyConfigured: isConfiguredApiKey(config.controlPlaneApiKey),
-    tunnelClientPath: null,
-    localCheck: null,
-  };
-  try { diagnostics.tunnelClientPath = resolveTunnelClient(config); }
-  catch (error) { diagnostics.tunnelClientPath = error instanceof Error ? error.message : String(error); }
-  if (options.skipRelayCheck) diagnostics.localCheck = "skipped (--skip-relay-check)";
-  else if (config.tunnelMcpTransport === "stdio") {
-    try { await runRelayMcpSelfTest(config); diagnostics.localCheck = "ok"; }
-    catch (error) { diagnostics.localCheck = error instanceof Error ? error.message : String(error); }
-  } else {
-    try { await assertRelayReachable(config.relayMcpUrl); diagnostics.localCheck = "ok"; }
-    catch (error) { diagnostics.localCheck = error instanceof Error ? error.message : String(error); }
-  }
-  printDiagnostics(config, diagnostics);
-  if (!diagnostics.controlPlaneApiKeyConfigured || !diagnostics.tunnelClientPath || (!options.skipRelayCheck && diagnostics.localCheck !== "ok")) return 1;
-  return runTunnelClient(diagnostics.tunnelClientPath, [...config.tunnelClientArgs, "doctor", "--profile", config.tunnelProfile, "--explain", "--health.listen-addr", config.tunnelHealthListenAddr], config.controlPlaneApiKey);
-}
-
-function printDiagnostics(config, diagnostics) {
-  console.log(`env file (.env): ${diagnostics.envPathPresent ? "present" : "missing"}`);
-  console.log(`env file (.env.local): ${diagnostics.envLocalPathPresent ? "present" : "missing"}`);
-  console.log(`profile: ${config.tunnelProfile}`);
-  console.log(`MCP transport: ${config.tunnelMcpTransport}`);
-  console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
-  console.log(`local MCP check: ${diagnostics.localCheck ?? "not run"}`);
-  console.log(`tunnel ID configured: ${diagnostics.tunnelIdConfigured ? "yes" : "no"}`);
-  console.log(`control-plane key configured: ${diagnostics.controlPlaneApiKeyConfigured ? "yes" : "no"}`);
-  console.log(`tunnel-client path: ${diagnostics.tunnelClientPath ?? "unresolved"}`);
-}
-
 function requireConfiguredTunnelId(config) {
   if (!isConfiguredTunnelId(config.tunnelId)) throw new ValidationError("TUNNEL_ID is required for init. Set it in .env, .env.local, or the process environment.");
 }
@@ -1494,30 +1384,6 @@ function postJsonRpcPing(relayMcpUrl, signal = null) {
     request.write(body);
     request.end();
   });
-}
-
-function runRelayMcpSelfTest(config) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(process.execPath, [config.relayMcpStdioLauncherPath, "--self-test"], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
-    const stdoutSink = createRedactedSink(sensitiveValues(config.controlPlaneApiKey), () => {});
-    const stderrSink = createRedactedSink(sensitiveValues(config.controlPlaneApiKey), (text) => process.stderr.write(text));
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => stdoutSink.push(chunk));
-    child.stderr.on("data", (chunk) => stderrSink.push(chunk));
-    child.on("error", (error) => rejectPromise(new ValidationError(`Failed to start Relay MCP stdio self-test: ${error.message}`)));
-    child.on("close", (code, signal) => {
-      const stdout = stdoutSink.finish();
-      const stderr = stderrSink.finish();
-      if (stdout.trim()) { rejectPromise(new ValidationError(`Relay MCP stdio self-test wrote unexpected stdout: ${stdout.trim()}`)); return; }
-      if (signal || (code ?? 1) !== 0) { rejectPromise(new ValidationError(`Relay MCP stdio self-test failed with exit code ${code ?? 1}.${stderr.trim() ? ` ${stderr.trim()}` : ""}`)); return; }
-      resolvePromise();
-    });
-  });
-}
-
-function buildDefaultRelayMcpCommand() {
-  return `${quoteCommandArgument(normalizeCommandPathForTunnel(process.execPath))} ${quoteCommandArgument(normalizeCommandPathForTunnel(RELAY_MCP_STDIO_LAUNCHER_PATH))}`;
 }
 
 function quoteCommandArgument(value) {
@@ -2174,7 +2040,6 @@ export {
   createRedactedSink,
   currentProcessStartIdentity,
   releaseAggregateLock,
-  normalizeRelayMcpProfile,
   normalizeRuntimeHealth,
   normalizeRuntimeStatus,
   parsePrivateIngressAddress,
