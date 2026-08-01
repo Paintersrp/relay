@@ -42,6 +42,42 @@ func TestNewValidatesConfiguration(t *testing.T) {
 	}
 }
 
+func TestCleanupRemovesOnlyExactOwnedStaging(t *testing.T) {
+	root := t.TempDir()
+	generationID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	nonce := "0123456789abcdef0123456789abcdef"
+	owned := filepath.Join(root, sourceindex.StagingDirectoryName, generationID+"-"+nonce)
+	other := filepath.Join(root, sourceindex.StagingDirectoryName, generationID+"-"+"ffffffffffffffffffffffffffffffff")
+	if err := os.MkdirAll(owned, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(other, 0700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Supervisor{config: Config{IndexRoot: root}}
+	if err := s.cleanup(generationID, nonce); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if _, err := os.Lstat(owned); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("owned staging remains: %v", err)
+	}
+	if info, err := os.Lstat(other); err != nil || !info.IsDir() {
+		t.Fatalf("other staging was changed: %v", err)
+	}
+}
+
+func TestCleanupRejectsSymlinkStagingParent(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, sourceindex.StagingDirectoryName)); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	s := &Supervisor{config: Config{IndexRoot: root}}
+	if err := s.cleanup("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "0123456789abcdef0123456789abcdef"); err == nil {
+		t.Fatal("cleanup accepted a symlink staging parent")
+	}
+}
+
 type testStore struct{}
 type testAuthority struct{}
 

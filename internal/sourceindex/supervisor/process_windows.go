@@ -10,3 +10,4 @@ func terminateProcess(cmd *exec.Cmd) {
 		_ = cmd.Process.Kill()
 	}
 }
+func terminateResidualProcessGroup(*exec.Cmd) {}

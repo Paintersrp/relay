@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"relay/internal/sourceindex"
@@ -34,6 +35,8 @@ var (
 	ErrChildProtocol               = errors.New("source-index child protocol failure")
 	ErrStagedVerification          = errors.New("source-index staged verification failure")
 	ErrPublication                 = errors.New("source-index publication failure")
+	ErrPublicationAfterExposure    = errors.New("source-index publication reconciliation required")
+	ErrFailureFinalization         = errors.New("source-index failure finalization required")
 	ErrPersistenceAfterPublication = errors.New("source-index persistence failure after publication")
 )
 
@@ -98,7 +101,6 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 	if err != nil {
 		return s.fail(generationID, "source_unavailable", "source authority is unavailable", nil, "", ErrAuthorityUnavailable)
 	}
-	defer lease.Close()
 
 	options := sourceindex.DefaultBuildOptions()
 	if _, err := sourceindex.MarshalBuildOptions(options); err != nil {
@@ -125,18 +127,27 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 		return s.fail(generationID, code, message, lease, nonce, err)
 	}
 	if response.Status == indexerprotocol.BuildStatusFailed {
-		return s.fail(generationID, response.Failure.Code, "indexer reported build failure", lease, nonce, errors.New("indexer reported failure"))
+		return s.fail(generationID, response.Failure.Code, safeFailureMessage(response.Failure.Message), lease, nonce, errors.New("indexer reported failure"))
 	}
 	verified, err := s.verify(request, nonce, *response.Result)
 	if err != nil {
 		return s.fail(generationID, "verification_failed", "staged source-index verification failed", lease, nonce, ErrStagedVerification)
 	}
-	if err := s.publish(generationID, nonce); err != nil {
+	publication, err := s.publish(generationID, nonce)
+	if err != nil {
+		if publication.Exposed {
+			closeErr := lease.Close()
+			return workflow.SourceIndexGeneration{}, errors.Join(ErrPublicationAfterExposure, sanitizedError(err), sanitizedError(closeErr))
+		}
 		return s.fail(generationID, "publication_failed", "source-index publication failed", lease, nonce, ErrPublication)
 	}
 	ready, err := s.store.MarkSourceIndexGenerationReady(ctx, workflow.MarkSourceIndexGenerationReadyParams{GenerationID: generationID, GenerationManifestSHA256: verified.generation, CoverageManifestSHA256: verified.coverage, ArtifactManifestSHA256: verified.artifact})
 	if err != nil {
-		return workflow.SourceIndexGeneration{}, fmt.Errorf("%w: ready transition", ErrPersistenceAfterPublication)
+		closeErr := lease.Close()
+		return workflow.SourceIndexGeneration{}, errors.Join(ErrPublicationAfterExposure, ErrPersistenceAfterPublication, sanitizedError(closeErr))
+	}
+	if err := lease.Close(); err != nil {
+		return workflow.SourceIndexGeneration{}, fmt.Errorf("%w: lease release", ErrPublicationAfterExposure)
 	}
 	return ready, nil
 }
@@ -144,6 +155,9 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 func (s *Supervisor) acquireLease(ctx context.Context, generation workflow.SourceIndexGeneration) (SourceLease, string, string, error) {
 	lease, err := s.authority.AcquireSourceIndexLease(ctx, generation.Identity)
 	if err != nil || lease == nil || !cleanAbsolute(lease.RepositoryPath()) {
+		if lease != nil {
+			_ = lease.Close()
+		}
 		return nil, "source_unavailable", "source authority is unavailable", errors.New("lease unavailable")
 	}
 	return lease, "", "", nil
@@ -187,63 +201,77 @@ func (s *Supervisor) verify(request indexerprotocol.BuildRequest, nonce string, 
 	if err != nil {
 		return verifiedResult{}, err
 	}
-	gd, _ := sourceindex.GenerationManifestSHA256(g)
-	cd, _ := sourceindex.CoverageManifestSHA256(c)
-	ad, _ := sourceindex.ArtifactManifestSHA256(a)
+	gd, err := sourceindex.GenerationManifestSHA256(g)
+	if err != nil {
+		return verifiedResult{}, err
+	}
+	cd, err := sourceindex.CoverageManifestSHA256(c)
+	if err != nil {
+		return verifiedResult{}, err
+	}
+	ad, err := sourceindex.ArtifactManifestSHA256(a)
+	if err != nil {
+		return verifiedResult{}, err
+	}
 	if gd != result.GenerationManifestSHA256 || cd != result.CoverageManifestSHA256 || ad != result.ArtifactManifestSHA256 || c.Counts != result.CoverageCounts {
 		return verifiedResult{}, errors.New("reported artifact values mismatch")
 	}
 	return verifiedResult{gd, cd, ad}, nil
 }
 
-func (s *Supervisor) publish(generationID, nonce string) error {
+type PublicationResult struct{ Exposed bool }
+
+func (s *Supervisor) publish(generationID, nonce string) (PublicationResult, error) {
 	if err := sourceindex.ValidateIndexRoot(s.config.IndexRoot, s.config.ProtectedStorage); err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	if err := os.MkdirAll(s.config.IndexRoot, 0700); err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	rootInfo, err := os.Lstat(s.config.IndexRoot)
 	if err != nil || rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
-		return errors.New("unsafe index root")
+		return PublicationResult{}, errors.New("unsafe index root")
 	}
 	staging, err := sourceindex.StagingDirectory(s.config.IndexRoot, generationID, nonce)
 	if err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	target, err := sourceindex.GenerationDirectory(s.config.IndexRoot, generationID)
 	if err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	parent := filepath.Dir(target)
 	if err := os.MkdirAll(parent, 0700); err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	parentInfo, err := os.Lstat(parent)
 	if err != nil || parentInfo.Mode()&os.ModeSymlink != 0 || !parentInfo.IsDir() {
-		return errors.New("unsafe generation parent")
+		return PublicationResult{}, errors.New("unsafe generation parent")
 	}
 	if info, err := os.Lstat(staging); err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return errors.New("unsafe staging directory")
+		return PublicationResult{}, errors.New("unsafe staging directory")
 	}
 	if _, err := os.Lstat(target); err == nil {
-		return errors.New("generation target exists")
+		return PublicationResult{}, errors.New("generation target exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return PublicationResult{}, err
 	}
 	if err := fsatomic.SyncDirectory(staging); err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	if err := fsatomic.SyncDirectory(parent); err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	if err := fsatomic.RenameNoReplace(staging, target); err != nil {
-		return err
+		return PublicationResult{}, err
 	}
 	if err := fsatomic.SyncDirectory(parent); err != nil {
-		return err
+		return PublicationResult{Exposed: true}, err
 	}
-	return fsatomic.SyncDirectory(s.config.IndexRoot)
+	if err := fsatomic.SyncDirectory(s.config.IndexRoot); err != nil {
+		return PublicationResult{Exposed: true}, err
+	}
+	return PublicationResult{Exposed: true}, nil
 }
 
 func (s *Supervisor) fail(generationID, code, message string, lease SourceLease, nonce string, cause error) (workflow.SourceIndexGeneration, error) {
@@ -255,22 +283,40 @@ func (s *Supervisor) fail(generationID, code, message string, lease SourceLease,
 	if lease != nil {
 		cleanupErr = errors.Join(cleanupErr, lease.Close())
 	}
+	if cleanupErr != nil {
+		return workflow.SourceIndexGeneration{}, errors.Join(cause, ErrFailureFinalization)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, markErr := s.store.MarkSourceIndexGenerationFailed(ctx, workflow.MarkSourceIndexGenerationFailedParams{GenerationID: generationID, FailureCode: safeFailureCode(code), FailureMessage: message})
 	if markErr != nil {
 		return workflow.SourceIndexGeneration{}, errors.Join(cause, errors.New("source-index failure finalization failed"))
 	}
-	if cleanupErr != nil {
-		return workflow.SourceIndexGeneration{}, errors.Join(cause, errors.New("source-index staging cleanup failed"))
-	}
 	return workflow.SourceIndexGeneration{}, cause
 }
 
 func (s *Supervisor) cleanup(generationID, nonce string) error {
+	if err := sourceindex.ValidateIndexRoot(s.config.IndexRoot, s.config.ProtectedStorage); err != nil {
+		return errors.New("unsafe index root")
+	}
+	rootInfo, err := os.Lstat(s.config.IndexRoot)
+	if err != nil || rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return errors.New("unsafe index root")
+	}
+	stagingParent := filepath.Join(s.config.IndexRoot, sourceindex.StagingDirectoryName)
+	parentInfo, err := os.Lstat(stagingParent)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || parentInfo.Mode()&os.ModeSymlink != 0 || !parentInfo.IsDir() {
+		return errors.New("unsafe staging parent")
+	}
 	path, err := sourceindex.StagingDirectory(s.config.IndexRoot, generationID, nonce)
 	if err != nil {
 		return errors.New("invalid owned staging directory")
+	}
+	if filepath.Dir(path) != stagingParent || filepath.Base(path) != generationID+"-"+nonce {
+		return errors.New("owned staging path disagreement")
 	}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -305,8 +351,17 @@ func safeFailureCode(code string) string {
 	}
 	return "indexer_process_failed"
 }
+func safeFailureMessage(message string) string {
+	if strings.TrimSpace(message) == message && message != "" && len(message) <= 4096 {
+		return message
+	}
+	return "indexer reported build failure"
+}
 
 func sanitizedError(err error) error {
+	if err == nil {
+		return nil
+	}
 	switch {
 	case errors.Is(err, ErrAuthorityUnavailable):
 		return ErrAuthorityUnavailable
@@ -316,6 +371,10 @@ func sanitizedError(err error) error {
 		return ErrStagedVerification
 	case errors.Is(err, ErrPublication):
 		return ErrPublication
+	case errors.Is(err, ErrPublicationAfterExposure):
+		return ErrPublicationAfterExposure
+	case errors.Is(err, ErrFailureFinalization):
+		return ErrFailureFinalization
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return context.Canceled
 	default:
@@ -326,7 +385,7 @@ func sanitizedError(err error) error {
 func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID string) (indexerprotocol.BuildResponse, string, string, error) {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(childCtx, s.config.IndexerPath)
+	cmd := exec.Command(s.config.IndexerPath)
 	configureProcess(cmd)
 	cmd.Env = childEnvironment()
 	cmd.Stdin = bytes.NewReader(request)
@@ -341,15 +400,46 @@ func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID 
 	if err := cmd.Start(); err != nil {
 		return indexerprotocol.BuildResponse{}, "indexer_start_failed", "cannot start indexer", err
 	}
-	go func() { <-childCtx.Done(); terminateProcess(cmd) }()
+	childReaped := make(chan struct{})
+	var processMu sync.Mutex
+	reaped := false
+	go func() {
+		select {
+		case <-childCtx.Done():
+			processMu.Lock()
+			if !reaped {
+				terminateProcess(cmd)
+			}
+			processMu.Unlock()
+		case <-childReaped:
+		}
+	}()
 	out := &boundedBuffer{limit: MaxIndexerResponseBytes, cancel: cancel}
 	errout := &boundedBuffer{limit: MaxIndexerStderrBytes, cancel: cancel}
 	done := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(out, stdout); done <- struct{}{} }()
 	go func() { _, _ = io.Copy(errout, stderr); done <- struct{}{} }()
-	waitErr := cmd.Wait()
-	<-done
-	<-done
+	waitResult := make(chan error, 1)
+	go func() {
+		waitErr := cmd.Wait()
+		processMu.Lock()
+		reaped = true
+		close(childReaped)
+		processMu.Unlock()
+		waitResult <- waitErr
+	}()
+	waitErr := <-waitResult
+	// Descendants may retain inherited pipes after the direct child exits.
+	terminateResidualProcessGroup(cmd)
+	_ = stdout.Close()
+	_ = stderr.Close()
+	copyDone := make(chan struct{})
+	go func() { <-done; <-done; close(copyDone) }()
+	select {
+	case <-copyDone:
+	case <-time.After(5 * time.Second):
+		return indexerprotocol.BuildResponse{}, "indexer_process_failed", "indexer output did not terminate", errors.New("indexer pipes did not close")
+	}
 	if out.exceeded {
 		return indexerprotocol.BuildResponse{}, "indexer_output_exceeded", "indexer response exceeded supervisor limit", errors.New("indexer response exceeded limit")
 	}
@@ -383,9 +473,12 @@ type boundedBuffer struct {
 	data     []byte
 	exceeded bool
 	cancel   func()
+	mu       sync.Mutex
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if int64(len(b.data))+int64(len(p)) > b.limit {
 		remaining := b.limit - int64(len(b.data))
 		if remaining > 0 {
@@ -400,7 +493,11 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	b.data = append(b.data, p...)
 	return len(p), nil
 }
-func (b *boundedBuffer) bytes() []byte { return append([]byte(nil), b.data...) }
+func (b *boundedBuffer) bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]byte(nil), b.data...)
+}
 
 func childEnvironment() []string {
 	allowed := map[string]bool{"PATH": true, "SystemRoot": true, "WINDIR": true, "ComSpec": true, "TMP": true, "TEMP": true}
