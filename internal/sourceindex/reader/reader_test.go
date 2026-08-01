@@ -14,6 +14,7 @@ import (
 
 	"relay/internal/sourceindex"
 	"relay/internal/sourceindex/indexer"
+	"relay/internal/sourceindex/indexerprotocol"
 	"relay/internal/sourceindex/zoektread"
 	workflow "relay/internal/store/workflow"
 )
@@ -426,7 +427,9 @@ func withFakeFS(fs *fakeFS) {
 	boundFS = fs
 	oldOpenShard := openShard
 	oldSupported := zoektSupported
+	oldVerify := verifyGenerationFiles
 	zoektSupported = func() bool { return true }
+	verifyGenerationFiles = fakeVerifiedGenerationFiles
 	openShard = func(f *os.File, generation string, sequence int, want zoektread.Metadata) (shard, error) {
 		fs.filesClosed++
 		_ = f.Close()
@@ -436,8 +439,106 @@ func withFakeFS(fs *fakeFS) {
 		boundFS = old
 		openShard = oldOpenShard
 		zoektSupported = oldSupported
+		verifyGenerationFiles = oldVerify
 	}
 	fs.t.Cleanup(restore)
+}
+
+// fakeVerifiedGenerationFiles completes verification of a bound generation
+// without the pinned Zoekt builder: canonical manifests, digest chains,
+// complete artifact membership, and shard integrity, skipping only the
+// platform-blocked document enumeration.
+func fakeVerifiedGenerationFiles(files indexer.VerifiedGenerationFiles, r indexerprotocol.BuildRequest) (*indexer.VerifiedGeneration, error) {
+	gb, _, err := files.ReadManifest(sourceindex.GenerationManifestFileName)
+	if err != nil {
+		return nil, err
+	}
+	g, err := sourceindex.ParseGenerationManifest(gb)
+	if err != nil {
+		return nil, err
+	}
+	cb, _, err := files.ReadManifest(sourceindex.CoverageManifestFileName)
+	if err != nil {
+		return nil, err
+	}
+	c, err := sourceindex.ParseCoverageManifest(cb)
+	if err != nil {
+		return nil, err
+	}
+	ab, _, err := files.ReadManifest(sourceindex.ArtifactManifestFileName)
+	if err != nil {
+		return nil, err
+	}
+	a, err := sourceindex.ParseArtifactManifest(ab)
+	if err != nil {
+		return nil, err
+	}
+	gd, err := sourceindex.GenerationManifestSHA256(g)
+	if err != nil {
+		return nil, err
+	}
+	cd, err := sourceindex.CoverageManifestSHA256(c)
+	if err != nil {
+		return nil, err
+	}
+	ad, err := sourceindex.ArtifactManifestSHA256(a)
+	if err != nil {
+		return nil, err
+	}
+	if gd != digest(gb) || cd != digest(cb) || ad != digest(ab) || g.GenerationID != r.GenerationID || c.GenerationID != r.GenerationID || c.CommitOID != r.Identity.CommitOID || c.TreeOID != r.Identity.TreeOID || a.GenerationID != r.GenerationID || g.Identity != r.Identity || g.CoverageManifestSHA256 != digest(cb) || g.ArtifactManifestSHA256 != digest(ab) {
+		return nil, errors.New("manifest integrity")
+	}
+	artifacts, err := files.ListArtifacts()
+	if err != nil {
+		return nil, err
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			for _, o := range artifacts {
+				if o.File != nil {
+					_ = o.File.Close()
+				}
+			}
+		}
+	}()
+	byPath := make(map[string]indexer.OpenedArtifact, len(artifacts))
+	for _, o := range artifacts {
+		if _, ok := byPath[o.RelativePath]; ok {
+			return nil, errors.New("repeated artifact path")
+		}
+		if o.RelativePath != sourceindex.CoverageManifestFileName && o.Kind != sourceindex.ArtifactZoektShard {
+			return nil, errors.New("unexpected artifact")
+		}
+		byPath[o.RelativePath] = o
+	}
+	if len(byPath) != len(a.Files) {
+		return nil, errors.New("artifact membership")
+	}
+	var shardCount int64
+	for _, want := range a.Files {
+		o, ok := byPath[want.RelativePath]
+		if !ok {
+			return nil, errors.New("missing artifact")
+		}
+		if o.Kind != want.Kind || o.SizeBytes != want.SizeBytes || o.SHA256 != want.SHA256 {
+			return nil, errors.New("artifact integrity")
+		}
+		if want.Kind == sourceindex.ArtifactZoektShard {
+			shardCount++
+		}
+	}
+	complete = true
+	return &indexer.VerifiedGeneration{
+		Generation:          g,
+		Coverage:            c,
+		Artifacts:           a,
+		Opened:              artifacts,
+		GenerationRawSHA256: digest(gb),
+		CoverageRawSHA256:   digest(cb),
+		ArtifactRawSHA256:   digest(ab),
+		ShardCount:          shardCount,
+	}, nil
 }
 
 // fakeShard records the exact query inputs and serves canned results.
@@ -1556,4 +1657,284 @@ func indexedCoverage(paths ...string) map[string]sourceindex.CoverageStatus {
 		out[p] = sourceindex.CoverageIndexedText
 	}
 	return out
+}
+
+// probeFS records every opened artifact descriptor and directory close, and
+// injects deterministic close failures and enumeration mutations.
+type probeFS struct {
+	dirFS
+	opened     []*os.File
+	names      map[dirHandle]string
+	closeCount map[dirHandle]int
+	failClose  map[string]error
+	mutateList func([]dirEntry) []dirEntry
+	listCalls  int
+}
+
+func newProbeFS(fs *fakeFS) *probeFS {
+	return &probeFS{dirFS: fs, names: map[dirHandle]string{}, closeCount: map[dirHandle]int{}, failClose: map[string]error{}}
+}
+
+func (p *probeFS) OpenChild(parent dirHandle, name string) (dirHandle, indexer.FileIdentity, error) {
+	handle, id, err := p.dirFS.OpenChild(parent, name)
+	if err == nil {
+		p.names[handle] = name
+	}
+	return handle, id, err
+}
+
+func (p *probeFS) OpenFile(dir dirHandle, name string) (*os.File, indexer.FileIdentity, error) {
+	file, id, err := p.dirFS.OpenFile(dir, name)
+	if err == nil {
+		p.opened = append(p.opened, file)
+	}
+	return file, id, err
+}
+
+func (p *probeFS) List(dir dirHandle) ([]dirEntry, error) {
+	entries, err := p.dirFS.List(dir)
+	if err != nil {
+		return nil, err
+	}
+	p.listCalls++
+	if p.listCalls == 2 && p.mutateList != nil {
+		return p.mutateList(entries), nil
+	}
+	return entries, nil
+}
+
+func (p *probeFS) Close(dir dirHandle) error {
+	p.closeCount[dir]++
+	if err, ok := p.failClose[p.names[dir]]; ok {
+		_ = p.dirFS.Close(dir)
+		return err
+	}
+	return p.dirFS.Close(dir)
+}
+
+func (p *probeFS) handleNamed(name string) dirHandle {
+	for h, n := range p.names {
+		if n == name {
+			return h
+		}
+	}
+	return 0
+}
+
+func assertFilesClosed(t *testing.T, files []*os.File) {
+	t.Helper()
+	for _, f := range files {
+		if err := f.Close(); !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("artifact %s still open: %v", f.Name(), err)
+		}
+	}
+}
+
+func TestRequiredShardsDirectoryAccepted(t *testing.T) {
+	identity, _ := testIdentity(t, "vault")
+	fs := newFakeFS(t)
+	withFakeFS(fs)
+	root := filepath.Join(t.TempDir(), "index")
+	row, id, _ := buildGeneration(t, fs, root, generationSpec{identity: identity, indexed: []string{"a.txt"}, shards: map[int][]byte{0: []byte("shard")}})
+	handle, _, err := fs.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gens, _, err := fs.OpenChild(handle, sourceindex.GenerationDirectoryName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen, _, err := fs.OpenChild(gens, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := &boundGenerationFiles{dir: &boundDirectory{handle: gen, name: "generations/" + id}, cache: map[string][]byte{}, ids: map[string]indexer.FileIdentity{}}
+	for _, name := range []string{sourceindex.GenerationManifestFileName, sourceindex.CoverageManifestFileName, sourceindex.ArtifactManifestFileName} {
+		if _, _, err := files.ReadManifest(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	artifacts, err := files.ListArtifacts()
+	if err != nil {
+		t.Fatalf("bound enumeration failed: %v", err)
+	}
+	if len(artifacts) != 2 || artifacts[0].RelativePath != sourceindex.CoverageManifestFileName || artifacts[0].Kind != sourceindex.ArtifactCoverage || artifacts[1].RelativePath != sourceindex.ShardDirectoryName+"/000000.zoekt" || artifacts[1].Kind != sourceindex.ArtifactZoektShard || artifacts[1].SHA256 != sha256sum([]byte("shard")) || artifacts[1].SizeBytes != int64(len("shard")) {
+		t.Fatalf("artifacts = %#v", artifacts)
+	}
+	for _, o := range artifacts {
+		if o.File != nil {
+			_ = o.File.Close()
+		}
+	}
+	_ = boundFS.Close(gen)
+	_ = boundFS.Close(gens)
+	_ = boundFS.Close(handle)
+	// The reader completes opening with fake verified shards.
+	r, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity)
+	if err != nil {
+		t.Fatalf("open failed: %v", err)
+	}
+	defer r.Close()
+	if d := r.Descriptor(); d.GenerationID != id || d.Identity != identity {
+		t.Fatalf("descriptor = %#v", d)
+	}
+}
+
+func TestShardsDirectoryRejection(t *testing.T) {
+	identity, _ := testIdentity(t, "vault")
+	base := func(t *testing.T) (*fakeFS, workflow.SourceIndexGeneration, string, string) {
+		fs := newFakeFS(t)
+		withFakeFS(fs)
+		root := filepath.Join(t.TempDir(), "index")
+		row, _, genDir := buildGeneration(t, fs, root, generationSpec{identity: identity, indexed: []string{"a.txt"}, shards: map[int][]byte{0: []byte("shard")}})
+		return fs, row, root, genDir
+	}
+	reject := func(name string, setup func(t *testing.T, fs *fakeFS, row workflow.SourceIndexGeneration, root, genDir string)) {
+		t.Helper()
+		t.Run(name, func(t *testing.T) {
+			fs, row, root, genDir := base(t)
+			setup(t, fs, row, root, genDir)
+			if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+				t.Fatalf("error = %v, want generation integrity", err)
+			}
+		})
+	}
+	reject("missing shards directory", func(t *testing.T, fs *fakeFS, _ workflow.SourceIndexGeneration, _, genDir string) {
+		fs.remove(filepath.Join(genDir, sourceindex.ShardDirectoryName))
+	})
+	reject("second unexpected directory", func(t *testing.T, fs *fakeFS, _ workflow.SourceIndexGeneration, _, genDir string) {
+		fs.mkdir(filepath.Join(genDir, "unexpected"))
+	})
+	reject("symlink named shards", func(t *testing.T, fs *fakeFS, _ workflow.SourceIndexGeneration, _, genDir string) {
+		fs.remove(filepath.Join(genDir, sourceindex.ShardDirectoryName))
+		fs.symlinkEntry(filepath.Join(genDir, sourceindex.ShardDirectoryName))
+	})
+	reject("regular file named shards", func(t *testing.T, fs *fakeFS, _ workflow.SourceIndexGeneration, _, genDir string) {
+		fs.remove(filepath.Join(genDir, sourceindex.ShardDirectoryName))
+		fs.writeFile(filepath.Join(genDir, sourceindex.ShardDirectoryName), []byte("x"))
+	})
+	t.Run("missing shards entry after descriptor opened", func(t *testing.T) {
+		fs, row, root, _ := base(t)
+		probe := newProbeFS(fs)
+		probe.mutateList = func(entries []dirEntry) []dirEntry {
+			filtered := entries[:0]
+			for _, e := range entries {
+				if e.Name != sourceindex.ShardDirectoryName {
+					filtered = append(filtered, e)
+				}
+			}
+			return filtered
+		}
+		old := boundFS
+		boundFS = probe
+		defer func() { boundFS = old }()
+		if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+			t.Fatalf("error = %v, want generation integrity", err)
+		}
+		assertFilesClosed(t, probe.opened)
+		if n := probe.closeCount[probe.handleNamed(sourceindex.ShardDirectoryName)]; n != 1 {
+			t.Fatalf("shards directory closed %d times, want once", n)
+		}
+	})
+	t.Run("duplicate reported shards entries", func(t *testing.T) {
+		fs, row, root, _ := base(t)
+		probe := newProbeFS(fs)
+		probe.mutateList = func(entries []dirEntry) []dirEntry {
+			return append(entries, dirEntry{Name: sourceindex.ShardDirectoryName, Mode: os.ModeDir})
+		}
+		old := boundFS
+		boundFS = probe
+		defer func() { boundFS = old }()
+		if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+			t.Fatalf("error = %v, want generation integrity", err)
+		}
+		assertFilesClosed(t, probe.opened)
+	})
+}
+
+func TestVerificationCleanup(t *testing.T) {
+	identity, _ := testIdentity(t, "vault")
+	build := func(t *testing.T) (*fakeFS, workflow.SourceIndexGeneration, string) {
+		fs := newFakeFS(t)
+		withFakeFS(fs)
+		root := filepath.Join(t.TempDir(), "index")
+		row, _, _ := buildGeneration(t, fs, root, generationSpec{identity: identity, indexed: []string{"a.txt"}, shards: map[int][]byte{0: []byte("shard")}})
+		return fs, row, root
+	}
+	attach := func(t *testing.T, fs *fakeFS) *probeFS {
+		probe := newProbeFS(fs)
+		old := boundFS
+		boundFS = probe
+		t.Cleanup(func() { boundFS = old })
+		return probe
+	}
+	t.Run("shard count mismatch closes every verified artifact", func(t *testing.T) {
+		fs, row, root := build(t)
+		probe := attach(t, fs)
+		old := verifyGenerationFiles
+		verifyGenerationFiles = func(files indexer.VerifiedGenerationFiles, r indexerprotocol.BuildRequest) (*indexer.VerifiedGeneration, error) {
+			verified, err := fakeVerifiedGenerationFiles(files, r)
+			if err != nil {
+				return nil, err
+			}
+			verified.ShardCount++
+			return verified, nil
+		}
+		t.Cleanup(func() { verifyGenerationFiles = old })
+		if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+			t.Fatalf("error = %v, want generation integrity", err)
+		}
+		assertFilesClosed(t, probe.opened)
+	})
+	t.Run("enumeration failure closes every opened artifact", func(t *testing.T) {
+		fs, row, root := build(t)
+		probe := attach(t, fs)
+		fs.mkdir(filepath.Join(root, sourceindex.GenerationDirectoryName, identityID(t, identity), "unexpected"))
+		if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+			t.Fatalf("error = %v, want generation integrity", err)
+		}
+		assertFilesClosed(t, probe.opened)
+	})
+	t.Run("successful verification closes each artifact exactly once", func(t *testing.T) {
+		fs, row, root := build(t)
+		probe := attach(t, fs)
+		r, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Close(); err != nil {
+			t.Fatal(err)
+		}
+		assertFilesClosed(t, probe.opened)
+		fs.assertBalancedFiles(t)
+	})
+	t.Run("shard directory close error is not retried", func(t *testing.T) {
+		fs, row, root := build(t)
+		probe := attach(t, fs)
+		probe.failClose[sourceindex.ShardDirectoryName] = errors.New("close failed")
+		if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+			t.Fatalf("error = %v, want generation integrity", err)
+		}
+		if n := probe.closeCount[probe.handleNamed(sourceindex.ShardDirectoryName)]; n != 1 {
+			t.Fatalf("shards directory closed %d times, want once", n)
+		}
+		assertFilesClosed(t, probe.opened)
+	})
+	t.Run("cleanup continues across multiple close errors", func(t *testing.T) {
+		fs, row, root := build(t)
+		probe := attach(t, fs)
+		id, _ := sourceindex.GenerationID(identity)
+		probe.failClose[sourceindex.ShardDirectoryName] = errors.New("shards close failed")
+		probe.failClose[id] = errors.New("generation close failed")
+		if _, err := openGeneration(t, fs, &fakeStore{row: row}, Config{IndexRoot: root}, identity); !errors.Is(err, ErrGenerationIntegrity) {
+			t.Fatalf("error = %v, want generation integrity", err)
+		}
+		if n := probe.closeCount[probe.handleNamed(sourceindex.ShardDirectoryName)]; n != 1 {
+			t.Fatalf("shards directory closed %d times, want once", n)
+		}
+		if n := probe.closeCount[probe.handleNamed(id)]; n != 1 {
+			t.Fatalf("generation directory closed %d times, want once", n)
+		}
+		assertFilesClosed(t, probe.opened)
+	})
 }

@@ -207,6 +207,19 @@ func VerifyGenerationFiles(files VerifiedGenerationFiles, r indexerprotocol.Buil
 
 func sameIdentity(a, b FileIdentity) bool { return a == b }
 
+// openStagedFile opens one staged artifact during path enumeration; the seam
+// keeps deterministic tests able to observe every opened descriptor.
+var openStagedFile = os.Open
+
+// stagedFileIdentity identifies one staged artifact; the seam keeps path
+// enumeration testable where stable file identities are unavailable.
+var stagedFileIdentity = artifactFileIdentity
+
+// verifyBound is the shared verification boundary behind the path-based entry
+// point; the seam keeps its exit cleanup testable without the pinned Zoekt
+// builder on every platform.
+var verifyBound = VerifyGenerationFiles
+
 // pathFiles is the builder's path-based VerifiedGenerationFiles adapter over a
 // staged generation directory.
 type pathFiles struct{ root string }
@@ -228,9 +241,16 @@ func (p pathFiles) ReadManifest(name string) ([]byte, FileIdentity, error) {
 	return b, identity, nil
 }
 
-func (p pathFiles) ListArtifacts() ([]OpenedArtifact, error) {
-	var out []OpenedArtifact
+func (p pathFiles) ListArtifacts() (out []OpenedArtifact, err error) {
 	identities := make(map[FileIdentity]string)
+	var opened []*os.File
+	defer func() {
+		if err != nil {
+			for _, f := range opened {
+				_ = f.Close()
+			}
+		}
+	}()
 	e := filepath.Walk(p.root, func(path string, info os.FileInfo, er error) error {
 		if er != nil {
 			return er
@@ -247,7 +267,7 @@ func (p pathFiles) ListArtifacts() ([]OpenedArtifact, error) {
 			}
 			return nil
 		}
-		identity, er := artifactFileIdentity(info)
+		identity, er := stagedFileIdentity(info)
 		if er != nil {
 			return errors.New("unsafe output")
 		}
@@ -263,18 +283,17 @@ func (p pathFiles) ListArtifacts() ([]OpenedArtifact, error) {
 		if rel == sourceindex.ArtifactManifestFileName || rel == sourceindex.GenerationManifestFileName {
 			return nil
 		}
-		f, er := os.Open(path)
+		f, er := openStagedFile(path)
 		if er != nil {
 			return er
 		}
+		opened = append(opened, f)
 		h := sha256.New()
 		n, er := io.Copy(h, f)
 		if er != nil {
-			_ = f.Close()
 			return er
 		}
 		if _, er := f.Seek(0, 0); er != nil {
-			_ = f.Close()
 			return er
 		}
 		kind := sourceindex.ArtifactZoektMetadata
@@ -286,7 +305,10 @@ func (p pathFiles) ListArtifacts() ([]OpenedArtifact, error) {
 		out = append(out, OpenedArtifact{Kind: kind, RelativePath: rel, SHA256: hex.EncodeToString(h.Sum(nil)), SizeBytes: n, Identity: identity, File: f})
 		return nil
 	})
-	return out, e
+	if e != nil {
+		return nil, e
+	}
+	return out, nil
 }
 
 // CloseArtifacts closes every opened artifact descriptor.
@@ -298,4 +320,22 @@ func CloseArtifacts(artifacts []OpenedArtifact) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// Verify performs the complete path-based verification of one staged
+// generation. Every opened artifact is closed on every exit after verification
+// succeeds, including shard-count mismatch and later failures.
+func Verify(root string, r indexerprotocol.BuildRequest, expectedShards int64) (err error) {
+	files := pathFiles{root: root}
+	verified, e := verifyBound(files, r)
+	if e != nil {
+		return e
+	}
+	defer func() {
+		err = errors.Join(err, CloseArtifacts(verified.Opened))
+	}()
+	if verified.ShardCount != expectedShards {
+		return errors.New("shard count")
+	}
+	return nil
 }

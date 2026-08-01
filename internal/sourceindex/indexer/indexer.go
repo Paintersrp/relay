@@ -352,18 +352,6 @@ func artifactFiles(root string) ([]sourceindex.ArtifactFile, error) {
 	}
 	return fs, nil
 }
-func Verify(root string, r indexerprotocol.BuildRequest, expectedShards int64) error {
-	files := pathFiles{root: root}
-	verified, e := VerifyGenerationFiles(files, r)
-	if e != nil {
-		return e
-	}
-	if verified.ShardCount != expectedShards {
-		return errors.New("shard count")
-	}
-	return CloseArtifacts(verified.Opened)
-}
-
 func safeDirectory(path string) error {
 	i, e := os.Lstat(path)
 	if e != nil || i.Mode()&os.ModeSymlink != 0 || !i.IsDir() {

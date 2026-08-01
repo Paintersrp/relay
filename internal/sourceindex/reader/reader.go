@@ -77,6 +77,11 @@ var boundFS dirFS = defaultDirFS()
 
 var zoektSupported = zoektread.Supported
 
+// verifyGenerationFiles is the shared verification boundary; the seam keeps
+// deterministic tests able to complete reader opening without the pinned
+// Zoekt builder on every platform.
+var verifyGenerationFiles = indexer.VerifyGenerationFiles
+
 type shard interface {
 	Search(ctx context.Context, literal string, limit int) (zoektread.Result, error)
 	Close() error
@@ -141,18 +146,24 @@ func (b *boundGenerationFiles) ListArtifacts() ([]indexer.OpenedArtifact, error)
 	}
 	var opened []*os.File
 	shardsClosed := false
-	closeAll := func() {
+	closeFiles := func() error {
+		var errs []error
 		for _, f := range opened {
-			_ = f.Close()
+			errs = append(errs, f.Close())
 		}
+		return errors.Join(errs...)
+	}
+	closeAll := func() error {
+		var errs []error
+		errs = append(errs, closeFiles())
 		if !shardsClosed {
-			_ = boundFS.Close(shardsDir)
 			shardsClosed = true
+			errs = append(errs, boundFS.Close(shardsDir))
 		}
+		return errors.Join(errs...)
 	}
 	fail := func(e error) ([]indexer.OpenedArtifact, error) {
-		closeAll()
-		return nil, e
+		return nil, errors.Join(e, closeAll())
 	}
 	expected := make(map[string]bool)
 	var expectedOrder []string
@@ -238,21 +249,27 @@ func (b *boundGenerationFiles) ListArtifacts() ([]indexer.OpenedArtifact, error)
 		out = append(out, o)
 	}
 	if e := boundFS.Close(shardsDir); e != nil {
-		return fail(e)
+		shardsClosed = true
+		return nil, errors.Join(e, closeFiles())
 	}
 	shardsClosed = true
 	genEntries, e := boundFS.List(b.dir.handle)
 	if e != nil {
 		return fail(e)
 	}
+	shardsSeen := false
 	for _, entry := range genEntries {
-		if entry.Mode&os.ModeSymlink != 0 || !entry.Mode.IsRegular() {
+		if entry.Mode&os.ModeSymlink != 0 || !entry.Mode.IsRegular() && !entry.Mode.IsDir() {
 			return fail(errors.New("unsafe entry"))
 		}
 		if entry.Mode.IsDir() {
 			if entry.Name != sourceindex.ShardDirectoryName {
 				return fail(errors.New("unexpected directory"))
 			}
+			if shardsSeen {
+				return fail(errors.New("repeated shards entry"))
+			}
+			shardsSeen = true
 			continue
 		}
 		if entry.Name == sourceindex.GenerationManifestFileName || entry.Name == sourceindex.ArtifactManifestFileName || entry.Name == sourceindex.CoverageManifestFileName {
@@ -268,6 +285,9 @@ func (b *boundGenerationFiles) ListArtifacts() ([]indexer.OpenedArtifact, error)
 			return fail(e)
 		}
 		out = append(out, o)
+	}
+	if !shardsSeen {
+		return fail(errors.New("missing shards directory"))
 	}
 	return out, nil
 }
@@ -375,7 +395,7 @@ func Open(ctx context.Context, store GenerationStore, config Config, identity so
 		}
 	}
 	req := indexerprotocol.BuildRequest{GenerationID: id, Identity: identity, BuildOptions: sourceindex.DefaultBuildOptions()}
-	verified, err := indexer.VerifyGenerationFiles(files, req)
+	verified, err := verifyGenerationFiles(files, req)
 	if err != nil {
 		_ = dir.Close()
 		return nil, fmt.Errorf("%w: artifacts", ErrGenerationIntegrity)
