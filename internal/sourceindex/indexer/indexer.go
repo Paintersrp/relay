@@ -48,6 +48,8 @@ type treeEntry struct {
 }
 type document struct{ path, content []byte }
 
+var commandContext = exec.CommandContext
+
 func gitEnv() []string {
 	out := make([]string, 0)
 	for _, e := range os.Environ() {
@@ -60,7 +62,7 @@ func gitEnv() []string {
 }
 func runGit(ctx context.Context, repo string, args ...string) ([]byte, error) {
 	a := append([]string{"--no-replace-objects", "-c", "credential.helper=", "--git-dir=" + repo}, args...)
-	c := exec.CommandContext(ctx, "git", a...)
+	c := commandContext(ctx, "git", a...)
 	c.Env = gitEnv()
 	return c.Output()
 }
@@ -109,7 +111,7 @@ func traverse(ctx context.Context, r indexerprotocol.BuildRequest) ([]treeEntry,
 			return nil, fail("tree_invalid", "malformed tree fields")
 		}
 		size := int64(0)
-		if string(f[2]) == "blob" {
+		if string(f[1]) == "blob" {
 			var er error
 			size, er = strconv.ParseInt(string(f[3]), 10, 64)
 			if er != nil || size < 0 {
@@ -168,7 +170,7 @@ type batchReader struct {
 }
 
 func newBatchReader(ctx context.Context, repo string) (*batchReader, error) {
-	c := exec.CommandContext(ctx, "git", "--no-replace-objects", "-c", "credential.helper=", "--git-dir="+repo, "cat-file", "--batch")
+	c := commandContext(ctx, "git", "--no-replace-objects", "-c", "credential.helper=", "--git-dir="+repo, "cat-file", "--batch")
 	c.Env = gitEnv()
 	in, e := c.StdinPipe()
 	if e != nil {
