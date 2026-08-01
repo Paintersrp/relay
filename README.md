@@ -12,7 +12,7 @@ Delivery Ticket revision → exact revision approval → selection → complete 
 → package-linked Run → execution and validation → audit → optional remediation
 ```
 
-The authority chain is retained governing authority, the exact approved Delivery Ticket revision, selected Ticket membership, the complete Ticket Design Brief, optional Deterministic Operations, the approved immutable package, the package-linked Run, attempt-owned execution evidence, the audit packet and decision, and immutable remediation evidence when revision is required. The Ticket Design Brief is the complete semantic implementation authority; Deterministic Operations add optional exact-execution data and never replace the Brief. Package approval is the only active Run-creation path. Authored Execution Spec submission, standalone Run creation, and Plan/pass-associated Run creation are retired.
+The authority chain is retained governing authority, the exact approved Delivery Ticket revision, selected Ticket membership, the complete Ticket Design Brief, optional Deterministic Operations, the approved immutable package, the package-linked Run, runtime execution evidence, the audit packet and decision, and immutable remediation evidence when revision is required. Adaptive execution stores structured validation results in attempt-owned `execution_evidence`; deterministic-complete execution has no adaptive attempt and represents assigned validations as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. The Ticket Design Brief is the complete semantic implementation authority; Deterministic Operations add optional exact-execution data and never replace the Brief. Package approval is the only active Run-creation path. Authored Execution Spec submission, standalone Run creation, and Plan/pass-associated Run creation are retired.
 
 Projects retain repository associations, notes, Feature Workspaces, Delivery Tickets, and historical records. Plans and passes remain readable historical records only: no active Plan or pass creation or mutation path exists.
 
@@ -27,7 +27,7 @@ Each package has one effective mode:
 
 There is at most one adaptive Executor attempt. Relay does not perform multi-candidate or multi-agent execution.
 
-Required validation commands originate in the approved execution assignment, propagate through execution admission and launch, and produce structured attempt-owned `execution_evidence`. There is no parallel validation-artifact family.
+Required validation commands originate in the approved execution assignment and propagate through execution admission and launch. Adaptive execution produces structured attempt-owned `execution_evidence`; deterministic-complete execution has no adaptive attempt and represents assigned validations as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact family.
 
 ### Audit and remediation
 

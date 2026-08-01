@@ -36,7 +36,7 @@ Select an adapter and model on the Run execution surface. The effective mode is 
 - `adaptive_after_partial_application`: the attempt receives the complete Brief and exact applied/residual evidence.
 - `deterministic_complete`: no adaptive Executor attempt is launched.
 
-There is at most one adaptive Executor attempt. Relay derives the execution assignment and runtime envelope from the approved package. Deterministic operations run before adaptive execution when present. Required validation commands originate in that approved assignment, flow through admission and launch, and are retained as structured `execution_evidence` owned by the adaptive attempt. Validation is not a separate Run-level authority.
+There is at most one adaptive Executor attempt. Relay derives the execution assignment and runtime envelope from the approved package. Deterministic operations run before adaptive execution when present. For adaptive modes, required validation commands originate in that approved assignment, flow through admission and launch, and are retained as structured `execution_evidence` owned by the adaptive attempt. In deterministic-complete execution, no adaptive attempt is launched; assigned validation commands appear as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. Validation is not a separate Run-level authority.
 
 ## Audit and remediation
 

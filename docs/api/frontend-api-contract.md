@@ -26,9 +26,9 @@ Plans and passes remain presentation-only historical endpoints. There is no acti
 | `GET /api/runs/{runID}/audit/status` | Audit status |
 | `POST /api/runs/{runID}/audit/prepare` | Prepare audit packet |
 | `GET /api/runs/{runID}/audit/packet` | Read current audit packet |
-| `POST /api/runs/{runID}/audit/decision` | Retained HTTP transport route; not an active operator decision path |
+| `POST /api/runs/{runID}/audit/decision` | Record an audit decision from the active web Run workbench's manual fallback |
 
-Audit decisions are recorded through the Auditor role app. The HTTP audit decision handler is not an active operator path.
+The Auditor role app is the normal handoff for recording audit decisions. The active web Run workbench also provides this HTTP route as an exceptional manual fallback; both paths reach the same audit decision domain owner. The web client does not implement a separate decision authority.
 
 ## Run response DTOs
 
@@ -55,7 +55,7 @@ Optional summary properties are `planId`, `passId`, `passNumber`, `project`, `re
 
 `GET /api/runs/{runID}/specification` is a retained historical-review transport name. It currently returns `run`, `executionSpec`, and `executorBrief`, with optional `plan`, `pass`, and `remediatesRunId`. These response property names and identifiers are compatibility-only DTO data. They do not mean an active package-linked Run has authored Execution Spec or Executor Brief authority, or Plan/pass authority; no active workflow creates or depends on a newly authored Execution Spec.
 
-Execution admission returns `success` and `preflight`; it may return `applier`, `run`, or `attempt` according to the effective mode. Required validation commands come from the approved assignment and structured results remain in attempt-owned `execution_evidence`.
+Execution admission returns `success` and `preflight`; it may return `applier`, `run`, or `attempt` according to the effective mode. Required validation commands come from the approved assignment. Under adaptive execution, structured results remain in the adaptive attempt's `execution_evidence`; under deterministic-complete execution, no adaptive attempt or attempt-owned evidence artifact exists and assigned commands are represented as `not_run` in audit evidence because no adaptive Executor attempt was dispatched.
 
 ## Audit
 

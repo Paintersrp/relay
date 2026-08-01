@@ -79,7 +79,7 @@ Return existing validation errors unchanged where possible and wrap new context 
 
 ## Evidence or Artifact Behavior
 
-The committed diff and focused tests must show the required summary behavior. Validation output is execution evidence owned by the attempt; it is not a separate authority artifact.
+The committed diff and focused tests must show the required summary behavior. Under adaptive execution, validation output belongs to the adaptive attempt's `execution_evidence`; deterministic-complete execution has no adaptive attempt and reports assigned validation commands as `not_run` in audit evidence. Validation evidence is not a separate authority artifact.
 
 ## Concurrency or Lifecycle Behavior
 

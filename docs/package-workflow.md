@@ -13,7 +13,7 @@ Read the package from the outside in:
 5. Zero or one optional Deterministic Operations artifact.
 6. The approved immutable execution package.
 7. The package-linked Run and its derived execution assignment and runtime envelope.
-8. Attempt-owned execution evidence, including structured validation results when an adaptive attempt runs.
+8. Runtime execution evidence, including attempt-owned `execution_evidence` and structured validation results when adaptive execution runs.
 9. The audit packet and audit decision.
 10. Immutable remediation evidence when the decision is `needs_revision`.
 
@@ -48,7 +48,7 @@ The submitted Deterministic Operations artifact contains exact operations and de
 
 ## Validation Evidence
 
-Required validation commands originate in the approved execution assignment. They propagate through execution admission and launch. Structured command results are stored as `execution_evidence` owned by the execution attempt. There is no parallel validation-artifact authority family and validation is not an independent Run-level authority.
+Required validation commands originate in the approved execution assignment and propagate through execution admission and launch. Under adaptive execution, one adaptive Executor attempt exists and structured command results belong to that attempt's `execution_evidence`. Under deterministic-complete execution, no adaptive attempt or attempt-owned `execution_evidence` artifact exists; assigned validation commands are represented as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact authority family and validation is not an independent Run-level authority.
 
 ## Audit Packets
 
@@ -94,7 +94,7 @@ Each role app exposes only its compiled role-specific catalog. `/mcp/v1/...` val
 3. The operator approves the exact package digest and contents.
 4. Relay creates the package-linked Run from that approval.
 5. Relay determines the effective mode and derives the assignment and runtime envelope.
-6. Execution records structured validation results in attempt-owned `execution_evidence` when an adaptive attempt runs.
+6. Under adaptive execution, the one adaptive attempt records structured validation results in its `execution_evidence`. Under deterministic-complete execution, no adaptive attempt runs and assigned validation commands appear as `not_run` in audit evidence because no adaptive Executor attempt was dispatched.
 7. The operator prepares an audit packet against the exact committed SHA.
 8. The Auditor accepts the implementation or records `needs_revision` with material findings.
 9. Revision-required work returns to a fresh Planner context through an ordinary Ticket revision.
