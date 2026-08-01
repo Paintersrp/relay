@@ -30,16 +30,16 @@ func RemoveOwnedStaging(indexRoot, child string) error {
 		return err
 	}
 	defer unix.Close(staging)
-	var stat unix.Stat_t
-	if err := unix.Fstatat(staging, child, &stat, unix.AT_SYMLINK_NOFOLLOW); errors.Is(err, unix.ENOENT) {
+	fd, err := openVerifiedDirectory(staging, child, nil)
+	if errors.Is(err, unix.ENOENT) {
 		return nil
-	} else if err != nil {
-		return err
-	} else if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return os.ErrInvalid
 	}
-	fd, err := unix.Openat(staging, child, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
+		return err
+	}
+	var owned unix.Stat_t
+	if err := unix.Fstat(fd, &owned); err != nil {
+		unix.Close(fd)
 		return err
 	}
 	if err := removeDirectory(fd); err != nil {
@@ -48,6 +48,13 @@ func RemoveOwnedStaging(indexRoot, child string) error {
 	}
 	if err := unix.Close(fd); err != nil {
 		return err
+	}
+	var current unix.Stat_t
+	if err := unix.Fstatat(staging, child, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return err
+	}
+	if current.Dev != owned.Dev || current.Ino != owned.Ino || current.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return os.ErrInvalid
 	}
 	return unix.Unlinkat(staging, child, unix.AT_REMOVEDIR)
 }
@@ -73,7 +80,7 @@ func removeDirectory(fd int) error {
 			return err
 		}
 		if stat.Mode&unix.S_IFMT == unix.S_IFDIR {
-			child, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+			child, err := openVerifiedDirectory(fd, name, &stat)
 			if err != nil {
 				return err
 			}
@@ -95,6 +102,29 @@ func removeDirectory(fd int) error {
 		}
 	}
 	return nil
+}
+
+// openVerifiedDirectory binds traversal to an opened object.  openat2 prevents
+// path escape, symlinks, magic links, and mounts; fstat then binds an optional
+// inspected entry to that descriptor before recursion can continue.
+func openVerifiedDirectory(parent int, name string, inspected *unix.Stat_t) (int, error) {
+	fd, err := unix.Openat2(parent, name, &unix.OpenHow{
+		Flags:   uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC),
+		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
+	})
+	if err != nil {
+		return -1, err
+	}
+	var opened unix.Stat_t
+	if err := unix.Fstat(fd, &opened); err != nil {
+		unix.Close(fd)
+		return -1, err
+	}
+	if opened.Mode&unix.S_IFMT != unix.S_IFDIR || (inspected != nil && (opened.Dev != inspected.Dev || opened.Ino != inspected.Ino)) {
+		unix.Close(fd)
+		return -1, os.ErrInvalid
+	}
+	return fd, nil
 }
 
 func RenameNoReplace(source, target string) error {

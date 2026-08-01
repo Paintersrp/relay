@@ -2,7 +2,6 @@
 package supervisor
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -10,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,6 +24,9 @@ import (
 const (
 	MaxIndexerResponseBytes int64 = 1 << 20
 	MaxIndexerStderrBytes   int64 = 4 << 10
+	// processShutdownGrace bounds cleanup only after a process has been stopped
+	// or a direct child has exited while descendants retain its pipes.
+	processShutdownGrace = 5 * time.Second
 )
 
 var (
@@ -371,6 +372,8 @@ func safeFailureMessage(code string) string {
 		return "source-index worker response exceeded limits"
 	case "indexer_protocol_failed":
 		return "source-index worker response was invalid"
+	case "cancelled":
+		return "source-index build cancelled"
 	case "publication_failed":
 		return "source-index publication failed"
 	case "build_options_mismatch":
@@ -402,104 +405,6 @@ func sanitizedError(err error) error {
 	default:
 		return errors.New("source-index build failed")
 	}
-}
-
-func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID string) (indexerprotocol.BuildResponse, string, string, error) {
-	childCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	cmd := exec.Command(s.config.IndexerPath)
-	configureProcess(cmd)
-	cmd.Env = childEnvironment()
-	cmd.Stdin = bytes.NewReader(request)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return indexerprotocol.BuildResponse{}, "indexer_start_failed", "cannot prepare indexer output", err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return indexerprotocol.BuildResponse{}, "indexer_start_failed", "cannot prepare indexer diagnostics", err
-	}
-	if err := cmd.Start(); err != nil {
-		return indexerprotocol.BuildResponse{}, "indexer_start_failed", "cannot start indexer", err
-	}
-	childReaped := make(chan struct{})
-	var processMu sync.Mutex
-	reaped := false
-	go func() {
-		select {
-		case <-childCtx.Done():
-			processMu.Lock()
-			if !reaped {
-				terminateProcess(cmd)
-			}
-			processMu.Unlock()
-		case <-childReaped:
-		}
-	}()
-	out := &boundedBuffer{limit: MaxIndexerResponseBytes, cancel: cancel}
-	errout := &boundedBuffer{limit: MaxIndexerStderrBytes, cancel: cancel}
-	done := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(out, stdout); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(errout, stderr); done <- struct{}{} }()
-	waitResult := make(chan error, 1)
-	go func() {
-		waitErr := cmd.Wait()
-		processMu.Lock()
-		reaped = true
-		close(childReaped)
-		processMu.Unlock()
-		waitResult <- waitErr
-	}()
-	var waitErr error
-	select {
-	case waitErr = <-waitResult:
-	case <-time.After(5 * time.Second):
-		terminateProcess(cmd)
-		_ = stdout.Close()
-		_ = stderr.Close()
-		select {
-		case waitErr = <-waitResult:
-		case <-time.After(5 * time.Second):
-			return indexerprotocol.BuildResponse{}, "indexer_process_failed", "indexer process did not terminate", errors.New("indexer process did not terminate")
-		}
-	}
-	// Descendants may retain inherited pipes after the direct child exits.
-	terminateResidualProcessGroup(cmd)
-	_ = stdout.Close()
-	_ = stderr.Close()
-	copyDone := make(chan struct{})
-	go func() { <-done; <-done; close(copyDone) }()
-	select {
-	case <-copyDone:
-	case <-time.After(5 * time.Second):
-		return indexerprotocol.BuildResponse{}, "indexer_process_failed", "indexer output did not terminate", errors.New("indexer pipes did not close")
-	}
-	if out.exceeded {
-		return indexerprotocol.BuildResponse{}, "indexer_output_exceeded", "indexer response exceeded supervisor limit", errors.New("indexer response exceeded limit")
-	}
-	if errout.exceeded {
-		return indexerprotocol.BuildResponse{}, "indexer_process_failed", "indexer diagnostics exceeded supervisor limit", errors.New("indexer diagnostics exceeded limit")
-	}
-	response, parseErr := indexerprotocol.ParseBuildResponse(out.bytes())
-	if parseErr != nil {
-		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response is invalid", fmt.Errorf("%w: invalid response", ErrChildProtocol)
-	}
-	if response.GenerationID != "" && response.GenerationID != generationID {
-		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response generation does not match", fmt.Errorf("%w: generation mismatch", ErrChildProtocol)
-	}
-	if waitErr == nil {
-		if response.Status != indexerprotocol.BuildStatusSuccess || response.Result == nil || response.Failure != nil {
-			return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer process and response disagree", fmt.Errorf("%w: exit mismatch", ErrChildProtocol)
-		}
-		return response, "", "", nil
-	}
-	if ctx.Err() != nil {
-		return indexerprotocol.BuildResponse{}, "cancelled", "source-index build cancelled", ctx.Err()
-	}
-	if response.Status != indexerprotocol.BuildStatusFailed || response.Failure == nil || response.Result != nil {
-		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer process and response disagree", fmt.Errorf("%w: exit mismatch", ErrChildProtocol)
-	}
-	return response, "", "", nil
 }
 
 type boundedBuffer struct {
