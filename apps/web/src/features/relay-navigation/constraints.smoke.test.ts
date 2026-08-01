@@ -238,7 +238,9 @@ describe("Task 13.5 — architecture-boundary constraints", () => {
 
     // Sanity: the documented contract is readable and enumerates endpoints, so
     // this check is comparing against a real, populated API_Contract surface.
-    const documented = readFileSync(contractDoc, "utf8").match(/`\/api\/[^`]+`/g) ?? [];
+    const documented = readFileSync(contractDoc, "utf8").match(
+      /^\|\s*`(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD) \/api\/[^`]+`\s*\|/gm,
+    ) ?? [];
     expect(documented.length).toBeGreaterThan(0);
   });
 
