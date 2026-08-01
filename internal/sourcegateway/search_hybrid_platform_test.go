@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"relay/internal/app/operations"
 	"relay/internal/sourceindex"
 	"relay/internal/sourceindex/reader"
 	"relay/internal/sourceindex/zoektbuild"
@@ -196,6 +198,96 @@ func buildHybridPlatformFixture(t *testing.T) hybridPlatformFixture {
 			blobs: blobs,
 			nodes: map[string]sourcevault.RetainedCommitNode{},
 		},
+	}
+}
+
+type hybridPlatformSearchIndexProvider struct {
+	fixture     hybridPlatformFixture
+	authorities []operations.SourceReadAuthority
+	readers     []*reader.Reader
+}
+
+func (p *hybridPlatformSearchIndexProvider) OpenSearchIndex(ctx context.Context, authority operations.SourceReadAuthority) (SearchIndexHandle, error) {
+	p.authorities = append(p.authorities, authority)
+	indexReader, err := reader.Open(ctx, hybridPlatformGenerationStore{row: p.fixture.row}, reader.Config{IndexRoot: p.fixture.root}, p.fixture.identity)
+	if err != nil {
+		return nil, err
+	}
+	p.readers = append(p.readers, indexReader)
+	return indexReader, nil
+}
+
+func TestHybridRealReaderPublicSearchPagesBindsAndMatchesScanner(t *testing.T) {
+	fixture := buildHybridPlatformFixture(t)
+	authority := fidelityAuthority(fixture.identity.CommitOID, fixture.identity.TreeOID, "", 1)
+	indexedService := newFidelityService(t, fixture.vault, authority)
+	provider := &hybridPlatformSearchIndexProvider{fixture: fixture}
+	indexedService.searchIndex = provider
+
+	request := textSearchRequest("needle")
+	request.Limit = 1
+	var indexedMatches []SearchMatch
+	var pages []SearchResult
+	for page := 0; page < 8; page++ {
+		result, err := indexedService.Search(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages = append(pages, result)
+		indexedMatches = append(indexedMatches, result.Matches...)
+		if len(provider.readers) != len(pages) || len(provider.authorities) != len(pages) {
+			t.Fatalf("opens=%d authorities=%d pages=%d", len(provider.readers), len(provider.authorities), len(pages))
+		}
+		if _, err := provider.readers[page].IndexedTextCandidates(context.Background(), "needle"); !errors.Is(err, reader.ErrClosed) {
+			t.Fatalf("page %d reader close error=%v", page, err)
+		}
+		if page == 0 {
+			generationID, err := sourceindex.GenerationID(fixture.identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cursor, err := indexedService.cursors.Decode(result.Cursor)
+			if err != nil || cursor.SearchBackend != string(searchBackendIndexed) || cursor.SearchGenerationID != generationID || cursor.SearchGenerationManifestSHA256 != fixture.row.GenerationManifestSHA256 || cursor.SearchCoverageManifestSHA256 != fixture.row.CoverageManifestSHA256 || cursor.SearchArtifactManifestSHA256 != fixture.row.ArtifactManifestSHA256 {
+				t.Fatalf("cursor=%#v error=%v", cursor, err)
+			}
+		}
+		if result.Completion == SearchCompletionComplete {
+			if result.Cursor != "" {
+				t.Fatalf("terminal page cursor=%q", result.Cursor)
+			}
+			break
+		}
+		if result.Cursor == "" {
+			t.Fatalf("incomplete page=%#v", result)
+		}
+		request.Cursor = result.Cursor
+		if page == 7 {
+			t.Fatal("public indexed pagination did not terminate")
+		}
+	}
+	if len(pages) < 2 || len(provider.readers) != len(pages) {
+		t.Fatalf("pages=%d readers=%d", len(pages), len(provider.readers))
+	}
+	for index := range provider.authorities {
+		if provider.authorities[index].Relationship.CommitOID != authority.Relationship.CommitOID || provider.authorities[index].Relationship.TreeOID != authority.Relationship.TreeOID {
+			t.Fatalf("authority %d=%#v", index, provider.authorities[index])
+		}
+	}
+	for left := range provider.readers {
+		for right := left + 1; right < len(provider.readers); right++ {
+			if provider.readers[left] == provider.readers[right] {
+				t.Fatalf("pages %d and %d reused reader", left, right)
+			}
+		}
+	}
+
+	scannerService := newFidelityService(t, fixture.vault, authority)
+	scannerResult, err := scannerService.Search(context.Background(), textSearchRequest("needle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scannerResult.Completion != SearchCompletionComplete || !reflect.DeepEqual(indexedMatches, scannerResult.Matches) {
+		t.Fatalf("indexed=%#v scanner=%#v", indexedMatches, scannerResult)
 	}
 }
 
