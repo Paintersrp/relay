@@ -1,6 +1,7 @@
 # Go build output
 /bin/
 /tmp/
+/relay-source-indexer
 *.test
 *.out
 *.exe

@@ -337,6 +337,7 @@ func shards(root string, r indexerprotocol.BuildRequest, docs []document, limit 
 }
 func artifactFiles(root string) ([]sourceindex.ArtifactFile, error) {
 	var fs []sourceindex.ArtifactFile
+	identities := make(map[fileIdentity]string)
 	e := filepath.Walk(root, func(p string, i os.FileInfo, er error) error {
 		if er != nil {
 			return er
@@ -353,6 +354,14 @@ func artifactFiles(root string) ([]sourceindex.ArtifactFile, error) {
 			}
 			return nil
 		}
+		identity, er := artifactFileIdentity(i)
+		if er != nil {
+			return errors.New("unsafe output")
+		}
+		if prior, ok := identities[identity]; ok {
+			return fmt.Errorf("artifact aliases %q and %q", prior, p)
+		}
+		identities[identity] = p
 		rel, er := filepath.Rel(root, p)
 		if er != nil {
 			return er
