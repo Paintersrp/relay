@@ -24,14 +24,14 @@ HTTP MCP accepts POST JSON-RPC. When configured, role-app authentication uses th
 
 ## Role responsibilities
 
-Wayfinder provides route-bound operation packets and packet-authorized retained-source investigation. Planner owns Ticket and package authoring in its fixed role surface. Auditor owns audit packet review and audit decisions in its fixed role surface.
+Wayfinder provides route-bound operation packets and packet-authorized retained-source investigation. Planner owns Ticket Design Brief and optional Deterministic Operations authoring in its fixed role surface. Auditor owns audit packet review and audit decisions in its fixed role surface. These are the three public role apps; there is no aggregate MCP role.
 
-The `*:all` local tunnel commands supervise all three role registrations together. This is multi-role registration orchestration, not a fourth MCP transport or connector URL.
+The `*:all` local tunnel commands supervise all three role registrations together. This is multi-role registration orchestration, not a fourth MCP transport or connector URL. Manual fallback is exceptional; the normal handoff is Wayfinder to Planner to Auditor through their role-specific catalogs.
 
 ## Workflow authority
 
 The active lifecycle is Ticket revision, exact approval, selection, complete Ticket Design Brief, optional Deterministic Operations, package preparation, package approval, package-linked Run, execution and validation, audit, and optional remediation. Plans and passes are retained read-only history and have no active mutation or execution authority.
 
-The Design Brief is the complete semantic authority. Deterministic Operations are optional exact-execution data. Required validation commands come from the approved assignment, flow into execution admission and launch, and remain in attempt-owned `execution_evidence`.
+The retained governing authority, exact approved Delivery Ticket revision, selected membership, complete Ticket Design Brief, optional Deterministic Operations, approved package, package-linked Run, attempt-owned evidence, audit packet, and remediation evidence form the authority chain. The Design Brief is the complete semantic authority. Deterministic Operations are optional exact-execution data. Required validation commands come from the approved assignment, flow into execution admission and launch, and remain in attempt-owned `execution_evidence`; there is no parallel validation-artifact authority family.
 
 Audit packets bind package approval, the exact Ticket revision, execution evidence, retained authority, repository evidence, and audited commit. Readback rechecks stored bytes, ownership, digest, current execution evidence, and repository evidence. Stale or superseded packets cannot receive decisions. The Auditor may attribute findings to `implementation`, `governing_package`, or `both`; `needs_revision` creates immutable remediation evidence for fresh-context Planner work without the prior Executor transcript.

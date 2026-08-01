@@ -53,7 +53,7 @@ Optional summary properties are `planId`, `passId`, `passNumber`, `project`, `re
 
 `GET /api/runs/{runID}` returns `run`, `attempts`, and `artifacts`. An attempt has `attemptId`, `attemptNumber`, `adapter`, `model`, `status`, `createdAt`, `startedAt`, `finishedAt`, `cancellationRequestedAt`, and `artifacts`; detailed attempt responses also contain `runId`, `result`, `liveStdout`, `liveStderr`, `liveStdoutTruncated`, `liveStderrTruncated`, `liveStdoutBytes`, and `liveStderrBytes`.
 
-`GET /api/runs/{runID}/specification` currently returns `run`, `executionSpec`, and `executorBrief`, with optional `plan`, `pass`, and `remediatesRunId`. These names are retained historical-review DTO properties. They do not mean an active package Run has authored execution-spec, executor-brief, or Plan/pass authority.
+`GET /api/runs/{runID}/specification` is a retained historical-review transport name. It currently returns `run`, `executionSpec`, and `executorBrief`, with optional `plan`, `pass`, and `remediatesRunId`. These response property names and identifiers are compatibility-only DTO data. They do not mean an active package-linked Run has authored Execution Spec or Executor Brief authority, or Plan/pass authority; no active workflow creates or depends on a newly authored Execution Spec.
 
 Execution admission returns `success` and `preflight`; it may return `applier`, `run`, or `attempt` according to the effective mode. Required validation commands come from the approved assignment and structured results remain in attempt-owned `execution_evidence`.
 

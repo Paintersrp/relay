@@ -12,7 +12,7 @@ Delivery Ticket revision → exact revision approval → selection → complete 
 → package-linked Run → execution and validation → audit → optional remediation
 ```
 
-The Ticket Design Brief is the complete semantic implementation authority. Deterministic Operations are optional exact-execution data. Authored Execution Spec submission, standalone Run creation, and Plan/pass-associated Run creation are retired; package approval is the only active Run-creation path.
+The authority chain is retained governing authority, the exact approved Delivery Ticket revision, selected Ticket membership, the complete Ticket Design Brief, optional Deterministic Operations, the approved immutable package, the package-linked Run, attempt-owned execution evidence, the audit packet and decision, and immutable remediation evidence when revision is required. The Ticket Design Brief is the complete semantic implementation authority; Deterministic Operations add optional exact-execution data and never replace the Brief. Package approval is the only active Run-creation path. Authored Execution Spec submission, standalone Run creation, and Plan/pass-associated Run creation are retired.
 
 Projects retain repository associations, notes, Feature Workspaces, Delivery Tickets, and historical records. Plans and passes remain readable historical records only: no active Plan or pass creation or mutation path exists.
 
@@ -20,10 +20,10 @@ Projects retain repository associations, notes, Feature Workspaces, Delivery Tic
 
 Each package has one effective mode:
 
-- `adaptive_no_operations`: the adaptive Executor receives the complete Brief.
-- `adaptive_preflight_failed`: no deterministic writes occur; the adaptive Executor receives the complete Brief and verified preflight result.
-- `adaptive_after_partial_application`: the adaptive Executor receives the complete Brief and exact applied/residual deterministic evidence.
-- `deterministic_complete`: deterministic application is complete and no adaptive Executor attempt launches.
+- `adaptive_no_operations`: no deterministic writes; the adaptive Executor receives the complete Brief.
+- `adaptive_preflight_failed`: no deterministic writes; the adaptive Executor receives the complete Brief and verified preflight failure evidence.
+- `adaptive_after_partial_application`: deterministic writes occurred; the adaptive Executor receives the complete Brief and exact applied/residual evidence.
+- `deterministic_complete`: deterministic writes completed the package; no adaptive Executor attempt launches.
 
 There is at most one adaptive Executor attempt. Relay does not perform multi-candidate or multi-agent execution.
 
@@ -33,7 +33,7 @@ Required validation commands originate in the approved execution assignment, pro
 
 An audit packet binds the approved package authority, exact Ticket revision, execution evidence, retained authority, repository evidence, and audited commit. Packet readback rechecks stored bytes, ownership, digest, current execution evidence, and repository evidence; stale or superseded packets cannot receive decisions.
 
-The Auditor role app records `accepted` or `needs_revision` decisions. Findings may be attributed to `implementation`, `governing_package`, or `both`. A `needs_revision` decision produces immutable remediation evidence for a fresh-context Planner pass; the prior Executor transcript is not supplied. Remediation returns through the normal Ticket revision, approval, package, and Run lifecycle.
+The Auditor role app records `accepted` or `needs_revision` decisions. Findings may be attributed to `implementation`, `governing_package`, or `both`. A `needs_revision` decision produces immutable remediation evidence for a fresh-context Planner revision; the prior Executor transcript is not supplied. Remediation returns through the normal Ticket revision, approval, package, and Run lifecycle.
 
 ## MCP
 
@@ -84,6 +84,8 @@ npm run chatgpt-mcp:stop:all
 ## Documentation
 
 - [Operator guide](docs/operator-guide.md)
+- [Package-native workflow](docs/package-workflow.md)
+- [Package workflow examples](docs/examples/package-workflow/)
 - [MCP contract](docs/mcp.md)
 - [Local ChatGPT tunnel](docs/chatgpt-mcp-local.md)
 - [Frontend API contract](docs/api/frontend-api-contract.md)

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "checkout",
+  "repo_target": "relay",
+  "branch": "main",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "coverage": "partial",
+  "operations": [
+    {
+      "path": "internal/checkout/summary.go",
+      "operation": "modify",
+      "implementation": {
+        "changes": [
+          {
+            "kind": "replace",
+            "old_text": "return \"pending\"",
+            "new_text": "return \"ready\"",
+            "expected_occurrences": 1
+          }
+        ]
+      }
+    },
+    {
+      "path": "internal/checkout/summary_test.go",
+      "operation": "create",
+      "implementation": {
+        "content": "package checkout\n\nimport \"testing\"\n\nfunc TestSummaryReadyState(t *testing.T) {\n\tif got := summaryState(); got != \"ready\" {\n\t\tt.Fatalf(\"summary state = %q\", got)\n\t}\n}\n"
+      }
+    }
+  ]
+}

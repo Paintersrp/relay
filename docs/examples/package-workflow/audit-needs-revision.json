@@ -1,0 +1,25 @@
+{
+  "auditPacketId": "audit-packet-2026-07-31-001",
+  "packetSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "auditedCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "decision": "needs_revision",
+  "rationale": "The committed result has an implementation defect and the approved package omitted a required proof obligation.",
+  "materialFindings": [
+    {
+      "source": "implementation",
+      "summary": "The empty-cart branch returns a non-deterministic summary.",
+      "evidence": "The audited commit uses an unordered map when rendering the empty-cart result, and the focused validation result does not cover the required empty case.",
+      "required_remediation": "Implement the empty-cart case deterministically and add a focused test proving the result."
+    },
+    {
+      "source": "governing_package",
+      "summary": "The approved Ticket Design Brief does not require input immutability proof.",
+      "evidence": "The exact approved Brief lists output cases but omits the required invariant that the input cart remains unchanged.",
+      "required_remediation": "Publish a fresh Ticket revision whose complete Brief states the input-immutability obligation and validation command."
+    }
+  ],
+  "observations": [
+    "The packet was prepared against the exact audited commit named above."
+  ],
+  "operatorConfirmed": true
+}

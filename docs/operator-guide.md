@@ -17,12 +17,13 @@ The web application defaults to `http://localhost:3000` and the API to `http://l
 2. Approve the exact Ticket revision.
 3. Create the selection.
 4. Complete the Ticket Design Brief, and add zero or one Deterministic Operations artifact.
-5. Prepare and approve the execution package.
-6. Use the package-linked Run created by approval.
-7. Execute required validation and prepare an audit packet against the audited commit.
-8. Submit the audit decision with the Auditor role app.
+5. Prepare the immutable execution package and review its exact digest and contents.
+6. Approve that exact package. Approval creates the package-linked Run; there is no extra chat confirmation step.
+7. Use the Run's derived execution assignment and runtime envelope.
+8. Execute required validation and prepare an audit packet against the audited commit.
+9. Submit the audit decision with the Auditor role app.
 
-The Ticket Design Brief is the complete semantic implementation authority. Deterministic Operations are optional exact-execution data. Package approval is the only active Run-creation path. Authored Execution Spec submission and standalone or Plan/pass-associated Run creation are retired.
+Before package preparation, the exact Delivery Ticket revision must be approved, its Ticket membership must be selected, and the complete Ticket Design Brief must be available. Deterministic Operations are optional and must be one exact accepted artifact when present. The Brief is the complete semantic implementation authority; operations never replace it. Package approval is the only active Run-creation path. Authored Execution Spec submission and standalone or Plan/pass-associated Run creation are retired.
 
 Plans and passes are read-only historical records. Projects retain Feature Workspaces, repositories, Tickets, and historical records; they are not active Plan containers.
 
@@ -35,13 +36,17 @@ Select an adapter and model on the Run execution surface. The effective mode is 
 - `adaptive_after_partial_application`: the attempt receives the complete Brief and exact applied/residual evidence.
 - `deterministic_complete`: no adaptive Executor attempt is launched.
 
-There is at most one adaptive Executor attempt. Required validation commands originate in the approved assignment, flow into admission and launch, and are retained as structured `execution_evidence` owned by that attempt.
+There is at most one adaptive Executor attempt. Relay derives the execution assignment and runtime envelope from the approved package. Deterministic operations run before adaptive execution when present. Required validation commands originate in that approved assignment, flow through admission and launch, and are retained as structured `execution_evidence` owned by the adaptive attempt. Validation is not a separate Run-level authority.
 
 ## Audit and remediation
 
 Prepare an audit packet using the full audited commit SHA. Packet readback verifies exact stored bytes, ownership, digest, current execution evidence, and repository evidence. A stale or superseded packet cannot receive a decision.
 
-Use the Auditor role app to record `accepted` or `needs_revision`, including material findings attributed to `implementation`, `governing_package`, or `both`. A revision decision creates immutable remediation evidence for a fresh-context Planner pass. The previous Executor transcript is excluded. Remediation follows the ordinary Ticket revision, approval, package, and Run lifecycle.
+Use the Auditor role app to record `accepted` or `needs_revision`, including material findings attributed to `implementation`, `governing_package`, or `both`. A revision decision creates immutable remediation evidence for a fresh-context Planner revision. The previous Executor transcript is excluded. Remediation follows the ordinary Ticket revision, approval, package, and Run lifecycle.
+
+If the packet is stale or superseded, do not decide it. Prepare a fresh packet against the current execution evidence and exact audited commit; packet replacement does not rewrite the prior immutable packet.
+
+See the [package-native workflow](package-workflow.md) for the authority chain, mode evidence, freshness rules, and [schema-grounded examples](examples/package-workflow/).
 
 ## Local ChatGPT registrations
 
