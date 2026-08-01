@@ -20,6 +20,9 @@ const config = defineConfig({
     // `// @vitest-environment jsdom` docblock at the top of the test file
     // (the least-disruptive approach — see src/test/setup.ts).
     environment: "node",
+    // Selected from the validation matrix to prevent jsdom component tests
+    // from saturating local workers.
+    maxWorkers: 2,
     // Shared setup: registers @testing-library/jest-dom matchers and, when a
     // DOM is present, installs a matchMedia shim + RTL auto-cleanup.
     setupFiles: ["./src/test/setup.ts"],
