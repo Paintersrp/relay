@@ -17,9 +17,22 @@ import (
 	"relay/internal/sourceindex/indexerprotocol"
 )
 
-// runChild owns direct-child reaping: cmd.Wait is called exactly once, only
-// after waitid has observed the leader without reaping it.  Keeping the leader
-// unreaped preserves its process-group identity while residual pipes are fixed.
+// observeChildExit observes, but deliberately does not reap, the direct child.
+// Tests replace this narrow seam to exercise an observation failure.
+var observeChildExit = func(pid int) error {
+	return unix.Waitid(unix.P_PID, pid, nil, unix.WEXITED|unix.WNOWAIT, nil)
+}
+
+type outputStream uint8
+
+const (
+	stdoutStream outputStream = iota
+	stderrStream
+)
+
+// runChild owns direct-child reaping. Keeping the leader unreaped until the
+// group is signalled matters: once reaped, its numeric process-group ID could
+// be reused, making a later negative-PID signal target an unrelated group.
 func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID string) (indexerprotocol.BuildResponse, string, string, error) {
 	cmd := exec.Command(s.config.IndexerPath)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -36,15 +49,17 @@ func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID 
 		return indexerprotocol.BuildResponse{}, "indexer_start_failed", "cannot start indexer", err
 	}
 
-	overflow := make(chan struct{}, 1)
-	signalOverflow := func() {
-		select {
-		case overflow <- struct{}{}:
-		default:
+	overflow := make(chan outputStream, 2)
+	signalOverflow := func(stream outputStream) func() {
+		return func() {
+			select {
+			case overflow <- stream:
+			default:
+			}
 		}
 	}
-	out := &boundedBuffer{limit: MaxIndexerResponseBytes, cancel: signalOverflow}
-	errout := &boundedBuffer{limit: MaxIndexerStderrBytes, cancel: signalOverflow}
+	out := &boundedBuffer{limit: MaxIndexerResponseBytes, cancel: signalOverflow(stdoutStream)}
+	errout := &boundedBuffer{limit: MaxIndexerStderrBytes, cancel: signalOverflow(stderrStream)}
 	drained := make(chan struct{})
 	go func() {
 		var copies sync.WaitGroup
@@ -56,97 +71,115 @@ func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID 
 	}()
 
 	exited := make(chan error, 1)
-	go func() { exited <- unix.Waitid(unix.P_PID, cmd.Process.Pid, nil, unix.WEXITED|unix.WNOWAIT, nil) }()
+	go func() { exited <- observeChildExit(cmd.Process.Pid) }()
 
+	var closeReaders sync.Once
+	closePipes := func() {
+		closeReaders.Do(func() {
+			_ = stdout.Close()
+			_ = stderr.Close()
+		})
+	}
 	terminated := false
 	terminate := func() {
-		if !terminated {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			terminated = true
+		if terminated {
+			return
 		}
+		// This must happen before reaping; see the process-group comment above.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		terminated = true
 	}
-	var exitObserveErr error
-	select {
-	case exitObserveErr = <-exited:
-	case <-ctx.Done():
-		terminate()
-		_ = stdout.Close()
-		_ = stderr.Close()
-		select {
-		case exitObserveErr = <-exited:
-		case <-time.After(processShutdownGrace):
-		}
-	case <-overflow:
-		terminate()
-		_ = stdout.Close()
-		_ = stderr.Close()
-		select {
-		case exitObserveErr = <-exited:
-		case <-time.After(processShutdownGrace):
-		}
+	var startReap sync.Once
+	reaped := make(chan error, 1)
+	beginReap := func() {
+		startReap.Do(func() {
+			// This is the sole owner of cmd.Wait. The buffer lets it finish after
+			// a bounded caller has returned.
+			go func() { reaped <- cmd.Wait() }()
+		})
 	}
 
-	if ctx.Err() != nil {
+	// shutdown is the only abnormal-termination path. Its deadline covers both
+	// reaping and pipe draining, so no cleanup phase can extend the grace period.
+	shutdown := func(deadline time.Time) (error, bool) {
 		terminate()
-		_ = stdout.Close()
-		_ = stderr.Close()
-		select {
-		case <-drained:
-		case <-time.After(processShutdownGrace):
+		closePipes()
+		beginReap()
+		var waitErr error
+		gotReap, gotDrain := false, false
+		reapCh, drainCh := reaped, drained
+		timer := time.NewTimer(time.Until(deadline))
+		defer timer.Stop()
+		for !gotReap || !gotDrain {
+			select {
+			case waitErr = <-reapCh:
+				gotReap = true
+				reapCh = nil
+			case <-drainCh:
+				gotDrain = true
+				drainCh = nil
+			case <-timer.C:
+				return waitErr, gotReap
+			}
 		}
-		_ = cmd.Wait()
-		return indexerprotocol.BuildResponse{}, "cancelled", "source-index build cancelled", ctx.Err()
+		return waitErr, true
 	}
-	// If exit observation won the select race with an overflowing reader, honor
-	// overflow immediately rather than treating retained descriptors as normal.
-	select {
-	case <-overflow:
-		terminate()
-		_ = stdout.Close()
-		_ = stderr.Close()
-	case <-drained:
-		// Both readers already completed; classification below remains stable.
-	default:
-	}
-	if out.exceeded || errout.exceeded {
-		terminate()
-		_ = stdout.Close()
-		_ = stderr.Close()
-		select {
-		case <-drained:
-		case <-time.After(processShutdownGrace):
-		}
-		_ = cmd.Wait()
-		if out.exceeded {
+	overflowFailure := func(stream outputStream) (indexerprotocol.BuildResponse, string, string, error) {
+		if stream == stdoutStream {
 			return indexerprotocol.BuildResponse{}, "indexer_output_exceeded", "indexer response exceeded supervisor limit", errors.New("indexer response exceeded limit")
 		}
 		return indexerprotocol.BuildResponse{}, "indexer_output_exceeded", "indexer diagnostics exceeded supervisor limit", errors.New("indexer diagnostics exceeded limit")
 	}
-	if exitObserveErr != nil {
-		_ = stdout.Close()
-		_ = stderr.Close()
-		_ = cmd.Wait()
-		return indexerprotocol.BuildResponse{}, "indexer_process_failed", "cannot observe indexer process", exitObserveErr
+
+	select {
+	case observeErr := <-exited:
+		if observeErr != nil {
+			shutdown(time.Now().Add(processShutdownGrace))
+			return indexerprotocol.BuildResponse{}, "indexer_process_failed", "cannot observe indexer process", observeErr
+		}
+	case <-ctx.Done():
+		shutdown(time.Now().Add(processShutdownGrace))
+		return indexerprotocol.BuildResponse{}, "cancelled", "source-index build cancelled", ctx.Err()
+	case stream := <-overflow:
+		shutdown(time.Now().Add(processShutdownGrace))
+		return overflowFailure(stream)
 	}
 
-	// A normal leader exit does not close pipes held by descendants.  First give
-	// valid trailing output a chance to drain, then kill the still-identifiable
-	// original group before reaping its leader.
+	// A normal leader exit may leave descendants holding its output descriptors.
+	// Do not reap until either normal draining completes or this deadline expires.
+	deadline := time.Now().Add(processShutdownGrace)
+	timer := time.NewTimer(processShutdownGrace)
+	defer timer.Stop()
 	select {
+	case <-ctx.Done():
+		shutdown(time.Now().Add(processShutdownGrace))
+		return indexerprotocol.BuildResponse{}, "cancelled", "source-index build cancelled", ctx.Err()
+	case stream := <-overflow:
+		shutdown(time.Now().Add(processShutdownGrace))
+		return overflowFailure(stream)
 	case <-drained:
-	case <-time.After(processShutdownGrace):
-		terminate()
-		_ = stdout.Close()
-		_ = stderr.Close()
+		// A writer can signal overflow immediately before both copies finish.
 		select {
-		case <-drained:
-		case <-time.After(processShutdownGrace):
+		case stream := <-overflow:
+			shutdown(time.Now().Add(processShutdownGrace))
+			return overflowFailure(stream)
+		default:
 		}
+		beginReap()
+		waitErr := <-reaped
+		return s.finishChild(out, waitErr, generationID)
+	case <-timer.C:
+		// This is a single sequence: shutdown receives the original deadline,
+		// rather than granting descendants another full grace interval.
+		waitErr, reapedInTime := shutdown(deadline)
+		if !reapedInTime {
+			return indexerprotocol.BuildResponse{}, "indexer_process_failed", "cannot reap indexer process", errors.New("indexer process did not reap during shutdown")
+		}
+		return s.finishChild(out, waitErr, generationID)
 	}
-	waitErr := cmd.Wait()
-	if out.exceeded || errout.exceeded {
-		return indexerprotocol.BuildResponse{}, "indexer_output_exceeded", "indexer response exceeded supervisor limit", errors.New("indexer response exceeded limit")
-	}
+}
+
+func (s *Supervisor) finishChild(out *boundedBuffer, waitErr error, generationID string) (indexerprotocol.BuildResponse, string, string, error) {
 	response, parseErr := indexerprotocol.ParseBuildResponse(out.bytes())
 	if parseErr != nil {
 		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response is invalid", fmt.Errorf("%w: invalid response", ErrChildProtocol)
