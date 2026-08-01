@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"errors"
 	"sort"
 	"unicode/utf8"
 
 	"relay/internal/app/operations"
+	"relay/internal/sourceindex/reader"
 	"relay/internal/sourcevault"
 )
 
@@ -99,6 +101,7 @@ type preparedSearch struct {
 	fingerprint   string
 	resume        searchResume
 	resumePending bool
+	backend       searchBackendBinding
 }
 
 type verifiedSearchCandidate struct {
@@ -131,7 +134,7 @@ func (s *Service) prepareSearch(ctx context.Context, request SearchRequest) (pre
 	}
 	prepared := preparedSearch{request: request, literal: literal, authority: authority, prefixes: prefixes, queryID: searchQueryID(request.Mode, literal), filterID: searchFilterID(prefixes), fingerprint: searchFingerprint(authority, request.Mode, literal, prefixes, request.Budget)}
 	if request.Cursor != "" {
-		prepared.resume, err = s.decodeSearchCursor(ctx, authority, prepared.fingerprint, request.Cursor)
+		prepared.resume, prepared.backend, err = s.decodeSearchCursor(ctx, authority, prepared.fingerprint, request.Cursor)
 		if err != nil {
 			return preparedSearch{}, err
 		}
@@ -163,11 +166,105 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResu
 	if err != nil {
 		return SearchResult{}, err
 	}
+	if request.Cursor != "" {
+		if prepared.backend.Backend == searchBackendScanner {
+			return s.executeScannerSearch(ctx, prepared)
+		}
+		return s.executeIndexedSearch(ctx, prepared, true)
+	}
+	if !s.indexedSearchEligible(prepared) {
+		prepared.backend = searchBackendBinding{Backend: searchBackendScanner}
+		return s.executeScannerSearch(ctx, prepared)
+	}
+	return s.executeIndexedSearch(ctx, prepared, false)
+}
+
+func (s *Service) indexedSearchEligible(prepared preparedSearch) bool {
+	if s.searchIndex == nil || prepared.request.Mode != SearchModeTextLiteral || utf8.RuneCount(prepared.literal) < 3 {
+		return false
+	}
+	for _, prefix := range prepared.prefixes {
+		if !utf8.Valid(prefix.bytes) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) executeScannerSearch(ctx context.Context, prepared preparedSearch) (SearchResult, error) {
+	if prepared.backend != (searchBackendBinding{Backend: searchBackendScanner}) {
+		return SearchResult{}, &Error{Code: CodeInvalidCursor}
+	}
 	source, err := newRetainedTreeSearchCandidateSource(ctx, s, prepared.authority, prepared.prefixes)
 	if err != nil {
 		return SearchResult{}, err
 	}
 	return s.executePreparedSearch(ctx, prepared, source)
+}
+
+func (s *Service) executeIndexedSearch(ctx context.Context, prepared preparedSearch, continuation bool) (result SearchResult, resultErr error) {
+	if !s.indexedSearchEligible(prepared) {
+		if continuation {
+			return SearchResult{}, &Error{Code: CodeInvalidCursor}
+		}
+		prepared.backend = searchBackendBinding{Backend: searchBackendScanner}
+		return s.executeScannerSearch(ctx, prepared)
+	}
+	handle, err := s.searchIndex.OpenSearchIndex(ctx, prepared.authority)
+	if err != nil {
+		if !nilInterface(handle) {
+			_ = handle.Close()
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return SearchResult{}, err
+		}
+		if continuation {
+			return SearchResult{}, &Error{Code: CodeInvalidCursor}
+		}
+		if stableSearchIndexMiss(err) && nilInterface(handle) {
+			prepared.backend = searchBackendBinding{Backend: searchBackendScanner}
+			return s.executeScannerSearch(ctx, prepared)
+		}
+		return SearchResult{}, err
+	}
+	if nilInterface(handle) {
+		if continuation {
+			return SearchResult{}, &Error{Code: CodeInvalidCursor}
+		}
+		return SearchResult{}, reader.ErrGenerationIntegrity
+	}
+	descriptor := handle.Descriptor()
+	if !validReaderDescriptorForAuthority(descriptor, prepared.authority) {
+		closeErr := handle.Close()
+		if continuation {
+			return SearchResult{}, &Error{Code: CodeInvalidCursor}
+		}
+		if closeErr != nil {
+			return SearchResult{}, reader.ErrGenerationIntegrity
+		}
+		prepared.backend = searchBackendBinding{Backend: searchBackendScanner}
+		return s.executeScannerSearch(ctx, prepared)
+	}
+	defer func() {
+		if closeErr := handle.Close(); closeErr != nil && resultErr == nil {
+			result = SearchResult{}
+			resultErr = &Error{Code: CodeInternalFailure}
+		}
+	}()
+	binding := indexedSearchBinding(descriptor)
+	if continuation && binding != prepared.backend {
+		return SearchResult{}, &Error{Code: CodeInvalidCursor}
+	}
+	prepared.backend = binding
+	source, err := newHybridTextSearchCandidateSource(ctx, handle, descriptor, prepared.request.TextLiteral, prepared.prefixes)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	return s.executePreparedSearch(ctx, prepared, source)
+}
+
+func stableSearchIndexMiss(err error) bool {
+	return errors.Is(err, reader.ErrGenerationUnavailable) || errors.Is(err, reader.ErrGenerationIntegrity) || errors.Is(err, reader.ErrUnsupportedPlatform) || errors.Is(err, reader.ErrInvalidConfiguration)
 }
 
 // executePreparedSearch is the canonical authoritative matcher for ordered,
@@ -309,7 +406,7 @@ func (s *Service) matchRetainedSearchCandidate(ctx context.Context, prepared pre
 }
 
 func (s *Service) finishSearchCandidateIncomplete(prepared preparedSearch, result SearchResult, candidate verifiedSearchCandidate, state searchCandidateState, completion SearchCompletion, objectExhausted, byteExhausted bool) (SearchResult, bool, error) {
-	value, err := s.finishSearchIncomplete(prepared.authority, prepared.fingerprint, result, candidate.Identity, candidate.BlobOID, state.phase, state.nextOffset, state.ordinal, state.totalSize, state.totalSizeKnown, completion, objectExhausted, byteExhausted)
+	value, err := s.finishSearchIncomplete(prepared.authority, prepared.fingerprint, prepared.backend, result, candidate.Identity, candidate.BlobOID, state.phase, state.nextOffset, state.ordinal, state.totalSize, state.totalSizeKnown, completion, objectExhausted, byteExhausted)
 	return value, false, err
 }
 
@@ -445,11 +542,14 @@ func pathHasComponentPrefix(path, prefix []byte) bool {
 	return len(path) > len(prefix) && bytes.Equal(path[:len(prefix)], prefix) && path[len(prefix)] == '/'
 }
 
-func (s *Service) finishSearchIncomplete(authority operations.SourceReadAuthority, fingerprint string, result SearchResult, identity PathIdentity, blobOID string, phase searchPhase, nextOffset, ordinal, totalSize int64, totalSizeKnown bool, completion SearchCompletion, objectExhausted, byteExhausted bool) (SearchResult, error) {
+func (s *Service) finishSearchIncomplete(authority operations.SourceReadAuthority, fingerprint string, binding searchBackendBinding, result SearchResult, identity PathIdentity, blobOID string, phase searchPhase, nextOffset, ordinal, totalSize int64, totalSizeKnown bool, completion SearchCompletion, objectExhausted, byteExhausted bool) (SearchResult, error) {
 	if completion != SearchCompletionPageIncomplete && completion != SearchCompletionBudgetIncomplete {
 		return SearchResult{}, &Error{Code: CodeInternalFailure}
 	}
-	value := searchCursorPayload(authority, fingerprint, identity, blobOID, phase, nextOffset, ordinal, totalSize, totalSizeKnown)
+	if !validSearchBackendBinding(binding) {
+		return SearchResult{}, &Error{Code: CodeInternalFailure}
+	}
+	value := searchCursorPayload(authority, fingerprint, binding, identity, blobOID, phase, nextOffset, ordinal, totalSize, totalSizeKnown)
 	token, err := s.cursors.Encode(value)
 	if err != nil {
 		return SearchResult{}, err

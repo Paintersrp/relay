@@ -43,6 +43,11 @@ type cursorPayload struct {
 	SearchPhase                     searchPhase   `json:"search_phase,omitempty"`
 	SearchObjectSize                int64         `json:"search_object_size,omitempty"`
 	SearchObjectSizeKnown           bool          `json:"search_object_size_known,omitempty"`
+	SearchBackend                   string        `json:"search_backend,omitempty"`
+	SearchGenerationID              string        `json:"search_generation_id,omitempty"`
+	SearchGenerationManifestSHA256  string        `json:"search_generation_manifest_sha256,omitempty"`
+	SearchCoverageManifestSHA256    string        `json:"search_coverage_manifest_sha256,omitempty"`
+	SearchArtifactManifestSHA256    string        `json:"search_artifact_manifest_sha256,omitempty"`
 }
 
 type HMACCursorCodec struct{ key []byte }
@@ -55,7 +60,7 @@ func NewHMACCursorCodec(key []byte) (*HMACCursorCodec, error) {
 }
 
 func (c *HMACCursorCodec) Encode(value cursorPayload) (string, error) {
-	if c == nil || len(c.key) < 32 || value.Version != CursorVersion || value.Kind == "" {
+	if c == nil || len(c.key) < 32 || value.Kind == "" || value.Kind == "search" && value.Version != SearchCursorVersion || value.Kind != "search" && value.Version != CursorVersion {
 		return "", &Error{Code: CodeInvalidCursor}
 	}
 	payload, err := json.Marshal(value)
@@ -104,7 +109,7 @@ func (c *HMACCursorCodec) Decode(token string) (cursorPayload, error) {
 }
 
 func validCursorPayload(value cursorPayload) bool {
-	if value.Version != CursorVersion || value.Kind == "" || value.NextOffset < 0 || value.NextIndex < 0 || !validLowerHex(value.PacketSHA256, 64) || !validLowerHex(value.CommitOID, 40) || !validLowerHex(value.TreeOID, 40) || !validLowerHex(value.RequestFingerprint, 64) {
+	if value.Kind == "" || value.Kind == "search" && value.Version != SearchCursorVersion || value.Kind != "search" && value.Version != CursorVersion || value.NextOffset < 0 || value.NextIndex < 0 || !validLowerHex(value.PacketSHA256, 64) || !validLowerHex(value.CommitOID, 40) || !validLowerHex(value.TreeOID, 40) || !validLowerHex(value.RequestFingerprint, 64) {
 		return false
 	}
 	for _, oid := range []string{value.ObjectOID, value.LastCommitOID, value.SecondaryCommitOID, value.SecondaryTreeOID} {
@@ -125,7 +130,7 @@ func validCursorPayload(value cursorPayload) bool {
 		if !validSearchPhase(value.SearchPhase) || value.SearchObjectSize < 0 || (!value.SearchObjectSizeKnown && value.SearchObjectSize != 0) {
 			return false
 		}
-	} else if value.SearchPhase != "" || value.SearchObjectSize != 0 || value.SearchObjectSizeKnown {
+	} else if value.SearchPhase != "" || value.SearchObjectSize != 0 || value.SearchObjectSizeKnown || value.SearchBackend != "" || value.SearchGenerationID != "" || value.SearchGenerationManifestSHA256 != "" || value.SearchCoverageManifestSHA256 != "" || value.SearchArtifactManifestSHA256 != "" {
 		return false
 	}
 	return true

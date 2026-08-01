@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"unicode/utf8"
 
+	"relay/internal/app/operations"
 	"relay/internal/sourceindex"
 	"relay/internal/sourceindex/reader"
 )
@@ -16,6 +17,15 @@ type indexedSearchCandidateReader interface {
 	Descriptor() reader.Descriptor
 	IndexedTextCandidates(context.Context, string) ([]reader.Candidate, error)
 	FallbackCandidates() []reader.Candidate
+}
+
+type SearchIndexProvider interface {
+	OpenSearchIndex(context.Context, operations.SourceReadAuthority) (SearchIndexHandle, error)
+}
+
+type SearchIndexHandle interface {
+	indexedSearchCandidateReader
+	Close() error
 }
 
 type sliceSearchCandidateSource struct {
@@ -99,6 +109,26 @@ func validReaderDescriptor(d reader.Descriptor) bool {
 	}
 	id, err := sourceindex.GenerationID(d.Identity)
 	return err == nil && id == d.GenerationID
+}
+
+func validReaderDescriptorForAuthority(d reader.Descriptor, authority operations.SourceReadAuthority) bool {
+	options, err := sourceindex.BuildOptionsSHA256(sourceindex.DefaultBuildOptions())
+	return err == nil && validReaderDescriptor(d) && d.Identity.CommitOID == authority.Relationship.CommitOID && d.Identity.TreeOID == authority.Relationship.TreeOID && d.Identity.BuildOptionsSHA256 == options
+}
+
+func indexedSearchBinding(d reader.Descriptor) searchBackendBinding {
+	return searchBackendBinding{Backend: searchBackendIndexed, GenerationID: d.GenerationID, GenerationManifestSHA256: d.GenerationManifestSHA256, CoverageManifestSHA256: d.CoverageManifestSHA256, ArtifactManifestSHA256: d.ArtifactManifestSHA256}
+}
+
+func validSearchBackendBinding(binding searchBackendBinding) bool {
+	switch binding.Backend {
+	case searchBackendScanner:
+		return binding.GenerationID == "" && binding.GenerationManifestSHA256 == "" && binding.CoverageManifestSHA256 == "" && binding.ArtifactManifestSHA256 == ""
+	case searchBackendIndexed:
+		return validLowerHex64(binding.GenerationID) && validLowerHex64(binding.GenerationManifestSHA256) && validLowerHex64(binding.CoverageManifestSHA256) && validLowerHex64(binding.ArtifactManifestSHA256)
+	default:
+		return false
+	}
 }
 
 func validLowerHex64(value string) bool {

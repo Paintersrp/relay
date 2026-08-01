@@ -4,9 +4,25 @@ import "relay/internal/operations/registry"
 
 const (
 	SearchOrderVersion    = "relay.source-search-order.v1"
+	SearchCursorVersion   = "relay.source-search-cursor.v2"
 	MaxSearchPageMatches  = MaxTreePageEntries
 	MaxSearchLiteralBytes = MaxBlobPageBytes
 )
+
+type searchBackend string
+
+const (
+	searchBackendScanner searchBackend = "scanner"
+	searchBackendIndexed searchBackend = "indexed"
+)
+
+type searchBackendBinding struct {
+	Backend                  searchBackend
+	GenerationID             string
+	GenerationManifestSHA256 string
+	CoverageManifestSHA256   string
+	ArtifactManifestSHA256   string
+}
 
 type SearchMode string
 

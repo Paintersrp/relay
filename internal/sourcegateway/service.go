@@ -18,13 +18,32 @@ type Service struct {
 	vault       VaultReader
 	selectors   SelectorStore
 	cursors     CursorCodec
+	searchIndex SearchIndexProvider
 }
 
-func NewService(authorities AuthorityResolver, vault VaultReader, selectors SelectorStore, cursors CursorCodec) (*Service, error) {
+type Option func(*Service) error
+
+func WithSearchIndexProvider(provider SearchIndexProvider) Option {
+	return func(service *Service) error {
+		if nilInterface(provider) {
+			return &Error{Code: CodeInvalidRequest}
+		}
+		service.searchIndex = provider
+		return nil
+	}
+}
+
+func NewService(authorities AuthorityResolver, vault VaultReader, selectors SelectorStore, cursors CursorCodec, options ...Option) (*Service, error) {
 	if authorities == nil || vault == nil || selectors == nil || cursors == nil {
 		return nil, &Error{Code: CodeInvalidRequest}
 	}
-	return &Service{authorities: authorities, vault: vault, selectors: selectors, cursors: cursors}, nil
+	service := &Service{authorities: authorities, vault: vault, selectors: selectors, cursors: cursors}
+	for _, option := range options {
+		if option == nil || option(service) != nil {
+			return nil, &Error{Code: CodeInvalidRequest}
+		}
+	}
+	return service, nil
 }
 func (s *Service) resolveAuthority(ctx context.Context, packetID string, surface registry.SurfaceContractID, operation registry.OperationID, repositoryKey string) (operations.SourceReadAuthority, error) {
 	if s == nil || strings.TrimSpace(packetID) != packetID || packetID == "" || surface == "" || operation == "" || strings.TrimSpace(repositoryKey) != repositoryKey || repositoryKey == "" {
