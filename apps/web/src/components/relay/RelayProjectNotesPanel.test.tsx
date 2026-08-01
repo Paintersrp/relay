@@ -62,11 +62,11 @@ describe("RelayProjectNotesPanel", () => {
     mocks.createNote.mockReset();
     mocks.deleteNote.mockReset();
     mocks.updateNote.mockReset();
-    mocks.updateNote.mockResolvedValue({});
   });
 
   it("defaults to open Notes and supports complete and reopen transitions", async () => {
     const user = userEvent.setup();
+    mocks.updateNote.mockResolvedValue({});
     renderPanel();
 
     expect(screen.getByText("Open Note")).toBeInTheDocument();
@@ -161,39 +161,51 @@ describe("RelayProjectNotesPanel", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("creates, edits, and deletes ordinary Notes through explicit dialogs", async () => {
+  it("creates an ordinary Note through an explicit dialog", async () => {
     const user = userEvent.setup();
     mocks.createNote.mockResolvedValue({});
-    mocks.updateNote.mockResolvedValue({});
-    mocks.deleteNote.mockResolvedValue(undefined);
     renderPanel();
 
     await user.click(screen.getByRole("button", { name: "New Note" }));
-    await user.type(screen.getByLabelText("Title"), "New Note");
-    await user.type(screen.getByLabelText("Body"), "New body");
-    await user.click(screen.getByRole("button", { name: "Create Note" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Title"), "New Note");
+    await user.type(within(dialog).getByLabelText("Body"), "New body");
+    await user.click(within(dialog).getByRole("button", { name: "Create Note" }));
     await waitFor(() => {
       expect(mocks.createNote).toHaveBeenCalledWith("project-1", {
         title: "New Note",
         body: "New body",
       });
     });
+  });
+
+  it("edits an ordinary Note through an explicit dialog", async () => {
+    const user = userEvent.setup();
+    mocks.updateNote.mockResolvedValue({});
+    renderPanel();
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    const titleInput = screen.getByLabelText("Title");
+    const dialog = screen.getByRole("dialog");
+    const titleInput = within(dialog).getByLabelText("Title");
     await user.clear(titleInput);
     await user.type(titleInput, "Updated Note");
-    await user.click(screen.getByRole("button", { name: "Save Note" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save Note" }));
     await waitFor(() => {
       expect(mocks.updateNote).toHaveBeenCalledWith("project-1", "note-open", {
         title: "Updated Note",
         body: "Still relevant",
       });
     });
+  });
+
+  it("deletes an ordinary Note through an explicit confirmation dialog", async () => {
+    const user = userEvent.setup();
+    mocks.deleteNote.mockResolvedValue(undefined);
+    renderPanel();
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
-    const deleteButtons = screen.getAllByRole("button", { name: "Delete Note" });
-    await user.click(deleteButtons[deleteButtons.length - 1]);
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete Note" }));
     await waitFor(() => {
       expect(mocks.deleteNote).toHaveBeenCalledWith("project-1", "note-open");
     });
