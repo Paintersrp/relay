@@ -1,0 +1,62 @@
+package supervisor
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"relay/internal/sourceindex"
+	workflow "relay/internal/store/workflow"
+)
+
+func TestNewValidatesConfiguration(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	indexer, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &testStore{}
+	authority := &testAuthority{}
+	if _, err := New(store, authority, Config{IndexRoot: filepath.Join(root, "indexes"), IndexerPath: indexer}); err != nil {
+		t.Fatalf("New valid configuration: %v", err)
+	}
+	for _, config := range []Config{
+		{IndexRoot: "relative", IndexerPath: indexer},
+		{IndexRoot: filepath.Join(root, "indexes"), IndexerPath: "relative"},
+		{IndexRoot: filepath.Join(root, "indexes"), IndexerPath: filepath.Join(root, "missing")},
+		{IndexRoot: filepath.Join(root, "indexes"), IndexerPath: root},
+		{IndexRoot: filepath.Join(root, "source"), IndexerPath: indexer, ProtectedStorage: sourceindex.ProtectedStorage{SourceVaultRoot: root}},
+	} {
+		if _, err := New(store, authority, config); !errors.Is(err, ErrInvalidConfiguration) {
+			t.Errorf("New(%+v) error = %v, want invalid configuration", config, err)
+		}
+	}
+	if _, err := New(nil, authority, Config{IndexRoot: filepath.Join(root, "indexes"), IndexerPath: indexer}); !errors.Is(err, ErrInvalidConfiguration) {
+		t.Errorf("nil store error = %v", err)
+	}
+	if _, err := New(store, nil, Config{IndexRoot: filepath.Join(root, "indexes"), IndexerPath: indexer}); !errors.Is(err, ErrInvalidConfiguration) {
+		t.Errorf("nil authority error = %v", err)
+	}
+}
+
+type testStore struct{}
+type testAuthority struct{}
+
+func (*testStore) GetSourceIndexGeneration(context.Context, string) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected call")
+}
+func (*testStore) BeginSourceIndexGenerationBuild(context.Context, string) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected call")
+}
+func (*testStore) MarkSourceIndexGenerationReady(context.Context, workflow.MarkSourceIndexGenerationReadyParams) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected call")
+}
+func (*testStore) MarkSourceIndexGenerationFailed(context.Context, workflow.MarkSourceIndexGenerationFailedParams) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected call")
+}
+func (*testAuthority) AcquireSourceIndexLease(context.Context, sourceindex.GenerationIdentity) (SourceLease, error) {
+	return nil, errors.New("unexpected call")
+}

@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"relay/internal/sourceindex"
+	"relay/internal/sourceindex/fsatomic"
 	"relay/internal/sourceindex/indexerprotocol"
 	"relay/internal/sourceindex/zoektbuild"
 )
@@ -503,16 +504,7 @@ func safeDirectory(path string) error {
 	return nil
 }
 func syncDirectory(path string) error {
-	f, e := os.Open(path)
-	if e != nil {
-		return e
-	}
-	e = f.Sync()
-	closeErr := f.Close()
-	if e != nil {
-		return e
-	}
-	return closeErr
+	return fsatomic.SyncDirectory(path)
 }
 func syncBuild(root, parent string) error {
 	for _, name := range []string{sourceindex.CoverageManifestFileName, sourceindex.ArtifactManifestFileName, sourceindex.GenerationManifestFileName} {
@@ -626,7 +618,7 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	if e = syncBuild(tmp, parent); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot durably prepare staging generation")
 	}
-	if e = exposeNoReplace(tmp, target); e != nil {
+	if e = fsatomic.RenameNoReplace(tmp, target); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot expose staging generation")
 	}
 	if e = syncDirectory(parent); e != nil {
