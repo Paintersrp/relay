@@ -67,8 +67,8 @@ func TestPrepareExecutionAssignmentPersistsBriefOnlyArtifact(t *testing.T) {
 
 func TestLoadExecutionAssignmentRequiresAndVerifiesExistingArtifact(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
-	if _, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID); err == nil {
-		t.Fatal("missing assignment was accepted")
+	if _, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID); !errors.Is(err, ErrExecutionAssignmentConflict) {
+		t.Fatalf("missing assignment error = %v", err)
 	}
 	prepared := prepareExecutionAssignment(t, fixture)
 	loaded, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID)
@@ -77,6 +77,12 @@ func TestLoadExecutionAssignmentRequiresAndVerifiesExistingArtifact(t *testing.T
 	}
 	if loaded.Artifact.ID != prepared.Artifact.ID || !reflect.DeepEqual(loaded.Bytes, prepared.Bytes) {
 		t.Fatalf("loaded assignment = %#v, want %#v", loaded, prepared)
+	}
+	if _, err := fixture.store.DB().Exec(`DELETE FROM artifacts WHERE id = ?`, prepared.Artifact.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID); !errors.Is(err, ErrExecutionAssignmentConflict) {
+		t.Fatalf("deleted assignment metadata error = %v", err)
 	}
 }
 

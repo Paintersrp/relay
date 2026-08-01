@@ -141,7 +141,8 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 
 func TestLaunchPreparedAdaptiveCompleteDoesNoLaunchWork(t *testing.T) {
 	fixture := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
-	adapterCalls, launchCalls := 0, 0
+	prepareDeterministicComplete(t, fixture)
+	adapterCalls, preflightCalls, launchCalls := 0, 0, 0
 	service, err := NewExecution(fixture.store, nil, "prepared-launch-test", fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -149,6 +150,10 @@ func TestLaunchPreparedAdaptiveCompleteDoesNoLaunchWork(t *testing.T) {
 	service.adapterFactory = func(string) (ExecutorAdapter, error) {
 		adapterCalls++
 		return &preparedLaunchAdapter{id: AdapterCodex}, nil
+	}
+	service.invocationPreflight = func(ExecutorInvocation) ExecutorPreflightResult {
+		preflightCalls++
+		return ExecutorPreflightResult{OK: true}
 	}
 	service.launch = func(func()) { launchCalls++ }
 	result, err := service.LaunchPreparedAdaptive(context.Background(), PreparedAdaptiveLaunchInput{RunID: fixture.run.RunID})
@@ -158,8 +163,15 @@ func TestLaunchPreparedAdaptiveCompleteDoesNoLaunchWork(t *testing.T) {
 	if result.Mode != EffectiveExecutorBriefDeterministicComplete || result.AdaptiveDispatchRequired || result.NewlyAdmitted || result.NewlyLaunched || result.Run != nil || result.Attempt != nil || result.Lease != nil {
 		t.Fatalf("result=%#v", result)
 	}
-	if adapterCalls != 0 || launchCalls != 0 {
-		t.Fatalf("adapter calls=%d launch calls=%d", adapterCalls, launchCalls)
+	if adapterCalls != 0 || preflightCalls != 0 || launchCalls != 0 {
+		t.Fatalf("adapter calls=%d preflight calls=%d launch calls=%d", adapterCalls, preflightCalls, launchCalls)
+	}
+	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), fixture.run.ID)
+	if err != nil || len(attempts) != 0 {
+		t.Fatalf("attempts=%#v err=%v", attempts, err)
+	}
+	if _, err := service.runs.GetActiveRunMutationLease(context.Background(), fixture.run.RunID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("active lease error=%v", err)
 	}
 }
 

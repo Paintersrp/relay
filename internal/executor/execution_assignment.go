@@ -261,7 +261,7 @@ func (s *ExecutionAssignmentService) LoadExecutionAssignment(ctx context.Context
 		existing = &candidate
 	}
 	if existing == nil {
-		return ExecutionAssignmentResult{}, fmt.Errorf("Run execution_assignment artifact is missing")
+		return ExecutionAssignmentResult{}, fmt.Errorf("%w: Run execution_assignment artifact is missing", ErrExecutionAssignmentConflict)
 	}
 	return s.resolveExistingAssignment(*existing, assignment, content, authority.Run.RunID, filename)
 }

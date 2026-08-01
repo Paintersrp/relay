@@ -236,7 +236,7 @@ func admissionConflict(err error) error {
 	if errors.Is(err, workflowruns.ErrMutationLeaseConflict) {
 		return err
 	}
-	if errors.Is(err, ErrAdaptiveExecutionAttemptConflict) || errors.Is(err, ErrEffectiveExecutorBriefConflict) || errors.Is(err, workflowruns.ErrPreparedAdaptiveExecutionConflict) {
+	if errors.Is(err, ErrAdaptiveExecutionAttemptConflict) || errors.Is(err, ErrEffectiveExecutorBriefConflict) || errors.Is(err, ErrExecutionAssignmentConflict) || errors.Is(err, workflowruns.ErrPreparedAdaptiveExecutionConflict) {
 		return fmt.Errorf("%w: %v", ErrAdaptiveDispatchAdmissionConflict, err)
 	}
 	return err

@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -120,6 +121,7 @@ func seedAdaptivePartialLease(t *testing.T, fixture *executionAssignmentFixture,
 func TestBeginAdaptiveDispatchAdmissionCompleteAndConcurrent(t *testing.T) {
 	ctx := context.Background()
 	complete := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
+	prepareDeterministicComplete(t, complete)
 	service, err := NewAdaptiveDispatchAdmissionService(complete.store, complete.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +132,17 @@ func TestBeginAdaptiveDispatchAdmissionCompleteAndConcurrent(t *testing.T) {
 	}
 	if result.Mode != EffectiveExecutorBriefDeterministicComplete || result.AdaptiveDispatchRequired || result.NewlyAdmitted || result.Run != nil || result.Attempt != nil || result.Lease != nil || result.EffectiveBriefArtifact != nil || result.InputArtifact != nil || len(result.EffectiveBriefBytes) != 0 || len(result.InputBytes) != 0 {
 		t.Fatalf("complete result = %#v", result)
+	}
+	completeAttempts, err := complete.store.ListExecutionAttemptsByRun(ctx, complete.run.ID)
+	if err != nil || len(completeAttempts) != 0 {
+		t.Fatalf("complete attempts = %#v err=%v", completeAttempts, err)
+	}
+	if _, err := service.runs.GetActiveRunMutationLease(ctx, complete.run.RunID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("complete lease error = %v", err)
+	}
+	completeRun, err := complete.store.GetRunByRunID(ctx, complete.run.RunID)
+	if err != nil || completeRun.Status != workflowstore.RunStatusSetupReady {
+		t.Fatalf("complete Run = %#v err=%v", completeRun, err)
 	}
 
 	fixture := adaptiveAttemptFixture(t, false, "", DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}})
@@ -219,6 +232,7 @@ func TestBeginAdaptiveDispatchAdmissionCompleteRejectsDurableDispatchState(t *te
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := adaptiveAttemptFixture(t, true, "complete", appliedOutcomeInput("complete"))
+			prepareDeterministicComplete(t, fixture)
 			tc.seed(t, fixture)
 			service, err := NewAdaptiveDispatchAdmissionService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
@@ -232,6 +246,17 @@ func TestBeginAdaptiveDispatchAdmissionCompleteRejectsDurableDispatchState(t *te
 				t.Fatalf("Run = %#v err=%v", run, err)
 			}
 		})
+	}
+}
+
+func prepareDeterministicComplete(t *testing.T, fixture *executionAssignmentFixture) {
+	t.Helper()
+	prepared, err := newAdaptiveAttemptService(t, fixture).Prepare(context.Background(), AdaptiveExecutionAttemptInput{RunID: fixture.run.RunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Mode != EffectiveExecutorBriefDeterministicComplete || prepared.AdaptiveDispatchRequired || prepared.Attempt != nil || prepared.InputArtifact != nil || len(prepared.InputBytes) != 0 {
+		t.Fatalf("deterministic-complete preparation = %#v", prepared)
 	}
 }
 
