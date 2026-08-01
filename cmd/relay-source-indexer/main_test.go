@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"relay/internal/sourceindex"
+	"relay/internal/sourceindex/indexer"
 	"relay/internal/sourceindex/indexerprotocol"
 )
 
@@ -93,6 +94,15 @@ func TestCommandCanonicalProcessContract(t *testing.T) {
 	if bytes.HasSuffix(out, []byte{'\n'}) || response.Version != indexerprotocol.ProtocolVersion {
 		t.Fatal("response framing or version is invalid")
 	}
+	if runtime.GOOS != "windows" {
+		if response.Result == nil || response.Status != indexerprotocol.BuildStatusSuccess {
+			t.Fatalf("successful request returned failure: %#v", response)
+		}
+		root := filepath.Join(r.IndexRoot, filepath.FromSlash(response.Result.StagingRelativeDirectory))
+		if err := indexer.Verify(root, r, response.Result.ShardCount); err != nil {
+			t.Fatalf("command generation failed verification: %v", err)
+		}
+	}
 	failed, err := run([]byte(`{"version":"relay.source-indexer-protocol.v1","unknown":1}`))
 	if err == nil {
 		t.Fatal("invalid request exited zero")
@@ -107,5 +117,25 @@ func TestCommandCanonicalProcessContract(t *testing.T) {
 	}
 	if response, parseErr := indexerprotocol.ParseBuildResponse(oversized); parseErr != nil || response.Failure == nil || response.Failure.Code != indexerprotocol.FailureInvalidRequest {
 		t.Fatalf("oversized request response: %v %#v", parseErr, response)
+	}
+	if runtime.GOOS != "windows" {
+		failedRequest := r
+		failedRequest.RepositoryPath = filepath.Join(t.TempDir(), "missing-repository")
+		failedRequest.IndexRoot = filepath.Join(t.TempDir(), "failed-index")
+		failedRaw, err := indexerprotocol.MarshalBuildRequest(failedRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		failed, err := run(failedRaw)
+		if err == nil {
+			t.Fatal("handled build failure exited zero")
+		}
+		failure, parseErr := indexerprotocol.ParseBuildResponse(failed)
+		if parseErr != nil || failure.Failure == nil {
+			t.Fatalf("handled failure response: %v %#v", parseErr, failure)
+		}
+		if _, err := os.Stat(filepath.Join(failedRequest.IndexRoot, sourceindex.StagingDirectoryName)); err == nil {
+			t.Fatal("failed command left a usable staging target")
+		}
 	}
 }
