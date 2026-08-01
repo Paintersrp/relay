@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"math"
 	"os"
 	"os/exec"
@@ -1420,6 +1421,41 @@ func TestSearchRetainedReadFailuresAndIntegrityMismatchesFailClosed(t *testing.T
 			t.Fatal("cancelled search succeeded")
 		}
 	})
+}
+
+func TestSearchPreservesVaultContextErrors(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	blobOID := strings.Repeat("3", 40)
+	authority := fidelityAuthority(commitOID, rootTree, "", 1)
+	base := &fidelityVaultFake{
+		trees: map[string][]sourcevault.RetainedTreeEntry{rootTree: {{Name: []byte("a"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}},
+		blobs: map[string][]byte{blobOID: []byte("aaaa")},
+		nodes: map[string]sourcevault.RetainedCommitNode{},
+	}
+	for _, want := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(want.Error()+" tree", func(t *testing.T) {
+			vault := &searchVaultWrapper{base: base, tree: func(context.Context, sourcevault.ReadRetainedTreeRequest) (sourcevault.ReadRetainedTreeResult, error) {
+				return sourcevault.ReadRetainedTreeResult{}, want
+			}}
+			result, err := newSearchService(t, searchAuthorityResolver{authority: authority}, vault, nil).Search(context.Background(), byteSearchRequest([]byte("a")))
+			if !errors.Is(err, want) || len(result.Matches) != 0 {
+				t.Fatalf("result=%#v error=%v", result, err)
+			}
+		})
+		for _, mode := range []SearchRequest{byteSearchRequest([]byte("a")), textSearchRequest("aaa")} {
+			name := string(mode.Mode)
+			t.Run(want.Error()+" "+name+" blob", func(t *testing.T) {
+				vault := &searchVaultWrapper{base: base, blob: func(context.Context, sourcevault.ReadRetainedBlobRangeRequest) (sourcevault.ReadRetainedBlobRangeResult, error) {
+					return sourcevault.ReadRetainedBlobRangeResult{}, want
+				}}
+				result, err := newSearchService(t, searchAuthorityResolver{authority: authority}, vault, nil).Search(context.Background(), mode)
+				if !errors.Is(err, want) || len(result.Matches) != 0 {
+					t.Fatalf("result=%#v error=%v", result, err)
+				}
+			})
+		}
+	}
 }
 
 func TestSearchObjectSizeInconsistencyFailsWithinCallAndAcrossResume(t *testing.T) {

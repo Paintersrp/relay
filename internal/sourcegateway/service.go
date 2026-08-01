@@ -124,6 +124,15 @@ func mapVaultError(err error) error {
 		return &Error{Code: CodeInternalFailure}
 	}
 }
+func mapSearchVaultError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return mapVaultError(err)
+}
 func cursorMatchesAuthority(value cursorPayload, authority operations.SourceReadAuthority, fingerprint, kind string) bool {
 	return value.Version == CursorVersion && value.Kind == kind && value.PacketID == authority.Summary.PacketID && value.PacketSHA256 == authority.Summary.PacketSHA256 && value.SurfaceContract == string(authority.Summary.SurfaceContract) && value.OperationID == string(authority.Summary.OperationID) && value.ProjectID == authority.Summary.ProjectID && value.RepositoryKey == authority.RepositoryKey && value.PublicationID == authority.PublicationID && value.VaultRelationshipRowID == authority.Relationship.ID && value.CommitOID == authority.Relationship.CommitOID && value.TreeOID == authority.Relationship.TreeOID && value.RequestFingerprint == fingerprint
 }

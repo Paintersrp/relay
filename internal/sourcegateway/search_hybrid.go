@@ -28,7 +28,13 @@ func newSliceSearchCandidateSource(paths [][]byte) *sliceSearchCandidateSource {
 	for i := range paths {
 		owned[i] = append([]byte(nil), paths[i]...)
 	}
-	return &sliceSearchCandidateSource{paths: owned}
+	return newOwnedSliceSearchCandidateSource(owned)
+}
+
+// newOwnedSliceSearchCandidateSource takes ownership of paths whose ownership
+// and validity have already been established by the caller.
+func newOwnedSliceSearchCandidateSource(paths [][]byte) *sliceSearchCandidateSource {
+	return &sliceSearchCandidateSource{paths: paths}
 }
 
 func (s *sliceSearchCandidateSource) Next(ctx context.Context) (searchCandidate, bool, error) {
@@ -82,7 +88,7 @@ func newHybridTextSearchCandidateSource(ctx context.Context, index indexedSearch
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return newSliceSearchCandidateSource(merged), nil
+	return newOwnedSliceSearchCandidateSource(merged), nil
 }
 
 func generationIntegrityError() error { return reader.ErrGenerationIntegrity }

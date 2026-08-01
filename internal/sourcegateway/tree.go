@@ -168,7 +168,7 @@ func (s *Service) initialCandidates(ctx context.Context, authority operations.So
 func (s *Service) readTree(ctx context.Context, authority operations.SourceReadAuthority, treeOID string) ([]sourcevault.RetainedTreeEntry, error) {
 	result, err := s.vault.ReadRetainedTree(ctx, sourcevault.ReadRetainedTreeRequest{Relationship: authority.Relationship, TreeOID: treeOID})
 	if err != nil {
-		return nil, mapVaultError(err)
+		return nil, mapSearchVaultError(err)
 	}
 	if result.TreeOID != treeOID {
 		return nil, &Error{Code: CodeObjectMismatch}

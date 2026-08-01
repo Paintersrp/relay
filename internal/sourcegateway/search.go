@@ -278,7 +278,7 @@ func (s *Service) matchRetainedSearchCandidate(ctx context.Context, prepared pre
 		}
 		page, err := s.vault.ReadRetainedBlobRange(ctx, sourcevault.ReadRetainedBlobRangeRequest{Relationship: prepared.authority.Relationship, BlobOID: candidate.BlobOID, Offset: state.nextOffset, Limit: int64(len(prepared.literal))})
 		if err != nil {
-			return SearchResult{}, false, mapVaultError(err)
+			return SearchResult{}, false, mapSearchVaultError(err)
 		}
 		if page.BlobOID != candidate.BlobOID || page.Offset != state.nextOffset || page.TotalSize < 0 || page.Offset+int64(len(page.Bytes)) > page.TotalSize || int64(len(page.Bytes)) > int64(len(prepared.literal)) {
 			return SearchResult{}, false, &Error{Code: CodeObjectMismatch}
@@ -329,7 +329,7 @@ func (s *Service) validateSearchText(ctx context.Context, authority operations.S
 	}
 	page, err := s.vault.ReadRetainedBlobRange(ctx, sourcevault.ReadRetainedBlobRangeRequest{Relationship: authority.Relationship, BlobOID: blobOID, Offset: offset, Limit: limit})
 	if err != nil {
-		return searchTextValidation{}, mapVaultError(err)
+		return searchTextValidation{}, mapSearchVaultError(err)
 	}
 	if page.BlobOID != blobOID || page.Offset != offset || page.TotalSize < 0 || page.Offset+int64(len(page.Bytes)) > page.TotalSize || int64(len(page.Bytes)) > limit {
 		return searchTextValidation{}, &Error{Code: CodeObjectMismatch}
