@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"math"
 	"os"
 	"time"
 
@@ -80,8 +82,79 @@ func Write(path, generation string, sequence int, metadata Metadata, docs []Docu
 	}
 	return closeErr
 }
-func Verify(path, generation string, sequence int, metadata Metadata) error {
-	repos, indexMetadata, err := index.ReadMetadataPath(path)
+
+// VerifyFile verifies one shard's deterministic metadata from the exact opened
+// descriptor. The descriptor is left open and at its current offset.
+func VerifyFile(f *os.File, generation string, sequence int, metadata Metadata) error {
+	inf, err := newFileIndex(f)
+	if err != nil {
+		return err
+	}
+	return verifyIndexFile(inf, generation, sequence, metadata)
+}
+
+// DocumentsFile verifies one shard from the exact opened descriptor and
+// returns its complete corpus. The descriptor is left open.
+func DocumentsFile(f *os.File, generation string, sequence int, metadata Metadata) ([]string, error) {
+	inf, err := newFileIndex(f)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyIndexFile(inf, generation, sequence, metadata); err != nil {
+		return nil, err
+	}
+	searcher, err := index.NewSearcher(inf)
+	if err != nil {
+		return nil, err
+	}
+	defer searcher.Close()
+	result, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{MaxDocDisplayCount: 1 << 30, TotalMaxMatchCount: 1 << 30})
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, len(result.Files))
+	for i, match := range result.Files {
+		paths[i] = match.FileName
+	}
+	return paths, nil
+}
+
+// fileIndex is a non-owning IndexFile over an already-opened descriptor. It
+// never closes the descriptor, so one bound descriptor can be verified and
+// then opened by the reader.
+type fileIndex struct {
+	f    *os.File
+	size uint32
+}
+
+func newFileIndex(f *os.File) (*fileIndex, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() >= math.MaxUint32 {
+		return nil, errors.New("index too large")
+	}
+	return &fileIndex{f: f, size: uint32(info.Size())}, nil
+}
+
+func (x *fileIndex) Read(off, sz uint32) ([]byte, error) {
+	if sz == 0 {
+		return nil, nil
+	}
+	b := make([]byte, sz)
+	if _, err := x.f.ReadAt(b, int64(off)); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (x *fileIndex) Size() (uint32, error) { return x.size, nil }
+func (x *fileIndex) Close()                {}
+func (x *fileIndex) Name() string          { return x.f.Name() }
+
+func verifyIndexFile(inf index.IndexFile, generation string, sequence int, metadata Metadata) error {
+	repos, indexMetadata, err := index.ReadMetadata(inf)
 	if err != nil {
 		return err
 	}
@@ -106,34 +179,32 @@ func Verify(path, generation string, sequence int, metadata Metadata) error {
 	return nil
 }
 
-// Documents opens the complete shard reader and returns its corpus. Metadata
-// parsing alone accepts truncated shards, so callers use this for verification.
-func Documents(path, generation string, sequence int, metadata Metadata) ([]string, error) {
-	if err := Verify(path, generation, sequence, metadata); err != nil {
-		return nil, err
+// Verify opens path and verifies one shard's deterministic metadata.
+func Verify(path, generation string, sequence int, metadata Metadata) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
 	}
+	if err := VerifyFile(f, generation, sequence, metadata); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// Documents opens path and returns the complete corpus of one shard.
+func Documents(path, generation string, sequence int, metadata Metadata) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	indexFile, err := index.NewIndexFile(f)
+	paths, err := DocumentsFile(f, generation, sequence, metadata)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
-	searcher, err := index.NewSearcher(indexFile)
-	if err != nil {
-		indexFile.Close()
+	if err := f.Close(); err != nil {
 		return nil, err
-	}
-	defer searcher.Close()
-	result, err := searcher.Search(context.Background(), &query.Const{Value: true}, &zoekt.SearchOptions{MaxDocDisplayCount: 1 << 30, TotalMaxMatchCount: 1 << 30})
-	if err != nil {
-		return nil, err
-	}
-	paths := make([]string, len(result.Files))
-	for i, match := range result.Files {
-		paths[i] = match.FileName
 	}
 	return paths, nil
 }

@@ -45,14 +45,243 @@ type Descriptor struct {
 	GenerationManifestSHA256, CoverageManifestSHA256, ArtifactManifestSHA256 string
 }
 type Candidate struct{ Path []byte }
+
+// manifestLimitBytes bounds every manifest read from a bound descriptor.
+const manifestLimitBytes int64 = 1 << 30
+
+// dirHandle is an opaque directory descriptor owned by the platform dirFS.
+type dirHandle int
+
+// dirEntry describes one directory entry as seen without following symlinks.
+type dirEntry struct {
+	Name string
+	Mode os.FileMode
+}
+
+// dirFS anchors every reader filesystem operation to open directory
+// descriptors. The supported implementation refuses symlinks, traversal, and
+// cross-filesystem components; unsupported platforms fail closed.
+type dirFS interface {
+	OpenRoot(path string) (dirHandle, indexer.FileIdentity, error)
+	OpenChild(parent dirHandle, name string) (dirHandle, indexer.FileIdentity, error)
+	Identity(dir dirHandle) (indexer.FileIdentity, error)
+	ReadFile(dir dirHandle, name string, limit int64) ([]byte, indexer.FileIdentity, error)
+	OpenFile(dir dirHandle, name string) (*os.File, indexer.FileIdentity, error)
+	List(dir dirHandle) ([]dirEntry, error)
+	Close(dir dirHandle) error
+}
+
+// The filesystem boundary is a package seam so deterministic tests can bind
+// the reader to a fake descriptor space on every platform.
+var boundFS dirFS = defaultDirFS()
+
+var zoektSupported = zoektread.Supported
+
+type shard interface {
+	Search(ctx context.Context, literal string, limit int) (zoektread.Result, error)
+	Close() error
+}
+
+var openShard = func(f *os.File, generation string, sequence int, want zoektread.Metadata) (shard, error) {
+	return zoektread.Open(f, generation, sequence, want)
+}
+
+type boundDirectory struct {
+	handle   dirHandle
+	identity indexer.FileIdentity
+	name     string
+}
+
+func (d *boundDirectory) Close() error { return boundFS.Close(d.handle) }
+
+// boundGenerationFiles reads one generation exclusively through its bound
+// generation-directory descriptor.
+type boundGenerationFiles struct {
+	dir   *boundDirectory
+	cache map[string][]byte
+	ids   map[string]indexer.FileIdentity
+}
+
+func (b *boundGenerationFiles) ReadManifest(name string) ([]byte, indexer.FileIdentity, error) {
+	if raw, ok := b.cache[name]; ok {
+		return raw, b.ids[name], nil
+	}
+	if name != sourceindex.GenerationManifestFileName && name != sourceindex.CoverageManifestFileName && name != sourceindex.ArtifactManifestFileName {
+		return nil, indexer.FileIdentity{}, errors.New("unexpected manifest")
+	}
+	raw, id, err := boundFS.ReadFile(b.dir.handle, name, manifestLimitBytes)
+	if err != nil {
+		return nil, indexer.FileIdentity{}, err
+	}
+	b.cache[name] = raw
+	b.ids[name] = id
+	return raw, id, nil
+}
+
+func (b *boundGenerationFiles) ListArtifacts() ([]indexer.OpenedArtifact, error) {
+	raw, ok := b.cache[sourceindex.ArtifactManifestFileName]
+	if !ok {
+		return nil, errors.New("artifact manifest not read")
+	}
+	am, err := sourceindex.ParseArtifactManifest(raw)
+	if err != nil {
+		return nil, err
+	}
+	seenIdentity := make(map[indexer.FileIdentity]string, len(b.ids)+8)
+	for name, id := range b.ids {
+		seenIdentity[id] = name
+	}
+	var out []indexer.OpenedArtifact
+	if cb, ok := b.cache[sourceindex.CoverageManifestFileName]; ok {
+		out = append(out, indexer.OpenedArtifact{Kind: sourceindex.ArtifactCoverage, RelativePath: sourceindex.CoverageManifestFileName, SHA256: digest(cb), SizeBytes: int64(len(cb)), Identity: b.ids[sourceindex.CoverageManifestFileName]})
+	}
+	shardsDir, _, err := boundFS.OpenChild(b.dir.handle, sourceindex.ShardDirectoryName)
+	if err != nil {
+		return nil, err
+	}
+	var opened []*os.File
+	shardsClosed := false
+	closeAll := func() {
+		for _, f := range opened {
+			_ = f.Close()
+		}
+		if !shardsClosed {
+			_ = boundFS.Close(shardsDir)
+			shardsClosed = true
+		}
+	}
+	fail := func(e error) ([]indexer.OpenedArtifact, error) {
+		closeAll()
+		return nil, e
+	}
+	expected := make(map[string]bool)
+	var expectedOrder []string
+	shardNumber := 0
+	for _, want := range am.Files {
+		if want.Kind != sourceindex.ArtifactZoektShard {
+			continue
+		}
+		seq := fmt.Sprintf("%06d.zoekt", shardNumber)
+		shardNumber++
+		if want.RelativePath != sourceindex.ShardDirectoryName+"/"+seq {
+			return fail(errors.New("noncontiguous shard"))
+		}
+		expected[seq] = true
+		expectedOrder = append(expectedOrder, seq)
+	}
+	record := func(file *os.File, id indexer.FileIdentity, rel string, want *sourceindex.ArtifactFile) (indexer.OpenedArtifact, error) {
+		if prior, ok := seenIdentity[id]; ok {
+			return indexer.OpenedArtifact{}, fmt.Errorf("artifact aliases %q", prior)
+		}
+		seenIdentity[id] = rel
+		info, e := file.Stat()
+		if e != nil {
+			return indexer.OpenedArtifact{}, e
+		}
+		if _, e := file.Seek(0, 0); e != nil {
+			return indexer.OpenedArtifact{}, e
+		}
+		h := sha256.New()
+		if _, e := io.Copy(h, file); e != nil {
+			return indexer.OpenedArtifact{}, e
+		}
+		if _, e := file.Seek(0, 0); e != nil {
+			return indexer.OpenedArtifact{}, e
+		}
+		sha := hex.EncodeToString(h.Sum(nil))
+		if want != nil && (info.Size() != want.SizeBytes || sha != want.SHA256) {
+			return indexer.OpenedArtifact{}, errors.New("shard integrity")
+		}
+		return indexer.OpenedArtifact{Kind: sourceindex.ArtifactZoektShard, RelativePath: rel, SHA256: sha, SizeBytes: info.Size(), Identity: id, File: file}, nil
+	}
+	wantBySeq := make(map[string]*sourceindex.ArtifactFile, len(expectedOrder))
+	for i := range am.Files {
+		if am.Files[i].Kind == sourceindex.ArtifactZoektShard {
+			wantBySeq[filepath.Base(am.Files[i].RelativePath)] = &am.Files[i]
+		}
+	}
+	for _, seq := range expectedOrder {
+		file, id, e := boundFS.OpenFile(shardsDir, seq)
+		if e != nil {
+			return fail(e)
+		}
+		opened = append(opened, file)
+		o, e := record(file, id, sourceindex.ShardDirectoryName+"/"+seq, wantBySeq[seq])
+		if e != nil {
+			return fail(e)
+		}
+		out = append(out, o)
+	}
+	shardEntries, e := boundFS.List(shardsDir)
+	if e != nil {
+		return fail(e)
+	}
+	for _, entry := range shardEntries {
+		if entry.Mode&os.ModeSymlink != 0 || !entry.Mode.IsRegular() {
+			return fail(errors.New("unsafe shard entry"))
+		}
+		if entry.Mode.IsDir() {
+			return fail(errors.New("unexpected directory"))
+		}
+		if expected[entry.Name] {
+			continue
+		}
+		file, id, e := boundFS.OpenFile(shardsDir, entry.Name)
+		if e != nil {
+			return fail(e)
+		}
+		opened = append(opened, file)
+		o, e := record(file, id, sourceindex.ShardDirectoryName+"/"+entry.Name, nil)
+		if e != nil {
+			return fail(e)
+		}
+		out = append(out, o)
+	}
+	if e := boundFS.Close(shardsDir); e != nil {
+		return fail(e)
+	}
+	shardsClosed = true
+	genEntries, e := boundFS.List(b.dir.handle)
+	if e != nil {
+		return fail(e)
+	}
+	for _, entry := range genEntries {
+		if entry.Mode&os.ModeSymlink != 0 || !entry.Mode.IsRegular() {
+			return fail(errors.New("unsafe entry"))
+		}
+		if entry.Mode.IsDir() {
+			if entry.Name != sourceindex.ShardDirectoryName {
+				return fail(errors.New("unexpected directory"))
+			}
+			continue
+		}
+		if entry.Name == sourceindex.GenerationManifestFileName || entry.Name == sourceindex.ArtifactManifestFileName || entry.Name == sourceindex.CoverageManifestFileName {
+			continue
+		}
+		file, id, e := boundFS.OpenFile(b.dir.handle, entry.Name)
+		if e != nil {
+			return fail(e)
+		}
+		opened = append(opened, file)
+		o, e := record(file, id, entry.Name, nil)
+		if e != nil {
+			return fail(e)
+		}
+		out = append(out, o)
+	}
+	return out, nil
+}
+
 type Reader struct {
-	descriptor Descriptor
-	coverage   map[string]sourceindex.CoverageStatus
-	fallback   [][]byte
-	shards     []*zoektread.Reader
-	limit      int
-	mu         sync.Mutex
-	closed     bool
+	descriptor           Descriptor
+	coverage             map[string]sourceindex.CoverageStatus
+	fallback             [][]byte
+	shards               []shard
+	limit                int
+	indexedDocumentCount int64
+	dir                  *boundDirectory
+	mu                   sync.Mutex
+	closed               bool
 }
 
 func validDigest(s string) bool {
@@ -83,169 +312,235 @@ func Open(ctx context.Context, store GenerationStore, config Config, identity so
 	if err := sourceindex.ValidateIndexRoot(config.IndexRoot, config.ProtectedStorage); err != nil {
 		return nil, fmt.Errorf("%w: index root", ErrInvalidConfiguration)
 	}
-	if !zoektread.Supported() {
+	if !zoektSupported() {
 		return nil, ErrUnsupportedPlatform
 	}
-	g, err := store.GetSourceIndexGenerationByIdentity(ctx, identity)
+	row, err := store.GetSourceIndexGenerationByIdentity(ctx, identity)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
 	}
 	id, _ := sourceindex.GenerationID(identity)
-	if g.Identity != identity || g.GenerationID != id || g.State != workflow.SourceIndexGenerationReady || g.FailureCode != "" || g.FailureMessage != "" || !validDigest(g.GenerationManifestSHA256) || !validDigest(g.CoverageManifestSHA256) || !validDigest(g.ArtifactManifestSHA256) {
+	if row.Identity != identity || row.GenerationID != id || row.State != workflow.SourceIndexGenerationReady || row.FailureCode != "" || row.FailureMessage != "" || !validDigest(row.GenerationManifestSHA256) || !validDigest(row.CoverageManifestSHA256) || !validDigest(row.ArtifactManifestSHA256) {
 		return nil, ErrGenerationUnavailable
 	}
-	root, err := sourceindex.GenerationDirectory(config.IndexRoot, g.GenerationID)
+	dir, err := anchorDirectory(config, row.GenerationID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: generation directory", ErrGenerationIntegrity)
-	}
-	if err := safeDirs(config.IndexRoot, root); err != nil {
 		return nil, fmt.Errorf("%w: directory", ErrGenerationIntegrity)
 	}
-	gm, cm, am, err := manifests(root)
+	files := &boundGenerationFiles{dir: dir, cache: map[string][]byte{}, ids: map[string]indexer.FileIdentity{}}
+	gm, _, err := files.ReadManifest(sourceindex.GenerationManifestFileName)
 	if err != nil {
+		_ = dir.Close()
 		return nil, fmt.Errorf("%w: manifests", ErrGenerationIntegrity)
 	}
-	gd, cd, ad := mustDigest(gm), mustDigest(cm), mustDigest(am)
-	if gm.GenerationID != id || gm.Identity != identity || cm.GenerationID != id || cm.CommitOID != identity.CommitOID || cm.TreeOID != identity.TreeOID || am.GenerationID != id || gm.CoverageManifestSHA256 != cd || gm.ArtifactManifestSHA256 != ad || gd != g.GenerationManifestSHA256 || cd != g.CoverageManifestSHA256 || ad != g.ArtifactManifestSHA256 {
+	g, err := sourceindex.ParseGenerationManifest(gm)
+	if err != nil {
+		_ = dir.Close()
+		return nil, fmt.Errorf("%w: manifests", ErrGenerationIntegrity)
+	}
+	cm, _, err := files.ReadManifest(sourceindex.CoverageManifestFileName)
+	if err != nil {
+		_ = dir.Close()
+		return nil, fmt.Errorf("%w: manifests", ErrGenerationIntegrity)
+	}
+	c, err := sourceindex.ParseCoverageManifest(cm)
+	if err != nil {
+		_ = dir.Close()
+		return nil, fmt.Errorf("%w: manifests", ErrGenerationIntegrity)
+	}
+	am, _, err := files.ReadManifest(sourceindex.ArtifactManifestFileName)
+	if err != nil {
+		_ = dir.Close()
+		return nil, fmt.Errorf("%w: manifests", ErrGenerationIntegrity)
+	}
+	a, err := sourceindex.ParseArtifactManifest(am)
+	if err != nil {
+		_ = dir.Close()
+		return nil, fmt.Errorf("%w: manifests", ErrGenerationIntegrity)
+	}
+	gd, _ := sourceindex.GenerationManifestSHA256(g)
+	cd, _ := sourceindex.CoverageManifestSHA256(c)
+	ad, _ := sourceindex.ArtifactManifestSHA256(a)
+	if g.GenerationID != id || g.Identity != identity || c.GenerationID != id || c.CommitOID != identity.CommitOID || c.TreeOID != identity.TreeOID || a.GenerationID != id || g.CoverageManifestSHA256 != cd || g.ArtifactManifestSHA256 != ad || gd != row.GenerationManifestSHA256 || cd != row.CoverageManifestSHA256 || ad != row.ArtifactManifestSHA256 {
+		_ = dir.Close()
 		return nil, ErrGenerationIntegrity
 	}
 	var shardCount int64
-	for _, f := range am.Files {
+	for _, f := range a.Files {
 		if f.Kind == sourceindex.ArtifactZoektShard {
 			shardCount++
 		}
 	}
 	req := indexerprotocol.BuildRequest{GenerationID: id, Identity: identity, BuildOptions: sourceindex.DefaultBuildOptions()}
-	if err := indexer.Verify(root, req, shardCount); err != nil {
+	verified, err := indexer.VerifyGenerationFiles(files, req)
+	if err != nil {
+		_ = dir.Close()
 		return nil, fmt.Errorf("%w: artifacts", ErrGenerationIntegrity)
 	}
-	if cm.Counts.IndexedText > int64(^uint(0)>>1) {
+	consumed := false
+	defer func() {
+		if !consumed {
+			for _, o := range verified.Opened {
+				if o.File != nil {
+					_ = o.File.Close()
+				}
+			}
+		}
+	}()
+	if verified.ShardCount != shardCount {
+		_ = dir.Close()
 		return nil, ErrGenerationIntegrity
 	}
-	r := &Reader{descriptor: Descriptor{id, identity, gd, cd, ad}, coverage: map[string]sourceindex.CoverageStatus{}, limit: int(cm.Counts.IndexedText)}
-	for _, e := range cm.Entries {
-		p, _ := e.Path.Bytes()
-		r.coverage[string(p)] = e.Status
-		if e.Status == sourceindex.CoverageFallbackPath || e.Status == sourceindex.CoverageFallbackSize {
-			r.fallback = append(r.fallback, p)
+	if verified.GenerationRawSHA256 != row.GenerationManifestSHA256 || verified.CoverageRawSHA256 != row.CoverageManifestSHA256 || verified.ArtifactRawSHA256 != row.ArtifactManifestSHA256 {
+		_ = dir.Close()
+		return nil, ErrGenerationIntegrity
+	}
+	again, err := store.GetSourceIndexGenerationByIdentity(ctx, identity)
+	if err != nil {
+		_ = dir.Close()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
+	}
+	if again.State != workflow.SourceIndexGenerationReady || again.Identity != identity || again.GenerationID != id || again.GenerationManifestSHA256 != row.GenerationManifestSHA256 || again.CoverageManifestSHA256 != row.CoverageManifestSHA256 || again.ArtifactManifestSHA256 != row.ArtifactManifestSHA256 {
+		_ = dir.Close()
+		return nil, ErrGenerationUnavailable
+	}
+	if againID, err := boundFS.Identity(dir.handle); err != nil || againID != dir.identity {
+		_ = dir.Close()
+		return nil, ErrGenerationIntegrity
+	}
+	shardArtifacts := make([]indexer.OpenedArtifact, 0, shardCount)
+	for _, o := range verified.Opened {
+		if o.Kind == sourceindex.ArtifactZoektShard {
+			shardArtifacts = append(shardArtifacts, o)
 		}
 	}
-	sort.Slice(r.fallback, func(i, j int) bool { return bytes.Compare(r.fallback[i], r.fallback[j]) < 0 })
-	meta := zoektread.Metadata{RepositoryName: gm.RepositoryName, Branch: gm.BranchName, Version: identity.CommitOID, IndexOptions: identity.BuildOptionsSHA256, Values: map[string]string{"relay_generation_id": id, "relay_vault_id": identity.VaultID, "relay_commit_oid": identity.CommitOID, "relay_tree_oid": identity.TreeOID, "relay_engine_revision": identity.EngineRevision, "relay_build_contract_version": identity.BuildContractVersion, "relay_build_options_sha256": identity.BuildOptionsSHA256}}
-	for _, f := range am.Files {
-		if f.Kind != sourceindex.ArtifactZoektShard {
-			continue
-		}
-		expected := fmt.Sprintf("shards/%06d.zoekt", len(r.shards))
-		if f.RelativePath != expected {
-			r.Close()
+	if int64(len(shardArtifacts)) != shardCount {
+		_ = dir.Close()
+		return nil, ErrGenerationIntegrity
+	}
+	for i, o := range shardArtifacts {
+		if o.RelativePath != fmt.Sprintf("shards/%06d.zoekt", i) {
+			_ = dir.Close()
 			return nil, ErrGenerationIntegrity
 		}
-		file, e := openShard(root, f)
+	}
+	limit, err := searchLimit(c.Counts.IndexedText)
+	if err != nil {
+		_ = dir.Close()
+		return nil, err
+	}
+	coverage, err := coverageMap(c)
+	if err != nil {
+		_ = dir.Close()
+		return nil, ErrGenerationIntegrity
+	}
+	fallback, err := fallbackPaths(c)
+	if err != nil {
+		_ = dir.Close()
+		return nil, ErrGenerationIntegrity
+	}
+	r := &Reader{descriptor: Descriptor{id, identity, gd, cd, ad}, coverage: coverage, fallback: fallback, limit: limit, indexedDocumentCount: c.Counts.IndexedText, dir: dir}
+	meta := zoektread.Metadata{RepositoryName: g.RepositoryName, Branch: g.BranchName, Version: identity.CommitOID, IndexOptions: identity.BuildOptionsSHA256, Values: map[string]string{"relay_generation_id": id, "relay_vault_id": identity.VaultID, "relay_commit_oid": identity.CommitOID, "relay_tree_oid": identity.TreeOID, "relay_engine_revision": identity.EngineRevision, "relay_build_contract_version": identity.BuildContractVersion, "relay_build_options_sha256": identity.BuildOptionsSHA256}}
+	for i, artifact := range shardArtifacts {
+		z, e := openShard(artifact.File, id, i, meta)
 		if e != nil {
-			r.Close()
-			return nil, fmt.Errorf("%w: shard", ErrGenerationIntegrity)
-		}
-		z, e := zoektread.Open(file, id, len(r.shards), meta)
-		if e != nil {
-			_ = file.Close()
-			r.Close()
+			_ = r.Close()
 			if errors.Is(e, zoektread.ErrUnsupported) {
 				return nil, ErrUnsupportedPlatform
 			}
-			return nil, ErrGenerationIntegrity
+			return nil, fmt.Errorf("%w: shard", ErrGenerationIntegrity)
 		}
 		r.shards = append(r.shards, z)
 	}
+	consumed = true
 	return r, nil
 }
-func safeDirs(root, generation string) error {
-	for _, p := range []string{root, filepath.Join(root, sourceindex.GenerationDirectoryName), generation} {
-		i, e := os.Lstat(p)
-		if e != nil || i.Mode()&os.ModeSymlink != 0 || !i.IsDir() {
-			return os.ErrInvalid
+
+// searchLimit performs the checked conversion of the exact verified
+// indexed-document count to the explicit positive Zoekt search limit.
+func searchLimit(indexed int64) (int, error) {
+	if indexed < 0 {
+		return 0, ErrGenerationIntegrity
+	}
+	n, err := checkedInt(uint64(indexed))
+	if err != nil {
+		return 0, ErrGenerationIntegrity
+	}
+	if n < 1 {
+		n = 1
+	}
+	return n, nil
+}
+
+func checkedInt(v uint64) (int, error) {
+	if v > uint64(^uint(0)>>1) {
+		return 0, ErrGenerationIntegrity
+	}
+	return int(v), nil
+}
+
+func anchorDirectory(config Config, generationID string) (*boundDirectory, error) {
+	root, _, err := boundFS.OpenRoot(config.IndexRoot)
+	if err != nil {
+		return nil, err
+	}
+	gens, _, err := boundFS.OpenChild(root, sourceindex.GenerationDirectoryName)
+	if err != nil {
+		_ = boundFS.Close(root)
+		return nil, err
+	}
+	gen, id, err := boundFS.OpenChild(gens, generationID)
+	if err != nil {
+		_ = boundFS.Close(gens)
+		_ = boundFS.Close(root)
+		return nil, err
+	}
+	if err := boundFS.Close(gens); err != nil {
+		_ = boundFS.Close(gen)
+		_ = boundFS.Close(root)
+		return nil, err
+	}
+	if err := boundFS.Close(root); err != nil {
+		_ = boundFS.Close(gen)
+		return nil, err
+	}
+	return &boundDirectory{handle: gen, identity: id, name: sourceindex.GenerationDirectoryName + "/" + generationID}, nil
+}
+
+func coverageMap(c sourceindex.CoverageManifest) (map[string]sourceindex.CoverageStatus, error) {
+	out := make(map[string]sourceindex.CoverageStatus, len(c.Entries))
+	for _, e := range c.Entries {
+		p, err := e.Path.Bytes()
+		if err != nil {
+			return nil, err
 		}
+		out[string(p)] = e.Status
 	}
-	return nil
+	return out, nil
 }
-func manifests(root string) (sourceindex.GenerationManifest, sourceindex.CoverageManifest, sourceindex.ArtifactManifest, error) {
-	var z sourceindex.GenerationManifest
-	var c sourceindex.CoverageManifest
-	var a sourceindex.ArtifactManifest
-	read := func(n string) ([]byte, error) {
-		p := filepath.Join(root, n)
-		i, e := os.Lstat(p)
-		if e != nil || i.Mode()&os.ModeSymlink != 0 || !i.Mode().IsRegular() {
-			return nil, os.ErrInvalid
+
+func fallbackPaths(c sourceindex.CoverageManifest) ([][]byte, error) {
+	var out [][]byte
+	for _, e := range c.Entries {
+		if e.Status != sourceindex.CoverageFallbackPath && e.Status != sourceindex.CoverageFallbackSize {
+			continue
 		}
-		return os.ReadFile(p)
+		p, err := e.Path.Bytes()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
 	}
-	b, e := read(sourceindex.GenerationManifestFileName)
-	if e != nil {
-		return z, c, a, e
-	}
-	z, e = sourceindex.ParseGenerationManifest(b)
-	if e != nil {
-		return z, c, a, e
-	}
-	b, e = read(sourceindex.CoverageManifestFileName)
-	if e != nil {
-		return z, c, a, e
-	}
-	c, e = sourceindex.ParseCoverageManifest(b)
-	if e != nil {
-		return z, c, a, e
-	}
-	b, e = read(sourceindex.ArtifactManifestFileName)
-	if e != nil {
-		return z, c, a, e
-	}
-	a, e = sourceindex.ParseArtifactManifest(b)
-	return z, c, a, e
+	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i], out[j]) < 0 })
+	return out, nil
 }
-func mustDigest(v any) string {
-	switch x := v.(type) {
-	case sourceindex.GenerationManifest:
-		d, _ := sourceindex.GenerationManifestSHA256(x)
-		return d
-	case sourceindex.CoverageManifest:
-		d, _ := sourceindex.CoverageManifestSHA256(x)
-		return d
-	case sourceindex.ArtifactManifest:
-		d, _ := sourceindex.ArtifactManifestSHA256(x)
-		return d
-	}
-	return ""
-}
-func openShard(root string, want sourceindex.ArtifactFile) (*os.File, error) {
-	p := filepath.Join(root, filepath.FromSlash(want.RelativePath))
-	if rel, e := filepath.Rel(root, p); e != nil || rel == ".." || filepath.IsAbs(rel) {
-		return nil, os.ErrInvalid
-	}
-	i, e := os.Lstat(p)
-	if e != nil || i.Mode()&os.ModeSymlink != 0 || !i.Mode().IsRegular() {
-		return nil, os.ErrInvalid
-	}
-	f, e := os.Open(p)
-	if e != nil {
-		return nil, e
-	}
-	fi, e := f.Stat()
-	if e != nil || !os.SameFile(i, fi) || fi.Size() != want.SizeBytes {
-		f.Close()
-		return nil, os.ErrInvalid
-	}
-	h := sha256.New()
-	if _, e = io.Copy(h, f); e != nil || hex.EncodeToString(h.Sum(nil)) != want.SHA256 {
-		f.Close()
-		return nil, os.ErrInvalid
-	}
-	if _, e = f.Seek(0, 0); e != nil {
-		f.Close()
-		return nil, e
-	}
-	return f, nil
-}
+
 func (r *Reader) Descriptor() Descriptor { return r.descriptor }
 func (r *Reader) FallbackCandidates() []Candidate {
 	out := make([]Candidate, len(r.fallback))
@@ -255,26 +550,30 @@ func (r *Reader) FallbackCandidates() []Candidate {
 	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i].Path, out[j].Path) < 0 })
 	return out
 }
+
 func (r *Reader) IndexedTextCandidates(ctx context.Context, literal string) ([]Candidate, error) {
-	if literal == "" || !utf8.ValidString(literal) || utf8.RuneCountInString(literal) < 3 {
-		return nil, ErrQueryIneligible
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
 		return nil, ErrClosed
 	}
+	if literal == "" || !utf8.ValidString(literal) || utf8.RuneCountInString(literal) < 3 {
+		return nil, ErrQueryIneligible
+	}
 	seen := map[string]bool{}
 	for _, s := range r.shards {
 		x, e := s.Search(ctx, literal, r.limit)
 		if e != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
 			}
 			return nil, ErrQueryIncomplete
 		}
-		if x.Crashes > 0 || x.FilesSkipped > 0 || x.ShardsSkipped > 0 || x.Flush || len(x.Matches) > r.limit {
-			return nil, ErrQueryIncomplete
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if e := r.validateResult(x); e != nil {
+			return nil, e
 		}
 		for _, m := range x.Matches {
 			p := []byte(m.FileName)
@@ -287,8 +586,8 @@ func (r *Reader) IndexedTextCandidates(ctx context.Context, literal string) ([]C
 			seen[string(p)] = true
 		}
 	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
 	}
 	paths := make([][]byte, 0, len(seen))
 	for p := range seen {
@@ -301,10 +600,40 @@ func (r *Reader) IndexedTextCandidates(ctx context.Context, literal string) ([]C
 	}
 	return out, nil
 }
+
+// validateResult classifies one shard's completion evidence, failing closed on
+// crashes, skipped files or shards, limit or size flushes, inconsistent
+// statistics, and results beyond the verified corpus bound. Trigram-filter
+// skips are an ordinary negative-query outcome.
+func (r *Reader) validateResult(x zoektread.Result) error {
+	if r.indexedDocumentCount == 0 && len(x.Matches) > 0 {
+		return ErrGenerationIntegrity
+	}
+	if int64(len(x.Matches)) > r.indexedDocumentCount {
+		return ErrQueryIncomplete
+	}
+	if x.Crashes > 0 || x.FilesSkipped > 0 || x.ShardsSkipped > 0 {
+		return ErrQueryIncomplete
+	}
+	switch x.FlushReason {
+	case zoektread.FlushReasonNone, zoektread.FlushReasonFinalFlush:
+	default:
+		return ErrQueryIncomplete
+	}
+	if x.FileCount != len(x.Matches) || x.MatchCount != len(x.Matches) {
+		return ErrQueryIncomplete
+	}
+	if x.ShardsSkippedFilter > 0 && len(x.Matches) > 0 {
+		return ErrQueryIncomplete
+	}
+	return nil
+}
+
 func (d Descriptor) IdentityStringRepository() string {
 	x, _ := sourceindex.GenerationRepositoryName(d.GenerationID)
 	return x
 }
+
 func (r *Reader) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -312,8 +641,16 @@ func (r *Reader) Close() error {
 		return nil
 	}
 	r.closed = true
+	var errs []error
 	for _, s := range r.shards {
-		s.Close()
+		if e := s.Close(); e != nil {
+			errs = append(errs, e)
+		}
 	}
-	return nil
+	if r.dir != nil {
+		if e := r.dir.Close(); e != nil {
+			errs = append(errs, e)
+		}
+	}
+	return errors.Join(errs...)
 }

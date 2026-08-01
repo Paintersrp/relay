@@ -8,15 +8,16 @@ import (
 	"syscall"
 )
 
-type fileIdentity struct {
-	device uint64
-	inode  uint64
+// FileIdentity identifies one regular file by device and inode.
+type FileIdentity struct {
+	Device uint64
+	Inode  uint64
 }
 
-func artifactFileIdentity(info os.FileInfo) (fileIdentity, error) {
+func artifactFileIdentity(info os.FileInfo) (FileIdentity, error) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || stat.Nlink != 1 {
-		return fileIdentity{}, errors.New("unreliable file identity")
+		return FileIdentity{}, errors.New("unreliable file identity")
 	}
-	return fileIdentity{device: uint64(stat.Dev), inode: uint64(stat.Ino)}, nil
+	return FileIdentity{Device: uint64(stat.Dev), Inode: uint64(stat.Ino)}, nil
 }

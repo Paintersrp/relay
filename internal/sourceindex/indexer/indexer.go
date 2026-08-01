@@ -339,161 +339,29 @@ func shards(root string, r indexerprotocol.BuildRequest, docs []document, limit 
 	return int64(seq), nil
 }
 func artifactFiles(root string) ([]sourceindex.ArtifactFile, error) {
-	var fs []sourceindex.ArtifactFile
-	identities := make(map[fileIdentity]string)
-	e := filepath.Walk(root, func(p string, i os.FileInfo, er error) error {
-		if er != nil {
-			return er
-		}
-		if p == root {
-			return nil
-		}
-		if i.Mode()&os.ModeSymlink != 0 || !i.Mode().IsRegular() && !i.IsDir() {
-			return errors.New("unsafe output")
-		}
-		if i.IsDir() {
-			if filepath.ToSlash(p) != filepath.ToSlash(filepath.Join(root, sourceindex.ShardDirectoryName)) {
-				return errors.New("unexpected directory")
-			}
-			return nil
-		}
-		identity, er := artifactFileIdentity(i)
-		if er != nil {
-			return errors.New("unsafe output")
-		}
-		if prior, ok := identities[identity]; ok {
-			return fmt.Errorf("artifact aliases %q and %q", prior, p)
-		}
-		identities[identity] = p
-		rel, er := filepath.Rel(root, p)
-		if er != nil {
-			return er
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == sourceindex.ArtifactManifestFileName || rel == sourceindex.GenerationManifestFileName {
-			return nil
-		}
-		if rel != sourceindex.CoverageManifestFileName && (!strings.HasPrefix(rel, "shards/") || strings.Contains(strings.TrimPrefix(rel, "shards/"), "/")) {
-			return errors.New("unexpected output")
-		}
-		if strings.HasPrefix(rel, "shards/") {
-			if len(rel) != len("shards/000000.zoekt") || !strings.HasSuffix(rel, ".zoekt") {
-				return errors.New("unexpected output")
-			}
-			for _, digit := range rel[len("shards/") : len("shards/")+6] {
-				if digit < '0' || digit > '9' {
-					return errors.New("unexpected output")
-				}
-			}
-		}
-		b, er := os.ReadFile(p)
-		if er != nil {
-			return er
-		}
-		kind := sourceindex.ArtifactZoektMetadata
-		if rel == sourceindex.CoverageManifestFileName {
-			kind = sourceindex.ArtifactCoverage
-		} else if strings.HasSuffix(rel, ".zoekt") {
-			kind = sourceindex.ArtifactZoektShard
-		}
-		fs = append(fs, sourceindex.ArtifactFile{Kind: kind, RelativePath: rel, SHA256: digest(b), SizeBytes: int64(len(b))})
-		return nil
-	})
-	return fs, e
+	files, err := (pathFiles{root: root}).ListArtifacts()
+	if err != nil {
+		return nil, err
+	}
+	if err := CloseArtifacts(files); err != nil {
+		return nil, err
+	}
+	fs := make([]sourceindex.ArtifactFile, 0, len(files))
+	for _, o := range files {
+		fs = append(fs, sourceindex.ArtifactFile{Kind: o.Kind, RelativePath: o.RelativePath, SHA256: o.SHA256, SizeBytes: o.SizeBytes})
+	}
+	return fs, nil
 }
 func Verify(root string, r indexerprotocol.BuildRequest, expectedShards int64) error {
-	gb, e := os.ReadFile(filepath.Join(root, sourceindex.GenerationManifestFileName))
+	files := pathFiles{root: root}
+	verified, e := VerifyGenerationFiles(files, r)
 	if e != nil {
 		return e
 	}
-	g, e := sourceindex.ParseGenerationManifest(gb)
-	if e != nil {
-		return e
-	}
-	cb, e := os.ReadFile(filepath.Join(root, sourceindex.CoverageManifestFileName))
-	if e != nil {
-		return e
-	}
-	c, e := sourceindex.ParseCoverageManifest(cb)
-	if e != nil {
-		return e
-	}
-	ab, e := os.ReadFile(filepath.Join(root, sourceindex.ArtifactManifestFileName))
-	if e != nil {
-		return e
-	}
-	a, e := sourceindex.ParseArtifactManifest(ab)
-	if e != nil {
-		return e
-	}
-	gd, e := sourceindex.GenerationManifestSHA256(g)
-	if e != nil {
-		return e
-	}
-	cd, e := sourceindex.CoverageManifestSHA256(c)
-	if e != nil {
-		return e
-	}
-	ad, e := sourceindex.ArtifactManifestSHA256(a)
-	if e != nil {
-		return e
-	}
-	if gd != digest(gb) || cd != digest(cb) || ad != digest(ab) || g.GenerationID != r.GenerationID || c.GenerationID != r.GenerationID || c.CommitOID != r.Identity.CommitOID || c.TreeOID != r.Identity.TreeOID || a.GenerationID != r.GenerationID || g.Identity != r.Identity || g.CoverageManifestSHA256 != digest(cb) || g.ArtifactManifestSHA256 != digest(ab) {
-		return errors.New("manifest integrity")
-	}
-	files, e := artifactFiles(root)
-	if e != nil {
-		return e
-	}
-	listed, e := sourceindex.NewArtifactManifest(r.GenerationID, files)
-	if e != nil || !sameArtifacts(a, listed) {
-		return errors.New("artifact integrity")
-	}
-	m, e := metadata(r)
-	if e != nil {
-		return e
-	}
-	var n int64
-	expectedDocuments := map[string]bool{}
-	for _, entry := range c.Entries {
-		path, er := entry.Path.Bytes()
-		if er != nil {
-			return er
-		}
-		if entry.Status == sourceindex.CoverageIndexedText {
-			expectedDocuments[string(path)] = true
-		}
-	}
-	seenDocuments := map[string]bool{}
-	for _, f := range a.Files {
-		if f.Kind == sourceindex.ArtifactZoektShard {
-			n++
-			seq := fmt.Sprintf("shards/%06d.zoekt", n-1)
-			if f.RelativePath != seq {
-				return errors.New("noncontiguous shard")
-			}
-			if e := zoektbuild.Verify(filepath.Join(root, filepath.FromSlash(f.RelativePath)), r.GenerationID, int(n-1), m); e != nil {
-				return e
-			}
-			documents, er := zoektbuild.Documents(filepath.Join(root, filepath.FromSlash(f.RelativePath)), r.GenerationID, int(n-1), m)
-			if er != nil {
-				return er
-			}
-			for _, document := range documents {
-				if !expectedDocuments[document] || seenDocuments[document] {
-					return errors.New("unexpected shard document")
-				}
-				seenDocuments[document] = true
-			}
-		}
-	}
-	if n != expectedShards {
+	if verified.ShardCount != expectedShards {
 		return errors.New("shard count")
 	}
-	if len(seenDocuments) != len(expectedDocuments) {
-		return errors.New("missing shard document")
-	}
-	return nil
+	return CloseArtifacts(verified.Opened)
 }
 
 func safeDirectory(path string) error {
@@ -528,17 +396,6 @@ func syncBuild(root, parent string) error {
 		return e
 	}
 	return syncDirectory(parent)
-}
-func sameArtifacts(a, b sourceindex.ArtifactManifest) bool {
-	if len(a.Files) != len(b.Files) {
-		return false
-	}
-	for i := range a.Files {
-		if a.Files[i] != b.Files[i] {
-			return false
-		}
-	}
-	return true
 }
 func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol.BuildResult, error) {
 	if e := repository(ctx, r); e != nil {

@@ -4,6 +4,7 @@
 package zoektread
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,10 +30,23 @@ type Match struct {
 	FileName, Repository, Version string
 	Branches                      []string
 }
+
+// FlushReason mirrors the pinned Zoekt completion reasons.
+type FlushReason uint8
+
+const (
+	FlushReasonNone FlushReason = iota
+	FlushReasonTimerExpired
+	FlushReasonFinalFlush
+	FlushReasonMaxSize
+)
+
 type Result struct {
 	Matches                              []Match
 	Crashes, FilesSkipped, ShardsSkipped int
-	Flush                                bool
+	ShardsSkippedFilter                  int
+	FlushReason                          FlushReason
+	FileCount, MatchCount                int
 }
 type Reader struct{ searcher zoekt.Searcher }
 
@@ -90,7 +104,7 @@ func Open(f *os.File, generation string, sequence int, want Metadata) (*Reader, 
 }
 
 func (r *Reader) Search(ctx context.Context, literal string, limit int) (Result, error) {
-	if r == nil || r.searcher == nil || limit < 0 {
+	if r == nil || r.searcher == nil || limit < 1 {
 		return Result{}, ErrInvalid
 	}
 	q := &query.Type{Type: query.TypeFileName, Child: &query.Substring{Pattern: literal, CaseSensitive: true, Content: true}}
@@ -102,15 +116,49 @@ func (r *Reader) Search(ctx context.Context, literal string, limit int) (Result,
 	if result == nil {
 		return Result{}, ErrInvalid
 	}
-	out := Result{Crashes: result.Crashes, FilesSkipped: result.FilesSkipped, ShardsSkipped: result.ShardsSkipped, Flush: result.FlushReason != 0}
+	out := Result{Crashes: result.Crashes, FilesSkipped: result.FilesSkipped, ShardsSkipped: result.ShardsSkipped, ShardsSkippedFilter: result.ShardsSkippedFilter, FileCount: result.FileCount, MatchCount: result.MatchCount}
+	switch result.FlushReason {
+	case 0:
+		out.FlushReason = FlushReasonNone
+	case zoekt.FlushReasonFinalFlush:
+		out.FlushReason = FlushReasonFinalFlush
+	case zoekt.FlushReasonTimerExpired:
+		out.FlushReason = FlushReasonTimerExpired
+	case zoekt.FlushReasonMaxSize:
+		out.FlushReason = FlushReasonMaxSize
+	default:
+		return Result{}, ErrInvalid
+	}
 	for _, f := range result.Files {
+		if err := validFilenameResult(&f); err != nil {
+			return Result{}, err
+		}
 		out.Matches = append(out.Matches, Match{FileName: f.FileName, Repository: f.Repository, Version: f.Version, Branches: append([]string(nil), f.Branches...)})
 	}
 	return out, nil
 }
-func (r *Reader) Close() {
+
+// validFilenameResult establishes the exact expected TypeFileName result shape
+// for the pinned Zoekt revision: exactly one filename LineMatch whose line is
+// the filename, and no content, chunk, or whole-file payload. Any deviation
+// means filename-result mode was not honored.
+func validFilenameResult(f *zoekt.FileMatch) error {
+	if len(f.ChunkMatches) != 0 || len(f.Content) != 0 {
+		return ErrInvalid
+	}
+	if len(f.LineMatches) != 1 || !f.LineMatches[0].FileName {
+		return ErrInvalid
+	}
+	if !bytes.Equal(f.LineMatches[0].Line, []byte(f.FileName)) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func (r *Reader) Close() error {
 	if r != nil && r.searcher != nil {
 		r.searcher.Close()
 		r.searcher = nil
 	}
+	return nil
 }
