@@ -14,7 +14,10 @@ import (
 )
 
 func main() {
-	raw, err := io.ReadAll(os.Stdin)
+	raw, err := io.ReadAll(io.LimitReader(os.Stdin, indexerprotocol.MaxRequestBytes+1))
+	if len(raw) > indexerprotocol.MaxRequestBytes {
+		err = errors.New("request too large")
+	}
 	request, parseErr := indexerprotocol.ParseBuildRequest(raw)
 	if err == nil {
 		err = parseErr
@@ -32,11 +35,11 @@ func main() {
 			response.Status = indexerprotocol.BuildStatusSuccess
 			response.Result = &result
 		} else if ctx.Err() != nil {
-			response.Failure = &indexerprotocol.BuildFailure{Code: "cancelled", Message: "build cancelled"}
+			response.Failure = &indexerprotocol.BuildFailure{Code: indexerprotocol.FailureCancelled, Message: "build cancelled"}
 		}
 	}
 	if response.Status == indexerprotocol.BuildStatusFailed && response.Failure == nil {
-		code, message := "invalid_request", "invalid build request"
+		code, message := indexerprotocol.FailureInvalidRequest, "invalid build request"
 		var f *indexer.Failure
 		if errors.As(err, &f) {
 			code, message = f.Code, f.Message
@@ -47,7 +50,10 @@ func main() {
 	if marshalErr != nil {
 		os.Exit(1)
 	}
-	_, _ = os.Stdout.Write(b)
+	n, writeErr := os.Stdout.Write(b)
+	if writeErr != nil || n != len(b) {
+		os.Exit(1)
+	}
 	if response.Status != indexerprotocol.BuildStatusSuccess {
 		os.Exit(1)
 	}

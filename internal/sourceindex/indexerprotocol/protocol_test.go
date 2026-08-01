@@ -42,7 +42,7 @@ func TestRequestCanonical(t *testing.T) {
 }
 func TestResponseCanonical(t *testing.T) {
 	r := request(t)
-	v := BuildResponse{Version: ProtocolVersion, Status: BuildStatusSuccess, GenerationID: r.GenerationID, Result: &BuildResult{StagingRelativeDirectory: "staging/" + r.GenerationID + "-" + r.StagingNonce, GenerationManifestSHA256: strings.Repeat("1", 64), CoverageManifestSHA256: strings.Repeat("2", 64), ArtifactManifestSHA256: strings.Repeat("3", 64), CoverageCounts: sourceindex.CoverageCounts{Total: 1}, ShardCount: 1}}
+	v := BuildResponse{Version: ProtocolVersion, Status: BuildStatusSuccess, GenerationID: r.GenerationID, Result: &BuildResult{StagingRelativeDirectory: "staging/" + r.GenerationID + "-" + r.StagingNonce, GenerationManifestSHA256: strings.Repeat("1", 64), CoverageManifestSHA256: strings.Repeat("2", 64), ArtifactManifestSHA256: strings.Repeat("3", 64), CoverageCounts: sourceindex.CoverageCounts{IndexedText: 1, Total: 1}, ShardCount: 1}}
 	b, err := MarshalBuildResponse(v)
 	if err != nil {
 		t.Fatal(err)
@@ -61,5 +61,21 @@ func TestResponseCanonical(t *testing.T) {
 	f.Failure.Message = strings.Repeat("x", 4097)
 	if _, err = MarshalBuildResponse(f); err == nil {
 		t.Fatal("accepted unbounded failure")
+	}
+}
+
+func TestResponseRejectsInvalidFailureAndCounts(t *testing.T) {
+	r := request(t)
+	response := BuildResponse{Version: ProtocolVersion, Status: BuildStatusFailed, Failure: &BuildFailure{Code: "unknown", Message: "failure"}}
+	if _, err := MarshalBuildResponse(response); err == nil {
+		t.Fatal("accepted unknown failure code")
+	}
+	response.Failure = &BuildFailure{Code: FailureInternal, Message: " failure"}
+	if _, err := MarshalBuildResponse(response); err == nil {
+		t.Fatal("accepted padded failure message")
+	}
+	response = BuildResponse{Version: ProtocolVersion, Status: BuildStatusSuccess, GenerationID: r.GenerationID, Result: &BuildResult{StagingRelativeDirectory: "staging/" + r.GenerationID + "-" + r.StagingNonce, GenerationManifestSHA256: strings.Repeat("1", 64), CoverageManifestSHA256: strings.Repeat("2", 64), ArtifactManifestSHA256: strings.Repeat("3", 64), CoverageCounts: sourceindex.CoverageCounts{IndexedText: 1, Total: 2}, ShardCount: 1}}
+	if _, err := MarshalBuildResponse(response); err == nil {
+		t.Fatal("accepted inconsistent coverage counts")
 	}
 }

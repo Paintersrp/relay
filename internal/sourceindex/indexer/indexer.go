@@ -2,6 +2,7 @@
 package indexer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -50,14 +51,15 @@ type document struct{ path, content []byte }
 func gitEnv() []string {
 	out := make([]string, 0)
 	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "GIT_") {
+		name := e[:strings.IndexByte(e, '=')]
+		if !strings.HasPrefix(name, "GIT_") && name != "HOME" && name != "XDG_CONFIG_HOME" && name != "XDG_DATA_HOME" {
 			out = append(out, e)
 		}
 	}
-	return append(out, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	return append(out, "HOME=", "XDG_CONFIG_HOME=", "XDG_DATA_HOME=", "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 }
 func runGit(ctx context.Context, repo string, args ...string) ([]byte, error) {
-	a := append([]string{"--no-replace-objects", "--git-dir=" + repo}, args...)
+	a := append([]string{"--no-replace-objects", "-c", "credential.helper=", "--git-dir=" + repo}, args...)
 	c := exec.CommandContext(ctx, "git", a...)
 	c.Env = gitEnv()
 	return c.Output()
@@ -71,10 +73,12 @@ func repository(ctx context.Context, r indexerprotocol.BuildRequest) error {
 	if e != nil || strings.TrimSpace(string(b)) != "true" {
 		return fail("source_unavailable", "repository is not bare")
 	}
-	if _, e = runGit(ctx, r.RepositoryPath, "cat-file", "-e", r.Identity.CommitOID+"^{commit}"); e != nil {
+	b, e = runGit(ctx, r.RepositoryPath, "cat-file", "-t", r.Identity.CommitOID)
+	if e != nil || strings.TrimSpace(string(b)) != "commit" {
 		return fail("source_mismatch", "commit is unavailable")
 	}
-	if _, e = runGit(ctx, r.RepositoryPath, "cat-file", "-e", r.Identity.TreeOID+"^{tree}"); e != nil {
+	b, e = runGit(ctx, r.RepositoryPath, "cat-file", "-t", r.Identity.TreeOID)
+	if e != nil || strings.TrimSpace(string(b)) != "tree" {
 		return fail("source_mismatch", "tree is unavailable")
 	}
 	b, e = runGit(ctx, r.RepositoryPath, "rev-parse", r.Identity.CommitOID+"^{tree}")
@@ -139,19 +143,102 @@ func validEntry(e treeEntry) bool {
 	}
 	return (e.mode == "040000" && e.typ == "tree") || (e.mode == "100644" && e.typ == "blob") || (e.mode == "100755" && e.typ == "blob") || (e.mode == "120000" && e.typ == "blob") || (e.mode == "160000" && e.typ == "commit")
 }
-func blob(ctx context.Context, r indexerprotocol.BuildRequest, e treeEntry) ([]byte, error) {
-	b, er := runGit(ctx, r.RepositoryPath, "cat-file", "blob", e.oid)
-	if er != nil || int64(len(b)) != e.size {
-		return nil, fail("content_read_failed", "retained blob content is unavailable")
+
+type limitedBuffer struct{ b []byte }
+
+func (w *limitedBuffer) Write(p []byte) (int, error) {
+	const limit = 4096
+	if len(w.b) < limit {
+		w.b = append(w.b, p[:min(len(p), limit-len(w.b))]...)
 	}
-	return b, nil
+	return len(p), nil
+}
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+type batchReader struct {
+	ctx context.Context
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	out *bufio.Reader
+}
+
+func newBatchReader(ctx context.Context, repo string) (*batchReader, error) {
+	c := exec.CommandContext(ctx, "git", "--no-replace-objects", "-c", "credential.helper=", "--git-dir="+repo, "cat-file", "--batch")
+	c.Env = gitEnv()
+	in, e := c.StdinPipe()
+	if e != nil {
+		return nil, e
+	}
+	out, e := c.StdoutPipe()
+	if e != nil {
+		return nil, e
+	}
+	c.Stderr = &limitedBuffer{}
+	if e = c.Start(); e != nil {
+		return nil, e
+	}
+	return &batchReader{ctx, c, in, bufio.NewReaderSize(out, 8192)}, nil
+}
+func (b *batchReader) Close() error {
+	_ = b.in.Close()
+	e := b.cmd.Wait()
+	if b.ctx.Err() != nil {
+		return b.ctx.Err()
+	}
+	return e
+}
+func (b *batchReader) readLine() ([]byte, error) {
+	v, e := b.out.ReadSlice('\n')
+	if e != nil || len(v) > 4096 {
+		return nil, errors.New("invalid batch header")
+	}
+	return v[:len(v)-1], nil
+}
+func (b *batchReader) blob(e treeEntry) ([]byte, error) {
+	if b.ctx.Err() != nil {
+		return nil, b.ctx.Err()
+	}
+	if _, er := io.WriteString(b.in, e.oid+"\n"); er != nil {
+		return nil, er
+	}
+	h, er := b.readLine()
+	if er != nil {
+		return nil, er
+	}
+	f := bytes.Fields(h)
+	if len(f) != 3 || string(f[0]) != e.oid || string(f[1]) != "blob" {
+		return nil, errors.New("invalid batch object")
+	}
+	n, er := strconv.ParseInt(string(f[2]), 10, 64)
+	if er != nil || n != e.size || n < 0 {
+		return nil, errors.New("invalid batch size")
+	}
+	content := make([]byte, n)
+	if _, er = io.ReadFull(b.out, content); er != nil {
+		return nil, er
+	}
+	var delimiter [1]byte
+	if _, er = io.ReadFull(b.out, delimiter[:]); er != nil || delimiter[0] != '\n' {
+		return nil, errors.New("invalid batch delimiter")
+	}
+	return content, nil
 }
 func classify(ctx context.Context, r indexerprotocol.BuildRequest, entries []treeEntry) ([]sourceindex.CoverageEntry, []document, error) {
+	reader, er := newBatchReader(ctx, r.RepositoryPath)
+	if er != nil {
+		return nil, nil, fail("content_read_failed", "cannot start retained blob reader")
+	}
 	cs := make([]sourceindex.CoverageEntry, 0, len(entries))
 	var docs []document
 	for _, e := range entries {
 		p, er := sourceindex.NewPathIdentity(e.path)
 		if er != nil {
+			_ = reader.Close()
 			return nil, nil, fail("tree_invalid", "invalid retained path")
 		}
 		c := sourceindex.CoverageEntry{Path: p, Mode: e.mode, ObjectType: e.typ, ObjectOID: e.oid, SizeBytes: e.size, Status: sourceindex.CoverageNonBlob}
@@ -169,9 +256,10 @@ func classify(ctx context.Context, r indexerprotocol.BuildRequest, entries []tre
 			cs = append(cs, c)
 			continue
 		}
-		b, er := blob(ctx, r, e)
+		b, er := reader.blob(e)
 		if er != nil {
-			return nil, nil, er
+			_ = reader.Close()
+			return nil, nil, fail("content_read_failed", "retained blob content is unavailable")
 		}
 		if !utf8.Valid(b) || bytes.IndexByte(b, 0) >= 0 {
 			c.Status = sourceindex.CoverageTextIneligible
@@ -182,6 +270,9 @@ func classify(ctx context.Context, r indexerprotocol.BuildRequest, entries []tre
 			docs = append(docs, document{e.path, b})
 		}
 		cs = append(cs, c)
+	}
+	if er := reader.Close(); er != nil {
+		return nil, nil, fail("content_read_failed", "retained blob reader failed")
 	}
 	return cs, docs, nil
 }
@@ -257,6 +348,9 @@ func artifactFiles(root string) ([]sourceindex.ArtifactFile, error) {
 			return errors.New("unsafe output")
 		}
 		if i.IsDir() {
+			if filepath.ToSlash(p) != filepath.ToSlash(filepath.Join(root, sourceindex.ShardDirectoryName)) {
+				return errors.New("unexpected directory")
+			}
 			return nil
 		}
 		rel, er := filepath.Rel(root, p)
@@ -267,8 +361,18 @@ func artifactFiles(root string) ([]sourceindex.ArtifactFile, error) {
 		if rel == sourceindex.ArtifactManifestFileName || rel == sourceindex.GenerationManifestFileName {
 			return nil
 		}
-		if rel != sourceindex.CoverageManifestFileName && !strings.HasPrefix(rel, "shards/") {
+		if rel != sourceindex.CoverageManifestFileName && (!strings.HasPrefix(rel, "shards/") || strings.Contains(strings.TrimPrefix(rel, "shards/"), "/")) {
 			return errors.New("unexpected output")
+		}
+		if strings.HasPrefix(rel, "shards/") {
+			if len(rel) != len("shards/000000.zoekt") || !strings.HasSuffix(rel, ".zoekt") {
+				return errors.New("unexpected output")
+			}
+			for _, digit := range rel[len("shards/") : len("shards/")+6] {
+				if digit < '0' || digit > '9' {
+					return errors.New("unexpected output")
+				}
+			}
 		}
 		b, er := os.ReadFile(p)
 		if er != nil {
@@ -310,10 +414,19 @@ func Verify(root string, r indexerprotocol.BuildRequest, expectedShards int64) e
 	if e != nil {
 		return e
 	}
-	gd, _ := sourceindex.GenerationManifestSHA256(g)
-	cd, _ := sourceindex.CoverageManifestSHA256(c)
-	ad, _ := sourceindex.ArtifactManifestSHA256(a)
-	if gd != digest(gb) || cd != digest(cb) || ad != digest(ab) || g.GenerationID != r.GenerationID || c.GenerationID != r.GenerationID || a.GenerationID != r.GenerationID || g.Identity != r.Identity {
+	gd, e := sourceindex.GenerationManifestSHA256(g)
+	if e != nil {
+		return e
+	}
+	cd, e := sourceindex.CoverageManifestSHA256(c)
+	if e != nil {
+		return e
+	}
+	ad, e := sourceindex.ArtifactManifestSHA256(a)
+	if e != nil {
+		return e
+	}
+	if gd != digest(gb) || cd != digest(cb) || ad != digest(ab) || g.GenerationID != r.GenerationID || c.GenerationID != r.GenerationID || c.CommitOID != r.Identity.CommitOID || c.TreeOID != r.Identity.TreeOID || a.GenerationID != r.GenerationID || g.Identity != r.Identity || g.CoverageManifestSHA256 != digest(cb) || g.ArtifactManifestSHA256 != digest(ab) {
 		return errors.New("manifest integrity")
 	}
 	files, e := artifactFiles(root)
@@ -329,18 +442,89 @@ func Verify(root string, r indexerprotocol.BuildRequest, expectedShards int64) e
 		return e
 	}
 	var n int64
+	expectedDocuments := map[string]bool{}
+	for _, entry := range c.Entries {
+		path, er := entry.Path.Bytes()
+		if er != nil {
+			return er
+		}
+		if entry.Status == sourceindex.CoverageIndexedText {
+			expectedDocuments[string(path)] = true
+		}
+	}
+	seenDocuments := map[string]bool{}
 	for _, f := range a.Files {
 		if f.Kind == sourceindex.ArtifactZoektShard {
 			n++
-			if e := zoektbuild.Verify(filepath.Join(root, filepath.FromSlash(f.RelativePath)), m); e != nil {
+			seq := fmt.Sprintf("shards/%06d.zoekt", n-1)
+			if f.RelativePath != seq {
+				return errors.New("noncontiguous shard")
+			}
+			if e := zoektbuild.Verify(filepath.Join(root, filepath.FromSlash(f.RelativePath)), r.GenerationID, int(n-1), m); e != nil {
 				return e
+			}
+			documents, er := zoektbuild.Documents(filepath.Join(root, filepath.FromSlash(f.RelativePath)), r.GenerationID, int(n-1), m)
+			if er != nil {
+				return er
+			}
+			for _, document := range documents {
+				if !expectedDocuments[document] || seenDocuments[document] {
+					return errors.New("unexpected shard document")
+				}
+				seenDocuments[document] = true
 			}
 		}
 	}
 	if n != expectedShards {
 		return errors.New("shard count")
 	}
+	if len(seenDocuments) != len(expectedDocuments) {
+		return errors.New("missing shard document")
+	}
 	return nil
+}
+
+func safeDirectory(path string) error {
+	i, e := os.Lstat(path)
+	if e != nil || i.Mode()&os.ModeSymlink != 0 || !i.IsDir() {
+		return errors.New("unsafe directory")
+	}
+	return nil
+}
+func syncDirectory(path string) error {
+	f, e := os.Open(path)
+	if e != nil {
+		return e
+	}
+	e = f.Sync()
+	closeErr := f.Close()
+	if e != nil {
+		return e
+	}
+	return closeErr
+}
+func syncBuild(root, parent string) error {
+	for _, name := range []string{sourceindex.CoverageManifestFileName, sourceindex.ArtifactManifestFileName, sourceindex.GenerationManifestFileName} {
+		f, e := os.Open(filepath.Join(root, name))
+		if e != nil {
+			return e
+		}
+		e = f.Sync()
+		closeErr := f.Close()
+		if e != nil {
+			return e
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	if e := syncDirectory(filepath.Join(root, sourceindex.ShardDirectoryName)); e != nil {
+		return e
+	}
+	if e := syncDirectory(root); e != nil {
+		return e
+	}
+	return syncDirectory(parent)
 }
 func sameArtifacts(a, b sourceindex.ArtifactManifest) bool {
 	if len(a.Files) != len(b.Files) {
@@ -361,19 +545,25 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("unsafe_path", "unsafe staging path")
 	}
-	if e = os.MkdirAll(r.IndexRoot, 0700); e != nil {
+	if e = os.MkdirAll(r.IndexRoot, 0700); e != nil || safeDirectory(r.IndexRoot) != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create index root")
 	}
 	parent := filepath.Dir(target)
-	if e = os.MkdirAll(parent, 0700); e != nil {
+	if e = os.MkdirAll(parent, 0700); e != nil || safeDirectory(parent) != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create staging directory")
 	}
 	if _, e = os.Lstat(target); e == nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "staging target exists")
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot inspect staging target")
 	}
 	tmp, e := os.MkdirTemp(parent, ".relay-build-")
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create private build directory")
+	}
+	if safeDirectory(parent) != nil || safeDirectory(tmp) != nil {
+		_ = os.RemoveAll(tmp)
+		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "unsafe staging directory")
 	}
 	defer os.RemoveAll(tmp)
 	entries, e := traverse(ctx, r)
@@ -422,8 +612,14 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	if e = ctx.Err(); e != nil {
 		return indexerprotocol.BuildResult{}, fail("cancelled", "build cancelled")
 	}
-	if e = os.Rename(tmp, target); e != nil {
+	if e = syncBuild(tmp, parent); e != nil {
+		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot durably prepare staging generation")
+	}
+	if e = exposeNoReplace(tmp, target); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot expose staging generation")
+	}
+	if e = syncDirectory(parent); e != nil {
+		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot durably expose staging generation")
 	}
 	rel, _ := sourceindex.StagingRelativeDirectory(r.GenerationID, r.StagingNonce)
 	return indexerprotocol.BuildResult{StagingRelativeDirectory: rel, GenerationManifestSHA256: digest(gb), CoverageManifestSHA256: digest(cb), ArtifactManifestSHA256: digest(ab), CoverageCounts: cm.Counts, ShardCount: count}, nil

@@ -16,5 +16,6 @@ type Metadata struct {
 
 var unsupported = errors.New("pinned zoekt index builder is unavailable on windows")
 
-func Write(string, string, int, Metadata, []Document) error { return unsupported }
-func Verify(string, Metadata) error                         { return unsupported }
+func Write(string, string, int, Metadata, []Document) error     { return unsupported }
+func Verify(string, string, int, Metadata) error                { return unsupported }
+func Documents(string, string, int, Metadata) ([]string, error) { return nil, unsupported }

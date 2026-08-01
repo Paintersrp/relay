@@ -15,6 +15,23 @@ import (
 
 const ProtocolVersion = "relay.source-indexer-protocol.v1"
 
+const MaxRequestBytes = 1 << 20
+
+const (
+	FailureInvalidRequest    = "invalid_request"
+	FailureUnsafePath        = "unsafe_path"
+	FailureSourceUnavailable = "source_unavailable"
+	FailureSourceMismatch    = "source_mismatch"
+	FailureTreeInvalid       = "tree_invalid"
+	FailureObjectInvalid     = "object_invalid"
+	FailureContentReadFailed = "content_read_failed"
+	FailureIndexBuildFailed  = "index_build_failed"
+	FailureArtifactWrite     = "artifact_write_failed"
+	FailureVerification      = "verification_failed"
+	FailureCancelled         = "cancelled"
+	FailureInternal          = "internal"
+)
+
 type BuildRequest struct {
 	Version        string                         `json:"version"`
 	GenerationID   string                         `json:"generation_id"`
@@ -94,18 +111,41 @@ func validateResponse(v BuildResponse) error {
 		return errors.New("generation id")
 	}
 	if v.Status == BuildStatusSuccess {
-		if !hex(v.GenerationID, 64) || v.Result == nil || v.Failure != nil || v.Result.ShardCount <= 0 || !hex(v.Result.GenerationManifestSHA256, 64) || !hex(v.Result.CoverageManifestSHA256, 64) || !hex(v.Result.ArtifactManifestSHA256, 64) || v.Result.CoverageCounts.Total < 0 {
+		if v.Result == nil {
 			return errors.New("success response")
 		}
-		if !strings.HasPrefix(v.Result.StagingRelativeDirectory, sourceindex.StagingDirectoryName+"/") || strings.Contains(v.Result.StagingRelativeDirectory, "\\") {
+		counts := v.Result.CoverageCounts
+		if !hex(v.GenerationID, 64) || v.Failure != nil || v.Result.ShardCount <= 0 || !hex(v.Result.GenerationManifestSHA256, 64) || !hex(v.Result.CoverageManifestSHA256, 64) || !hex(v.Result.ArtifactManifestSHA256, 64) || counts.IndexedText < 0 || counts.ShortText < 0 || counts.TextIneligible < 0 || counts.FallbackPath < 0 || counts.FallbackSize < 0 || counts.NonBlob < 0 || counts.Total < 0 || counts.Total != counts.IndexedText+counts.ShortText+counts.TextIneligible+counts.FallbackPath+counts.FallbackSize+counts.NonBlob {
+			return errors.New("success response")
+		}
+		expected, err := sourceindex.StagingRelativeDirectory(v.GenerationID, stagingNonce(v.Result.StagingRelativeDirectory))
+		if err != nil || v.Result.StagingRelativeDirectory != expected {
 			return errors.New("staging directory")
 		}
 		return nil
 	}
-	if v.Result != nil || v.Failure == nil || len(v.Failure.Code) == 0 || len(v.Failure.Code) > 128 || len(v.Failure.Message) == 0 || len(v.Failure.Message) > 4096 {
+	if v.Result != nil || v.Failure == nil || !validFailureCode(v.Failure.Code) || strings.TrimSpace(v.Failure.Code) != v.Failure.Code || strings.TrimSpace(v.Failure.Message) != v.Failure.Message || len(v.Failure.Message) == 0 || len(v.Failure.Message) > 4096 {
 		return errors.New("failure response")
 	}
 	return nil
+}
+func stagingNonce(path string) string {
+	p := strings.Split(path, "/")
+	if len(p) != 2 || p[0] != sourceindex.StagingDirectoryName {
+		return ""
+	}
+	i := strings.LastIndexByte(p[1], '-')
+	if i < 0 {
+		return ""
+	}
+	return p[1][i+1:]
+}
+func validFailureCode(code string) bool {
+	switch code {
+	case FailureInvalidRequest, FailureUnsafePath, FailureSourceUnavailable, FailureSourceMismatch, FailureTreeInvalid, FailureObjectInvalid, FailureContentReadFailed, FailureIndexBuildFailed, FailureArtifactWrite, FailureVerification, FailureCancelled, FailureInternal:
+		return true
+	}
+	return false
 }
 func marshal(v any, validate func() error) ([]byte, error) {
 	if err := validate(); err != nil {
