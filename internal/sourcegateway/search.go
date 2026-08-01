@@ -167,7 +167,15 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResu
 	if err != nil {
 		return SearchResult{}, err
 	}
+	return s.executePreparedSearch(ctx, prepared, source)
+}
+
+// executePreparedSearch is the canonical authoritative matcher for ordered,
+// path-only candidate sources.
+func (s *Service) executePreparedSearch(ctx context.Context, prepared preparedSearch, source searchCandidateSource) (SearchResult, error) {
 	result := SearchResult{Source: fidelitySourceIdentity(prepared.authority), Mode: prepared.request.Mode, QueryID: prepared.queryID, FilterID: prepared.filterID, Matches: []SearchMatch{}}
+	var previous []byte
+	var err error
 	for {
 		candidate, ok, nextErr := source.Next(ctx)
 		if nextErr != nil {
@@ -180,6 +188,10 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResu
 			result.Completion = SearchCompletionComplete
 			return result, nil
 		}
+		if !validatePath(candidate.Path, false) || !searchPathSelected(candidate.Path, prepared.prefixes) || previous != nil && bytes.Compare(candidate.Path, previous) <= 0 {
+			return SearchResult{}, &Error{Code: CodeIntegrityFailure}
+		}
+		previous = append(previous[:0], candidate.Path...)
 		if prepared.resumePending {
 			comparison := bytes.Compare(candidate.Path, prepared.resume.path)
 			if comparison < 0 {
