@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"relay/internal/sourceindex"
@@ -40,6 +41,115 @@ func TestSourceIndexGenerationLifecycleAndConvergence(t *testing.T) {
 	if _, err := store.RetrySourceIndexGeneration(ctx, created.GenerationID); !errors.Is(err, ErrSourceIndexGenerationLifecycleConflict) {
 		t.Fatalf("retry retired error = %v", err)
 	}
+}
+
+func TestSourceIndexGenerationIdentityConvergence(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	identity := testSourceIndexIdentity(t, "vault-identity", "a", "b")
+	created, wasCreated, err := store.CreateOrResolveSourceIndexGeneration(ctx, CreateOrResolveSourceIndexGenerationParams{Identity: identity})
+	if err != nil || !wasCreated || created.State != SourceIndexGenerationPending || created.AttemptCount != 0 {
+		t.Fatalf("created = %#v, %t, %v", created, wasCreated, err)
+	}
+	if _, err := store.BeginSourceIndexGenerationBuild(ctx, created.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	existing, wasCreated, err := store.CreateOrResolveSourceIndexGeneration(ctx, CreateOrResolveSourceIndexGenerationParams{Identity: identity})
+	if err != nil || wasCreated || existing.ID != created.ID || existing.State != SourceIndexGenerationBuilding || existing.AttemptCount != 1 || existing.BuildingStartedAt == "" {
+		t.Fatalf("existing = %#v, %t, %v", existing, wasCreated, err)
+	}
+	byIdentity, err := store.GetSourceIndexGenerationByIdentity(ctx, identity)
+	if err != nil || byIdentity != existing {
+		t.Fatalf("by identity = %#v, %v", byIdentity, err)
+	}
+}
+
+func TestSourceIndexGenerationIdentityWrongGenerationIDIsIntegrityFailure(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	identity := testSourceIndexIdentity(t, "vault-wrong-id", "a", "b")
+	wrongID := strings.Repeat("9", 64)
+	if generationID, err := sourceindex.GenerationID(identity); err != nil || generationID == wrongID {
+		t.Fatalf("generation ID = %q, %v", generationID, err)
+	}
+	insertSourceIndexGeneration(t, ctx, store, wrongID, identity)
+	if _, _, err := store.CreateOrResolveSourceIndexGeneration(ctx, CreateOrResolveSourceIndexGenerationParams{Identity: identity}); !errors.Is(err, ErrSourceIndexGenerationIntegrity) || errors.Is(err, ErrSourceIndexGenerationNotFound) {
+		t.Fatalf("create-or-resolve error = %v", err)
+	}
+	if _, err := store.GetSourceIndexGenerationByIdentity(ctx, identity); !errors.Is(err, ErrSourceIndexGenerationIntegrity) || errors.Is(err, ErrSourceIndexGenerationNotFound) {
+		t.Fatalf("get by identity error = %v", err)
+	}
+	assertWorkflowCount(t, store.DB(), "source_index_generations", 1)
+}
+
+func TestSourceIndexGenerationIDWithDifferentIdentityIsIntegrityFailure(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	requested := testSourceIndexIdentity(t, "vault-requested", "a", "b")
+	stored := testSourceIndexIdentity(t, "vault-stored", "c", "d")
+	requestedID, err := sourceindex.GenerationID(requested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertSourceIndexGeneration(t, ctx, store, requestedID, stored)
+	if _, _, err := store.CreateOrResolveSourceIndexGeneration(ctx, CreateOrResolveSourceIndexGenerationParams{Identity: requested}); !errors.Is(err, ErrSourceIndexGenerationIntegrity) {
+		t.Fatalf("create-or-resolve error = %v", err)
+	}
+}
+
+func TestGetSourceIndexGenerationByIdentityMissing(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	if _, err := store.GetSourceIndexGenerationByIdentity(ctx, testSourceIndexIdentity(t, "vault-missing", "a", "b")); !errors.Is(err, ErrSourceIndexGenerationNotFound) {
+		t.Fatalf("get by identity error = %v", err)
+	}
+}
+
+func TestSourceIndexGenerationConcurrentConvergence(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	identity := testSourceIndexIdentity(t, "vault-concurrent", "a", "b")
+	const callers = 8
+	type result struct {
+		generation SourceIndexGeneration
+		created    bool
+		err        error
+	}
+	results := make(chan result, callers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			generation, created, err := store.CreateOrResolveSourceIndexGeneration(ctx, CreateOrResolveSourceIndexGenerationParams{Identity: identity})
+			results <- result{generation, created, err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	var first SourceIndexGeneration
+	createdCount := 0
+	for result := range results {
+		if result.err != nil || result.generation.Identity != identity {
+			t.Fatalf("result = %#v", result)
+		}
+		if first.ID == 0 {
+			first = result.generation
+		}
+		if result.generation.ID != first.ID || result.generation.GenerationID != first.GenerationID {
+			t.Fatalf("result generation = %#v, first = %#v", result.generation, first)
+		}
+		if result.created {
+			createdCount++
+		}
+	}
+	if createdCount != 1 {
+		t.Fatalf("created count = %d, want 1", createdCount)
+	}
+	assertWorkflowCount(t, store.DB(), "source_index_generations", 1)
 }
 
 func TestSourceIndexGenerationFailureRetryAndReads(t *testing.T) {
@@ -154,4 +264,12 @@ func testSourceIndexIdentity(t *testing.T, vaultID, commit, tree string) sourcei
 		t.Fatal(err)
 	}
 	return identity
+}
+
+func insertSourceIndexGeneration(t *testing.T, ctx context.Context, store *Store, generationID string, identity sourceindex.GenerationIdentity) {
+	t.Helper()
+	_, err := store.DB().ExecContext(ctx, `INSERT INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`, generationID, identity.Version, identity.VaultID, identity.CommitOID, identity.TreeOID, identity.Engine, identity.EngineRevision, identity.BuildContractVersion, identity.BuildOptionsSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
 }

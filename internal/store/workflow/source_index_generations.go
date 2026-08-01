@@ -67,11 +67,31 @@ func (s *Store) CreateOrResolveSourceIndexGeneration(ctx context.Context, params
 	if err != nil {
 		return SourceIndexGeneration{}, false, fmt.Errorf("%w: %v", ErrInvalidSourceIndexGeneration, err)
 	}
-	value, err := scanSourceIndexGeneration(s.db.QueryRowContext(ctx, `INSERT OR IGNORE INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending') RETURNING `+sourceIndexGenerationColumns, id, params.Identity.Version, params.Identity.VaultID, params.Identity.CommitOID, params.Identity.TreeOID, params.Identity.Engine, params.Identity.EngineRevision, params.Identity.BuildContractVersion, params.Identity.BuildOptionsSHA256))
+	value, err := s.getSourceIndexGenerationByExactIdentity(ctx, params.Identity)
+	if err == nil {
+		if value.GenerationID != id || value.Identity != params.Identity {
+			return SourceIndexGeneration{}, false, fmt.Errorf("%w: existing identity differs", ErrSourceIndexGenerationIntegrity)
+		}
+		return value, false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return SourceIndexGeneration{}, false, err
+	}
+	value, err = scanSourceIndexGeneration(s.db.QueryRowContext(ctx, `INSERT INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending') ON CONFLICT(generation_id) DO NOTHING RETURNING `+sourceIndexGenerationColumns, id, params.Identity.Version, params.Identity.VaultID, params.Identity.CommitOID, params.Identity.TreeOID, params.Identity.Engine, params.Identity.EngineRevision, params.Identity.BuildContractVersion, params.Identity.BuildOptionsSHA256))
 	if err == nil {
 		return value, true, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
+		identityValue, identityErr := s.getSourceIndexGenerationByExactIdentity(ctx, params.Identity)
+		if identityErr == nil {
+			if identityValue.GenerationID != id || identityValue.Identity != params.Identity {
+				return SourceIndexGeneration{}, false, fmt.Errorf("%w: existing identity differs", ErrSourceIndexGenerationIntegrity)
+			}
+			return identityValue, false, nil
+		}
+		if !errors.Is(identityErr, sql.ErrNoRows) {
+			return SourceIndexGeneration{}, false, identityErr
+		}
 		return SourceIndexGeneration{}, false, err
 	}
 	value, err = s.GetSourceIndexGeneration(ctx, id)
@@ -100,7 +120,21 @@ func (s *Store) GetSourceIndexGenerationByIdentity(ctx context.Context, identity
 	if err != nil {
 		return SourceIndexGeneration{}, fmt.Errorf("%w: %v", ErrInvalidSourceIndexGeneration, err)
 	}
-	return s.GetSourceIndexGeneration(ctx, id)
+	value, err := s.getSourceIndexGenerationByExactIdentity(ctx, identity)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SourceIndexGeneration{}, fmt.Errorf("%w: %s", ErrSourceIndexGenerationNotFound, id)
+	}
+	if err != nil {
+		return SourceIndexGeneration{}, err
+	}
+	if value.GenerationID != id || value.Identity != identity {
+		return SourceIndexGeneration{}, fmt.Errorf("%w: existing identity differs", ErrSourceIndexGenerationIntegrity)
+	}
+	return value, nil
+}
+
+func (s *Store) getSourceIndexGenerationByExactIdentity(ctx context.Context, identity sourceindex.GenerationIdentity) (SourceIndexGeneration, error) {
+	return scanSourceIndexGeneration(s.db.QueryRowContext(ctx, `SELECT `+sourceIndexGenerationColumns+` FROM source_index_generations WHERE identity_version = ? AND vault_id = ? AND commit_oid = ? AND tree_oid = ? AND engine = ? AND engine_revision = ? AND build_contract_version = ? AND build_options_sha256 = ?`, identity.Version, identity.VaultID, identity.CommitOID, identity.TreeOID, identity.Engine, identity.EngineRevision, identity.BuildContractVersion, identity.BuildOptionsSHA256))
 }
 
 func (s *Store) ListSourceIndexGenerationsByState(ctx context.Context, state SourceIndexGenerationState) ([]SourceIndexGeneration, error) {
