@@ -89,6 +89,7 @@ ORDER BY name`)
 		"repository_branch_mutation_leases",
 		"repository_targets",
 		"runs",
+		"source_index_generations",
 		"source_path_selectors",
 		"source_vault_closures",
 		"source_vault_retentions",

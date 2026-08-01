@@ -106,6 +106,55 @@ func TestWayfinderPacketSchemaUpgradeFromPreChangeDatabase(t *testing.T) {
 	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('unknown-surface.v1', 'create_operation_packet', 'upgrade-invalid-surface', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
 }
 
+func TestSourceIndexGenerationSchemaUpgradeAndGuards(t *testing.T) {
+	db := openMigrationTestDB(t, "source-index-generation")
+	defer db.Close()
+
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 31); err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+
+	columns := make(map[string]bool)
+	rows, err := db.Query(`SELECT name FROM pragma_table_info('source_index_generations')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		columns[name] = true
+	}
+	for _, name := range []string{"generation_id", "identity_version", "vault_id", "commit_oid", "tree_oid", "engine", "engine_revision", "build_contract_version", "build_options_sha256", "state", "attempt_count", "generation_manifest_sha256", "coverage_manifest_sha256", "artifact_manifest_sha256", "failure_code", "failure_message", "created_at", "updated_at", "building_started_at", "ready_at", "failed_at", "retired_at"} {
+		if !columns[name] {
+			t.Fatalf("missing source generation column %q", name)
+		}
+	}
+
+	id := strings.Repeat("a", 64)
+	commit := strings.Repeat("b", 40)
+	tree := strings.Repeat("c", 40)
+	options := strings.Repeat("d", 64)
+	if _, err := db.Exec(`INSERT INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, 'relay.source-index-generation-identity.v1', 'vault-migration', ?, ?, 'zoekt', '2b2ce2e398e6bee68d67143f567b6c6199340c7f', 'relay.source-index-build.v1', ?, 'pending')`, id, commit, tree, options); err != nil {
+		t.Fatal(err)
+	}
+	assertExecFails(t, db, `INSERT INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, 'relay.source-index-generation-identity.v1', 'vault-migration', ?, ?, 'zoekt', '2b2ce2e398e6bee68d67143f567b6c6199340c7f', 'relay.source-index-build.v1', ?, 'pending')`, id, commit, tree, options)
+	assertExecFails(t, db, `INSERT INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, 'relay.source-index-generation-identity.v1', 'vault-migration', ?, ?, 'zoekt', '2b2ce2e398e6bee68d67143f567b6c6199340c7f', 'relay.source-index-build.v1', ?, 'pending')`, strings.Repeat("e", 64), commit, tree, options)
+	assertExecFails(t, db, `INSERT INTO source_index_generations (generation_id, identity_version, vault_id, commit_oid, tree_oid, engine, engine_revision, build_contract_version, build_options_sha256, state) VALUES (?, 'relay.source-index-generation-identity.v1', 'vault-invalid', ?, ?, 'zoekt', '2b2ce2e398e6bee68d67143f567b6c6199340c7f', 'relay.source-index-build.v1', ?, 'building')`, strings.Repeat("f", 64), commit, tree, options)
+	assertExecFails(t, db, `UPDATE source_index_generations SET vault_id = 'changed' WHERE generation_id = ?`, id)
+	assertExecFails(t, db, `UPDATE source_index_generations SET state = 'ready' WHERE generation_id = ?`, id)
+	assertExecFails(t, db, `DELETE FROM source_index_generations WHERE generation_id = ?`, id)
+}
+
 func openMigrationTestDB(t *testing.T, name string) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:relay-migration-%s-%s?mode=memory&cache=shared", name, strings.ReplaceAll(t.Name(), "/", "-")))
