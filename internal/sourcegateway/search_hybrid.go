@@ -3,6 +3,7 @@ package sourcegateway
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"unicode/utf8"
 
 	"relay/internal/sourceindex"
@@ -46,6 +47,9 @@ func newHybridTextSearchCandidateSource(ctx context.Context, index indexedSearch
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if nilInterface(index) {
+		return nil, generationIntegrityError()
+	}
 	if !validReaderDescriptor(expected) || index.Descriptor() != expected {
 		return nil, generationIntegrityError()
 	}
@@ -63,16 +67,19 @@ func newHybridTextSearchCandidateSource(ctx context.Context, index indexedSearch
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	indexedPaths, err := validateHybridCandidates(indexed, prefixes, true)
+	indexedPaths, err := validateHybridCandidates(ctx, indexed, true)
 	if err != nil {
 		return nil, err
 	}
-	fallbackPaths, err := validateHybridCandidates(fallback, prefixes, false)
+	fallbackPaths, err := validateHybridCandidates(ctx, fallback, false)
 	if err != nil {
 		return nil, err
 	}
-	merged, err := mergeHybridCandidates(indexedPaths, fallbackPaths)
+	merged, err := mergeHybridCandidates(ctx, indexedPaths, fallbackPaths, prefixes)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return newSliceSearchCandidateSource(merged), nil
@@ -100,38 +107,65 @@ func validLowerHex64(value string) bool {
 	return true
 }
 
-func validateHybridCandidates(candidates []reader.Candidate, prefixes []canonicalSearchPrefix, requireUTF8 bool) ([][]byte, error) {
+func nilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
+func validateHybridCandidates(ctx context.Context, candidates []reader.Candidate, requireUTF8 bool) ([][]byte, error) {
 	paths := make([][]byte, 0, len(candidates))
 	var previous []byte
 	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		path := append([]byte(nil), candidate.Path...)
 		if !validatePath(path, false) || requireUTF8 && !utf8.Valid(path) || previous != nil && bytes.Compare(path, previous) <= 0 {
 			return nil, generationIntegrityError()
 		}
 		previous = path
-		if searchPathSelected(path, prefixes) {
-			paths = append(paths, path)
-		}
+		paths = append(paths, path)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return paths, nil
 }
 
-func mergeHybridCandidates(indexed, fallback [][]byte) ([][]byte, error) {
+func mergeHybridCandidates(ctx context.Context, indexed, fallback [][]byte, prefixes []canonicalSearchPrefix) ([][]byte, error) {
 	paths := make([][]byte, 0, len(indexed)+len(fallback))
-	for len(indexed) > 0 && len(fallback) > 0 {
-		comparison := bytes.Compare(indexed[0], fallback[0])
-		if comparison == 0 {
-			return nil, generationIntegrityError()
+	for len(indexed) > 0 || len(fallback) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		if comparison < 0 {
-			paths = append(paths, indexed[0])
-			indexed = indexed[1:]
-		} else {
-			paths = append(paths, fallback[0])
-			fallback = fallback[1:]
+		var path []byte
+		switch {
+		case len(indexed) == 0:
+			path, fallback = fallback[0], fallback[1:]
+		case len(fallback) == 0:
+			path, indexed = indexed[0], indexed[1:]
+		default:
+			comparison := bytes.Compare(indexed[0], fallback[0])
+			if comparison == 0 {
+				return nil, generationIntegrityError()
+			}
+			if comparison < 0 {
+				path, indexed = indexed[0], indexed[1:]
+			} else {
+				path, fallback = fallback[0], fallback[1:]
+			}
+		}
+		if searchPathSelected(path, prefixes) {
+			paths = append(paths, path)
 		}
 	}
-	paths = append(paths, indexed...)
-	paths = append(paths, fallback...)
 	return paths, nil
 }

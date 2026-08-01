@@ -16,6 +16,7 @@ type hybridReaderFake struct {
 	fallback   []reader.Candidate
 	err        error
 	fallbacks  int
+	onFallback func()
 }
 
 func (f *hybridReaderFake) Descriptor() reader.Descriptor { return f.descriptor }
@@ -30,6 +31,9 @@ func (f *hybridReaderFake) IndexedTextCandidates(ctx context.Context, _ string) 
 }
 func (f *hybridReaderFake) FallbackCandidates() []reader.Candidate {
 	f.fallbacks++
+	if f.onFallback != nil {
+		f.onFallback()
+	}
 	return f.fallback
 }
 
@@ -98,6 +102,57 @@ func TestHybridTextCandidateSourceFailsClosed(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 		})
+	}
+}
+
+func TestHybridTextCandidateSourceValidatesUnselectedPaths(t *testing.T) {
+	descriptor := hybridTestDescriptor(t)
+	prefixes := []canonicalSearchPrefix{{bytes: []byte("selected")}}
+	tests := []struct {
+		name     string
+		indexed  []reader.Candidate
+		fallback []reader.Candidate
+	}{
+		{name: "indexed duplicate", indexed: []reader.Candidate{{Path: []byte("other")}, {Path: []byte("other")}}},
+		{name: "fallback descending", fallback: []reader.Candidate{{Path: []byte("z")}, {Path: []byte("a")}}},
+		{name: "invalid fallback path", fallback: []reader.Candidate{{Path: []byte("../other")}}},
+		{name: "cross stream duplicate", indexed: []reader.Candidate{{Path: []byte("other")}}, fallback: []reader.Candidate{{Path: []byte("other")}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &hybridReaderFake{descriptor: descriptor, indexed: test.indexed, fallback: test.fallback}
+			if _, err := newHybridTextSearchCandidateSource(context.Background(), fake, descriptor, "abc", prefixes); !errors.Is(err, reader.ErrGenerationIntegrity) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestHybridTextCandidateSourceRejectsNilReaderAndCancellation(t *testing.T) {
+	descriptor := hybridTestDescriptor(t)
+	var nilReader indexedSearchCandidateReader
+	if _, err := newHybridTextSearchCandidateSource(context.Background(), nilReader, descriptor, "abc", nil); !errors.Is(err, reader.ErrGenerationIntegrity) {
+		t.Fatalf("nil reader error = %v", err)
+	}
+	var typedNil *hybridReaderFake
+	if _, err := newHybridTextSearchCandidateSource(context.Background(), typedNil, descriptor, "abc", nil); !errors.Is(err, reader.ErrGenerationIntegrity) {
+		t.Fatalf("typed nil reader error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &hybridReaderFake{descriptor: descriptor, indexed: []reader.Candidate{{Path: []byte("a")}}, onFallback: cancel}
+	if _, err := newHybridTextSearchCandidateSource(ctx, fake, descriptor, "abc", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled materialization error = %v", err)
+	}
+}
+
+func TestExecutePreparedSearchRejectsNilCandidateSource(t *testing.T) {
+	service := &Service{}
+	if _, err := service.executePreparedSearch(context.Background(), preparedSearch{}, nil); ErrorCode(err) != CodeIntegrityFailure {
+		t.Fatalf("error = %v", err)
+	}
+	var typedNil *sliceSearchCandidateSource
+	if _, err := service.executePreparedSearch(context.Background(), preparedSearch{}, typedNil); ErrorCode(err) != CodeIntegrityFailure {
+		t.Fatalf("typed nil source error = %v", err)
 	}
 }
 
