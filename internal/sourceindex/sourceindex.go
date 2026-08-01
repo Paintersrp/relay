@@ -582,13 +582,9 @@ func StagingDirectory(root, id, nonce string) (string, error) {
 	return safeStoragePath(root, rel)
 }
 func safeStoragePath(root, rel string) (string, error) {
-	canon, e := canonicalExisting(root)
+	canon, e := canonicalDirectory(root)
 	if e != nil {
 		return "", e
-	}
-	info, e := os.Lstat(root)
-	if e != nil || info.Mode()&os.ModeSymlink != 0 {
-		return "", fail(UnsafePath, "root")
 	}
 	out := filepath.Join(canon, filepath.FromSlash(rel))
 	if !within(canon, out) {
@@ -597,11 +593,12 @@ func safeStoragePath(root, rel string) (string, error) {
 	cursor := canon
 	for _, part := range strings.Split(rel, "/") {
 		cursor = filepath.Join(cursor, part)
-		if info, e := os.Lstat(cursor); e == nil && info.Mode()&os.ModeSymlink != 0 {
-			resolved, x := filepath.EvalSymlinks(cursor)
-			if x != nil || !within(canon, resolved) {
-				return "", fail(UnsafePath, "symlink")
-			}
+		info, e := os.Lstat(cursor)
+		if errors.Is(e, os.ErrNotExist) {
+			continue
+		}
+		if e != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fail(UnsafePath, "storage component")
 		}
 	}
 	return out, nil
@@ -638,16 +635,45 @@ func ValidateIndexRoot(indexRoot string, p ProtectedStorage) error {
 	}
 	return nil
 }
-func canonicalExisting(p string) (string, error) {
+
+// canonicalDirectory accepts a directory that may not exist yet, but never
+// traverses a symlink or a non-directory component while locating it.
+func canonicalDirectory(p string) (string, error) {
 	a, e := filepath.Abs(p)
 	if e != nil {
 		return "", fail(UnsafePath, "root")
 	}
-	r, e := filepath.EvalSymlinks(a)
-	if e != nil {
-		return "", fail(UnsafePath, "root")
+	a = filepath.Clean(a)
+	volume := filepath.VolumeName(a)
+	cursor := volume + string(filepath.Separator)
+	if volume == "" {
+		cursor = string(filepath.Separator)
 	}
-	return filepath.Clean(r), nil
+	remaining := strings.TrimPrefix(a, cursor)
+	missing := false
+	for _, part := range strings.Split(remaining, string(filepath.Separator)) {
+		if part == "" {
+			continue
+		}
+		cursor = filepath.Join(cursor, part)
+		info, e := os.Lstat(cursor)
+		if errors.Is(e, os.ErrNotExist) {
+			missing = true
+			continue
+		}
+		if e != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fail(UnsafePath, "root component")
+		}
+		if missing {
+			// An existing component after a missing one is not a coherent path.
+			return "", fail(UnsafePath, "root component")
+		}
+	}
+	resolved, e := canonicalPotential(a)
+	if e != nil || !sameLocation(a, resolved) {
+		return "", fail(UnsafePath, "root resolution")
+	}
+	return a, nil
 }
 func canonicalPotential(p string) (string, error) {
 	a, e := filepath.Abs(p)
@@ -658,7 +684,11 @@ func canonicalPotential(p string) (string, error) {
 	suffix := []string{}
 	cursor := a
 	for {
-		if _, e := os.Lstat(cursor); e == nil {
+		info, e := os.Lstat(cursor)
+		if e == nil {
+			if len(suffix) > 0 && !info.IsDir() {
+				return "", fail(UnsafePath, "path component")
+			}
 			base, e := filepath.EvalSymlinks(cursor)
 			if e != nil {
 				return "", fail(UnsafePath, "symlink")
@@ -667,6 +697,9 @@ func canonicalPotential(p string) (string, error) {
 				base = filepath.Join(base, suffix[i])
 			}
 			return filepath.Clean(base), nil
+		}
+		if !errors.Is(e, os.ErrNotExist) {
+			return "", fail(UnsafePath, "path")
 		}
 		parent := filepath.Dir(cursor)
 		if parent == cursor {
@@ -679,5 +712,9 @@ func canonicalPotential(p string) (string, error) {
 func within(root, p string) bool {
 	r, e := filepath.Rel(root, p)
 	return e == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) && !filepath.IsAbs(r)
+}
+func sameLocation(a, b string) bool {
+	r, e := filepath.Rel(a, b)
+	return e == nil && r == "."
 }
 func overlaps(a, b string) bool { return within(a, b) || within(b, a) }
