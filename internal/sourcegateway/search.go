@@ -218,7 +218,7 @@ func (s *Service) executeIndexedSearch(ctx context.Context, prepared preparedSea
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return SearchResult{}, err
 		}
-		if continuation {
+		if continuation && stableSearchIndexMiss(err) {
 			return SearchResult{}, &Error{Code: CodeInvalidCursor}
 		}
 		if stableSearchIndexMiss(err) && nilInterface(handle) {

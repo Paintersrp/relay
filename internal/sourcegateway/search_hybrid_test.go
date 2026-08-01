@@ -40,15 +40,26 @@ func (f *hybridReaderFake) IndexedTextCandidates(ctx context.Context, _ string) 
 func (f *hybridReaderFake) Close() error { f.closes++; return f.closeErr }
 
 type searchIndexProviderFake struct {
-	handle    SearchIndexHandle
-	err       error
-	opens     int
-	authority operations.SourceReadAuthority
+	handle      SearchIndexHandle
+	handles     []SearchIndexHandle
+	err         error
+	errors      []error
+	opens       int
+	authority   operations.SourceReadAuthority
+	authorities []operations.SourceReadAuthority
 }
 
 func (f *searchIndexProviderFake) OpenSearchIndex(_ context.Context, authority operations.SourceReadAuthority) (SearchIndexHandle, error) {
 	f.opens++
 	f.authority = authority
+	f.authorities = append(f.authorities, authority)
+	if f.opens <= len(f.handles) {
+		var err error
+		if f.opens <= len(f.errors) {
+			err = f.errors[f.opens-1]
+		}
+		return f.handles[f.opens-1], err
+	}
 	return f.handle, f.err
 }
 func (f *hybridReaderFake) FallbackCandidates() []reader.Candidate {
@@ -83,16 +94,17 @@ func TestPublicSearchRoutesAndBindsBackend(t *testing.T) {
 	vault := &fidelityVaultFake{trees: map[string][]sourcevault.RetainedTreeEntry{treeOID: {{Name: []byte("a.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}}, blobs: map[string][]byte{blobOID: []byte("abcabc")}, nodes: map[string]sourcevault.RetainedCommitNode{}}
 	service := newFidelityService(t, vault, fidelityAuthority(commitOID, treeOID, "", 1))
 	descriptor := hybridTestDescriptor(t)
-	handle := &hybridReaderFake{descriptor: descriptor, indexed: []reader.Candidate{{Path: []byte("a.txt")}}}
-	provider := &searchIndexProviderFake{handle: handle}
+	first := &hybridReaderFake{descriptor: descriptor, indexed: []reader.Candidate{{Path: []byte("a.txt")}}}
+	second := &hybridReaderFake{descriptor: descriptor, indexed: []reader.Candidate{{Path: []byte("a.txt")}}}
+	provider := &searchIndexProviderFake{handles: []SearchIndexHandle{first, second}}
 	service.searchIndex = provider
 	request := SearchRequest{PacketID: "opkt-fidelity", SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", RepositoryKey: "relay", Mode: SearchModeTextLiteral, TextLiteral: "abc", Limit: 1, Budget: SearchBudget{ExaminedObjects: 10, ExaminedBytes: 64}}
 	result, err := service.Search(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.opens != 1 || provider.authority.Relationship.CommitOID != commitOID || handle.queries != 1 || handle.closes != 1 || len(result.Matches) != 1 {
-		t.Fatalf("opens=%d authority=%#v queries=%d closes=%d matches=%#v", provider.opens, provider.authority, handle.queries, handle.closes, result.Matches)
+	if provider.opens != 1 || provider.authority.Relationship.CommitOID != commitOID || first.queries != 1 || first.closes != 1 || len(result.Matches) != 1 {
+		t.Fatalf("opens=%d authority=%#v queries=%d closes=%d matches=%#v", provider.opens, provider.authority, first.queries, first.closes, result.Matches)
 	}
 	payload, err := service.cursors.Decode(result.Cursor)
 	if err != nil || payload.Version != SearchCursorVersion || payload.SearchBackend != string(searchBackendIndexed) || payload.SearchGenerationID != descriptor.GenerationID {
@@ -100,8 +112,66 @@ func TestPublicSearchRoutesAndBindsBackend(t *testing.T) {
 	}
 	request.Cursor = result.Cursor
 	continued, err := service.Search(context.Background(), request)
-	if err != nil || provider.opens != 2 || handle.closes != 2 || len(continued.Matches) != 1 || continued.Matches[0].ByteOffset != 3 {
-		t.Fatalf("continued=%#v error=%v opens=%d closes=%d", continued, err, provider.opens, handle.closes)
+	if err != nil || provider.opens != 2 || first.closes != 1 || second.queries != 1 || second.closes != 1 || len(continued.Matches) != 1 || continued.Matches[0].ByteOffset != 3 {
+		t.Fatalf("continued=%#v error=%v opens=%d first_closes=%d second_queries=%d second_closes=%d", continued, err, provider.opens, first.closes, second.queries, second.closes)
+	}
+}
+
+func TestIndexedContinuationOpenErrorClassificationAndClose(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	treeOID := strings.Repeat("2", 40)
+	blobOID := strings.Repeat("6", 40)
+	descriptor := hybridTestDescriptor(t)
+	request := SearchRequest{PacketID: "opkt-fidelity", SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", RepositoryKey: "relay", Mode: SearchModeTextLiteral, TextLiteral: "abc", Limit: 1, Budget: SearchBudget{ExaminedObjects: 10, ExaminedBytes: 64}}
+
+	for _, test := range []struct {
+		name        string
+		openErr     error
+		wantInvalid bool
+		withHandle  bool
+	}{
+		{name: "generation unavailable", openErr: reader.ErrGenerationUnavailable, wantInvalid: true},
+		{name: "generation integrity", openErr: reader.ErrGenerationIntegrity, wantInvalid: true},
+		{name: "unsupported platform", openErr: reader.ErrUnsupportedPlatform, wantInvalid: true},
+		{name: "invalid configuration", openErr: reader.ErrInvalidConfiguration, wantInvalid: true},
+		{name: "canceled", openErr: context.Canceled},
+		{name: "deadline", openErr: context.DeadlineExceeded},
+		{name: "unexpected", openErr: errors.New("unexpected provider failure")},
+		{name: "unexpected with handle", openErr: errors.New("unexpected provider failure with handle"), withHandle: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			vault := &fidelityVaultFake{trees: map[string][]sourcevault.RetainedTreeEntry{treeOID: {{Name: []byte("a.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}}, blobs: map[string][]byte{blobOID: []byte("abcabc")}, nodes: map[string]sourcevault.RetainedCommitNode{}}
+			service := newFidelityService(t, vault, fidelityAuthority(commitOID, treeOID, "", 1))
+			first := &hybridReaderFake{descriptor: descriptor, indexed: []reader.Candidate{{Path: []byte("a.txt")}}}
+			provider := &searchIndexProviderFake{handles: []SearchIndexHandle{first}}
+			service.searchIndex = provider
+			page, err := service.Search(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var failedHandle SearchIndexHandle
+			if test.withHandle {
+				failedHandle = &hybridReaderFake{descriptor: descriptor}
+			}
+			provider.handles = append(provider.handles, failedHandle)
+			provider.errors = []error{nil, test.openErr}
+			continued := request
+			continued.Cursor = page.Cursor
+			result, gotErr := service.Search(context.Background(), continued)
+			if test.wantInvalid {
+				if ErrorCode(gotErr) != CodeInvalidCursor {
+					t.Fatalf("error=%v", gotErr)
+				}
+			} else if !errors.Is(gotErr, test.openErr) {
+				t.Fatalf("error=%v want identity %v", gotErr, test.openErr)
+			}
+			if !reflect.DeepEqual(result, SearchResult{}) || provider.opens != 2 || first.closes != 1 {
+				t.Fatalf("result=%#v opens=%d first closes=%d", result, provider.opens, first.closes)
+			}
+			if handle, ok := failedHandle.(*hybridReaderFake); ok && (handle.closes != 1 || handle.queries != 0 || handle.fallbacks != 0) {
+				t.Fatalf("failed handle closes=%d queries=%d fallbacks=%d", handle.closes, handle.queries, handle.fallbacks)
+			}
+		})
 	}
 }
 
