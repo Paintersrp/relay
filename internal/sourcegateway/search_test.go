@@ -85,6 +85,58 @@ func TestSearchByteLiteralReturnsOverlapsAcrossPageSizeChanges(t *testing.T) {
 	}
 }
 
+func TestRetainedTreeSearchCandidatesArePathOnlyOrderedAndVerifiedAuthoritatively(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	nestedTree := strings.Repeat("3", 40)
+	rootBlob := strings.Repeat("4", 40)
+	nestedBlob := strings.Repeat("5", 40)
+	rootName := []byte("z.txt")
+	vault := &fidelityVaultFake{trees: map[string][]sourcevault.RetainedTreeEntry{
+		rootTree: {
+			{Name: []byte("dir"), Mode: "040000", ObjectType: "tree", ObjectOID: nestedTree},
+			{Name: []byte("gitlink"), Mode: "160000", ObjectType: "commit", ObjectOID: commitOID},
+			{Name: rootName, Mode: "100644", ObjectType: "blob", ObjectOID: rootBlob},
+		},
+		nestedTree: {{Name: []byte("a.txt"), Mode: "100755", ObjectType: "blob", ObjectOID: nestedBlob}},
+	}, blobs: map[string][]byte{rootBlob: []byte("x"), nestedBlob: []byte("x")}, nodes: map[string]sourcevault.RetainedCommitNode{}}
+	authority := fidelityAuthority(commitOID, rootTree, "", 1)
+	service := newFidelityService(t, vault, authority)
+	prefixes, err := service.canonicalSearchPrefixes(context.Background(), authority, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := newRetainedTreeSearchCandidateSource(context.Background(), service, authority, prefixes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootName[0] = 'q'
+	var paths [][]byte
+	for {
+		candidate, ok, nextErr := source.Next(context.Background())
+		if nextErr != nil {
+			t.Fatal(nextErr)
+		}
+		if !ok {
+			break
+		}
+		paths = append(paths, candidate.Path)
+	}
+	if len(paths) != 2 || string(paths[0]) != "dir/a.txt" || string(paths[1]) != "z.txt" {
+		t.Fatalf("candidate paths = %q", paths)
+	}
+	verified, err := service.verifySearchCandidate(context.Background(), authority, searchCandidate{Path: paths[0]})
+	if err != nil || verified.Mode != "100755" || verified.BlobOID != nestedBlob || verified.Identity.PathID != pathID([]byte("dir/a.txt")) {
+		t.Fatalf("verified = %#v err=%v", verified, err)
+	}
+	if _, err := service.verifySearchCandidate(context.Background(), authority, searchCandidate{Path: []byte("missing")}); ErrorCode(err) != CodePathAbsent {
+		t.Fatalf("missing candidate error = %v", err)
+	}
+	if _, err := service.verifySearchCandidate(context.Background(), authority, searchCandidate{Path: []byte("dir")}); ErrorCode(err) != CodeObjectMismatch {
+		t.Fatalf("non-blob candidate error = %v", err)
+	}
+}
+
 func TestSearchTextLiteralExcludesInvalidUTF8AndNUL(t *testing.T) {
 	commitOID := strings.Repeat("1", 40)
 	rootTree := strings.Repeat("2", 40)

@@ -20,7 +20,7 @@ The web application defaults to `http://localhost:3000` and the API to `http://l
 5. Prepare the immutable execution package and review its exact digest and contents.
 6. Approve that exact package. Approval creates the package-linked Run; there is no extra chat confirmation step.
 7. Use the Run's derived execution assignment and runtime envelope.
-8. Execute required validation and prepare an audit packet against the audited commit.
+8. Complete execution; for adaptive execution, Relay runs the assigned validations and stores attempt-owned evidence; for deterministic-complete execution, assigned commands appear as `not_run` in audit evidence; then prepare an audit packet against the audited commit.
 9. Submit the audit decision with the Auditor role app.
 
 Before package preparation, the exact Delivery Ticket revision must be approved, its Ticket membership must be selected, and the complete Ticket Design Brief must be available. Deterministic Operations are optional and must be one exact accepted artifact when present. The Brief is the complete semantic implementation authority; operations never replace it. Package approval is the only active Run-creation path. Authored Execution Spec submission and standalone or Plan/pass-associated Run creation are retired.

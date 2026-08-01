@@ -177,12 +177,8 @@ func (s *Service) readTree(ctx context.Context, authority operations.SourceReadA
 }
 func exactEntry(entries []sourcevault.RetainedTreeEntry, name []byte) (sourcevault.RetainedTreeEntry, bool) {
 	for _, entry := range entries {
-		comparison := bytes.Compare(entry.Name, name)
-		if comparison == 0 {
+		if bytes.Equal(entry.Name, name) {
 			return entry, true
-		}
-		if comparison > 0 {
-			break
 		}
 	}
 	return sourcevault.RetainedTreeEntry{}, false

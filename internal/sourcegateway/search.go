@@ -11,19 +11,28 @@ import (
 	"relay/internal/sourcevault"
 )
 
+type searchCandidateSource interface {
+	Next(context.Context) (searchCandidate, bool, error)
+}
+
+// searchCandidate deliberately carries only producer-owned path bytes.
 type searchCandidate struct {
+	Path []byte
+}
+
+type searchTraversalCandidate struct {
 	path  []byte
 	entry sourcevault.RetainedTreeEntry
 }
 
-type searchCandidateHeap []searchCandidate
+type searchCandidateHeap []searchTraversalCandidate
 
 func (h searchCandidateHeap) Len() int { return len(h) }
 func (h searchCandidateHeap) Less(left, right int) bool {
 	return bytes.Compare(h[left].path, h[right].path) < 0
 }
 func (h searchCandidateHeap) Swap(left, right int) { h[left], h[right] = h[right], h[left] }
-func (h *searchCandidateHeap) Push(value any)      { *h = append(*h, value.(searchCandidate)) }
+func (h *searchCandidateHeap) Push(value any)      { *h = append(*h, value.(searchTraversalCandidate)) }
 func (h *searchCandidateHeap) Pop() any {
 	values := *h
 	last := len(values) - 1
@@ -32,14 +41,14 @@ func (h *searchCandidateHeap) Pop() any {
 	return value
 }
 
-type searchCandidateIterator struct {
+type retainedTreeSearchCandidateSource struct {
 	service    *Service
 	authority  operations.SourceReadAuthority
 	prefixes   []canonicalSearchPrefix
 	candidates searchCandidateHeap
 }
 
-func newSearchCandidateIterator(ctx context.Context, service *Service, authority operations.SourceReadAuthority, prefixes []canonicalSearchPrefix) (*searchCandidateIterator, error) {
+func newRetainedTreeSearchCandidateSource(ctx context.Context, service *Service, authority operations.SourceReadAuthority, prefixes []canonicalSearchPrefix) (*retainedTreeSearchCandidateSource, error) {
 	entries, err := service.readTree(ctx, authority, authority.Relationship.TreeOID)
 	if err != nil {
 		return nil, err
@@ -47,14 +56,14 @@ func newSearchCandidateIterator(ctx context.Context, service *Service, authority
 	values := searchCandidateHeap{}
 	heap.Init(&values)
 	for _, entry := range entries {
-		heap.Push(&values, searchCandidate{path: append([]byte(nil), entry.Name...), entry: entry})
+		heap.Push(&values, searchTraversalCandidate{path: append([]byte(nil), entry.Name...), entry: entry})
 	}
-	return &searchCandidateIterator{service: service, authority: authority, prefixes: prefixes, candidates: values}, nil
+	return &retainedTreeSearchCandidateSource{service: service, authority: authority, prefixes: prefixes, candidates: values}, nil
 }
 
-func (i *searchCandidateIterator) next(ctx context.Context) (searchCandidate, bool, error) {
+func (i *retainedTreeSearchCandidateSource) Next(ctx context.Context) (searchCandidate, bool, error) {
 	for i.candidates.Len() > 0 {
-		current := heap.Pop(&i.candidates).(searchCandidate)
+		current := heap.Pop(&i.candidates).(searchTraversalCandidate)
 		switch current.entry.ObjectType {
 		case "tree":
 			if !searchDirectoryIntersects(current.path, i.prefixes) {
@@ -65,12 +74,11 @@ func (i *searchCandidateIterator) next(ctx context.Context) (searchCandidate, bo
 				return searchCandidate{}, false, err
 			}
 			for _, entry := range entries {
-				heap.Push(&i.candidates, searchCandidate{path: joinPath(current.path, entry.Name), entry: entry})
+				heap.Push(&i.candidates, searchTraversalCandidate{path: joinPath(current.path, entry.Name), entry: entry})
 			}
 		case "blob":
 			if searchPathSelected(current.path, i.prefixes) {
-				current.path = append([]byte(nil), current.path...)
-				return current, true, nil
+				return searchCandidate{Path: append([]byte(nil), current.path...)}, true, nil
 			}
 		case "commit":
 			continue
@@ -81,154 +89,210 @@ func (i *searchCandidateIterator) next(ctx context.Context) (searchCandidate, bo
 	return searchCandidate{}, false, nil
 }
 
-func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResult, error) {
+type preparedSearch struct {
+	request       SearchRequest
+	literal       []byte
+	authority     operations.SourceReadAuthority
+	prefixes      []canonicalSearchPrefix
+	queryID       string
+	filterID      string
+	fingerprint   string
+	resume        searchResume
+	resumePending bool
+}
+
+type verifiedSearchCandidate struct {
+	Path     []byte
+	Identity PathIdentity
+	Mode     string
+	BlobOID  string
+}
+
+type searchCandidateState struct {
+	phase          searchPhase
+	nextOffset     int64
+	ordinal        int64
+	totalSize      int64
+	totalSizeKnown bool
+}
+
+func (s *Service) prepareSearch(ctx context.Context, request SearchRequest) (preparedSearch, error) {
 	literal, err := validateSearchRequest(request)
 	if err != nil {
-		return SearchResult{}, err
+		return preparedSearch{}, err
 	}
 	authority, err := s.resolveRevisionAuthority(ctx, request.PacketID, request.SurfaceContract, request.OperationID, request.RepositoryKey, request.Revision)
 	if err != nil {
-		return SearchResult{}, err
+		return preparedSearch{}, err
 	}
 	prefixes, err := s.canonicalSearchPrefixes(ctx, authority, request.Prefixes)
 	if err != nil {
-		return SearchResult{}, err
+		return preparedSearch{}, err
 	}
-	queryID := searchQueryID(request.Mode, literal)
-	filterID := searchFilterID(prefixes)
-	fingerprint := searchFingerprint(authority, request.Mode, literal, prefixes, request.Budget)
-	var resume searchResume
-	resumePending := false
+	prepared := preparedSearch{request: request, literal: literal, authority: authority, prefixes: prefixes, queryID: searchQueryID(request.Mode, literal), filterID: searchFilterID(prefixes), fingerprint: searchFingerprint(authority, request.Mode, literal, prefixes, request.Budget)}
 	if request.Cursor != "" {
-		resume, err = s.decodeSearchCursor(ctx, authority, fingerprint, request.Cursor)
+		prepared.resume, err = s.decodeSearchCursor(ctx, authority, prepared.fingerprint, request.Cursor)
 		if err != nil {
-			return SearchResult{}, err
+			return preparedSearch{}, err
 		}
-		if request.Mode == SearchModeByteLiteral && resume.phase != searchPhaseLiteralScan {
-			return SearchResult{}, &Error{Code: CodeInvalidCursor}
+		if request.Mode == SearchModeByteLiteral && prepared.resume.phase != searchPhaseLiteralScan {
+			return preparedSearch{}, &Error{Code: CodeInvalidCursor}
 		}
-		resumePending = true
+		prepared.resumePending = true
 	}
-	iterator, err := newSearchCandidateIterator(ctx, s, authority, prefixes)
+	return prepared, nil
+}
+
+func (s *Service) verifySearchCandidate(ctx context.Context, authority operations.SourceReadAuthority, candidate searchCandidate) (verifiedSearchCandidate, error) {
+	entry, err := s.resolvePathEntry(ctx, authority, candidate.Path)
+	if err != nil {
+		return verifiedSearchCandidate{}, err
+	}
+	if entry.ObjectType != "blob" {
+		return verifiedSearchCandidate{}, &Error{Code: CodeObjectMismatch}
+	}
+	identity, err := s.makePathIdentity(ctx, authority, candidate.Path)
+	if err != nil {
+		return verifiedSearchCandidate{}, err
+	}
+	return verifiedSearchCandidate{Path: append([]byte(nil), candidate.Path...), Identity: identity, Mode: entry.Mode, BlobOID: entry.ObjectOID}, nil
+}
+
+func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResult, error) {
+	prepared, err := s.prepareSearch(ctx, request)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	result := SearchResult{Source: fidelitySourceIdentity(authority), Mode: request.Mode, QueryID: queryID, FilterID: filterID, Matches: []SearchMatch{}}
+	source, err := newRetainedTreeSearchCandidateSource(ctx, s, prepared.authority, prepared.prefixes)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	result := SearchResult{Source: fidelitySourceIdentity(prepared.authority), Mode: prepared.request.Mode, QueryID: prepared.queryID, FilterID: prepared.filterID, Matches: []SearchMatch{}}
 	for {
-		candidate, ok, nextErr := iterator.next(ctx)
+		candidate, ok, nextErr := source.Next(ctx)
 		if nextErr != nil {
 			return SearchResult{}, nextErr
 		}
 		if !ok {
-			if resumePending {
+			if prepared.resumePending {
 				return SearchResult{}, &Error{Code: CodeInvalidCursor}
 			}
 			result.Completion = SearchCompletionComplete
 			return result, nil
 		}
-		identity, identityErr := s.makePathIdentity(ctx, authority, candidate.path)
-		if identityErr != nil {
-			return SearchResult{}, identityErr
-		}
-		phase := searchPhaseLiteralScan
-		nextOffset := int64(0)
-		ordinal := int64(0)
-		totalSize := int64(0)
-		totalSizeKnown := false
-		if request.Mode == SearchModeTextLiteral {
-			phase = searchPhaseTextValidation
-		}
-		if resumePending {
-			comparison := bytes.Compare(candidate.path, resume.path)
+		if prepared.resumePending {
+			comparison := bytes.Compare(candidate.Path, prepared.resume.path)
 			if comparison < 0 {
 				continue
 			}
-			if comparison > 0 || identity.PathID != resume.pathID || candidate.entry.ObjectOID != resume.blobOID {
+			if comparison > 0 {
 				return SearchResult{}, &Error{Code: CodeInvalidCursor}
 			}
-			phase = resume.phase
-			nextOffset = resume.nextOffset
-			ordinal = resume.ordinal
-			totalSize = resume.totalSize
-			totalSizeKnown = resume.totalSizeKnown
-			resumePending = false
 		}
-		// A cursor at the end of a known blob represents a fully decided
-		// candidate. It must not consume a renewed object budget again.
-		if !resumePending && phase == searchPhaseLiteralScan && totalSizeKnown && nextOffset >= totalSize {
-			continue
+		verified, verifyErr := s.verifySearchCandidate(ctx, prepared.authority, candidate)
+		if verifyErr != nil {
+			return SearchResult{}, verifyErr
 		}
-		if result.ExaminedObjects >= request.Budget.ExaminedObjects {
-			minimumNextBytes := int64(len(literal))
-			if phase == searchPhaseTextValidation {
-				minimumNextBytes = utf8.UTFMax
-			}
-			return s.finishSearchIncomplete(authority, fingerprint, result, identity, candidate.entry.ObjectOID, phase, nextOffset, ordinal, totalSize, totalSizeKnown, SearchCompletionBudgetIncomplete, true, request.Budget.ExaminedBytes-result.ExaminedBytes < minimumNextBytes)
+		state := searchCandidateState{phase: searchPhaseLiteralScan}
+		if prepared.request.Mode == SearchModeTextLiteral {
+			state.phase = searchPhaseTextValidation
 		}
-		result.ExaminedObjects++
-		if phase == searchPhaseTextValidation {
-			for {
-				remaining := request.Budget.ExaminedBytes - result.ExaminedBytes
-				if remaining < utf8.UTFMax {
-					return s.finishSearchIncomplete(authority, fingerprint, result, identity, candidate.entry.ObjectOID, phase, nextOffset, 0, totalSize, totalSizeKnown, SearchCompletionBudgetIncomplete, false, true)
-				}
-				validation, validationErr := s.validateSearchText(ctx, authority, candidate.entry.ObjectOID, nextOffset, remaining, totalSize, totalSizeKnown)
-				if validationErr != nil {
-					return SearchResult{}, validationErr
-				}
-				result.ExaminedBytes += validation.examined
-				totalSize = validation.totalSize
-				totalSizeKnown = validation.totalSizeKnown
-				if validation.invalid {
-					break
-				}
-				nextOffset = validation.nextOffset
-				if validation.complete {
-					phase = searchPhaseLiteralScan
-					nextOffset = 0
-					break
-				}
+		if prepared.resumePending {
+			if verified.Identity.PathID != prepared.resume.pathID || verified.BlobOID != prepared.resume.blobOID {
+				return SearchResult{}, &Error{Code: CodeInvalidCursor}
 			}
-			if phase == searchPhaseTextValidation {
-				continue
-			}
+			state = searchCandidateState{phase: prepared.resume.phase, nextOffset: prepared.resume.nextOffset, ordinal: prepared.resume.ordinal, totalSize: prepared.resume.totalSize, totalSizeKnown: prepared.resume.totalSizeKnown}
+			prepared.resumePending = false
 		}
-		for {
-			remaining := request.Budget.ExaminedBytes - result.ExaminedBytes
-			if remaining < int64(len(literal)) {
-				return s.finishSearchIncomplete(authority, fingerprint, result, identity, candidate.entry.ObjectOID, searchPhaseLiteralScan, nextOffset, ordinal, totalSize, totalSizeKnown, SearchCompletionBudgetIncomplete, false, true)
-			}
-			page, readErr := s.vault.ReadRetainedBlobRange(ctx, sourcevault.ReadRetainedBlobRangeRequest{Relationship: authority.Relationship, BlobOID: candidate.entry.ObjectOID, Offset: nextOffset, Limit: int64(len(literal))})
-			if readErr != nil {
-				return SearchResult{}, mapVaultError(readErr)
-			}
-			if page.BlobOID != candidate.entry.ObjectOID || page.Offset != nextOffset || page.TotalSize < 0 || page.Offset+int64(len(page.Bytes)) > page.TotalSize || int64(len(page.Bytes)) > int64(len(literal)) {
-				return SearchResult{}, &Error{Code: CodeObjectMismatch}
-			}
-			if totalSizeKnown && page.TotalSize != totalSize {
-				return SearchResult{}, &Error{Code: CodeObjectMismatch}
-			}
-			totalSize = page.TotalSize
-			totalSizeKnown = true
-			result.ExaminedBytes += int64(len(page.Bytes))
-			if int64(len(page.Bytes)) < int64(len(literal)) {
-				if page.Offset+int64(len(page.Bytes)) != page.TotalSize {
-					return SearchResult{}, &Error{Code: CodeObjectMismatch}
-				}
-				break
-			}
-			if bytes.Equal(page.Bytes, literal) {
-				result.Matches = append(result.Matches, SearchMatch{MatchID: searchMatchID(authority, request.Mode, queryID, filterID, identity.PathID, candidate.entry.ObjectOID, nextOffset, int64(len(literal)), ordinal), Path: identity, FileMode: candidate.entry.Mode, BlobOID: candidate.entry.ObjectOID, ByteOffset: nextOffset, MatchLength: int64(len(literal)), OccurrenceOrdinal: ordinal})
-				ordinal++
-				nextOffset++
-				if len(result.Matches) == request.Limit {
-					return s.finishSearchIncomplete(authority, fingerprint, result, identity, candidate.entry.ObjectOID, searchPhaseLiteralScan, nextOffset, ordinal, totalSize, totalSizeKnown, SearchCompletionPageIncomplete, false, false)
-				}
-			} else {
-				nextOffset++
-			}
+		var complete bool
+		result, complete, err = s.matchRetainedSearchCandidate(ctx, prepared, verified, state, result)
+		if err != nil || !complete {
+			return result, err
 		}
 	}
+}
+
+func (s *Service) matchRetainedSearchCandidate(ctx context.Context, prepared preparedSearch, candidate verifiedSearchCandidate, state searchCandidateState, result SearchResult) (SearchResult, bool, error) {
+	if state.phase == searchPhaseLiteralScan && state.totalSizeKnown && state.nextOffset >= state.totalSize {
+		return result, true, nil
+	}
+	if result.ExaminedObjects >= prepared.request.Budget.ExaminedObjects {
+		minimumNextBytes := int64(len(prepared.literal))
+		if state.phase == searchPhaseTextValidation {
+			minimumNextBytes = utf8.UTFMax
+		}
+		return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionBudgetIncomplete, true, prepared.request.Budget.ExaminedBytes-result.ExaminedBytes < minimumNextBytes)
+	}
+	result.ExaminedObjects++
+	if state.phase == searchPhaseTextValidation {
+		for {
+			remaining := prepared.request.Budget.ExaminedBytes - result.ExaminedBytes
+			if remaining < utf8.UTFMax {
+				state.ordinal = 0
+				return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionBudgetIncomplete, false, true)
+			}
+			validation, err := s.validateSearchText(ctx, prepared.authority, candidate.BlobOID, state.nextOffset, remaining, state.totalSize, state.totalSizeKnown)
+			if err != nil {
+				return SearchResult{}, false, err
+			}
+			result.ExaminedBytes += validation.examined
+			state.totalSize = validation.totalSize
+			state.totalSizeKnown = validation.totalSizeKnown
+			if validation.invalid {
+				break
+			}
+			state.nextOffset = validation.nextOffset
+			if validation.complete {
+				state.phase = searchPhaseLiteralScan
+				state.nextOffset = 0
+				break
+			}
+		}
+		if state.phase == searchPhaseTextValidation {
+			return result, true, nil
+		}
+	}
+	for {
+		remaining := prepared.request.Budget.ExaminedBytes - result.ExaminedBytes
+		if remaining < int64(len(prepared.literal)) {
+			state.phase = searchPhaseLiteralScan
+			return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionBudgetIncomplete, false, true)
+		}
+		page, err := s.vault.ReadRetainedBlobRange(ctx, sourcevault.ReadRetainedBlobRangeRequest{Relationship: prepared.authority.Relationship, BlobOID: candidate.BlobOID, Offset: state.nextOffset, Limit: int64(len(prepared.literal))})
+		if err != nil {
+			return SearchResult{}, false, mapVaultError(err)
+		}
+		if page.BlobOID != candidate.BlobOID || page.Offset != state.nextOffset || page.TotalSize < 0 || page.Offset+int64(len(page.Bytes)) > page.TotalSize || int64(len(page.Bytes)) > int64(len(prepared.literal)) {
+			return SearchResult{}, false, &Error{Code: CodeObjectMismatch}
+		}
+		if state.totalSizeKnown && page.TotalSize != state.totalSize {
+			return SearchResult{}, false, &Error{Code: CodeObjectMismatch}
+		}
+		state.totalSize = page.TotalSize
+		state.totalSizeKnown = true
+		result.ExaminedBytes += int64(len(page.Bytes))
+		if int64(len(page.Bytes)) < int64(len(prepared.literal)) {
+			if page.Offset+int64(len(page.Bytes)) != page.TotalSize {
+				return SearchResult{}, false, &Error{Code: CodeObjectMismatch}
+			}
+			return result, true, nil
+		}
+		if bytes.Equal(page.Bytes, prepared.literal) {
+			result.Matches = append(result.Matches, SearchMatch{MatchID: searchMatchID(prepared.authority, prepared.request.Mode, prepared.queryID, prepared.filterID, candidate.Identity.PathID, candidate.BlobOID, state.nextOffset, int64(len(prepared.literal)), state.ordinal), Path: candidate.Identity, FileMode: candidate.Mode, BlobOID: candidate.BlobOID, ByteOffset: state.nextOffset, MatchLength: int64(len(prepared.literal)), OccurrenceOrdinal: state.ordinal})
+			state.ordinal++
+			state.nextOffset++
+			if len(result.Matches) == prepared.request.Limit {
+				return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionPageIncomplete, false, false)
+			}
+		} else {
+			state.nextOffset++
+		}
+	}
+}
+
+func (s *Service) finishSearchCandidateIncomplete(prepared preparedSearch, result SearchResult, candidate verifiedSearchCandidate, state searchCandidateState, completion SearchCompletion, objectExhausted, byteExhausted bool) (SearchResult, bool, error) {
+	value, err := s.finishSearchIncomplete(prepared.authority, prepared.fingerprint, result, candidate.Identity, candidate.BlobOID, state.phase, state.nextOffset, state.ordinal, state.totalSize, state.totalSizeKnown, completion, objectExhausted, byteExhausted)
+	return value, false, err
 }
 
 type searchTextValidation struct {

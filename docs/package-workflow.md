@@ -48,7 +48,7 @@ The submitted Deterministic Operations artifact contains exact operations and de
 
 ## Validation Evidence
 
-Required validation commands originate in the approved execution assignment and propagate through execution admission and launch. Under adaptive execution, one adaptive Executor attempt exists and structured command results belong to that attempt's `execution_evidence`. Under deterministic-complete execution, no adaptive attempt or attempt-owned `execution_evidence` artifact exists; assigned validation commands are represented as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact authority family and validation is not an independent Run-level authority.
+Under adaptive execution, required validation commands originate in the approved execution assignment, propagate through execution admission and adaptive launch, and structured command results belong to the one adaptive Executor attempt's `execution_evidence`. Under deterministic-complete execution, no adaptive attempt or attempt-owned `execution_evidence` artifact exists; assigned validation commands are represented as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact authority family and validation is not an independent Run-level authority.
 
 ## Audit Packets
 

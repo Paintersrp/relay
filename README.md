@@ -27,7 +27,7 @@ Each package has one effective mode:
 
 There is at most one adaptive Executor attempt. Relay does not perform multi-candidate or multi-agent execution.
 
-Required validation commands originate in the approved execution assignment and propagate through execution admission and launch. Adaptive execution produces structured attempt-owned `execution_evidence`; deterministic-complete execution has no adaptive attempt and represents assigned validations as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact family.
+In adaptive modes, required validation commands originate in the approved execution assignment, propagate through execution admission and adaptive launch, and produce structured attempt-owned `execution_evidence`. In deterministic-complete execution, no adaptive launch occurs and assigned validations appear as `not_run` audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact family.
 
 ### Audit and remediation
 
