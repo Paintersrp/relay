@@ -11,6 +11,7 @@ import (
 func RenameNoReplace(source, target string) error {
 	return windows.MoveFile(windows.StringToUTF16Ptr(source), windows.StringToUTF16Ptr(target))
 }
+func RemoveOwnedStaging(string, string) error { return os.ErrInvalid }
 
 func SyncDirectory(path string) error {
 	f, err := os.Open(path)

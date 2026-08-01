@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"relay/internal/sourceindex"
@@ -43,6 +44,9 @@ func TestNewValidatesConfiguration(t *testing.T) {
 }
 
 func TestCleanupRemovesOnlyExactOwnedStaging(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("anchored staging cleanup is supported on Linux")
+	}
 	root := t.TempDir()
 	generationID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	nonce := "0123456789abcdef0123456789abcdef"
@@ -67,6 +71,9 @@ func TestCleanupRemovesOnlyExactOwnedStaging(t *testing.T) {
 }
 
 func TestCleanupRejectsSymlinkStagingParent(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("anchored staging cleanup is supported on Linux")
+	}
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, sourceindex.StagingDirectoryName)); err != nil {
@@ -75,6 +82,23 @@ func TestCleanupRejectsSymlinkStagingParent(t *testing.T) {
 	s := &Supervisor{config: Config{IndexRoot: root}}
 	if err := s.cleanup("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "0123456789abcdef0123456789abcdef"); err == nil {
 		t.Fatal("cleanup accepted a symlink staging parent")
+	}
+}
+
+func TestSafeFailureMessageIsSupervisorOwned(t *testing.T) {
+	for _, code := range []string{
+		"invalid_request", "unsafe_path", "source_unavailable", "source_mismatch",
+		"tree_invalid", "object_invalid", "content_read_failed", "index_build_failed",
+		"artifact_write_failed", "verification_failed", "cancelled", "internal",
+	} {
+		message := safeFailureMessage(code)
+		if message == "" || message == code {
+			t.Fatalf("safeFailureMessage(%q) = %q", code, message)
+		}
+	}
+	malicious := "/private/repository TOKEN=secret\nstack trace\ngit fetch origin"
+	if got := safeFailureMessage(malicious); got == malicious || got != "source-index worker reported build failure" {
+		t.Fatalf("untrusted child text reached persistence message: %q", got)
 	}
 }
 

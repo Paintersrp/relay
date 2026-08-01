@@ -4,7 +4,8 @@ package fsatomic
 
 import "os"
 
-func RenameNoReplace(string, string) error { return os.ErrInvalid }
+func RenameNoReplace(string, string) error    { return os.ErrInvalid }
+func RemoveOwnedStaging(string, string) error { return os.ErrInvalid }
 
 func SyncDirectory(path string) error {
 	f, err := os.Open(path)

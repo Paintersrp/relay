@@ -97,8 +97,11 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 		return workflow.SourceIndexGeneration{}, err
 	}
 
-	lease, _, _, err := s.acquireLease(ctx, generation)
+	lease, err := s.acquireLease(ctx, generation)
 	if err != nil {
+		if errors.Is(err, ErrFailureFinalization) {
+			return workflow.SourceIndexGeneration{}, err
+		}
 		return s.fail(generationID, "source_unavailable", "source authority is unavailable", nil, "", ErrAuthorityUnavailable)
 	}
 
@@ -127,7 +130,7 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 		return s.fail(generationID, code, message, lease, nonce, err)
 	}
 	if response.Status == indexerprotocol.BuildStatusFailed {
-		return s.fail(generationID, response.Failure.Code, safeFailureMessage(response.Failure.Message), lease, nonce, errors.New("indexer reported failure"))
+		return s.fail(generationID, response.Failure.Code, safeFailureMessage(response.Failure.Code), lease, nonce, errors.New("indexer reported failure"))
 	}
 	verified, err := s.verify(request, nonce, *response.Result)
 	if err != nil {
@@ -141,26 +144,41 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 		}
 		return s.fail(generationID, "publication_failed", "source-index publication failed", lease, nonce, ErrPublication)
 	}
-	ready, err := s.store.MarkSourceIndexGenerationReady(ctx, workflow.MarkSourceIndexGenerationReadyParams{GenerationID: generationID, GenerationManifestSHA256: verified.generation, CoverageManifestSHA256: verified.coverage, ArtifactManifestSHA256: verified.artifact})
-	if err != nil {
-		closeErr := lease.Close()
-		return workflow.SourceIndexGeneration{}, errors.Join(ErrPublicationAfterExposure, ErrPersistenceAfterPublication, sanitizedError(closeErr))
-	}
 	if err := lease.Close(); err != nil {
 		return workflow.SourceIndexGeneration{}, fmt.Errorf("%w: lease release", ErrPublicationAfterExposure)
+	}
+	ready, err := s.store.MarkSourceIndexGenerationReady(ctx, workflow.MarkSourceIndexGenerationReadyParams{GenerationID: generationID, GenerationManifestSHA256: verified.generation, CoverageManifestSHA256: verified.coverage, ArtifactManifestSHA256: verified.artifact})
+	if err != nil {
+		return workflow.SourceIndexGeneration{}, ErrPersistenceAfterPublication
 	}
 	return ready, nil
 }
 
-func (s *Supervisor) acquireLease(ctx context.Context, generation workflow.SourceIndexGeneration) (SourceLease, string, string, error) {
+type ownedLease struct {
+	lease SourceLease
+	once  sync.Once
+	err   error
+}
+
+func (l *ownedLease) RepositoryPath() string { return l.lease.RepositoryPath() }
+func (l *ownedLease) Close() error {
+	l.once.Do(func() { l.err = l.lease.Close() })
+	return l.err
+}
+
+func (s *Supervisor) acquireLease(ctx context.Context, generation workflow.SourceIndexGeneration) (SourceLease, error) {
 	lease, err := s.authority.AcquireSourceIndexLease(ctx, generation.Identity)
-	if err != nil || lease == nil || !cleanAbsolute(lease.RepositoryPath()) {
-		if lease != nil {
-			_ = lease.Close()
-		}
-		return nil, "source_unavailable", "source authority is unavailable", errors.New("lease unavailable")
+	if lease == nil {
+		return nil, errors.New("lease unavailable")
 	}
-	return lease, "", "", nil
+	owned := &ownedLease{lease: lease}
+	if err != nil || !cleanAbsolute(lease.RepositoryPath()) {
+		if closeErr := owned.Close(); closeErr != nil {
+			return nil, ErrFailureFinalization
+		}
+		return nil, errors.New("lease unavailable")
+	}
+	return owned, nil
 }
 
 type verifiedResult struct{ generation, coverage, artifact string }
@@ -288,9 +306,9 @@ func (s *Supervisor) fail(generationID, code, message string, lease SourceLease,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, markErr := s.store.MarkSourceIndexGenerationFailed(ctx, workflow.MarkSourceIndexGenerationFailedParams{GenerationID: generationID, FailureCode: safeFailureCode(code), FailureMessage: message})
+	_, markErr := s.store.MarkSourceIndexGenerationFailed(ctx, workflow.MarkSourceIndexGenerationFailedParams{GenerationID: generationID, FailureCode: safeFailureCode(code), FailureMessage: safeFailureMessage(code)})
 	if markErr != nil {
-		return workflow.SourceIndexGeneration{}, errors.Join(cause, errors.New("source-index failure finalization failed"))
+		return workflow.SourceIndexGeneration{}, errors.Join(cause, ErrFailureFinalization)
 	}
 	return workflow.SourceIndexGeneration{}, cause
 }
@@ -299,39 +317,13 @@ func (s *Supervisor) cleanup(generationID, nonce string) error {
 	if err := sourceindex.ValidateIndexRoot(s.config.IndexRoot, s.config.ProtectedStorage); err != nil {
 		return errors.New("unsafe index root")
 	}
-	rootInfo, err := os.Lstat(s.config.IndexRoot)
-	if err != nil || rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
-		return errors.New("unsafe index root")
-	}
-	stagingParent := filepath.Join(s.config.IndexRoot, sourceindex.StagingDirectoryName)
-	parentInfo, err := os.Lstat(stagingParent)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil || parentInfo.Mode()&os.ModeSymlink != 0 || !parentInfo.IsDir() {
-		return errors.New("unsafe staging parent")
-	}
-	path, err := sourceindex.StagingDirectory(s.config.IndexRoot, generationID, nonce)
-	if err != nil {
+	if _, err := sourceindex.StagingRelativeDirectory(generationID, nonce); err != nil {
 		return errors.New("invalid owned staging directory")
 	}
-	if filepath.Dir(path) != stagingParent || filepath.Base(path) != generationID+"-"+nonce {
-		return errors.New("owned staging path disagreement")
+	if err := fsatomic.RemoveOwnedStaging(s.config.IndexRoot, generationID+"-"+nonce); err != nil {
+		return fmt.Errorf("cannot remove owned staging directory: %w", err)
 	}
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return errors.New("cannot inspect owned staging directory")
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return os.Remove(path)
-	}
-	if !info.IsDir() {
-		return errors.New("owned staging path is not a directory")
-	}
-	return os.RemoveAll(path)
+	return nil
 }
 
 func stagingNonce() (string, error) {
@@ -351,11 +343,41 @@ func safeFailureCode(code string) string {
 	}
 	return "indexer_process_failed"
 }
-func safeFailureMessage(message string) string {
-	if strings.TrimSpace(message) == message && message != "" && len(message) <= 4096 {
-		return message
+func safeFailureMessage(code string) string {
+	switch safeFailureCode(code) {
+	case indexerprotocol.FailureInvalidRequest:
+		return "source-index worker rejected its request"
+	case indexerprotocol.FailureUnsafePath:
+		return "source-index worker rejected a storage path"
+	case indexerprotocol.FailureSourceUnavailable:
+		return "source-index worker could not access source"
+	case indexerprotocol.FailureSourceMismatch:
+		return "source-index worker found different source content"
+	case indexerprotocol.FailureTreeInvalid:
+		return "source-index worker found an invalid source tree"
+	case indexerprotocol.FailureObjectInvalid:
+		return "source-index worker found an invalid source object"
+	case indexerprotocol.FailureContentReadFailed:
+		return "source-index worker could not read source content"
+	case indexerprotocol.FailureIndexBuildFailed:
+		return "source-index worker could not build the index"
+	case indexerprotocol.FailureArtifactWrite:
+		return "source-index worker could not write index artifacts"
+	case indexerprotocol.FailureInternal:
+		return "source-index worker encountered an internal failure"
+	case "indexer_start_failed":
+		return "source-index worker could not start"
+	case "indexer_output_exceeded":
+		return "source-index worker response exceeded limits"
+	case "indexer_protocol_failed":
+		return "source-index worker response was invalid"
+	case "publication_failed":
+		return "source-index publication failed"
+	case "build_options_mismatch":
+		return "source-index build options did not match generation"
+	default:
+		return "source-index worker reported build failure"
 	}
-	return "indexer reported build failure"
 }
 
 func sanitizedError(err error) error {
@@ -428,7 +450,19 @@ func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID 
 		processMu.Unlock()
 		waitResult <- waitErr
 	}()
-	waitErr := <-waitResult
+	var waitErr error
+	select {
+	case waitErr = <-waitResult:
+	case <-time.After(5 * time.Second):
+		terminateProcess(cmd)
+		_ = stdout.Close()
+		_ = stderr.Close()
+		select {
+		case waitErr = <-waitResult:
+		case <-time.After(5 * time.Second):
+			return indexerprotocol.BuildResponse{}, "indexer_process_failed", "indexer process did not terminate", errors.New("indexer process did not terminate")
+		}
+	}
 	// Descendants may retain inherited pipes after the direct child exits.
 	terminateResidualProcessGroup(cmd)
 	_ = stdout.Close()

@@ -11,8 +11,9 @@ import (
 )
 
 // AcquireSourceIndexLease exposes an already-retained closure to the index
-// supervisor while holding the vault's maintenance lock. It never imports or
-// creates source authority.
+// supervisor while holding the vault's maintenance lock. That lock is local to
+// this Manager instance; it does not claim cross-manager or cross-process
+// exclusion. It never imports or creates source authority.
 func (m *Manager) AcquireSourceIndexLease(ctx context.Context, identity sourceindex.GenerationIdentity) (supervisor.SourceLease, error) {
 	if m == nil {
 		return nil, &Error{Code: CodeVaultUnavailable}
