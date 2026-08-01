@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"relay/internal/sourceindex"
 	"relay/internal/sourceindex/reader"
@@ -322,6 +323,254 @@ func TestExecutePreparedSearchRejectsInvalidCandidateStreams(t *testing.T) {
 			prepared := preparedSearch{authority: authority, prefixes: []canonicalSearchPrefix{{bytes: prefix}}, literal: []byte("z"), request: byteSearchRequest([]byte("z"))}
 			_, err := service.executePreparedSearch(context.Background(), prepared, &hybridPathSource{paths: test.paths})
 			if ErrorCode(err) != CodeIntegrityFailure {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
+type hybridErrAfterChecks struct {
+	checks int
+	failAt int
+	err    error
+}
+
+func (c *hybridErrAfterChecks) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *hybridErrAfterChecks) Done() <-chan struct{}       { return nil }
+func (c *hybridErrAfterChecks) Err() error {
+	c.checks++
+	if c.checks >= c.failAt {
+		return c.err
+	}
+	return nil
+}
+func (c *hybridErrAfterChecks) Value(any) any { return nil }
+
+func TestHybridMaterializationCancellationIsAtomic(t *testing.T) {
+	descriptor := hybridTestDescriptor(t)
+	cases := []struct {
+		name     string
+		indexed  []reader.Candidate
+		fallback []reader.Candidate
+		failAt   int
+	}{
+		{name: "indexed validation", indexed: []reader.Candidate{{Path: []byte("a")}}, failAt: 5},
+		{name: "fallback validation", fallback: []reader.Candidate{{Path: []byte("a")}}, failAt: 5},
+		{name: "canonical merge", indexed: []reader.Candidate{{Path: []byte("a")}}, fallback: []reader.Candidate{{Path: []byte("b")}}, failAt: 9},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := &hybridErrAfterChecks{failAt: test.failAt, err: context.Canceled}
+			fake := &hybridReaderFake{descriptor: descriptor, indexed: test.indexed, fallback: test.fallback}
+			source, err := newHybridTextSearchCandidateSource(ctx, fake, descriptor, "abc", []canonicalSearchPrefix{{bytes: []byte{}}})
+			if source != nil || !errors.Is(err, context.Canceled) {
+				t.Fatalf("source=%v err=%v checks=%d", source, err, ctx.checks)
+			}
+		})
+	}
+}
+
+func TestHybridCandidateEmissionCancellationReturnsNoCandidate(t *testing.T) {
+	descriptor := hybridTestDescriptor(t)
+	source, err := newHybridTextSearchCandidateSource(context.Background(), &hybridReaderFake{
+		descriptor: descriptor,
+		indexed:    []reader.Candidate{{Path: []byte("a")}},
+	}, descriptor, "abc", []canonicalSearchPrefix{{bytes: []byte{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := &hybridErrAfterChecks{failAt: 1, err: context.DeadlineExceeded}
+	candidate, ok, err := source.Next(ctx)
+	if ok || !errors.Is(err, context.DeadlineExceeded) || candidate.Path != nil {
+		t.Fatalf("candidate=%#v ok=%v err=%v", candidate, ok, err)
+	}
+}
+
+func hybridTextPage(t *testing.T, service *Service, request SearchRequest, descriptor reader.Descriptor, indexed, fallback []reader.Candidate) SearchResult {
+	t.Helper()
+	prepared, err := service.prepareSearch(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := newHybridTextSearchCandidateSource(context.Background(), &hybridReaderFake{descriptor: descriptor, indexed: indexed, fallback: fallback}, descriptor, string(prepared.literal), prepared.prefixes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.executePreparedSearch(context.Background(), prepared, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestHybridOverlappingPaginationReconstructsSource(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	blobOID := strings.Repeat("3", 40)
+	authority := fidelityAuthority(commitOID, rootTree, "", 1)
+	service := newFidelityService(t, &fidelityVaultFake{
+		trees: map[string][]sourcevault.RetainedTreeEntry{rootTree: {{Name: []byte("a.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}},
+		blobs: map[string][]byte{blobOID: []byte("aaaaa")},
+		nodes: map[string]sourcevault.RetainedCommitNode{},
+	}, authority)
+	descriptor := hybridTestDescriptor(t)
+	request := textSearchRequest("aaa")
+	request.Limit = 1
+	request.Budget = SearchBudget{ExaminedObjects: 1, ExaminedBytes: 64}
+	indexed := []reader.Candidate{{Path: []byte("a.txt")}}
+	var matches []SearchMatch
+	for page := 0; page < 8; page++ {
+		result := hybridTextPage(t, service, request, descriptor, indexed, nil)
+		matches = append(matches, result.Matches...)
+		if result.Completion == SearchCompletionComplete {
+			if result.Cursor != "" || len(result.Matches) != 0 {
+				t.Fatalf("terminal page=%#v", result)
+			}
+			break
+		}
+		if result.Cursor == "" || len(result.Matches) != 1 {
+			t.Fatalf("incomplete page=%#v", result)
+		}
+		request.Cursor = result.Cursor
+		if page == 7 {
+			t.Fatal("pagination did not terminate")
+		}
+	}
+	if len(matches) != 3 {
+		t.Fatalf("matches=%#v", matches)
+	}
+	for i, match := range matches {
+		if match.ByteOffset != int64(i) || match.OccurrenceOrdinal != int64(i) || match.MatchLength != 3 || match.Path.PathID != pathID([]byte("a.txt")) || match.BlobOID != blobOID || match.MatchID == "" {
+			t.Fatalf("match %d=%#v", i, match)
+		}
+		if i > 0 && match.MatchID == matches[i-1].MatchID {
+			t.Fatalf("duplicate match identity at %d", i)
+		}
+	}
+}
+
+func TestHybridObjectBudgetContinuationResumesExactCandidate(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	firstBlob := strings.Repeat("3", 40)
+	secondBlob := strings.Repeat("4", 40)
+	authority := fidelityAuthority(commitOID, rootTree, "", 1)
+	service := newFidelityService(t, &fidelityVaultFake{
+		trees: map[string][]sourcevault.RetainedTreeEntry{rootTree: {
+			{Name: []byte("a.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: firstBlob},
+			{Name: []byte("b.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: secondBlob},
+		}},
+		blobs: map[string][]byte{firstBlob: []byte("needle"), secondBlob: []byte("needle")},
+		nodes: map[string]sourcevault.RetainedCommitNode{},
+	}, authority)
+	descriptor := hybridTestDescriptor(t)
+	request := textSearchRequest("needle")
+	request.Budget = SearchBudget{ExaminedObjects: 1, ExaminedBytes: 128}
+	indexed := []reader.Candidate{{Path: []byte("a.txt")}, {Path: []byte("b.txt")}}
+	first := hybridTextPage(t, service, request, descriptor, indexed, nil)
+	if first.Completion != SearchCompletionBudgetIncomplete || !first.ObjectBudgetExhausted || first.ByteBudgetExhausted || first.Cursor == "" || len(first.Matches) != 1 || first.Matches[0].Path.PathID != pathID([]byte("a.txt")) {
+		t.Fatalf("first=%#v", first)
+	}
+	cursor, err := service.cursors.Decode(first.Cursor)
+	path, ok := decodeCanonicalInline(cursor.AfterPath.InlineBase64)
+	if err != nil || !ok || string(path) != "b.txt" {
+		t.Fatalf("cursor=%#v err=%v", cursor, err)
+	}
+	request.Cursor = first.Cursor
+	second := hybridTextPage(t, service, request, descriptor, indexed, nil)
+	if second.Completion != SearchCompletionComplete || second.Cursor != "" || len(second.Matches) != 1 || second.Matches[0].Path.PathID != pathID([]byte("b.txt")) {
+		t.Fatalf("second=%#v", second)
+	}
+}
+
+func TestHybridByteBudgetZeroMatchContinuation(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	blobOID := strings.Repeat("3", 40)
+	authority := fidelityAuthority(commitOID, rootTree, "", 1)
+	service := newFidelityService(t, &fidelityVaultFake{
+		trees: map[string][]sourcevault.RetainedTreeEntry{rootTree: {{Name: []byte("a.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}},
+		blobs: map[string][]byte{blobOID: []byte("zzzzzz")},
+		nodes: map[string]sourcevault.RetainedCommitNode{},
+	}, authority)
+	descriptor := hybridTestDescriptor(t)
+	request := textSearchRequest("aaa")
+	request.Budget = SearchBudget{ExaminedObjects: 1, ExaminedBytes: 4}
+	indexed := []reader.Candidate{{Path: []byte("a.txt")}}
+	var all []SearchMatch
+	seenIncomplete := false
+	seenPartialValidation := false
+	seenLiteralScanExhaustion := false
+	for page := 0; page < 16; page++ {
+		result := hybridTextPage(t, service, request, descriptor, indexed, nil)
+		if len(result.Matches) != 0 || result.Cursor == "" && result.Completion != SearchCompletionComplete {
+			t.Fatalf("page=%d result=%#v", page, result)
+		}
+		all = append(all, result.Matches...)
+		if result.Completion == SearchCompletionComplete {
+			if result.Cursor != "" || result.ByteBudgetExhausted {
+				t.Fatalf("terminal result=%#v", result)
+			}
+			break
+		}
+		if result.Completion != SearchCompletionBudgetIncomplete || !result.ByteBudgetExhausted {
+			t.Fatalf("incomplete result=%#v", result)
+		}
+		cursor, err := service.cursors.Decode(result.Cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page == 0 && cursor.SearchPhase != searchPhaseTextValidation {
+			t.Fatalf("first cursor phase=%q", cursor.SearchPhase)
+		}
+		if page == 0 {
+			seenPartialValidation = cursor.SearchPhase == searchPhaseTextValidation && cursor.NextOffset > 0
+		}
+		if cursor.SearchPhase == searchPhaseLiteralScan {
+			seenLiteralScanExhaustion = true
+		}
+		seenIncomplete = true
+		request.Cursor = result.Cursor
+		if page == 15 {
+			t.Fatal("zero-match continuation did not terminate")
+		}
+	}
+	if !seenIncomplete || !seenPartialValidation || !seenLiteralScanExhaustion || len(all) != 0 {
+		t.Fatalf("incomplete=%v partial=%v literal=%v matches=%#v", seenIncomplete, seenPartialValidation, seenLiteralScanExhaustion, all)
+	}
+}
+
+func TestHybridResumeIntegrityRejectsReconstructedState(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	oldBlob := strings.Repeat("3", 40)
+	newBlob := strings.Repeat("4", 40)
+	authority := fidelityAuthority(commitOID, rootTree, "", 1)
+	service := newFidelityService(t, &fidelityVaultFake{
+		trees: map[string][]sourcevault.RetainedTreeEntry{rootTree: {{Name: []byte("a.txt"), Mode: "100644", ObjectType: "blob", ObjectOID: newBlob}}},
+		blobs: map[string][]byte{newBlob: []byte("needle")},
+		nodes: map[string]sourcevault.RetainedCommitNode{},
+	}, authority)
+	base := preparedSearch{authority: authority, prefixes: []canonicalSearchPrefix{{bytes: []byte{}}}, literal: []byte("needle"), request: textSearchRequest("needle"), resumePending: true}
+	cases := []struct {
+		name   string
+		paths  []reader.Candidate
+		resume searchResume
+	}{
+		{name: "resume path absent", paths: []reader.Candidate{{Path: []byte("a.txt")}, {Path: []byte("c.txt")}}, resume: searchResume{path: []byte("b.txt"), pathID: pathID([]byte("b.txt")), blobOID: oldBlob, phase: searchPhaseLiteralScan, totalSizeKnown: true, totalSize: 6}},
+		{name: "resume path after canonical source", paths: []reader.Candidate{{Path: []byte("b.txt")}}, resume: searchResume{path: []byte("a.txt"), pathID: pathID([]byte("a.txt")), blobOID: oldBlob, phase: searchPhaseLiteralScan, totalSizeKnown: true, totalSize: 6}},
+		{name: "blob changed", paths: []reader.Candidate{{Path: []byte("a.txt")}}, resume: searchResume{path: []byte("a.txt"), pathID: pathID([]byte("a.txt")), blobOID: oldBlob, phase: searchPhaseLiteralScan, totalSizeKnown: true, totalSize: 6}},
+		{name: "path identity changed", paths: []reader.Candidate{{Path: []byte("a.txt")}}, resume: searchResume{path: []byte("a.txt"), pathID: pathID([]byte("b.txt")), blobOID: newBlob, phase: searchPhaseLiteralScan, totalSizeKnown: true, totalSize: 6}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			prepared := base
+			prepared.resume = test.resume
+			source, err := newHybridTextSearchCandidateSource(context.Background(), &hybridReaderFake{descriptor: hybridTestDescriptor(t), indexed: test.paths}, hybridTestDescriptor(t), "needle", prepared.prefixes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.executePreparedSearch(context.Background(), prepared, source); ErrorCode(err) != CodeInvalidCursor {
 				t.Fatalf("error=%v", err)
 			}
 		})
