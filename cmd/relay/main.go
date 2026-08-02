@@ -39,15 +39,44 @@ type sourceIndexRuntime interface {
 	SetLogger(*slog.Logger)
 }
 
-var newWorkflowServer = server.NewWorkflow
+type relayLifecycle interface {
+	Handler() http.Handler
+	PrepareMCPIngress(string) (server.MCPIngressSummary, error)
+	StartMCPIngress(context.Context) error
+	ShutdownMCPIngress(context.Context) error
+}
+
+type httpLifecycle interface {
+	Serve(net.Listener) error
+	Shutdown(context.Context) error
+	Close() error
+}
+
+var newWorkflowServer = func(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []server.MCPHandler) (relayLifecycle, error) {
+	return server.NewWorkflow(store, log, ownerInstanceID, sourceVaults, mcpHandlers)
+}
 
 var listen = net.Listen
+
+var loadSourceIndexConfig = sourceindexruntime.LoadConfig
+
+var composeRetainedSourcePolicy = mcpcomposition.New
+
+var buildMCPHandlers = mcpbootstrap.BuildHandlers
+
+var newHTTPServer = func(handler http.Handler) httpLifecycle {
+	return &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+}
+
+var newShutdownContext = func() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 6*time.Second)
+}
 
 var newSourceIndexRuntime = func(store *workflowstore.Store, authority *sourcevault.Manager, indexConfig sourceindexruntime.Config) (sourceIndexRuntime, error) {
 	return sourceindexruntime.New(store, authority, indexConfig)
 }
 
-func constructRelayServer(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []server.MCPHandler) (*server.Server, error) {
+func constructRelayServer(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []server.MCPHandler) (relayLifecycle, error) {
 	relayServer, err := newWorkflowServer(store, log, ownerInstanceID, sourceVaults, mcpHandlers)
 	if err != nil {
 		return nil, fmt.Errorf("construct Relay server: %w", err)
@@ -114,7 +143,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 	if err != nil {
 		return fmt.Errorf("resolve workflow database storage: %w", err)
 	}
-	indexConfig, err := sourceindexruntime.LoadConfig(sourceindex.ProtectedStorage{SourceVaultRoot: vaultPath, WorkflowArtifactsRoot: artifactPath, WorkflowDatabasePath: databasePath})
+	indexConfig, err := loadSourceIndexConfig(sourceindex.ProtectedStorage{SourceVaultRoot: vaultPath, WorkflowArtifactsRoot: artifactPath, WorkflowDatabasePath: databasePath})
 	if err != nil {
 		return fmt.Errorf("load source-index runtime configuration: %w", err)
 	}
@@ -135,17 +164,17 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 			if !ownsRuntimeShutdown {
 				return
 			}
-			shutdown, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			shutdown, cancel := newShutdownContext()
 			defer cancel()
 			returnErr = errors.Join(returnErr, indexRuntime.Shutdown(shutdown))
 		}()
 		sourceOptions = append(sourceOptions, sourcegateway.WithSearchIndexProvider(indexRuntime))
 	}
-	policy, err := mcpcomposition.New(workflowStore, sourceVaults, authorityPublications, cursorKey, mcp.NewHTTPSFileParameterFetcher(), sourceOptions...)
+	policy, err := composeRetainedSourcePolicy(workflowStore, sourceVaults, authorityPublications, cursorKey, mcp.NewHTTPSFileParameterFetcher(), sourceOptions...)
 	if err != nil {
 		return fmt.Errorf("compose retained source policy: %w", err)
 	}
-	mcpHandlers, err := mcpbootstrap.BuildHandlers(workflowStore, policy, log)
+	mcpHandlers, err := buildMCPHandlers(workflowStore, policy, log)
 	if err != nil {
 		return fmt.Errorf("compose published MCP handlers: %w", err)
 	}
@@ -172,7 +201,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 	}
 	runContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	httpServer := &http.Server{Handler: relayServer.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	httpServer := newHTTPServer(relayServer.Handler())
 	serveResult := make(chan error, 1)
 	go func() {
 		err := httpServer.Serve(listener)
@@ -200,7 +229,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 	case runtimeErr = <-serveResult:
 		cancel()
 	}
-	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 6*time.Second)
+	shutdownContext, shutdownCancel := newShutdownContext()
 	defer shutdownCancel()
 	ingressResult := make(chan error, 1)
 	mainResult := make(chan error, 1)

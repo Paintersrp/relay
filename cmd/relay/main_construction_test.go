@@ -20,7 +20,7 @@ func startupSequence(
 	ownerInstanceID string,
 	sourceVaults *sourcevault.Manager,
 	mcpHandlers []server.MCPHandler,
-) (*server.Server, net.Listener, error) {
+) (relayLifecycle, net.Listener, error) {
 	s, err := constructRelayServer(store, log, ownerInstanceID, sourceVaults, mcpHandlers)
 	if err != nil {
 		return nil, nil, err
@@ -37,7 +37,7 @@ func TestRunPropagatesWorkflowServerConstructionError(t *testing.T) {
 	want := errors.New("construction failed")
 	original := newWorkflowServer
 	t.Cleanup(func() { newWorkflowServer = original })
-	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (*server.Server, error) {
+	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (relayLifecycle, error) {
 		return nil, want
 	}
 
@@ -64,7 +64,7 @@ func TestConstructionFailurePreventsListenerCreation(t *testing.T) {
 		listen = origListen
 	})
 
-	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (*server.Server, error) {
+	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (relayLifecycle, error) {
 		return nil, sentinelErr
 	}
 	listen = func(network, address string) (net.Listener, error) {
@@ -104,7 +104,7 @@ func TestListenerFailureReturnedWhenConstructionSucceeds(t *testing.T) {
 	origServer := newWorkflowServer
 	t.Cleanup(func() { newWorkflowServer = origServer })
 	fakeServer := &server.Server{}
-	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (*server.Server, error) {
+	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (relayLifecycle, error) {
 		return fakeServer, nil
 	}
 
