@@ -52,6 +52,7 @@ const (
 )
 
 var workerStarted = func() {}
+var periodicStarted = func() {}
 
 type Manager struct {
 	store             Store
@@ -307,6 +308,7 @@ func (m *Manager) wakeReconciliation() {
 }
 func (m *Manager) periodic() {
 	defer m.wg.Done()
+	periodicStarted()
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	for {
