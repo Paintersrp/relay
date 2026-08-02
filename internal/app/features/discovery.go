@@ -14,13 +14,14 @@ import (
 )
 
 var (
-	ErrDiscoveryCapabilityDisabled   = errors.New("integrated discovery capability is disabled")
-	ErrDiscoveryStaleState           = errors.New("integrated discovery state is stale")
-	ErrDiscoveryIntegrity            = errors.New("integrated discovery artifact integrity failure")
-	ErrDuplicateDiscoveryIntegration = errors.New("discovery resolution is already integrated")
-	ErrInvalidDiscoveryConsequence   = errors.New("invalid discovery integration consequence")
-	ErrDiscoveryDependencyUnresolved = errors.New("discovery blocking dependency is unresolved")
-	ErrDiscoveryCrossWorkspace       = errors.New("discovery references must share a workspace")
+	ErrDiscoveryCapabilityDisabled          = errors.New("integrated discovery capability is disabled")
+	ErrDiscoveryStaleState                  = errors.New("integrated discovery state is stale")
+	ErrDiscoveryIntegrity                   = errors.New("integrated discovery artifact integrity failure")
+	ErrDuplicateDiscoveryIntegration        = errors.New("discovery resolution is already integrated")
+	ErrInvalidDiscoveryConsequence          = errors.New("invalid discovery integration consequence")
+	ErrDiscoveryDependencyUnresolved        = errors.New("discovery blocking dependency is unresolved")
+	ErrDiscoveryCrossWorkspace              = errors.New("discovery references must share a workspace")
+	ErrInvalidDiscoverySupersessionTopology = errors.New("invalid discovery supersession topology")
 )
 
 type StartIntegratedDiscoveryInput struct {
@@ -350,7 +351,10 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 				return ErrDiscoveryCrossWorkspace
 			}
 			if target.ID == ticket.ID {
-				return ErrInvalidDiscoveryConsequence
+				return ErrInvalidDiscoverySupersessionTopology
+			}
+			if err := validateDiscoverySupersessionTopology(ctx, tx, current.ID, ticket.ID, target.ID); err != nil {
+				return err
 			}
 			replacement = sql.NullInt64{Int64: target.ID, Valid: true}
 		}
@@ -393,6 +397,64 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 		err = s.store.WithTx(ctx, operation)
 	}
 	return consequence, updated, err
+}
+
+// validateDiscoverySupersessionTopology rejects a new edge that would make an
+// existing replacement chain cyclic or depend on inconsistent history.
+func validateDiscoverySupersessionTopology(ctx context.Context, tx *workflowstore.Tx, workspaceRowID, sourceTicketRowID, replacementTicketRowID int64) error {
+	tickets, err := tx.ListFeatureWorkspaceDiscoveryTickets(ctx, workspaceRowID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[int64]workflowstore.FeatureWorkspaceDiscoveryTicket, len(tickets))
+	for _, ticket := range tickets {
+		byID[ticket.ID] = ticket
+	}
+	consequences, err := tx.ListDiscoveryIntegrationConsequences(ctx, workspaceRowID)
+	if err != nil {
+		return err
+	}
+	byResolution := make(map[int64]workflowstore.DiscoveryIntegrationConsequence, len(consequences))
+	for _, consequence := range consequences {
+		if _, exists := byResolution[consequence.ResolutionRowID]; exists {
+			return ErrInvalidDiscoverySupersessionTopology
+		}
+		byResolution[consequence.ResolutionRowID] = consequence
+	}
+
+	seen := map[int64]bool{}
+	for currentTicketRowID := replacementTicketRowID; ; {
+		if currentTicketRowID == sourceTicketRowID || seen[currentTicketRowID] {
+			return ErrInvalidDiscoverySupersessionTopology
+		}
+		current, ok := byID[currentTicketRowID]
+		if !ok || current.WorkspaceRowID != workspaceRowID {
+			return ErrInvalidDiscoverySupersessionTopology
+		}
+		seen[currentTicketRowID] = true
+		resolutions, err := tx.ListFeatureWorkspaceTicketResolutions(ctx, currentTicketRowID)
+		if err != nil {
+			return ErrInvalidDiscoverySupersessionTopology
+		}
+		if len(resolutions) == 0 {
+			return nil
+		}
+		resolution := resolutions[len(resolutions)-1]
+		consequence, ok := byResolution[resolution.ID]
+		if !ok {
+			return nil
+		}
+		if consequence.WorkspaceRowID != workspaceRowID || consequence.TicketRowID != currentTicketRowID {
+			return ErrInvalidDiscoverySupersessionTopology
+		}
+		if consequence.ConsequenceKind != "superseded" {
+			return nil
+		}
+		if !consequence.ReplacementTicketRowID.Valid {
+			return ErrInvalidDiscoverySupersessionTopology
+		}
+		currentTicketRowID = consequence.ReplacementTicketRowID.Int64
+	}
 }
 
 func discoveryDependencySatisfied(ctx context.Context, store *workflowstore.Store, tickets map[int64]workflowstore.FeatureWorkspaceDiscoveryTicket, consequences map[int64]workflowstore.DiscoveryIntegrationConsequence, ticketID int64, seen map[int64]bool) (bool, string) {
