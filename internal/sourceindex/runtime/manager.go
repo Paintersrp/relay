@@ -53,6 +53,7 @@ const (
 
 var workerStarted = func() {}
 var periodicStarted = func() {}
+var workerExited = func(periodic bool) {}
 
 type Manager struct {
 	store             Store
@@ -183,7 +184,10 @@ func (m *Manager) enqueue(id string) {
 	}
 }
 func (m *Manager) worker() {
-	defer m.wg.Done()
+	defer func() {
+		workerExited(false)
+		m.wg.Done()
+	}()
 	workerStarted()
 	for {
 		select {
@@ -307,7 +311,10 @@ func (m *Manager) wakeReconciliation() {
 	}
 }
 func (m *Manager) periodic() {
-	defer m.wg.Done()
+	defer func() {
+		workerExited(true)
+		m.wg.Done()
+	}()
 	periodicStarted()
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
