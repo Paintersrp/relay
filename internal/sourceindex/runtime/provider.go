@@ -61,6 +61,9 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 		}
 		return nil, mapGenerationResolutionError(err)
 	}
+	if !providerGenerationMatches(row, identity) {
+		return nil, reader.ErrGenerationIntegrity
+	}
 	if row.State != workflowstore.SourceIndexGenerationReady {
 		if row.State == workflowstore.SourceIndexGenerationPending {
 			m.enqueue(row.GenerationID)
@@ -87,7 +90,11 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 		l.mu.RUnlock()
 		return nil, mapGenerationResolutionError(err)
 	}
-	if current.State != workflowstore.SourceIndexGenerationReady || current.Identity != identity {
+	if !providerGenerationMatches(current, identity) {
+		l.mu.RUnlock()
+		return nil, reader.ErrGenerationIntegrity
+	}
+	if current.State != workflowstore.SourceIndexGenerationReady {
 		l.mu.RUnlock()
 		return nil, reader.ErrGenerationUnavailable
 	}
@@ -127,6 +134,13 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 	_ = r.Close()
 	l.mu.RUnlock()
 	return nil, reader.ErrGenerationUnavailable
+}
+
+// providerGenerationMatches prevents a persisted row for a different identity
+// from being opened under the caller's resolved authority.
+func providerGenerationMatches(row workflowstore.SourceIndexGeneration, identity sourceindex.GenerationIdentity) bool {
+	id, err := sourceindex.GenerationID(row.Identity)
+	return err == nil && row.GenerationID == id && row.Identity == identity
 }
 
 func mapGenerationResolutionError(err error) error {
