@@ -42,7 +42,7 @@ func (m *Manager) ReadRetainedTree(ctx context.Context, request ReadRetainedTree
 		return ReadRetainedTreeResult{}, &Error{Code: CodeInvalidRequest}
 	}
 	var result ReadRetainedTreeResult
-	err := m.withActiveRetentionEdge(ctx, request.Relationship, func(vaultPath string, _ workflowstore.SourceVaultClosure) error {
+	err := m.withActiveRetentionEdge(ctx, request.Relationship, func(vaultPath string, _ workflowstore.SourceVault, _ workflowstore.SourceVaultClosure) error {
 		entries, err := m.git.ReadTree(ctx, vaultPath, request.TreeOID)
 		if err != nil {
 			return managerError(ctx, err, CodeObjectUnavailable)
@@ -61,7 +61,7 @@ func (m *Manager) ReadRetainedBlobRange(ctx context.Context, request ReadRetaine
 		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
 	}
 	var result ReadRetainedBlobRangeResult
-	err := m.withActiveRetentionEdge(ctx, request.Relationship, func(vaultPath string, _ workflowstore.SourceVaultClosure) error {
+	err := m.withActiveRetentionEdge(ctx, request.Relationship, func(vaultPath string, _ workflowstore.SourceVault, _ workflowstore.SourceVaultClosure) error {
 		value, err := m.git.ReadBlobRange(ctx, vaultPath, request.BlobOID, request.Offset, request.Limit)
 		if err != nil {
 			return managerError(ctx, err, CodeObjectUnavailable)

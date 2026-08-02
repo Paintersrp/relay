@@ -773,7 +773,7 @@ func TestOpenGenerationResolution(t *testing.T) {
 	config := Config{IndexRoot: root}
 
 	t.Run("missing generation", func(t *testing.T) {
-		store := &fakeStore{err: errors.New("not found")}
+		store := &fakeStore{err: workflow.ErrSourceIndexGenerationNotFound}
 		if _, err := Open(context.Background(), store, config, identity); !errors.Is(err, ErrGenerationUnavailable) {
 			t.Fatalf("error = %v", err)
 		}

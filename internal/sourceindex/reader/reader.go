@@ -401,7 +401,7 @@ func Open(ctx context.Context, store GenerationStore, config Config, identity so
 		switch {
 		case errors.Is(err, workflow.ErrInvalidSourceIndexGeneration), errors.Is(err, workflow.ErrSourceIndexGenerationIntegrity):
 			return nil, fmt.Errorf("%w: generation", ErrGenerationIntegrity)
-		case errors.Is(err, workflow.ErrSourceIndexGenerationNotFound), err.Error() == "not found":
+		case errors.Is(err, workflow.ErrSourceIndexGenerationNotFound):
 			return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
 		default:
 			return nil, err
@@ -492,7 +492,7 @@ func Open(ctx context.Context, store GenerationStore, config Config, identity so
 		switch {
 		case errors.Is(err, workflow.ErrInvalidSourceIndexGeneration), errors.Is(err, workflow.ErrSourceIndexGenerationIntegrity):
 			return nil, fmt.Errorf("%w: generation", ErrGenerationIntegrity)
-		case errors.Is(err, workflow.ErrSourceIndexGenerationNotFound), err.Error() == "not found":
+		case errors.Is(err, workflow.ErrSourceIndexGenerationNotFound):
 			return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
 		default:
 			return nil, err

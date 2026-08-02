@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"relay/internal/sourceindex"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -30,10 +32,18 @@ func RemoveOwnedGenerationAttempt(indexRoot, generationID, nonce string) error {
 	if err := validateOwnedAttemptNames(indexRoot, generationID); err != nil {
 		return err
 	}
-	if err := removeOwnedChild(indexRoot, "staging", generationID+"-"+nonce); err != nil {
+	canonical, err := sourceindex.StagingRelativeDirectory(generationID, nonce)
+	if err != nil {
+		return os.ErrInvalid
+	}
+	private, err := sourceindex.PrivateBuildRelativeDirectory(generationID, nonce)
+	if err != nil {
+		return os.ErrInvalid
+	}
+	if err := removeOwnedChild(indexRoot, "staging", filepath.Base(canonical)); err != nil {
 		return err
 	}
-	return removePrivateAttempt(indexRoot, generationID, nonce)
+	return removeOwnedChild(indexRoot, "staging", filepath.Base(private))
 }
 
 func RemoveAllOwnedGenerationAttempts(indexRoot, generationID string) error {
@@ -125,75 +135,44 @@ func removeOwnedStagingAttempts(indexRoot, generationID string) error {
 		return err
 	}
 	defer unix.Close(parent)
-	entries, err := listDirectory(parent)
-	if err != nil {
-		return err
-	}
-	prefix := generationID + "-"
-	private := ".relay-build-" + generationID + "-"
-	for _, entry := range entries {
-		name := entry.Name()
-		switch {
-		case strings.HasPrefix(name, prefix):
-			if !validHex(strings.TrimPrefix(name, prefix), 32) {
-				return os.ErrInvalid
-			}
-		case strings.HasPrefix(name, private):
-			rest := strings.TrimPrefix(name, private)
-			parts := strings.Split(rest, "-")
-			if len(parts) != 2 || !validHex(parts[0], 32) || !validPrivateSuffix(parts[1]) {
-				return os.ErrInvalid
-			}
-		default:
-			continue
-		}
-		if err := removeOwnedChild(indexRoot, "staging", name); err != nil {
+	// Repeated scans ensure a concurrent valid creator cannot make cleanup
+	// appear complete based on a stale listing.
+	for pass := 0; pass < 64; pass++ {
+		entries, err := listDirectory(parent)
+		if err != nil {
 			return err
 		}
-	}
-	return errors.Join(unix.Fsync(parent), unix.Fsync(root))
-}
-
-func removePrivateAttempt(indexRoot, generationID, nonce string) error {
-	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{
-		Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
-	})
-	if errors.Is(err, unix.ENOENT) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer unix.Close(root)
-	parent, err := openVerifiedDirectory(root, "staging", nil)
-	if errors.Is(err, unix.ENOENT) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer unix.Close(parent)
-	entries, err := listDirectory(parent)
-	if err != nil {
-		return err
-	}
-	prefix := ".relay-build-" + generationID + "-"
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), prefix) {
-			continue
-		}
-		rest := strings.TrimPrefix(entry.Name(), prefix)
-		parts := strings.Split(rest, "-")
-		if len(parts) != 2 || !validHex(parts[0], 32) || !validPrivateSuffix(parts[1]) {
-			return os.ErrInvalid
-		}
-		if parts[0] == nonce {
-			if err := removeOwnedChild(indexRoot, "staging", entry.Name()); err != nil {
+		matched := false
+		for _, entry := range entries {
+			name := entry.Name()
+			if !belongsToGeneration(name, generationID) {
+				continue
+			}
+			if !validAttemptName(name, generationID) {
+				return os.ErrInvalid
+			}
+			matched = true
+			if err := removeOwnedChild(indexRoot, "staging", name); err != nil {
 				return err
 			}
 		}
+		if !matched {
+			final, err := listDirectory(parent)
+			if err != nil {
+				return err
+			}
+			for _, entry := range final {
+				if belongsToGeneration(entry.Name(), generationID) {
+					if !validAttemptName(entry.Name(), generationID) {
+						return os.ErrInvalid
+					}
+					return os.ErrInvalid
+				}
+			}
+			return errors.Join(unix.Fsync(parent), unix.Fsync(root))
+		}
 	}
-	return errors.Join(unix.Fsync(parent), unix.Fsync(root))
+	return os.ErrInvalid
 }
 
 func validateOwnedAttemptNames(indexRoot, generationID string) error {
@@ -223,17 +202,26 @@ func validateOwnedAttemptNames(indexRoot, generationID string) error {
 	private := ".relay-build-" + generationID + "-"
 	for _, entry := range entries {
 		name := entry.Name()
-		if strings.HasPrefix(name, canonical) && !validHex(strings.TrimPrefix(name, canonical), 32) {
-			return os.ErrInvalid
-		}
-		if strings.HasPrefix(name, private) {
-			parts := strings.Split(strings.TrimPrefix(name, private), "-")
-			if len(parts) != 2 || !validHex(parts[0], 32) || !validPrivateSuffix(parts[1]) {
+		if strings.HasPrefix(name, canonical) || strings.HasPrefix(name, private) {
+			if !validAttemptName(name, generationID) {
 				return os.ErrInvalid
 			}
 		}
 	}
 	return nil
+}
+
+func belongsToGeneration(name, generationID string) bool {
+	return strings.HasPrefix(name, generationID+"-") || strings.HasPrefix(name, ".relay-build-"+generationID+"-")
+}
+
+func validAttemptName(name, generationID string) bool {
+	canonical, _ := sourceindex.StagingRelativeDirectory(generationID, strings.Repeat("0", 32))
+	private, _ := sourceindex.PrivateBuildRelativeDirectory(generationID, strings.Repeat("0", 32))
+	if strings.HasPrefix(name, filepath.Base(canonical[:len(canonical)-32])) {
+		return validHex(strings.TrimPrefix(name, generationID+"-"), 32)
+	}
+	return strings.HasPrefix(name, filepath.Base(private[:len(private)-32])) && validHex(strings.TrimPrefix(name, ".relay-build-"+generationID+"-"), 32)
 }
 
 func listDirectory(fd int) ([]os.DirEntry, error) {
@@ -290,6 +278,9 @@ func removeDirectory(fd int, root bool, seen map[[2]uint64]bool) error {
 				return os.ErrInvalid
 			}
 		} else if mode != unix.S_IFREG || !canonicalShardName(name) {
+			return os.ErrInvalid
+		}
+		if inspected.Dev != self.Dev {
 			return os.ErrInvalid
 		}
 		if mode == unix.S_IFDIR {
@@ -382,18 +373,6 @@ func canonicalShardName(name string) bool {
 	}
 	for _, c := range name[:6] {
 		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func validPrivateSuffix(s string) bool {
-	if len(s) != 6 {
-		return false
-	}
-	for _, c := range s {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
 			return false
 		}
 	}

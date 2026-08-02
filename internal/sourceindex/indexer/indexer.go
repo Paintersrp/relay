@@ -385,7 +385,7 @@ func syncBuild(root, parent string) error {
 	}
 	return syncDirectory(parent)
 }
-func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol.BuildResult, error) {
+func Build(ctx context.Context, r indexerprotocol.BuildRequest) (result indexerprotocol.BuildResult, err error) {
 	if e := repository(ctx, r); e != nil {
 		return indexerprotocol.BuildResult{}, e
 	}
@@ -405,16 +405,20 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot inspect staging target")
 	}
-	tmp, e := os.MkdirTemp(parent, ".relay-build-"+r.GenerationID+"-"+r.StagingNonce+"-")
+	tmp, e := sourceindex.PrivateBuildDirectory(r.IndexRoot, r.GenerationID, r.StagingNonce)
+	if e != nil {
+		return indexerprotocol.BuildResult{}, fail("unsafe_path", "unsafe private build path")
+	}
+	e = os.Mkdir(tmp, 0700)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create private build directory")
 	}
 	exposed := false
 	defer func() {
 		if !exposed {
-			// The supervisor owns cleanup after a child crash. Normal returns use
-			// the same exact-attempt boundary rather than recursive RemoveAll.
-			_ = fsatomic.RemoveOwnedGenerationAttempt(r.IndexRoot, r.GenerationID, r.StagingNonce)
+			if cleanupErr := fsatomic.RemoveOwnedGenerationAttempt(r.IndexRoot, r.GenerationID, r.StagingNonce); cleanupErr != nil {
+				err = errors.Join(err, fail("artifact_write_failed", "cannot remove private build directory"))
+			}
 		}
 	}()
 	if safeDirectory(parent) != nil || safeDirectory(tmp) != nil {

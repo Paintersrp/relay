@@ -193,7 +193,7 @@ func (m *Manager) RetainPreparedInvestigationInTx(ctx context.Context, tx *workf
 	return workflowstore.SourceVaultRetention{}, managerError(ctx, err, CodeDatabaseFailure)
 }
 
-func (m *Manager) withActiveRetentionEdge(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship, use func(string, workflowstore.SourceVaultClosure) error) error {
+func (m *Manager) withActiveRetentionEdge(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship, use func(string, workflowstore.SourceVault, workflowstore.SourceVaultClosure) error) error {
 	if m == nil || use == nil {
 		return &Error{Code: CodeInvalidRequest}
 	}
@@ -230,11 +230,11 @@ func (m *Manager) withActiveRetentionEdge(ctx context.Context, relationship work
 	if err := m.git.VerifyVaultClosure(ctx, vaultPath, closure.CommitOID, closure.TreeOID, closure.RefName); err != nil {
 		return managerError(ctx, err, CodeVaultUnavailable)
 	}
-	return use(vaultPath, closure)
+	return use(vaultPath, vault, closure)
 }
 
 func (m *Manager) VerifyActiveRetentionEdge(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship) error {
-	return m.withActiveRetentionEdge(ctx, relationship, func(string, workflowstore.SourceVaultClosure) error {
+	return m.withActiveRetentionEdge(ctx, relationship, func(string, workflowstore.SourceVault, workflowstore.SourceVaultClosure) error {
 		return nil
 	})
 }

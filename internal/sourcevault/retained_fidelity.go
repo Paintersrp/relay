@@ -54,7 +54,7 @@ func (m *Manager) ReadRetainedCommitRange(ctx context.Context, r ReadRetainedCom
 		return ReadRetainedCommitRangeResult{}, &Error{Code: CodeInvalidRequest}
 	}
 	var out ReadRetainedCommitRangeResult
-	err := m.withActiveRetentionEdge(ctx, r.Relationship, func(path string, _ workflowstore.SourceVaultClosure) error {
+	err := m.withActiveRetentionEdge(ctx, r.Relationship, func(path string, _ workflowstore.SourceVault, _ workflowstore.SourceVaultClosure) error {
 		p, e := readGitObjectRange(ctx, path, r.CommitOID, "commit", r.Offset, r.Limit)
 		if e != nil {
 			return e
@@ -72,7 +72,7 @@ func (m *Manager) ReadRetainedCommitNode(ctx context.Context, r ReadRetainedComm
 		return RetainedCommitNode{}, &Error{Code: CodeInvalidRequest}
 	}
 	var out RetainedCommitNode
-	err := m.withActiveRetentionEdge(ctx, r.Relationship, func(path string, _ workflowstore.SourceVaultClosure) error {
+	err := m.withActiveRetentionEdge(ctx, r.Relationship, func(path string, _ workflowstore.SourceVault, _ workflowstore.SourceVaultClosure) error {
 		n, e := readGitCommitNode(ctx, path, r.CommitOID)
 		if e != nil {
 			return e

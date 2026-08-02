@@ -567,6 +567,15 @@ func StagingRelativeDirectory(id, nonce string) (string, error) {
 	}
 	return StagingDirectoryName + "/" + id + "-" + nonce, nil
 }
+
+// PrivateBuildRelativeDirectory is the sole canonical name for an unexposed
+// build attempt. It deliberately contains no MkdirTemp-style suffix.
+func PrivateBuildRelativeDirectory(id, nonce string) (string, error) {
+	if !lowerHex(id, 64) || !lowerHex(nonce, 32) {
+		return "", fail(UnsafePath, "generation id or nonce")
+	}
+	return StagingDirectoryName + "/.relay-build-" + id + "-" + nonce, nil
+}
 func GenerationDirectory(root, id string) (string, error) {
 	rel, e := GenerationRelativeDirectory(id)
 	if e != nil {
@@ -576,6 +585,13 @@ func GenerationDirectory(root, id string) (string, error) {
 }
 func StagingDirectory(root, id, nonce string) (string, error) {
 	rel, e := StagingRelativeDirectory(id, nonce)
+	if e != nil {
+		return "", e
+	}
+	return safeStoragePath(root, rel)
+}
+func PrivateBuildDirectory(root, id, nonce string) (string, error) {
+	rel, e := PrivateBuildRelativeDirectory(id, nonce)
 	if e != nil {
 		return "", e
 	}

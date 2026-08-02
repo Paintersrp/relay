@@ -8,7 +8,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"relay/internal/sourceindex"
 )
+
+func TestPrivateBuildNameIsCanonical(t *testing.T) {
+	id := strings.Repeat("a", 64)
+	nonce := strings.Repeat("b", 32)
+	rel, err := sourceindex.PrivateBuildRelativeDirectory(id, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "staging/.relay-build-" + id + "-" + nonce; rel != want {
+		t.Fatalf("private build name = %q, want %q", rel, want)
+	}
+}
 
 func TestRemoveOwnedGenerationAndStaging(t *testing.T) {
 	root := t.TempDir()
@@ -66,7 +80,15 @@ func TestRemoveOwnedAttemptRemovesCanonicalAndPrivateOnly(t *testing.T) {
 	id := strings.Repeat("a", 64)
 	nonce := strings.Repeat("b", 32)
 	otherNonce := strings.Repeat("c", 32)
-	for _, name := range []string{id + "-" + nonce, ".relay-build-" + id + "-" + nonce + "-abcdef", ".relay-build-" + id + "-" + otherNonce + "-abcdef"} {
+	private, err := sourceindex.PrivateBuildRelativeDirectory(id, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPrivate, err := sourceindex.PrivateBuildRelativeDirectory(id, otherNonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{id + "-" + nonce, filepath.Base(private), filepath.Base(otherPrivate)} {
 		if err := os.MkdirAll(filepath.Join(root, "staging", name), 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -74,12 +96,12 @@ func TestRemoveOwnedAttemptRemovesCanonicalAndPrivateOnly(t *testing.T) {
 	if err := RemoveOwnedGenerationAttempt(root, id, nonce); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{id + "-" + nonce, ".relay-build-" + id + "-" + nonce + "-abcdef"} {
+	for _, name := range []string{id + "-" + nonce, filepath.Base(private)} {
 		if _, err := os.Lstat(filepath.Join(root, "staging", name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("owned attempt remains: %s: %v", name, err)
 		}
 	}
-	if _, err := os.Lstat(filepath.Join(root, "staging", ".relay-build-"+id+"-"+otherNonce+"-abcdef")); err != nil {
+	if _, err := os.Lstat(filepath.Join(root, "staging", filepath.Base(otherPrivate))); err != nil {
 		t.Fatalf("other attempt changed: %v", err)
 	}
 }

@@ -103,39 +103,39 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 		if errors.Is(err, ErrFailureFinalization) {
 			return workflow.SourceIndexGeneration{}, err
 		}
-		return s.fail(generationID, "source_unavailable", "source authority is unavailable", nil, "", ErrAuthorityUnavailable)
+		return s.fail(ctx, generationID, "source_unavailable", "source authority is unavailable", nil, "", ErrAuthorityUnavailable)
 	}
 
 	options := sourceindex.DefaultBuildOptions()
 	if _, err := sourceindex.MarshalBuildOptions(options); err != nil {
-		return s.fail(generationID, "build_options_mismatch", "default build options are invalid", lease, "", err)
+		return s.fail(ctx, generationID, "build_options_mismatch", "default build options are invalid", lease, "", err)
 	}
 	digest, err := sourceindex.BuildOptionsSHA256(options)
 	if err != nil || digest != generation.Identity.BuildOptionsSHA256 {
-		return s.fail(generationID, "build_options_mismatch", "build options do not match generation", lease, "", err)
+		return s.fail(ctx, generationID, "build_options_mismatch", "build options do not match generation", lease, "", err)
 	}
 	nonce, err := stagingNonce()
 	if err != nil {
-		return s.fail(generationID, "indexer_start_failed", "cannot create staging nonce", lease, "", err)
+		return s.fail(ctx, generationID, "indexer_start_failed", "cannot create staging nonce", lease, "", err)
 	}
 	request := indexerprotocol.BuildRequest{Version: indexerprotocol.ProtocolVersion, GenerationID: generationID, Identity: generation.Identity, BuildOptions: options, RepositoryPath: lease.RepositoryPath(), IndexRoot: s.config.IndexRoot, StagingNonce: nonce}
 	requestBytes, err := indexerprotocol.MarshalBuildRequest(request)
 	if err != nil {
-		return s.fail(generationID, "indexer_start_failed", "cannot construct indexer request", lease, nonce, err)
+		return s.fail(ctx, generationID, "indexer_start_failed", "cannot construct indexer request", lease, nonce, err)
 	}
 	response, code, message, err := s.runChild(ctx, requestBytes, generationID)
 	if err != nil {
 		if ctx.Err() != nil {
 			code, message = "cancelled", "source-index build cancelled"
 		}
-		return s.fail(generationID, code, message, lease, nonce, err)
+		return s.fail(ctx, generationID, code, message, lease, nonce, err)
 	}
 	if response.Status == indexerprotocol.BuildStatusFailed {
-		return s.fail(generationID, response.Failure.Code, safeFailureMessage(response.Failure.Code), lease, nonce, errors.New("indexer reported failure"))
+		return s.fail(ctx, generationID, response.Failure.Code, safeFailureMessage(response.Failure.Code), lease, nonce, errors.New("indexer reported failure"))
 	}
 	verified, err := s.verify(request, nonce, *response.Result)
 	if err != nil {
-		return s.fail(generationID, "verification_failed", "staged source-index verification failed", lease, nonce, ErrStagedVerification)
+		return s.fail(ctx, generationID, "verification_failed", "staged source-index verification failed", lease, nonce, ErrStagedVerification)
 	}
 	publication, err := s.publish(generationID, nonce)
 	if err != nil {
@@ -143,7 +143,7 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 			closeErr := lease.Close()
 			return workflow.SourceIndexGeneration{}, errors.Join(ErrPublicationAfterExposure, sanitizedError(err), sanitizedError(closeErr))
 		}
-		return s.fail(generationID, "publication_failed", "source-index publication failed", lease, nonce, ErrPublication)
+		return s.fail(ctx, generationID, "publication_failed", "source-index publication failed", lease, nonce, ErrPublication)
 	}
 	if err := lease.Close(); err != nil {
 		return workflow.SourceIndexGeneration{}, fmt.Errorf("%w: lease release", ErrPublicationAfterExposure)
@@ -293,7 +293,7 @@ func (s *Supervisor) publish(generationID, nonce string) (PublicationResult, err
 	return PublicationResult{Exposed: true}, nil
 }
 
-func (s *Supervisor) fail(generationID, code, message string, lease SourceLease, nonce string, cause error) (workflow.SourceIndexGeneration, error) {
+func (s *Supervisor) fail(lifecycle context.Context, generationID, code, message string, lease SourceLease, nonce string, cause error) (workflow.SourceIndexGeneration, error) {
 	cause = sanitizedError(cause)
 	var cleanupErr error
 	if nonce != "" {
@@ -305,7 +305,8 @@ func (s *Supervisor) fail(generationID, code, message string, lease SourceLease,
 	if cleanupErr != nil {
 		return workflow.SourceIndexGeneration{}, errors.Join(cause, ErrFailureFinalization)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Preserve lifecycle values while allowing finalization after cancellation.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(lifecycle), 5*time.Second)
 	defer cancel()
 	_, markErr := s.store.MarkSourceIndexGenerationFailed(ctx, workflow.MarkSourceIndexGenerationFailedParams{GenerationID: generationID, FailureCode: safeFailureCode(code), FailureMessage: safeFailureMessage(code)})
 	if markErr != nil {

@@ -18,11 +18,7 @@ func (m *Manager) ResolveSourceIndexIdentity(ctx context.Context, relationship w
 		return sourceindex.GenerationIdentity{}, &Error{Code: CodeVaultUnavailable}
 	}
 	var identity sourceindex.GenerationIdentity
-	err := m.withActiveRetentionEdge(ctx, relationship, func(_ string, closure workflowstore.SourceVaultClosure) error {
-		vault, err := m.store.GetSourceVaultByRowID(ctx, relationship.VaultRowID)
-		if err != nil {
-			return err
-		}
+	err := m.withActiveRetentionEdge(ctx, relationship, func(_ string, vault workflowstore.SourceVault, closure workflowstore.SourceVaultClosure) error {
 		if vault.ID != closure.VaultRowID || closure.ID != relationship.ClosureRowID || closure.CommitOID != relationship.CommitOID || closure.TreeOID != relationship.TreeOID {
 			return &Error{Code: CodeVaultUnavailable}
 		}
