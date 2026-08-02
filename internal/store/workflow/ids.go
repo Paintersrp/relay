@@ -94,6 +94,22 @@ func NewFeatureWorkspaceIntegrationConsequenceID() string {
 	return "integration-" + uuid.NewString()
 }
 
+func NewFeatureWorkspaceDiscoveryAdoptionID() string {
+	return "discovery-adoption-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceDiscoveryAssessmentID() string {
+	return "discovery-assessment-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceDiscoveryClosurePacketID() string {
+	return "discovery-packet-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceDiscoveryReopenEventID() string {
+	return "discovery-reopen-" + uuid.NewString()
+}
+
 func NewFeatureWorkspaceRouteStateID() string {
 	return "route-" + uuid.NewString()
 }

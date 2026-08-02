@@ -254,18 +254,19 @@ type ExecutionPackageMember struct {
 }
 
 type FeatureWorkspace struct {
-	ID                            int64         `json:"id"`
-	WorkspaceID                   string        `json:"workspace_id"`
-	ProjectRowID                  int64         `json:"project_row_id"`
-	FeatureSlug                   string        `json:"feature_slug"`
-	State                         string        `json:"state"`
-	Version                       int64         `json:"version"`
-	CurrentRouteStateRowID        sql.NullInt64 `json:"current_route_state_row_id"`
-	CurrentAuthorityRevisionRowID sql.NullInt64 `json:"current_authority_revision_row_id"`
-	CreatedAt                     string        `json:"created_at"`
-	UpdatedAt                     string        `json:"updated_at"`
-	DiscoveryCapabilityEnabled    int64         `json:"discovery_capability_enabled"`
-	CurrentDiscoveryRevisionRowID sql.NullInt64 `json:"current_discovery_revision_row_id"`
+	ID                                 int64         `json:"id"`
+	WorkspaceID                        string        `json:"workspace_id"`
+	ProjectRowID                       int64         `json:"project_row_id"`
+	FeatureSlug                        string        `json:"feature_slug"`
+	State                              string        `json:"state"`
+	Version                            int64         `json:"version"`
+	CurrentRouteStateRowID             sql.NullInt64 `json:"current_route_state_row_id"`
+	CurrentAuthorityRevisionRowID      sql.NullInt64 `json:"current_authority_revision_row_id"`
+	CreatedAt                          string        `json:"created_at"`
+	UpdatedAt                          string        `json:"updated_at"`
+	DiscoveryCapabilityEnabled         int64         `json:"discovery_capability_enabled"`
+	CurrentDiscoveryRevisionRowID      sql.NullInt64 `json:"current_discovery_revision_row_id"`
+	CurrentDiscoveryClosurePacketRowID sql.NullInt64 `json:"current_discovery_closure_packet_row_id"`
 }
 
 type FeatureWorkspaceAdmittedInput struct {
@@ -307,13 +308,14 @@ type FeatureWorkspaceAuthorityRevision struct {
 }
 
 type FeatureWorkspaceCompletionDecision struct {
-	ID                     int64  `json:"id"`
-	CompletionDecisionID   string `json:"completion_decision_id"`
-	WorkspaceRowID         int64  `json:"workspace_row_id"`
-	AuthorityRevisionRowID int64  `json:"authority_revision_row_id"`
-	SourceClosureRowID     int64  `json:"source_closure_row_id"`
-	Decision               string `json:"decision"`
-	CreatedAt              string `json:"created_at"`
+	ID                          int64         `json:"id"`
+	CompletionDecisionID        string        `json:"completion_decision_id"`
+	WorkspaceRowID              int64         `json:"workspace_row_id"`
+	AuthorityRevisionRowID      int64         `json:"authority_revision_row_id"`
+	SourceClosureRowID          int64         `json:"source_closure_row_id"`
+	Decision                    string        `json:"decision"`
+	CreatedAt                   string        `json:"created_at"`
+	DiscoveryClosurePacketRowID sql.NullInt64 `json:"discovery_closure_packet_row_id"`
 }
 
 type FeatureWorkspaceCompletionReopening struct {
@@ -338,6 +340,15 @@ type FeatureWorkspaceDestination struct {
 	CreatedAt          string         `json:"created_at"`
 }
 
+type FeatureWorkspaceDiscoveryAdoption struct {
+	ID                      int64  `json:"id"`
+	WorkspaceRowID          int64  `json:"workspace_row_id"`
+	AdoptionID              string `json:"adoption_id"`
+	OperatorIdentity        string `json:"operator_identity"`
+	AdoptedWorkspaceVersion int64  `json:"adopted_workspace_version"`
+	CreatedAt               string `json:"created_at"`
+}
+
 type FeatureWorkspaceDiscoveryArtifact struct {
 	ID                  int64  `json:"id"`
 	DiscoveryArtifactID string `json:"discovery_artifact_id"`
@@ -347,6 +358,49 @@ type FeatureWorkspaceDiscoveryArtifact struct {
 	MediaType           string `json:"media_type"`
 	SizeBytes           int64  `json:"size_bytes"`
 	CreatedAt           string `json:"created_at"`
+}
+
+type FeatureWorkspaceDiscoveryClosurePacket struct {
+	ID                    int64  `json:"id"`
+	ClosurePacketID       string `json:"closure_packet_id"`
+	WorkspaceRowID        int64  `json:"workspace_row_id"`
+	ClosingRevisionRowID  int64  `json:"closing_revision_row_id"`
+	Destination           string `json:"destination"`
+	ManifestArtifactRowID int64  `json:"manifest_artifact_row_id"`
+	ManifestSha256        string `json:"manifest_sha256"`
+	ManifestSizeBytes     int64  `json:"manifest_size_bytes"`
+	ManifestMediaType     string `json:"manifest_media_type"`
+	CreatedAt             string `json:"created_at"`
+}
+
+type FeatureWorkspaceDiscoveryClosurePacketMember struct {
+	ID                 int64  `json:"id"`
+	ClosurePacketRowID int64  `json:"closure_packet_row_id"`
+	Sequence           int64  `json:"sequence"`
+	OwnerFamily        string `json:"owner_family"`
+	ArtifactRowID      int64  `json:"artifact_row_id"`
+	SourceIdentity     string `json:"source_identity"`
+	Sha256             string `json:"sha256"`
+	SizeBytes          int64  `json:"size_bytes"`
+	MediaType          string `json:"media_type"`
+	SemanticRole       string `json:"semantic_role"`
+	CreatedAt          string `json:"created_at"`
+}
+
+type FeatureWorkspaceDiscoveryDestinationAssessment struct {
+	ID                     int64          `json:"id"`
+	AssessmentID           string         `json:"assessment_id"`
+	WorkspaceRowID         int64          `json:"workspace_row_id"`
+	DiscoveryRevisionRowID int64          `json:"discovery_revision_row_id"`
+	WorkspaceVersion       int64          `json:"workspace_version"`
+	DiscoveryState         string         `json:"discovery_state"`
+	Destination            sql.NullString `json:"destination"`
+	Rationale              string         `json:"rationale"`
+	BlockersJson           string         `json:"blockers_json"`
+	RestorationActionsJson string         `json:"restoration_actions_json"`
+	ContinuationJson       string         `json:"continuation_json"`
+	CreatedIdentity        string         `json:"created_identity"`
+	CreatedAt              string         `json:"created_at"`
 }
 
 type FeatureWorkspaceDiscoveryIntegrationConsequence struct {
@@ -360,6 +414,17 @@ type FeatureWorkspaceDiscoveryIntegrationConsequence struct {
 	ReplacementTicketRowID   sql.NullInt64 `json:"replacement_ticket_row_id"`
 	EvidenceBasis            string        `json:"evidence_basis"`
 	CreatedAt                string        `json:"created_at"`
+}
+
+type FeatureWorkspaceDiscoveryReopenEvent struct {
+	ID                        int64  `json:"id"`
+	ReopenEventID             string `json:"reopen_event_id"`
+	WorkspaceRowID            int64  `json:"workspace_row_id"`
+	ClosurePacketRowID        int64  `json:"closure_packet_row_id"`
+	ReplacementRevisionRowID  int64  `json:"replacement_revision_row_id"`
+	CauseText                 string `json:"cause_text"`
+	ConfirmedOperatorIdentity string `json:"confirmed_operator_identity"`
+	CreatedAt                 string `json:"created_at"`
 }
 
 type FeatureWorkspaceDiscoveryTicket struct {

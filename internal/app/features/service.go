@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -344,16 +345,37 @@ func (s *Service) Complete(ctx context.Context, input CompletionInput) (Completi
 		if !completionGatesReady(gates) {
 			return ErrFeatureCompletionNotReady
 		}
+		packetAssociation := sql.NullInt64{}
+		if _, err := tx.GetDiscoveryLifecycleAdoption(ctx, workspace.ID); err == nil {
+			if !workspace.CurrentDiscoveryClosurePacketRowID.Valid {
+				return ErrFeatureCompletionNotReady
+			}
+			packet, err := tx.GetDiscoveryClosurePacketByRowID(ctx, workspace.CurrentDiscoveryClosurePacketRowID.Int64)
+			if err != nil || packet.WorkspaceRowID != workspace.ID || !workspace.CurrentDiscoveryRevisionRowID.Valid || packet.ClosingRevisionRowID != workspace.CurrentDiscoveryRevisionRowID.Int64 {
+				return ErrFeatureCompletionNotReady
+			}
+			artifact, err := tx.GetDiscoveryArtifactByRowID(ctx, packet.ManifestArtifactRowID)
+			if err != nil {
+				return ErrFeatureCompletionNotReady
+			}
+			if _, _, err = s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{RelativePath: artifact.RelativePath, SHA256: packet.ManifestSha256, SizeBytes: packet.ManifestSizeBytes, MediaType: packet.ManifestMediaType}, 16<<20); err != nil {
+				return ErrFeatureCompletionNotReady
+			}
+			packetAssociation = sql.NullInt64{Int64: packet.ID, Valid: true}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
 		if err != nil || !authority.SourceClosureRowID.Valid {
 			return ErrFeatureCompletionNotReady
 		}
 		decision, err := tx.CreateFeatureWorkspaceCompletionDecision(ctx, workflowstore.CreateFeatureWorkspaceCompletionDecisionParams{
-			CompletionDecisionID:   s.ids.CompletionDecisionID(),
-			WorkspaceRowID:         workspace.ID,
-			AuthorityRevisionRowID: authority.ID,
-			SourceClosureRowID:     authority.SourceClosureRowID.Int64,
-			Decision:               "completed",
+			CompletionDecisionID:        s.ids.CompletionDecisionID(),
+			WorkspaceRowID:              workspace.ID,
+			AuthorityRevisionRowID:      authority.ID,
+			SourceClosureRowID:          authority.SourceClosureRowID.Int64,
+			DiscoveryClosurePacketRowID: packetAssociation,
+			Decision:                    "completed",
 		})
 		if err != nil {
 			return err

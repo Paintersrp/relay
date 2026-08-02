@@ -443,6 +443,18 @@ SELECT * FROM feature_workspace_discovery_artifacts WHERE discovery_artifact_id 
 -- name: ListFeatureWorkspaceIntegratedDiscoveryRevisions :many
 SELECT * FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ? ORDER BY revision_number, id;
 
+-- name: GetFeatureWorkspaceDiscoveryAdoption :one
+SELECT * FROM feature_workspace_discovery_adoptions WHERE workspace_row_id = ?;
+
+-- name: GetFeatureWorkspaceDiscoveryClosurePacketByID :one
+SELECT * FROM feature_workspace_discovery_closure_packets WHERE closure_packet_id = ?;
+
+-- name: ListFeatureWorkspaceDiscoveryClosurePackets :many
+SELECT * FROM feature_workspace_discovery_closure_packets WHERE workspace_row_id = ? ORDER BY id;
+
+-- name: ListFeatureWorkspaceDiscoveryClosurePacketMembers :many
+SELECT * FROM feature_workspace_discovery_closure_packet_members WHERE closure_packet_row_id = ? ORDER BY sequence, id;
+
 -- name: CreateDeliveryTicket :one
 INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority)
 VALUES (?, ?, ?)
@@ -844,9 +856,10 @@ INSERT INTO feature_workspace_completion_decisions (
     workspace_row_id,
     authority_revision_row_id,
     source_closure_row_id,
+    discovery_closure_packet_row_id,
     decision
 )
-VALUES (?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetCurrentFeatureWorkspaceCompletionDecision :one
