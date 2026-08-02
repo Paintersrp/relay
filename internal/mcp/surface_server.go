@@ -111,11 +111,7 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 		if !dispatch.routeBound {
 			return dispatch.handle(args), nil
 		}
-		publicArgs, err := withoutSurfaceContract(args)
-		if err != nil {
-			return ToolCallResult{}, err
-		}
-		return dispatch.handle(publicArgs), nil
+		return dispatch.handle(boundArgs), nil
 	}
 	if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, args); err != nil {
 		return ToolCallResult{}, err
@@ -156,22 +152,4 @@ func withDefaultSurfaceContract(raw json.RawMessage, surface registry.SurfaceCon
 	}
 	object["surface_contract"] = encodedSurface
 	return json.Marshal(object)
-}
-
-// withoutSurfaceContract prevents an app-surface caller from supplying route
-// authority to a handler already bound to an immutable route registration.
-func withoutSurfaceContract(raw json.RawMessage) (json.RawMessage, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return json.RawMessage(`{}`), nil
-	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
-		return raw, nil
-	}
-	delete(object, "surface_contract")
-	bound, err := json.Marshal(object)
-	if err != nil {
-		return nil, err
-	}
-	return bound, nil
 }

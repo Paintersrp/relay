@@ -64,6 +64,86 @@ type sourcePacketFixture struct {
 	secretPaths []string
 }
 
+func TestPublicWayfinderAppSurfaceDispatchesInvestigationPacketAndSourceTools(t *testing.T) {
+	fixture := openSourcePacketFixture(t)
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wayfinder routecontracts.AppSurfaceManifest
+	for _, surface := range surfaces.Surfaces {
+		if surface.Surface == routecontracts.AppSurfaceWayfinder {
+			wayfinder = surface
+			break
+		}
+	}
+	if wayfinder.Surface == "" {
+		t.Fatal("Wayfinder app surface is missing")
+	}
+	registrations, err := BuildAppSurfaceHandlers(wayfinder, fixture.dispatchers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServerForAppSurface(nil, wayfinder, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	create := coldStartCall(t, server, "wayfinder-investigation-v1__create_operation_packet", map[string]any{
+		"mutation_id":         "public-investigation-create",
+		"operation_id":        "wayfinder.investigation",
+		"project_id":          sourceSnapshotProject,
+		"inputs":              []any{},
+		"workflow_references": []any{},
+		"attestations":        []any{},
+	})
+	var created CreateOperationPacketResult
+	coldStartDecode(t, create, &created)
+	packetID := created.Packet.Summary.PacketID
+	if packetID == "" || created.Packet.Summary.SurfaceContract != "wayfinder-investigation.v1" {
+		t.Fatalf("public create packet=%#v", created.Packet.Summary)
+	}
+
+	active := coldStartCall(t, server, "wayfinder-investigation-v1__get_active_operation_packet", map[string]any{
+		"project_id":   sourceSnapshotProject,
+		"operation_id": "wayfinder.investigation",
+	})
+	var activeView OperationPacketView
+	coldStartDecode(t, active, &activeView)
+	if activeView.Summary.PacketID != packetID {
+		t.Fatalf("public active packet=%#v", activeView.Summary)
+	}
+
+	listed := coldStartCall(t, server, "wayfinder-investigation-v1__list_operation_repositories", map[string]any{"packet_id": packetID})
+	var repositories struct {
+		Packet       json.RawMessage `json:"packet"`
+		Repositories json.RawMessage `json:"repositories"`
+	}
+	coldStartDecode(t, listed, &repositories)
+	var repositoryViews []struct {
+		RepositoryKey string `json:"repository_key"`
+	}
+	if err := json.Unmarshal(repositories.Repositories, &repositoryViews); err != nil {
+		t.Fatal(err)
+	}
+	if len(repositoryViews) != 1 || repositoryViews[0].RepositoryKey != fixture.repository {
+		t.Fatalf("public repositories=%#v", repositoryViews)
+	}
+
+	tree := coldStartCall(t, server, "wayfinder-investigation-v1__list_source_tree", map[string]any{
+		"packet_id": packetID, "repository_key": fixture.repository, "recursive": true, "limit": 1,
+	})
+	var treeView listSourceTreeView
+	coldStartDecode(t, tree, &treeView)
+	if treeView.Source.SurfaceContract != "wayfinder-investigation.v1" {
+		t.Fatalf("public source surface=%q", treeView.Source.SurfaceContract)
+	}
+}
+
 func openSourcePacketFixture(t *testing.T) sourcePacketFixture {
 	t.Helper()
 	ctx := context.Background()

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"relay/internal/mcp/routecontracts"
+	"relay/internal/operations/registry"
 )
 
 func TestRouteServerUsesOnlyExactRouteHandlers(t *testing.T) {
@@ -140,6 +141,77 @@ func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T
 	}
 }
 
+func TestAppSurfaceRouteBoundDispatchPassesRegisteredSurfaceContractToHandler(t *testing.T) {
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := fakeAppSurfaceDispatchers(routes)
+	var surface routecontracts.AppSurfaceManifest
+	for _, candidate := range surfaces.Surfaces {
+		if candidate.Surface == routecontracts.AppSurfaceWayfinder {
+			surface = candidate
+			break
+		}
+	}
+	if surface.Surface == "" {
+		t.Fatal("Wayfinder app surface is missing")
+	}
+	registrations, err := BuildAppSurfaceHandlers(surface, owners)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received []json.RawMessage
+	var selected AppToolRegistration
+	for index := range registrations {
+		if registrations[index].InternalToolName != "list_projects" {
+			continue
+		}
+		selected = registrations[index]
+		registrations[index].Handler.Handle = func(raw json.RawMessage) ToolCallResult {
+			received = append(received, append(json.RawMessage(nil), raw...))
+			return workflowOK(map[string]string{"status": "received"})
+		}
+		break
+	}
+	if selected.AdvertisedName == "" {
+		t.Fatal("Wayfinder list_projects registration is missing")
+	}
+	server, err := NewServerForAppSurface(nil, surface, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, arguments := range []json.RawMessage{json.RawMessage(`{}`), json.RawMessage(`{"surface_contract":"auditor-review.v1"}`)} {
+		if _, err := server.dispatchSurfaceTool(selected.AdvertisedName, arguments); err != nil {
+			t.Fatalf("dispatch %s: %v", arguments, err)
+		}
+	}
+	if len(received) != 2 {
+		t.Fatalf("handler calls=%d, want 2", len(received))
+	}
+	for _, arguments := range received {
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(arguments, &request); err != nil {
+			t.Fatal(err)
+		}
+		var contract registry.SurfaceContractID
+		if err := json.Unmarshal(request["surface_contract"], &contract); err != nil {
+			t.Fatal(err)
+		}
+		if contract != registry.SurfaceContractID(selected.SurfaceContract) {
+			t.Fatalf("handler surface_contract=%q, want %q", contract, selected.SurfaceContract)
+		}
+		if err := registry.ValidateOperationRequest(contract, selected.InternalToolName, arguments); err != nil {
+			t.Fatalf("handler arguments are not valid for mounted route: %v", err)
+		}
+	}
+}
+
 func appRouteCount(registrations []AppToolRegistration) int {
 	routes := make(map[string]struct{})
 	for _, registration := range registrations {
@@ -195,14 +267,15 @@ func fakeAppSurfaceDispatchers(routes routecontracts.RouteSet) RouteDispatchers 
 	for _, route := range routes.Manifests {
 		byTool := make(map[string]SurfaceHandler, len(route.Tools))
 		for _, tool := range route.Tools {
-			routePath, toolName := route.RoutePath, tool.Name
+			routePath, toolName, surfaceContract := route.RoutePath, tool.Name, route.SurfaceContract
 			byTool[toolName] = func(raw json.RawMessage) ToolCallResult {
 				var args map[string]json.RawMessage
 				if err := json.Unmarshal(raw, &args); err != nil {
 					return toolErr(err.Error())
 				}
-				if _, supplied := args["surface_contract"]; supplied {
-					return toolErr("route authority must not be caller supplied")
+				var received string
+				if err := json.Unmarshal(args["surface_contract"], &received); err != nil || received != surfaceContract {
+					return toolErr("route authority does not match mounted route")
 				}
 				return workflowOK(map[string]string{"route_path": routePath, "tool": toolName})
 			}
