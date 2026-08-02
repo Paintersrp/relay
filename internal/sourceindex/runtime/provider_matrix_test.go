@@ -116,6 +116,22 @@ func newProviderFixture(t *testing.T, state workflowstore.SourceIndexGenerationS
 	return f
 }
 
+func (f *providerFixture) start(t *testing.T) {
+	t.Helper()
+	f.m.mu.Lock()
+	f.m.started = false
+	f.m.config.BuildParallelism = 1
+	f.m.mu.Unlock()
+	if err := f.m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := f.m.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+}
+
 func (f *providerFixture) open(t *testing.T, ctx context.Context) (sourcegatewayHandle, error) {
 	t.Helper()
 	h, err := f.m.OpenSearchIndex(ctx, operations.SourceReadAuthority{})
@@ -436,6 +452,157 @@ func TestOpenSearchIndexProviderCurrentRowAndShutdown(t *testing.T) {
 				f.assertReleased(t)
 				f.assertNoBuild(t)
 			})
+		}
+	})
+}
+
+func TestOpenSearchIndexProviderShutdownRaces(t *testing.T) {
+	t.Run("RACE-01 shutdown before authority lookup completes", func(t *testing.T) {
+		f := newProviderFixture(t, workflowstore.SourceIndexGenerationReady)
+		f.start(t)
+		authorityEntered := make(chan struct{})
+		authorityRelease := make(chan struct{})
+		var releaseAuthority sync.Once
+		release := func() { releaseAuthority.Do(func() { close(authorityRelease) }) }
+		t.Cleanup(release)
+		f.store.authority = func(context.Context, sourceindex.GenerationIdentity) (bool, error) {
+			close(authorityEntered)
+			<-authorityRelease
+			return true, nil
+		}
+		result := make(chan struct {
+			h   sourcegatewayHandle
+			err error
+		}, 1)
+		go func() {
+			h, err := f.open(t, context.Background())
+			result <- struct {
+				h   sourcegatewayHandle
+				err error
+			}{h, err}
+		}()
+		<-authorityEntered
+		shutdown := make(chan error, 1)
+		go func() { shutdown <- f.m.Shutdown(context.Background()) }()
+		<-f.m.ctx.Done()
+		release()
+		got := <-result
+		if got.h.nil() == false || f.opens != 0 {
+			t.Fatalf("handle=%v opens=%d", got.h.nil(), f.opens)
+		}
+		requireUnavailable(t, got.err)
+		if err := <-shutdown; err != nil {
+			t.Fatal(err)
+		}
+		f.assertReleased(t)
+	})
+
+	t.Run("RACE-02 shutdown while reader opening is blocked", func(t *testing.T) {
+		f := newProviderFixture(t, workflowstore.SourceIndexGenerationReady)
+		f.start(t)
+		openEntered := make(chan struct{})
+		openRelease := make(chan struct{})
+		var releaseOpen sync.Once
+		release := func() { releaseOpen.Do(func() { close(openRelease) }) }
+		t.Cleanup(release)
+		old := openGenerationReader
+		openGenerationReader = func(context.Context, reader.GenerationStore, reader.Config, sourceindex.GenerationIdentity) (generationReader, error) {
+			close(openEntered)
+			<-openRelease
+			return f.reader, nil
+		}
+		t.Cleanup(func() { openGenerationReader = old })
+		result := make(chan struct {
+			h   sourcegatewayHandle
+			err error
+		}, 1)
+		go func() {
+			h, err := f.open(t, context.Background())
+			result <- struct {
+				h   sourcegatewayHandle
+				err error
+			}{h, err}
+		}()
+		<-openEntered
+		releaseCalls := 0
+		writerDone := make(chan struct{})
+		go func() {
+			l := f.m.lock(f.id)
+			l.mu.Lock()
+			releaseCalls++
+			l.mu.Unlock()
+			close(writerDone)
+		}()
+		shutdown := make(chan error, 1)
+		go func() { shutdown <- f.m.Shutdown(context.Background()) }()
+		<-f.m.ctx.Done()
+		release()
+		got := <-result
+		handles := 0
+		if !got.h.nil() {
+			handles++
+		}
+		requireUnavailable(t, got.err)
+		<-writerDone
+		if f.reader.closeCalls != 1 || releaseCalls != 1 || handles != 0 {
+			t.Fatalf("close calls=%d release calls=%d handles=%d", f.reader.closeCalls, releaseCalls, handles)
+		}
+		if err := <-shutdown; err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("RACE-03 shutdown after reader opens", func(t *testing.T) {
+		f := newProviderFixture(t, workflowstore.SourceIndexGenerationReady)
+		f.start(t)
+		finalCheckEntered := make(chan struct{})
+		finalCheckRelease := make(chan struct{})
+		var releaseFinalCheck sync.Once
+		release := func() { releaseFinalCheck.Do(func() { close(finalCheckRelease) }) }
+		t.Cleanup(release)
+		old := beforeProviderFinalStateCheck
+		beforeProviderFinalStateCheck = func() {
+			close(finalCheckEntered)
+			<-finalCheckRelease
+		}
+		t.Cleanup(func() { beforeProviderFinalStateCheck = old })
+		result := make(chan struct {
+			h   sourcegatewayHandle
+			err error
+		}, 1)
+		go func() {
+			h, err := f.open(t, context.Background())
+			result <- struct {
+				h   sourcegatewayHandle
+				err error
+			}{h, err}
+		}()
+		<-finalCheckEntered
+		releaseCalls := 0
+		writerDone := make(chan struct{})
+		go func() {
+			l := f.m.lock(f.id)
+			l.mu.Lock()
+			releaseCalls++
+			l.mu.Unlock()
+			close(writerDone)
+		}()
+		shutdown := make(chan error, 1)
+		go func() { shutdown <- f.m.Shutdown(context.Background()) }()
+		<-f.m.ctx.Done()
+		release()
+		got := <-result
+		handles := 0
+		if !got.h.nil() {
+			handles++
+		}
+		requireUnavailable(t, got.err)
+		<-writerDone
+		if f.reader.closeCalls != 1 || releaseCalls != 1 || handles != 0 {
+			t.Fatalf("close calls=%d release calls=%d handles=%d", f.reader.closeCalls, releaseCalls, handles)
+		}
+		if err := <-shutdown; err != nil {
+			t.Fatal(err)
 		}
 	})
 }
