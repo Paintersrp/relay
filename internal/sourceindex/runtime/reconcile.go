@@ -148,6 +148,9 @@ func (m *Manager) reconcileGenerationLocked(ctx context.Context, row workflowsto
 		}
 	case workflowstore.SourceIndexGenerationReady:
 		d, err := verifyPublishedGeneration(ctx, reader.Config{IndexRoot: m.config.IndexRoot, ProtectedStorage: m.config.ProtectedStorage}, row.Identity)
+		if err != nil && !errors.Is(err, reader.ErrGenerationIntegrity) && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 		if err == nil && d.GenerationManifestSHA256 == row.GenerationManifestSHA256 && d.CoverageManifestSHA256 == row.CoverageManifestSHA256 && d.ArtifactManifestSHA256 == row.ArtifactManifestSHA256 {
 			return nil
 		}
@@ -229,10 +232,10 @@ func (m *Manager) rebuildLocked(ctx context.Context, row workflowstore.SourceInd
 	l := m.lock(row.GenerationID)
 	l.retiring = true
 	defer func() { l.retiring = false }()
-	if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
+	if err := m.removeUnlocked(row.GenerationID); err != nil {
 		return err
 	}
-	if err := m.removeUnlocked(row.GenerationID); err != nil {
+	if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
 		return err
 	}
 	if _, err := m.store.ReactivateSourceIndexGeneration(ctx, row.GenerationID); err != nil {

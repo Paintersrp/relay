@@ -13,17 +13,25 @@ import (
 )
 
 type runtimeStore struct {
-	mu     sync.Mutex
-	rows   map[string]workflowstore.SourceIndexGeneration
-	active map[string]bool
-	events []string
-	err    error
-	activeErr error
+	mu            sync.Mutex
+	rows          map[string]workflowstore.SourceIndexGeneration
+	active        map[string]bool
+	events        []string
+	eventHook     func(string)
+	err           error
+	retryErr      error
+	retryCalls    int
+	activeErr     error
 	activeEntered chan struct{}
 	activeRelease chan struct{}
 }
 
-func (s *runtimeStore) event(v string) { s.events = append(s.events, v) }
+func (s *runtimeStore) event(v string) {
+	s.events = append(s.events, v)
+	if s.eventHook != nil {
+		s.eventHook(v)
+	}
+}
 func (s *runtimeStore) CreateOrResolveSourceIndexGeneration(_ context.Context, p workflowstore.CreateOrResolveSourceIndexGenerationParams) (workflowstore.SourceIndexGeneration, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,11 +88,20 @@ func (*runtimeStore) ListActiveSourceIndexAuthorities(context.Context) ([]workfl
 	return nil, nil
 }
 func (s *runtimeStore) IsSourceIndexAuthorityActive(_ context.Context, x sourceindex.GenerationIdentity) (bool, error) {
-	if s.activeEntered != nil { select { case s.activeEntered <- struct{}{}: default: } }
-	if s.activeRelease != nil { <-s.activeRelease }
+	if s.activeEntered != nil {
+		select {
+		case s.activeEntered <- struct{}{}:
+		default:
+		}
+	}
+	if s.activeRelease != nil {
+		<-s.activeRelease
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activeErr != nil { return false, s.activeErr }
+	if s.activeErr != nil {
+		return false, s.activeErr
+	}
 	id, e := sourceindex.GenerationID(x)
 	if e != nil {
 		return false, e
@@ -117,6 +134,10 @@ func (s *runtimeStore) MarkSourceIndexGenerationFailed(_ context.Context, p work
 func (s *runtimeStore) RetrySourceIndexGeneration(_ context.Context, id string) (workflowstore.SourceIndexGeneration, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.retryCalls++
+	if s.retryErr != nil {
+		return workflowstore.SourceIndexGeneration{}, s.retryErr
+	}
 	r := s.rows[id]
 	r.State = workflowstore.SourceIndexGenerationPending
 	r.FailureCode = ""
@@ -260,7 +281,7 @@ func TestReadyIntegrityAndCleanupPolicy(t *testing.T) {
 			t.Fatalf("error=%v", err)
 		}
 		got, _ := s.GetSourceIndexGeneration(context.Background(), id)
-		if got.State != workflowstore.SourceIndexGenerationRetired || len(m.queue) != 0 {
+		if got.State != workflowstore.SourceIndexGenerationReady || len(m.queue) != 0 {
 			t.Fatalf("state=%s queue=%d", got.State, len(m.queue))
 		}
 	})
