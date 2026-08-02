@@ -1938,3 +1938,21 @@ func TestVerificationCleanup(t *testing.T) {
 		assertFilesClosed(t, probe.opened)
 	})
 }
+
+func TestVerifyPublishedGenerationReturnsDescriptorAndClosesResources(t *testing.T) {
+	identity, _ := testIdentity(t, "vault")
+	fs := newFakeFS(t)
+	withFakeFS(fs)
+	root := filepath.Join(t.TempDir(), "index")
+	row, id, _ := buildGeneration(t, fs, root, generationSpec{identity: identity, indexed: []string{"a.txt"}, shards: map[int][]byte{0: []byte("shard")}})
+	descriptor, err := VerifyPublishedGeneration(context.Background(), Config{IndexRoot: root}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if descriptor.GenerationID != id || descriptor.Identity != identity || descriptor.GenerationManifestSHA256 != row.GenerationManifestSHA256 || descriptor.CoverageManifestSHA256 != row.CoverageManifestSHA256 || descriptor.ArtifactManifestSHA256 != row.ArtifactManifestSHA256 {
+		t.Fatalf("descriptor = %#v, want row %#v", descriptor, row)
+	}
+	if len(fs.handles) != 0 {
+		t.Fatalf("directory handles remain open: %v", fs.handles)
+	}
+}

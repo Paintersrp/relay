@@ -43,6 +43,54 @@ func TestSourceIndexGenerationLifecycleAndConvergence(t *testing.T) {
 	}
 }
 
+func TestSourceIndexGenerationAuthorityListAndReactivation(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	vault, closure := seedReadySourceVaultClosure(t, ctx, store)
+	identity := testSourceIndexIdentity(t, vault.VaultID, strings.TrimSpace(closure.CommitOID[:1]), strings.TrimSpace(closure.TreeOID[:1]))
+	created, _, err := store.CreateOrResolveSourceIndexGeneration(ctx, CreateOrResolveSourceIndexGenerationParams{Identity: identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginSourceIndexGenerationBuild(ctx, created.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	created, err = store.MarkSourceIndexGenerationReady(ctx, MarkSourceIndexGenerationReadyParams{
+		GenerationID: created.GenerationID, GenerationManifestSHA256: strings.Repeat("1", 64),
+		CoverageManifestSHA256: strings.Repeat("2", 64), ArtifactManifestSHA256: strings.Repeat("3", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.CreateOrGetSourceVaultRetention(ctx, CreateSourceVaultRetentionParams{
+			RetentionID: NewSourceVaultRetentionID(), ClosureRowID: closure.ID,
+			OwnerClass: SourceVaultOwnerArtifact, OwnerIdentity: "source-index-authority",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.ListActiveSourceIndexAuthorities(ctx)
+	if err != nil || len(active) != 1 || active[0].VaultRowID != vault.ID || active[0].VaultID != vault.VaultID || active[0].ClosureRowID != closure.ID || active[0].CommitOID != closure.CommitOID || active[0].TreeOID != closure.TreeOID {
+		t.Fatalf("active authorities = %#v, err=%v", active, err)
+	}
+	if _, err := store.RetireSourceIndexGeneration(ctx, created.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := store.ListActiveSourceIndexAuthorities(ctx); err != nil || len(active) != 1 {
+		t.Fatalf("retired authorities = %#v, err=%v", active, err)
+	}
+	reactivated, err := store.ReactivateSourceIndexGeneration(ctx, created.GenerationID)
+	if err != nil || reactivated.State != SourceIndexGenerationPending || reactivated.RetiredAt != "" || reactivated.ReadyAt != "" {
+		t.Fatalf("reactivated = %#v, err=%v", reactivated, err)
+	}
+	all, err := store.ListSourceIndexGenerations(ctx)
+	if err != nil || len(all) != 1 || all[0].State != SourceIndexGenerationPending {
+		t.Fatalf("all generations = %#v, err=%v", all, err)
+	}
+}
+
 func TestSourceIndexGenerationIdentityConvergence(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openWorkflowTestStore(t)

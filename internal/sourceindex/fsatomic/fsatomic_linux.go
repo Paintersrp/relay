@@ -7,14 +7,48 @@ package fsatomic
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-// RemoveOwnedStaging removes child only through descriptors rooted at indexRoot.
-// Missing root, staging, or child means no owned staging can remain.
+// RemoveOwnedGeneration removes one exact generation directory through
+// descriptors rooted at indexRoot. Missing paths mean no owned generation can
+// remain.
+func RemoveOwnedGeneration(indexRoot, generationID string) error {
+	if !validHex(generationID, 64) {
+		return os.ErrInvalid
+	}
+	return removeOwnedChild(indexRoot, "generations", generationID)
+}
+
+// RemoveOwnedGenerationStaging removes one exact generation staging directory
+// through descriptors rooted at indexRoot.
+func RemoveOwnedGenerationStaging(indexRoot, generationID, nonce string) error {
+	if !validHex(generationID, 64) || !validHex(nonce, 32) {
+		return os.ErrInvalid
+	}
+	return removeOwnedChild(indexRoot, "staging", generationID+"-"+nonce)
+}
+
+// RemoveOwnedStaging is retained for the supervisor's existing staging
+// cleanup boundary. New callers should use RemoveOwnedGenerationStaging.
 func RemoveOwnedStaging(indexRoot, child string) error {
-	root, err := unix.Open(indexRoot, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if child == "" || strings.ContainsAny(child, `/\`) || child == "." || child == ".." {
+		return os.ErrInvalid
+	}
+	return removeOwnedChild(indexRoot, "staging", child)
+}
+
+func removeOwnedChild(indexRoot, parentName, child string) error {
+	if !filepath.IsAbs(indexRoot) || filepath.Clean(indexRoot) != indexRoot {
+		return os.ErrInvalid
+	}
+	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{
+		Flags:   uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC),
+		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
 	if errors.Is(err, unix.ENOENT) {
 		return nil
 	}
@@ -22,15 +56,15 @@ func RemoveOwnedStaging(indexRoot, child string) error {
 		return err
 	}
 	defer unix.Close(root)
-	staging, err := unix.Openat(root, "staging", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	parent, err := openVerifiedDirectory(root, parentName, nil)
 	if errors.Is(err, unix.ENOENT) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer unix.Close(staging)
-	fd, err := openVerifiedDirectory(staging, child, nil)
+	defer unix.Close(parent)
+	fd, err := openVerifiedDirectory(parent, child, nil)
 	if errors.Is(err, unix.ENOENT) {
 		return nil
 	}
@@ -38,8 +72,11 @@ func RemoveOwnedStaging(indexRoot, child string) error {
 		return err
 	}
 	var owned unix.Stat_t
-	if err := unix.Fstat(fd, &owned); err != nil {
+	if err := unix.Fstat(fd, &owned); err != nil || owned.Mode&unix.S_IFMT != unix.S_IFDIR {
 		unix.Close(fd)
+		if err == nil {
+			err = os.ErrInvalid
+		}
 		return err
 	}
 	if err := removeDirectory(fd); err != nil {
@@ -50,13 +87,16 @@ func RemoveOwnedStaging(indexRoot, child string) error {
 		return err
 	}
 	var current unix.Stat_t
-	if err := unix.Fstatat(staging, child, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := unix.Fstatat(parent, child, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if errors.Is(err, unix.ENOENT) {
+			return nil
+		}
 		return err
 	}
 	if current.Dev != owned.Dev || current.Ino != owned.Ino || current.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return os.ErrInvalid
 	}
-	return unix.Unlinkat(staging, child, unix.AT_REMOVEDIR)
+	return unix.Unlinkat(parent, child, unix.AT_REMOVEDIR)
 }
 
 func removeDirectory(fd int) error {
@@ -92,16 +132,37 @@ func removeDirectory(fd int) error {
 			if closeErr != nil {
 				return closeErr
 			}
-			if err := unix.Unlinkat(fd, name, unix.AT_REMOVEDIR); err != nil {
+			if err := unlinkOwnedDirectory(fd, name, &stat); err != nil {
 				return err
 			}
 			continue
+		}
+		if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
+			return os.ErrInvalid
+		}
+		var current unix.Stat_t
+		if err := unix.Fstatat(fd, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return err
+		}
+		if current.Dev != stat.Dev || current.Ino != stat.Ino || current.Mode != stat.Mode || current.Nlink != stat.Nlink {
+			return os.ErrInvalid
 		}
 		if err := unix.Unlinkat(fd, name, 0); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func unlinkOwnedDirectory(parent int, name string, inspected *unix.Stat_t) error {
+	var current unix.Stat_t
+	if err := unix.Fstatat(parent, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return err
+	}
+	if current.Dev != inspected.Dev || current.Ino != inspected.Ino || current.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return os.ErrInvalid
+	}
+	return unix.Unlinkat(parent, name, unix.AT_REMOVEDIR)
 }
 
 // openVerifiedDirectory binds traversal to an opened object.  openat2 prevents
@@ -125,6 +186,18 @@ func openVerifiedDirectory(parent int, name string, inspected *unix.Stat_t) (int
 		return -1, os.ErrInvalid
 	}
 	return fd, nil
+}
+
+func validHex(s string, length int) bool {
+	if len(s) != length {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func RenameNoReplace(source, target string) error {

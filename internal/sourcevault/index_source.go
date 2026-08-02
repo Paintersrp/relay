@@ -10,6 +10,35 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
+// ResolveSourceIndexIdentity resolves the exact retained source-vault closure
+// for an index identity. It never selects a different generation of the same
+// commit or tree and requires the closure to remain actively retained.
+func (m *Manager) ResolveSourceIndexIdentity(ctx context.Context, relationship workflowstore.OperationPacketVaultRelationship) (sourceindex.GenerationIdentity, error) {
+	if m == nil || m.store == nil {
+		return sourceindex.GenerationIdentity{}, &Error{Code: CodeVaultUnavailable}
+	}
+	var identity sourceindex.GenerationIdentity
+	err := m.withActiveRetentionEdge(ctx, relationship, func(_ string, closure workflowstore.SourceVaultClosure) error {
+		vault, err := m.store.GetSourceVaultByRowID(ctx, relationship.VaultRowID)
+		if err != nil {
+			return err
+		}
+		if vault.ID != closure.VaultRowID || closure.ID != relationship.ClosureRowID || closure.CommitOID != relationship.CommitOID || closure.TreeOID != relationship.TreeOID {
+			return &Error{Code: CodeVaultUnavailable}
+		}
+		digest, err := sourceindex.BuildOptionsSHA256(sourceindex.DefaultBuildOptions())
+		if err != nil {
+			return err
+		}
+		identity, err = sourceindex.NewGenerationIdentity(vault.VaultID, closure.CommitOID, closure.TreeOID, digest)
+		return err
+	})
+	if err != nil {
+		return sourceindex.GenerationIdentity{}, err
+	}
+	return identity, nil
+}
+
 // AcquireSourceIndexLease exposes an already-retained closure to the index
 // supervisor while holding the vault's maintenance lock. That lock is local to
 // this Manager instance; it does not claim cross-manager or cross-process

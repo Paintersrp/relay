@@ -318,6 +318,64 @@ func validDigest(s string) bool {
 func digest(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func invalidConfig() error   { return ErrInvalidConfiguration }
 
+// VerifyPublishedGeneration verifies one published generation through bound
+// descriptors and closes every descriptor opened by verification before it
+// returns. The returned descriptor is derived from the verified manifests.
+func VerifyPublishedGeneration(ctx context.Context, config Config, identity sourceindex.GenerationIdentity) (descriptor Descriptor, err error) {
+	if err := ctx.Err(); err != nil {
+		return Descriptor{}, err
+	}
+	if config.IndexRoot == "" || !filepath.IsAbs(config.IndexRoot) || filepath.Clean(config.IndexRoot) != config.IndexRoot {
+		return Descriptor{}, invalidConfig()
+	}
+	if _, err := sourceindex.GenerationID(identity); err != nil {
+		return Descriptor{}, fmt.Errorf("%w: identity", ErrInvalidConfiguration)
+	}
+	wantOptions, _ := sourceindex.BuildOptionsSHA256(sourceindex.DefaultBuildOptions())
+	if identity.BuildOptionsSHA256 != wantOptions {
+		return Descriptor{}, fmt.Errorf("%w: build options", ErrInvalidConfiguration)
+	}
+	if err := sourceindex.ValidateIndexRoot(config.IndexRoot, config.ProtectedStorage); err != nil {
+		return Descriptor{}, fmt.Errorf("%w: index root", ErrInvalidConfiguration)
+	}
+	if !zoektSupported() {
+		return Descriptor{}, ErrUnsupportedPlatform
+	}
+	id, _ := sourceindex.GenerationID(identity)
+	dir, err := anchorDirectory(config, id)
+	if err != nil {
+		return Descriptor{}, fmt.Errorf("%w: directory", ErrGenerationIntegrity)
+	}
+	files := &boundGenerationFiles{dir: dir, cache: map[string][]byte{}, ids: map[string]indexer.FileIdentity{}}
+	verified, err := verifyGenerationFiles(files, indexerprotocol.BuildRequest{
+		GenerationID: id,
+		Identity:     identity,
+		BuildOptions: sourceindex.DefaultBuildOptions(),
+	})
+	if err != nil {
+		_ = dir.Close()
+		return Descriptor{}, fmt.Errorf("%w: artifacts", ErrGenerationIntegrity)
+	}
+	if err := ctx.Err(); err != nil {
+		_ = indexer.CloseArtifacts(verified.Opened)
+		_ = dir.Close()
+		return Descriptor{}, err
+	}
+	defer func() {
+		err = errors.Join(err, indexer.CloseArtifacts(verified.Opened), dir.Close())
+	}()
+	if verified.Generation.GenerationID != id || verified.Generation.Identity != identity {
+		return Descriptor{}, ErrGenerationIntegrity
+	}
+	return Descriptor{
+		GenerationID:             id,
+		Identity:                 identity,
+		GenerationManifestSHA256: verified.GenerationRawSHA256,
+		CoverageManifestSHA256:   verified.CoverageRawSHA256,
+		ArtifactManifestSHA256:   verified.ArtifactRawSHA256,
+	}, nil
+}
+
 func Open(ctx context.Context, store GenerationStore, config Config, identity sourceindex.GenerationIdentity) (*Reader, error) {
 	if store == nil || config.IndexRoot == "" || !filepath.IsAbs(config.IndexRoot) || filepath.Clean(config.IndexRoot) != config.IndexRoot {
 		return nil, invalidConfig()

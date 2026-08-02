@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,6 +20,9 @@ import (
 	"relay/internal/executor"
 	"relay/internal/mcp"
 	"relay/internal/server"
+	"relay/internal/sourcegateway"
+	"relay/internal/sourceindex"
+	sourceindexruntime "relay/internal/sourceindex/runtime"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -80,7 +84,47 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 	if err != nil {
 		return err
 	}
-	policy, err := mcpcomposition.New(workflowStore, sourceVaults, authorityPublications, cursorKey, mcp.NewHTTPSFileParameterFetcher())
+	abs := func(path string) (string, error) {
+		value, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Clean(value), nil
+	}
+	vaultPath, err := abs(sourceVaultDir)
+	if err != nil {
+		return fmt.Errorf("resolve source vault storage: %w", err)
+	}
+	artifactPath, err := abs(workflowArtifactsDir)
+	if err != nil {
+		return fmt.Errorf("resolve workflow artifact storage: %w", err)
+	}
+	databasePath, err := abs(workflowDBPath)
+	if err != nil {
+		return fmt.Errorf("resolve workflow database storage: %w", err)
+	}
+	indexConfig, err := sourceindexruntime.LoadConfig(sourceindex.ProtectedStorage{SourceVaultRoot: vaultPath, WorkflowArtifactsRoot: artifactPath, WorkflowDatabasePath: databasePath})
+	if err != nil {
+		return fmt.Errorf("load source-index runtime configuration: %w", err)
+	}
+	var indexRuntime *sourceindexruntime.Manager
+	var sourceOptions []sourcegateway.Option
+	if indexConfig.Enabled {
+		indexRuntime, err = sourceindexruntime.New(workflowStore, sourceVaults, indexConfig)
+		if err != nil {
+			return fmt.Errorf("construct source-index runtime: %w", err)
+		}
+		if err = indexRuntime.Start(ctx); err != nil {
+			return fmt.Errorf("start source-index runtime: %w", err)
+		}
+		defer func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			defer cancel()
+			_ = indexRuntime.Shutdown(shutdown)
+		}()
+		sourceOptions = append(sourceOptions, sourcegateway.WithSearchIndexProvider(indexRuntime))
+	}
+	policy, err := mcpcomposition.New(workflowStore, sourceVaults, authorityPublications, cursorKey, mcp.NewHTTPSFileParameterFetcher(), sourceOptions...)
 	if err != nil {
 		return fmt.Errorf("compose retained source policy: %w", err)
 	}
@@ -143,9 +187,15 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 	defer shutdownCancel()
 	ingressResult := make(chan error, 1)
 	mainResult := make(chan error, 1)
+	indexResult := make(chan error, 1)
 	go func() { ingressResult <- relayServer.ShutdownMCPIngress(shutdownContext) }()
 	go func() { mainResult <- httpServer.Shutdown(shutdownContext) }()
-	shutdownErr := errors.Join(<-ingressResult, <-mainResult)
+	if indexRuntime != nil {
+		go func() { indexResult <- indexRuntime.Shutdown(shutdownContext) }()
+	} else {
+		indexResult <- nil
+	}
+	shutdownErr := errors.Join(<-ingressResult, <-mainResult, <-indexResult)
 	if runtimeErr == nil {
 		select {
 		case runtimeErr = <-serveResult:
