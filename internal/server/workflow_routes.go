@@ -57,7 +57,11 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 		sourceVaultReader = sourceVaults
 	}
 
-	readService, err := workflowapp.NewService(workflowStore)
+	var sourceVaultRoot string
+	if sourceVaults != nil {
+		sourceVaultRoot = sourceVaults.Root()
+	}
+	readService, err := workflowapp.NewService(workflowStore, sourceVaultRoot)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct workflow read service: %w", err)
 	}

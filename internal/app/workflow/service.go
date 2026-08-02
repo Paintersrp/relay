@@ -27,11 +27,17 @@ type Service struct {
 	registry *workflowrepos.Registry
 }
 
-func NewService(store *workflowstore.Store) (*Service, error) {
+func NewService(store *workflowstore.Store, sourceVaultRoot ...string) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
-	registry, err := workflowrepos.NewRegistry(store)
+	var registry *workflowrepos.Registry
+	var err error
+	if len(sourceVaultRoot) > 0 && strings.TrimSpace(sourceVaultRoot[0]) != "" {
+		registry, err = workflowrepos.NewRegistryWithSourceVaultRoot(store, sourceVaultRoot[0])
+	} else {
+		registry, err = workflowrepos.NewRegistry(store)
+	}
 	if err != nil {
 		return nil, err
 	}

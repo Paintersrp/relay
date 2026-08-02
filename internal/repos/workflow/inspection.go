@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"relay/internal/sourcevaultpolicy"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -46,6 +47,7 @@ const (
 
 var (
 	ErrInvalidRepositoryPath             = errors.New("invalid repository path")
+	ErrRepositoryStorageOverlap          = errors.New("repository storage overlap")
 	ErrGitUnavailable                    = errors.New("Git executable is unavailable")
 	ErrGitTimeout                        = errors.New("Git command timed out")
 	ErrGitOutputLimit                    = errors.New("Git command output exceeded the limit")
@@ -265,6 +267,15 @@ func (r *Registry) Inspect(ctx context.Context, input InspectionInput) (Inspecti
 	resolvedRoot, err := resolveDirectory(rootResult.Stdout)
 	if err != nil {
 		return Inspection{}, fmt.Errorf("%w: resolve Git worktree root: %v", ErrInvalidRepositoryPath, err)
+	}
+	if r.sourceVaultRoot != "" {
+		canonicalRoot, separationErr := sourcevaultpolicy.ValidateRepositorySeparation(ctx, r.sourceVaultRoot, resolvedRoot)
+		if separationErr != nil {
+			if errors.Is(separationErr, sourcevaultpolicy.ErrOverlap) {
+				return Inspection{}, fmt.Errorf("%w: repository %q overlaps protected source-vault root %q; neither path may contain the other", ErrRepositoryStorageOverlap, canonicalRoot, r.sourceVaultRoot)
+			}
+			return Inspection{}, fmt.Errorf("%w: validate source-vault storage separation: %v", ErrInvalidRepositoryPath, separationErr)
+		}
 	}
 	bareResult, err := r.runner.Run(ctx, resolvedRoot, "rev-parse", "--is-bare-repository")
 	if err != nil {

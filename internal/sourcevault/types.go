@@ -32,6 +32,7 @@ const MaxObjectReadBytes int64 = 64 << 20
 type Error struct {
 	Code          string
 	FailureReason string
+	err           error
 }
 
 func (e *Error) Error() string {
@@ -64,6 +65,9 @@ func (e *Error) Error() string {
 	case CodeDatabaseFailure:
 		return "source vault persistence is unavailable"
 	case CodeUnsafeVaultRoot:
+		if e.err != nil {
+			return e.err.Error()
+		}
 		return "source vault storage overlaps registered source authority"
 	case CodeOperationCancelled:
 		return "source vault operation was cancelled"
@@ -74,6 +78,13 @@ func (e *Error) Error() string {
 	default:
 		return "source vault operation failed"
 	}
+}
+
+func (e *Error) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
 }
 
 func ErrorCode(err error) string {

@@ -89,7 +89,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, log, nil); err != nil {
-		log.Error("Relay server stopped", "error_class", "runtime_failure")
+		log.Error("Relay server stopped", "error_class", "runtime_failure", "error", err)
 		os.Exit(1)
 	}
 }
@@ -108,10 +108,20 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 		return fmt.Errorf("open workflow store: %w", err)
 	}
 	defer workflowStore.Close()
-	sourceVaultDir := environmentOrDefault("RELAY_SOURCE_VAULT_DIR", "data/workflow/source-vaults")
+	sourceVaultDir, sourceVaultExplicit, err := config.ResolveSourceVaultDir()
+	if err != nil {
+		return fmt.Errorf("resolve source vault storage: %w", err)
+	}
+	legacyMigration, err := migrateLegacySourceVault(sourceVaultDir, sourceVaultExplicit)
+	if err != nil {
+		return err
+	}
 	sourceVaults, err := sourcevault.Open(ctx, sourceVaultDir, workflowStore)
 	if err != nil {
 		return fmt.Errorf("open and reconcile source vaults: %w", err)
+	}
+	if err := legacyMigration.cleanup(); err != nil {
+		log.Warn("remove migrated legacy source-vault storage", "error", err)
 	}
 	authorityPublications, err := operations.NewAuthorityPublicationService(workflowStore, sourceVaults)
 	if err != nil {

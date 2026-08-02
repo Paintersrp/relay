@@ -276,6 +276,8 @@ func (h *WorkflowHandler) writeWorkflowRepositoryError(
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Repository target was not found")
 	case errors.Is(err, workflowrepos.ErrInvalidRepositoryPath):
 		shared.Error(w, http.StatusUnprocessableEntity, "INVALID_REPOSITORY_PATH", err.Error())
+	case errors.Is(err, workflowrepos.ErrRepositoryStorageOverlap):
+		shared.Error(w, http.StatusUnprocessableEntity, "REPOSITORY_STORAGE_OVERLAP", err.Error())
 	case errors.Is(err, workflowrepos.ErrInvalidConfiguredBranch),
 		errors.Is(err, workflowrepos.ErrConfiguredBranchUnavailable):
 		shared.Error(w, http.StatusUnprocessableEntity, "INVALID_REPOSITORY_AUTHORITY", err.Error())

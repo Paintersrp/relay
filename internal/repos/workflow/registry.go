@@ -8,13 +8,15 @@ import (
 	"strings"
 	"unicode"
 
+	"relay/internal/sourcevaultpolicy"
 	workflowstore "relay/internal/store/workflow"
 )
 
 type Registry struct {
-	store        *workflowstore.Store
-	runner       GitRunner
-	beforeCreate func()
+	store           *workflowstore.Store
+	runner          GitRunner
+	sourceVaultRoot string
+	beforeCreate    func()
 }
 
 func NewRegistry(store *workflowstore.Store) (*Registry, error) {
@@ -29,6 +31,20 @@ func NewRegistryWithRunner(store *workflowstore.Store, runner GitRunner) (*Regis
 		return nil, fmt.Errorf("Git runner is required")
 	}
 	return &Registry{store: store, runner: runner}, nil
+}
+
+// NewRegistryWithSourceVaultRoot applies the same canonical separation policy
+// used by source-vault startup before a repository can be persisted.
+func NewRegistryWithSourceVaultRoot(store *workflowstore.Store, root string) (*Registry, error) {
+	registry, err := NewRegistry(store)
+	if err != nil {
+		return nil, err
+	}
+	registry.sourceVaultRoot, err = sourcevaultpolicy.CanonicalPathForCreation(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve source-vault root: %w", err)
+	}
+	return registry, nil
 }
 
 func (r *Registry) Register(ctx context.Context, repoTarget, localPath string) (workflowstore.RepositoryTarget, error) {

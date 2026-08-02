@@ -449,6 +449,12 @@ func TestWorkflowRepositoryTypedErrorMapping(t *testing.T) {
 			code:   "INVALID_REPOSITORY_PATH",
 		},
 		{
+			name:   "storage overlap",
+			err:    fmtError(workflowrepos.ErrRepositoryStorageOverlap, "repository overlaps source-vault root"),
+			status: http.StatusUnprocessableEntity,
+			code:   "REPOSITORY_STORAGE_OVERLAP",
+		},
+		{
 			name:   "git unavailable",
 			err:    workflowrepos.ErrGitUnavailable,
 			status: http.StatusServiceUnavailable,

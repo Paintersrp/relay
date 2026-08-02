@@ -123,6 +123,43 @@ func TestInspectAndConfirmRepository(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsSourceVaultOverlapBeforeConfirmation(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	repository := filepath.Join(root, "repository")
+	if err := os.MkdirAll(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitTestCommand(t, repository, "init")
+	runGitTestCommand(t, repository, "remote", "add", "origin", "git@example.com:owner/relay.git")
+	store := openInspectionTestStore(t, filepath.Join(root, "relay.sqlite"))
+
+	for _, vault := range []string{filepath.Join(repository, "source-vaults"), filepath.Join(repository, "nested", "source-vaults")} {
+		registry, err := NewRegistryWithSourceVaultRoot(store, vault)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = registry.Inspect(context.Background(), InspectionInput{LocalPath: repository})
+		if !errors.Is(err, ErrRepositoryStorageOverlap) {
+			t.Fatalf("Inspect(%q) error = %v, want storage overlap", vault, err)
+		}
+	}
+	vault := filepath.Join(root, "vault")
+	insideVault := filepath.Join(vault, "repository")
+	if err := os.MkdirAll(insideVault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitTestCommand(t, insideVault, "init")
+	runGitTestCommand(t, insideVault, "remote", "add", "origin", "git@example.com:owner/inside.git")
+	registry, err := NewRegistryWithSourceVaultRoot(store, vault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Inspect(context.Background(), InspectionInput{LocalPath: insideVault}); !errors.Is(err, ErrRepositoryStorageOverlap) {
+		t.Fatalf("Inspect(repository inside vault) error = %v, want storage overlap", err)
+	}
+}
+
 func TestInspectSupportsLinkedWorktree(t *testing.T) {
 	requireGit(t)
 

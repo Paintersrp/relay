@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"relay/internal/sourcevaultpolicy"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -88,14 +89,7 @@ func (g *commandGit) ensureRoot() error {
 func (g *commandGit) ValidateRepositorySeparation(ctx context.Context, localPath string) (bool, error) {
 	storedPath, err := canonicalPathForCreation(localPath)
 	if err != nil {
-		return false, &Error{Code: CodeRepositoryMismatch}
-	}
-	managedRoot := filepath.Join(g.root, "repositories")
-	overlapsVaultStorage := func(candidate string) bool {
-		return pathsOverlap(g.root, candidate) || pathsOverlap(managedRoot, candidate)
-	}
-	if overlapsVaultStorage(storedPath) {
-		return false, &Error{Code: CodeUnsafeVaultRoot}
+		return false, &Error{Code: CodeRepositoryMismatch, err: err}
 	}
 	info, err := os.Stat(storedPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -104,18 +98,12 @@ func (g *commandGit) ValidateRepositorySeparation(ctx context.Context, localPath
 	if err != nil || !info.IsDir() {
 		return false, &Error{Code: CodeRepositoryMismatch}
 	}
-	sourcePath, err := canonicalExistingPath(localPath)
-	if err != nil {
-		return false, &Error{Code: CodeRepositoryMismatch}
+	_, err = sourcevaultpolicy.ValidateRepositorySeparation(ctx, g.root, localPath)
+	if errors.Is(err, sourcevaultpolicy.ErrOverlap) {
+		return false, &Error{Code: CodeUnsafeVaultRoot, err: err}
 	}
-	gitDirectory, commonDirectory, err := resolveGitDirectories(ctx, sourcePath)
 	if err != nil {
-		return false, err
-	}
-	if overlapsVaultStorage(sourcePath) ||
-		overlapsVaultStorage(gitDirectory) ||
-		overlapsVaultStorage(commonDirectory) {
-		return false, &Error{Code: CodeUnsafeVaultRoot}
+		return false, &Error{Code: CodeRepositoryMismatch, err: err}
 	}
 	return true, nil
 }

@@ -20,6 +20,13 @@ type Manager struct {
 	locks sync.Map
 }
 
+func (m *Manager) Root() string {
+	if git, ok := m.git.(*commandGit); ok {
+		return git.root
+	}
+	return ""
+}
+
 type vaultMutex struct {
 	mu sync.Mutex
 }
