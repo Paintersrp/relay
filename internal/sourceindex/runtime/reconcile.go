@@ -62,6 +62,25 @@ func (m *Manager) reconcile(ctx context.Context, startup bool) error {
 func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.SourceIndexGeneration, active bool, _ bool) error {
 	l := m.lock(row.GenerationID)
 	for {
+		m.mu.Lock()
+		local, owned := m.builds[row.GenerationID]
+		m.mu.Unlock()
+		if owned {
+			active, err := m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
+			if err != nil {
+				return err
+			}
+			if !active {
+				local.cancel()
+			}
+			m.emitLocalBuildEvent(row.GenerationID, localBuildWaitStarted)
+			select {
+			case <-local.done:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 		l.mu.Lock()
 		current, err := m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
 		if err != nil {
@@ -74,21 +93,20 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 			return err
 		}
 		m.mu.Lock()
-		local, owned := m.builds[current.GenerationID]
+		local, owned = m.builds[current.GenerationID]
 		m.mu.Unlock()
-		if current.State == workflowstore.SourceIndexGenerationBuilding && owned && !active {
+		if current.State == workflowstore.SourceIndexGenerationBuilding && owned {
 			l.mu.Unlock()
-			local.cancel()
+			if !active {
+				local.cancel()
+			}
+			m.emitLocalBuildEvent(current.GenerationID, localBuildWaitStarted)
 			select {
 			case <-local.done:
 				continue
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-		}
-		if current.State == workflowstore.SourceIndexGenerationBuilding && owned && active {
-			l.mu.Unlock()
-			return nil
 		}
 		err = m.reconcileGenerationLocked(ctx, current, active)
 		l.mu.Unlock()

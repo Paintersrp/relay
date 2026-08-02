@@ -41,6 +41,16 @@ type localBuild struct {
 	done   chan struct{}
 }
 
+type localBuildEvent uint8
+
+const (
+	localBuildRegistered localBuildEvent = iota
+	localBuildWriteReleased
+	localBuildRemoved
+	localBuildDoneClosed
+	localBuildWaitStarted
+)
+
 var workerStarted = func() {}
 
 type Manager struct {
@@ -63,6 +73,7 @@ type Manager struct {
 	doneOnce          sync.Once
 	stopLogOnce       sync.Once
 	logger            *slog.Logger
+	localBuildEvent   func(string, localBuildEvent)
 }
 
 func New(store Store, authority SourceAuthority, config Config) (*Manager, error) {
@@ -215,13 +226,17 @@ func (m *Manager) runBuild(id string) {
 	}
 	m.builds[id] = local
 	m.mu.Unlock()
+	m.emitLocalBuildEvent(id, localBuildRegistered)
 	defer func() {
 		cancel()
 		l.mu.Unlock()
+		m.emitLocalBuildEvent(id, localBuildWriteReleased)
 		m.mu.Lock()
 		delete(m.builds, id)
 		m.mu.Unlock()
+		m.emitLocalBuildEvent(id, localBuildRemoved)
 		close(local.done)
+		m.emitLocalBuildEvent(id, localBuildDoneClosed)
 	}()
 	// The queue decision above is only a reservation. Re-read the exact row and
 	// authority immediately before handing control to the supervisor.
@@ -277,6 +292,13 @@ func (m *Manager) runBuild(id string) {
 		m.logger.Info("source_index_generation_failed", "generation_id", id, "attempt_count", current.AttemptCount, "failure_code", current.FailureCode)
 	}
 }
+
+func (m *Manager) emitLocalBuildEvent(id string, event localBuildEvent) {
+	if m.localBuildEvent != nil {
+		m.localBuildEvent(id, event)
+	}
+}
+
 func (m *Manager) wakeReconciliation() {
 	select {
 	case m.wake <- struct{}{}:
