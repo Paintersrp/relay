@@ -46,12 +46,7 @@ func TestErrorReturningConstructorsRejectNilReader(t *testing.T) {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {
-			root := t.TempDir()
-			store, err := workflowstore.Open(root+"/workflow.sqlite", root+"/artifacts")
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := newExecutorWorkflowStore(t)
 			fn := reflect.ValueOf(c.value)
 			var args []reflect.Value
 			if fn.Type().NumIn() == 4 {
@@ -85,12 +80,7 @@ func TestErrorReturningConstructorsSucceedWithNonNilReader(t *testing.T) {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {
-			root := t.TempDir()
-			store, err := workflowstore.Open(root+"/workflow.sqlite", root+"/artifacts")
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := newExecutorWorkflowStore(t)
 			fn := reflect.ValueOf(c.value)
 			reader := newUnavailableSourceVaultReader()
 			var args []reflect.Value
