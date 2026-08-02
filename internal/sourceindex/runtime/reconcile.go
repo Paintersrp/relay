@@ -125,14 +125,7 @@ func (m *Manager) reconcileGenerationLocked(ctx context.Context, row workflowsto
 			if owned {
 				return nil
 			}
-			if err := m.recoverBuildingLocked(ctx, row, false); err != nil {
-				return err
-			}
-			updated, err := m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
-			if err != nil {
-				return err
-			}
-			row = updated
+			return m.recoverBuildingLocked(ctx, row, false)
 		}
 		if row.State != workflowstore.SourceIndexGenerationRetired {
 			if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
@@ -205,6 +198,9 @@ func (m *Manager) recoverBuildingLocked(ctx context.Context, row workflowstore.S
 		}
 		return nil
 	}
+	if !errors.Is(verifyErr, reader.ErrGenerationIntegrity) {
+		return verifyErr
+	}
 	if err := m.removeUnlocked(row.GenerationID); err != nil {
 		return err
 	}
@@ -226,7 +222,7 @@ func (m *Manager) recoverBuildingLocked(ctx context.Context, row workflowstore.S
 	if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
 		return err
 	}
-	return nil
+	return m.removeUnlocked(row.GenerationID)
 }
 
 func (m *Manager) rebuildLocked(ctx context.Context, row workflowstore.SourceIndexGeneration) error {

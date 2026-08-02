@@ -181,7 +181,7 @@ func TestUnownedBuildingRecoveryMatrix(t *testing.T) {
 			old := verifyPublishedGeneration
 			verifyPublishedGeneration = func(context.Context, reader.Config, sourceindex.GenerationIdentity) (reader.Descriptor, error) {
 				if !tc.valid {
-					return reader.Descriptor{}, errors.New("invalid")
+					return reader.Descriptor{}, reader.ErrGenerationIntegrity
 				}
 				return reader.Descriptor{GenerationManifestSHA256: "g", CoverageManifestSHA256: "c", ArtifactManifestSHA256: "a"}, nil
 			}
