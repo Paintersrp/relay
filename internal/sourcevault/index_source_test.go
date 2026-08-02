@@ -90,3 +90,50 @@ func TestResolveSourceIndexIdentityRequiresExactRetainedClosure(t *testing.T) {
 		t.Fatalf("released closure error = %v code=%q", err, ErrorCode(err))
 	}
 }
+
+func TestResolveSourceIndexIdentityRejectsEveryRelationshipMismatch(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	commit := commitFile(t, repo, "indexed.txt", []byte("indexed\n"), "indexed")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "refs/heads/main")
+	manager := openSourceVaultManager(t, ctx, store)
+	imported, err := manager.ImportClosure(ctx, ImportRequest{Revision: explicitRevision(storeTarget(t, ctx, store, "relay"), commit.commit, commit.tree)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retention, err := manager.RetainClosure(ctx, RetainRequest{ClosureID: imported.Closure.ClosureID, OwnerClass: workflowstore.SourceVaultOwnerOperationPacket, OwnerIdentity: "source-index-resolver"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := workflowstore.OperationPacketVaultRelationship{RetentionRowID: retention.ID, ClosureRowID: imported.Closure.ID, VaultRowID: imported.Vault.ID, OwnerIdentity: retention.OwnerIdentity, CommitOID: commit.commit, TreeOID: commit.tree}
+	resolved, err := manager.ResolveSourceIndexIdentity(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := sourceindex.BuildOptionsSHA256(sourceindex.DefaultBuildOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.VaultID != imported.Vault.VaultID || resolved.CommitOID != commit.commit || resolved.TreeOID != commit.tree || resolved.BuildOptionsSHA256 != digest {
+		t.Fatalf("resolved identity = %#v", resolved)
+	}
+	for _, tc := range []struct {
+		name string
+		edit func(*workflowstore.OperationPacketVaultRelationship)
+	}{
+		{"owner", func(r *workflowstore.OperationPacketVaultRelationship) { r.OwnerIdentity = "other" }},
+		{"closure", func(r *workflowstore.OperationPacketVaultRelationship) { r.ClosureRowID++ }},
+		{"vault", func(r *workflowstore.OperationPacketVaultRelationship) { r.VaultRowID++ }},
+		{"commit", func(r *workflowstore.OperationPacketVaultRelationship) { r.CommitOID = strings.Repeat("0", 40) }},
+		{"tree", func(r *workflowstore.OperationPacketVaultRelationship) { r.TreeOID = strings.Repeat("0", 40) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			relationship := base
+			tc.edit(&relationship)
+			if _, err := manager.ResolveSourceIndexIdentity(ctx, relationship); ErrorCode(err) != CodeVaultUnavailable {
+				t.Fatalf("error = %v, code = %q", err, ErrorCode(err))
+			}
+		})
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"relay/internal/sourceindex"
 	"relay/internal/sourceindex/indexer"
@@ -47,6 +48,30 @@ func testIdentity(t *testing.T, vault string) (sourceindex.GenerationIdentity, s
 type fakeStore struct {
 	row workflow.SourceIndexGeneration
 	err error
+}
+
+// scriptedStore makes each persisted-row read independently controllable. Open
+// deliberately re-reads after binding the artifacts, so both reads must retain
+// the workflow store's typed error classification.
+type scriptedStore struct {
+	row    workflow.SourceIndexGeneration
+	errs   []error
+	onCall func(int)
+	calls  int
+}
+
+func (s *scriptedStore) GetSourceIndexGenerationByIdentity(ctx context.Context, _ sourceindex.GenerationIdentity) (workflow.SourceIndexGeneration, error) {
+	s.calls++
+	if s.onCall != nil {
+		s.onCall(s.calls)
+	}
+	if err := ctx.Err(); err != nil {
+		return workflow.SourceIndexGeneration{}, err
+	}
+	if s.calls <= len(s.errs) && s.errs[s.calls-1] != nil {
+		return workflow.SourceIndexGeneration{}, s.errs[s.calls-1]
+	}
+	return s.row, nil
 }
 
 func (s *fakeStore) GetSourceIndexGenerationByIdentity(ctx context.Context, _ sourceindex.GenerationIdentity) (workflow.SourceIndexGeneration, error) {
@@ -840,6 +865,76 @@ func TestOpenGenerationResolution(t *testing.T) {
 			t.Fatalf("error = %v, want context.Canceled", err)
 		}
 	})
+}
+
+func TestOpenClassifiesBothWorkflowStoreReads(t *testing.T) {
+	identity, _ := testIdentity(t, "vault")
+	cases := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{"not found sentinel", workflow.ErrSourceIndexGenerationNotFound, ErrGenerationUnavailable},
+		{"invalid sentinel", workflow.ErrInvalidSourceIndexGeneration, ErrGenerationIntegrity},
+		{"integrity sentinel", workflow.ErrSourceIndexGenerationIntegrity, ErrGenerationIntegrity},
+		{"ordinary not found text", errors.New("not found"), nil},
+		{"database failure", errors.New("database unavailable"), nil},
+	}
+	for _, position := range []int{1, 2} {
+		for _, tc := range cases {
+			t.Run(fmt.Sprintf("read_%d/%s", position, tc.name), func(t *testing.T) {
+				fs := newFakeFS(t)
+				withFakeFS(fs)
+				root := filepath.Join(t.TempDir(), "index")
+				row, _, _ := buildGeneration(t, fs, root, generationSpec{identity: identity, indexed: []string{"a.txt"}, shards: map[int][]byte{0: []byte("shard")}})
+				errs := make([]error, 2)
+				errs[position-1] = tc.err
+				store := &scriptedStore{row: row, errs: errs}
+				_, err := Open(context.Background(), store, Config{IndexRoot: root}, identity)
+				want := tc.want
+				if want == nil {
+					want = tc.err
+				}
+				if !errors.Is(err, want) {
+					t.Fatalf("error = %v, want errors.Is(_, %v)", err, want)
+				}
+			})
+		}
+	}
+	for _, position := range []int{1, 2} {
+		for _, deadline := range []bool{false, true} {
+			t.Run(fmt.Sprintf("read_%d/context_%t", position, deadline), func(t *testing.T) {
+				fs := newFakeFS(t)
+				withFakeFS(fs)
+				root := filepath.Join(t.TempDir(), "index")
+				row, _, _ := buildGeneration(t, fs, root, generationSpec{identity: identity, indexed: []string{"a.txt"}, shards: map[int][]byte{0: []byte("shard")}})
+				var ctx context.Context
+				var cancel context.CancelFunc
+				if deadline {
+					ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+				} else {
+					ctx, cancel = context.WithCancel(context.Background())
+				}
+				defer cancel()
+				if position == 1 {
+					cancel()
+				}
+				store := &scriptedStore{row: row, onCall: func(call int) {
+					if call == position && position == 2 {
+						cancel()
+					}
+				}}
+				_, err := Open(ctx, store, Config{IndexRoot: root}, identity)
+				want := error(context.Canceled)
+				if deadline {
+					want = context.DeadlineExceeded
+				}
+				if !errors.Is(err, want) {
+					t.Fatalf("error = %v, want errors.Is(_, %v)", err, want)
+				}
+			})
+		}
+	}
 }
 
 func TestOpenBoundDirectorySafety(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"relay/internal/sourceindex"
@@ -119,4 +120,103 @@ func (*testStore) MarkSourceIndexGenerationFailed(context.Context, workflow.Mark
 }
 func (*testAuthority) AcquireSourceIndexLease(context.Context, sourceindex.GenerationIdentity) (SourceLease, error) {
 	return nil, errors.New("unexpected call")
+}
+
+type finalizationStore struct {
+	marks  int
+	params workflow.MarkSourceIndexGenerationFailedParams
+	ctx    context.Context
+}
+
+func (s *finalizationStore) GetSourceIndexGeneration(context.Context, string) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected")
+}
+func (s *finalizationStore) BeginSourceIndexGenerationBuild(context.Context, string) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected")
+}
+func (s *finalizationStore) MarkSourceIndexGenerationReady(context.Context, workflow.MarkSourceIndexGenerationReadyParams) (workflow.SourceIndexGeneration, error) {
+	return workflow.SourceIndexGeneration{}, errors.New("unexpected")
+}
+func (s *finalizationStore) MarkSourceIndexGenerationFailed(ctx context.Context, params workflow.MarkSourceIndexGenerationFailedParams) (workflow.SourceIndexGeneration, error) {
+	s.marks++
+	s.params, s.ctx = params, ctx
+	return workflow.SourceIndexGeneration{}, nil
+}
+
+type finalizationLease struct{ closes int }
+
+func (*finalizationLease) RepositoryPath() string { return "/retained/repository" }
+func (l *finalizationLease) Close() error         { l.closes++; return nil }
+
+func TestFailFinalizesAfterCallerCancellationAndCleansExactAttempt(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("descriptor-rooted cleanup is Linux-only")
+	}
+	root := t.TempDir()
+	id := strings.Repeat("a", 64)
+	nonce := strings.Repeat("b", 32)
+	canonical, err := sourceindex.StagingDirectory(root, id, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	private, err := sourceindex.PrivateBuildDirectory(root, id, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{canonical, private} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := &finalizationStore{}
+	lease := &finalizationLease{}
+	s := &Supervisor{store: store, config: Config{IndexRoot: root}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.fail(ctx, id, "cancelled", "ignored", lease, nonce, context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("fail error = %v", err)
+	}
+	if store.marks != 1 || store.params.FailureCode != "cancelled" || store.ctx.Err() != nil {
+		t.Fatalf("finalization = %#v marks=%d context=%v", store.params, store.marks, store.ctx.Err())
+	}
+	if lease.closes != 1 {
+		t.Fatalf("lease closes = %d, want 1", lease.closes)
+	}
+	for _, path := range []string{canonical, private} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("owned attempt remains at %s: %v", path, err)
+		}
+	}
+}
+
+func TestFailPreservesUnsafeAttemptWhenCleanupFails(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("descriptor-rooted cleanup is Linux-only")
+	}
+	root := t.TempDir()
+	id := strings.Repeat("a", 64)
+	nonce := strings.Repeat("b", 32)
+	canonical, err := sourceindex.StagingDirectory(root, id, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(canonical, 0700); err != nil {
+		t.Fatal(err)
+	}
+	unsafe := filepath.Join(canonical, "unknown")
+	if err := os.WriteFile(unsafe, []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &finalizationStore{}
+	lease := &finalizationLease{}
+	s := &Supervisor{store: store, config: Config{IndexRoot: root}}
+	if _, err := s.fail(context.Background(), id, "internal", "ignored", lease, nonce, errors.New("child failed")); !errors.Is(err, ErrFailureFinalization) {
+		t.Fatalf("fail error = %v", err)
+	}
+	if store.marks != 0 || lease.closes != 1 {
+		t.Fatalf("marks=%d closes=%d", store.marks, lease.closes)
+	}
+	if _, err := os.Lstat(unsafe); err != nil {
+		t.Fatalf("unsafe content was not preserved: %v", err)
+	}
 }
