@@ -148,7 +148,7 @@ type execInspectionRunner struct {
 func newExecGitRunner() execInspectionRunner {
 	return execInspectionRunner{
 		commandFactory: func(ctx context.Context, args ...string) *exec.Cmd {
-			return exec.CommandContext(ctx, "git", args...)
+			return sourcevaultpolicy.NewGitCommand(ctx, args...)
 		},
 		timeout:     gitCommandTimeout,
 		outputLimit: gitOutputLimit,

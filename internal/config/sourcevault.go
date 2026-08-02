@@ -38,11 +38,17 @@ func ResolveSourceVaultDirFor(goos, localAppData, xdgDataHome, home string) (str
 		}
 		root = filepath.Join(localAppData, "Relay", "source-vaults")
 	case "darwin":
+		if strings.TrimSpace(home) == "" {
+			return "", false, fmt.Errorf("determine durable application-data directory: configure a user home directory")
+		}
 		root = filepath.Join(home, "Library", "Application Support", "Relay", "source-vaults")
 	default:
 		if strings.TrimSpace(xdgDataHome) != "" {
 			root = filepath.Join(xdgDataHome, "relay", "source-vaults")
 		} else {
+			if strings.TrimSpace(home) == "" {
+				return "", false, fmt.Errorf("determine durable application-data directory: configure a user home directory")
+			}
 			root = filepath.Join(home, ".local", "share", "relay", "source-vaults")
 		}
 	}

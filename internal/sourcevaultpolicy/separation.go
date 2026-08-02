@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -22,7 +21,7 @@ func ValidateRepositorySeparation(ctx context.Context, root, localPath string) (
 	if err != nil {
 		return "", err
 	}
-	gitDir, commonDir, err := resolveGitDirectories(ctx, worktree)
+	gitDir, commonDir, err := ResolveGitDirectories(ctx, worktree)
 	if err != nil {
 		return "", err
 	}
@@ -71,27 +70,6 @@ func canonicalExistingPath(value string) (string, error) {
 	}
 	resolved, err := filepath.EvalSymlinks(abs)
 	return filepath.Clean(resolved), err
-}
-
-func resolveGitDirectories(ctx context.Context, source string) (string, string, error) {
-	cmd := exec.CommandContext(ctx, "git", "--no-replace-objects", "-C", source, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", "", err
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) != 2 {
-		return "", "", fmt.Errorf("resolve Git directories")
-	}
-	gitDir, err := canonicalExistingPath(strings.TrimSpace(lines[0]))
-	if err != nil {
-		return "", "", err
-	}
-	commonDir, err := canonicalExistingPath(strings.TrimSpace(lines[1]))
-	if err != nil {
-		return "", "", err
-	}
-	return gitDir, commonDir, nil
 }
 
 func PathsOverlap(left, right string) bool { return pathWithin(left, right) || pathWithin(right, left) }

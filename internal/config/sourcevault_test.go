@@ -11,6 +11,7 @@ func TestResolveSourceVaultDirForUsesDurablePlatformData(t *testing.T) {
 		{"windows", "windows", `C:\\Users\\relay\\AppData\\Local`, "", `C:\\Users\\relay`, filepath.Join(`C:\\Users\\relay\\AppData\\Local`, "Relay", "source-vaults")},
 		{"macos", "darwin", "", "", "/Users/relay", filepath.Join("/Users/relay", "Library", "Application Support", "Relay", "source-vaults")},
 		{"xdg", "linux", "", "/var/lib/relay-data", "/home/relay", filepath.Join("/var/lib/relay-data", "relay", "source-vaults")},
+		{"xdg without home", "linux", "", "/var/lib/relay-data", "", filepath.Join("/var/lib/relay-data", "relay", "source-vaults")},
 		{"unix fallback", "linux", "", "", "/home/relay", filepath.Join("/home/relay", ".local", "share", "relay", "source-vaults")},
 	}
 	for _, test := range tests {

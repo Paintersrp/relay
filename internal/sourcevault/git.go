@@ -157,34 +157,7 @@ func canonicalExistingPath(value string) (string, error) {
 }
 
 func resolveGitDirectories(ctx context.Context, sourcePath string) (string, string, error) {
-	cmd := exec.CommandContext(
-		ctx,
-		"git",
-		"--no-replace-objects",
-		"-C",
-		sourcePath,
-		"rev-parse",
-		"--path-format=absolute",
-		"--git-dir",
-		"--git-common-dir",
-	)
-	cmd.Env = controlledGitEnvironment()
-	stdout := newLimitedBuffer(gitDiagnosticLimit)
-	stderr := newLimitedBuffer(gitDiagnosticLimit)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return "", "", &Error{Code: CodeRepositoryMismatch}
-	}
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	if len(lines) != 2 || strings.TrimSpace(lines[0]) == "" || strings.TrimSpace(lines[1]) == "" {
-		return "", "", &Error{Code: CodeRepositoryMismatch}
-	}
-	gitDirectory, err := canonicalExistingPath(strings.TrimSpace(lines[0]))
-	if err != nil {
-		return "", "", &Error{Code: CodeRepositoryMismatch}
-	}
-	commonDirectory, err := canonicalExistingPath(strings.TrimSpace(lines[1]))
+	gitDirectory, commonDirectory, err := sourcevaultpolicy.ResolveGitDirectories(ctx, sourcePath)
 	if err != nil {
 		return "", "", &Error{Code: CodeRepositoryMismatch}
 	}
@@ -715,29 +688,10 @@ func gitCommand(ctx context.Context, path string, bare bool, args ...string) *ex
 		}
 	}
 	base = append(base, args...)
-	cmd := exec.CommandContext(ctx, "git", base...)
-	cmd.Env = controlledGitEnvironment()
-	return cmd
+	return sourcevaultpolicy.NewGitCommand(ctx, base...)
 }
 
-func controlledGitEnvironment() []string {
-	values := make([]string, 0, len(os.Environ())+5)
-	for _, value := range os.Environ() {
-		key, _, ok := strings.Cut(value, "=")
-		if !ok || strings.HasPrefix(strings.ToUpper(key), "GIT_") {
-			continue
-		}
-		values = append(values, value)
-	}
-	return append(
-		values,
-		"GIT_NO_LAZY_FETCH=1",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_ATTR_NOSYSTEM=1",
-	)
-}
+func controlledGitEnvironment() []string { return sourcevaultpolicy.ControlledGitEnvironment() }
 
 func validateVaultStorage(vaultPath string) error {
 	for _, relative := range []string{

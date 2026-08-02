@@ -120,6 +120,9 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 	if err != nil {
 		return fmt.Errorf("open and reconcile source vaults: %w", err)
 	}
+	if err := legacyMigration.reconciled(); err != nil {
+		return fmt.Errorf("record source-vault migration reconciliation: %w", err)
+	}
 	if err := legacyMigration.cleanup(); err != nil {
 		log.Warn("remove migrated legacy source-vault storage", "error", err)
 	}
