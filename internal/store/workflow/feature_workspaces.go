@@ -108,6 +108,10 @@ func (tx *Tx) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, revisionR
 	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceAuthorityLayers(ctx, revisionRowID)
 }
 
+func (tx *Tx) ListFeatureWorkspaceTicketResolutions(ctx context.Context, ticketRowID int64) ([]FeatureWorkspaceTicketResolution, error) {
+	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceTicketResolutions(ctx, ticketRowID)
+}
+
 func (tx *Tx) CreateFeatureWorkspace(ctx context.Context, params CreateFeatureWorkspaceParams) (FeatureWorkspace, error) {
 	return workflowgenerated.New(tx.tx).CreateFeatureWorkspace(ctx, params)
 }
@@ -207,9 +211,11 @@ UPDATE feature_workspaces
 SET version = version + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
 RETURNING id, workspace_id, project_row_id, feature_slug, state, version,
-          current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at`, workspaceID, expectedVersion).Scan(
+           current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
+           current_discovery_revision_row_id, created_at, updated_at`, workspaceID, expectedVersion).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
-		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
+		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
+		&value.CurrentDiscoveryRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
 	)
 	return value, err
 }
@@ -222,11 +228,13 @@ func getFeatureWorkspaceByRowID(ctx context.Context, queryer featureWorkspaceQue
 	var value FeatureWorkspace
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, workspace_id, project_row_id, feature_slug, state, version,
-       current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+       current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
+       current_discovery_revision_row_id, created_at, updated_at
 FROM feature_workspaces
 WHERE id = ?`, rowID).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
-		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
+		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
+		&value.CurrentDiscoveryRevisionRowID, &value.CreatedAt, &value.UpdatedAt,
 	)
 	return value, err
 }

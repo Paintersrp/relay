@@ -15,7 +15,7 @@ UPDATE feature_workspaces
 SET current_route_state_row_id = ?, state = ?, version = version + 1,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
-RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id
 `
 
 type AdvanceFeatureWorkspaceRouteStateParams struct {
@@ -44,6 +44,8 @@ func (q *Queries) AdvanceFeatureWorkspaceRouteState(ctx context.Context, arg Adv
 		&i.CurrentAuthorityRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DiscoveryCapabilityEnabled,
+		&i.CurrentDiscoveryRevisionRowID,
 	)
 	return i, err
 }
@@ -995,7 +997,7 @@ func (q *Queries) CreateExecutionPackageMember(ctx context.Context, arg CreateEx
 const createFeatureWorkspace = `-- name: CreateFeatureWorkspace :one
 INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug)
 VALUES (?, ?, ?)
-RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id
 `
 
 type CreateFeatureWorkspaceParams struct {
@@ -1018,6 +1020,8 @@ func (q *Queries) CreateFeatureWorkspace(ctx context.Context, arg CreateFeatureW
 		&i.CurrentAuthorityRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DiscoveryCapabilityEnabled,
+		&i.CurrentDiscoveryRevisionRowID,
 	)
 	return i, err
 }
@@ -2220,7 +2224,7 @@ func (q *Queries) GetExecutionPackageBySelectionRowID(ctx context.Context, selec
 }
 
 const getFeatureWorkspaceByWorkspaceID = `-- name: GetFeatureWorkspaceByWorkspaceID :one
-SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id
 FROM feature_workspaces
 WHERE workspace_id = ?
 `
@@ -2239,6 +2243,28 @@ func (q *Queries) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspac
 		&i.CurrentAuthorityRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DiscoveryCapabilityEnabled,
+		&i.CurrentDiscoveryRevisionRowID,
+	)
+	return i, err
+}
+
+const getFeatureWorkspaceDiscoveryArtifactByID = `-- name: GetFeatureWorkspaceDiscoveryArtifactByID :one
+SELECT id, discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes, created_at FROM feature_workspace_discovery_artifacts WHERE discovery_artifact_id = ?
+`
+
+func (q *Queries) GetFeatureWorkspaceDiscoveryArtifactByID(ctx context.Context, discoveryArtifactID string) (FeatureWorkspaceDiscoveryArtifact, error) {
+	row := q.db.QueryRowContext(ctx, getFeatureWorkspaceDiscoveryArtifactByID, discoveryArtifactID)
+	var i FeatureWorkspaceDiscoveryArtifact
+	err := row.Scan(
+		&i.ID,
+		&i.DiscoveryArtifactID,
+		&i.WorkspaceRowID,
+		&i.RelativePath,
+		&i.Sha256,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -3593,6 +3619,42 @@ func (q *Queries) ListFeatureWorkspaceDiscoveryTickets(ctx context.Context, work
 	return items, nil
 }
 
+const listFeatureWorkspaceIntegratedDiscoveryRevisions = `-- name: ListFeatureWorkspaceIntegratedDiscoveryRevisions :many
+SELECT id, discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, created_at FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ? ORDER BY revision_number, id
+`
+
+func (q *Queries) ListFeatureWorkspaceIntegratedDiscoveryRevisions(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceIntegratedDiscoveryRevision, error) {
+	rows, err := q.db.QueryContext(ctx, listFeatureWorkspaceIntegratedDiscoveryRevisions, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FeatureWorkspaceIntegratedDiscoveryRevision{}
+	for rows.Next() {
+		var i FeatureWorkspaceIntegratedDiscoveryRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.DiscoveryRevisionID,
+			&i.WorkspaceRowID,
+			&i.RevisionNumber,
+			&i.ArtifactRowID,
+			&i.PredecessorRevisionRowID,
+			&i.CreatedIdentity,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFeatureWorkspaceInvestigations = `-- name: ListFeatureWorkspaceInvestigations :many
 SELECT id, investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
 FROM feature_workspace_investigations
@@ -3751,7 +3813,7 @@ func (q *Queries) ListFeatureWorkspaceTicketResolutions(ctx context.Context, tic
 }
 
 const listFeatureWorkspacesByProject = `-- name: ListFeatureWorkspacesByProject :many
-SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id
 FROM feature_workspaces
 WHERE project_row_id = ?
 ORDER BY feature_slug, id
@@ -3777,6 +3839,8 @@ func (q *Queries) ListFeatureWorkspacesByProject(ctx context.Context, projectRow
 			&i.CurrentAuthorityRevisionRowID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DiscoveryCapabilityEnabled,
+			&i.CurrentDiscoveryRevisionRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -4195,7 +4259,7 @@ UPDATE feature_workspaces
 SET current_authority_revision_row_id = ?, version = version + 1,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
-RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id
 `
 
 type SetFeatureWorkspaceAuthorityRevisionParams struct {
@@ -4218,6 +4282,8 @@ func (q *Queries) SetFeatureWorkspaceAuthorityRevision(ctx context.Context, arg 
 		&i.CurrentAuthorityRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DiscoveryCapabilityEnabled,
+		&i.CurrentDiscoveryRevisionRowID,
 	)
 	return i, err
 }

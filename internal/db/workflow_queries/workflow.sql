@@ -437,6 +437,12 @@ SET current_authority_revision_row_id = ?, version = version + 1,
 WHERE workspace_id = ? AND version = ?
 RETURNING *;
 
+-- name: GetFeatureWorkspaceDiscoveryArtifactByID :one
+SELECT * FROM feature_workspace_discovery_artifacts WHERE discovery_artifact_id = ?;
+
+-- name: ListFeatureWorkspaceIntegratedDiscoveryRevisions :many
+SELECT * FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ? ORDER BY revision_number, id;
+
 -- name: CreateDeliveryTicket :one
 INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority)
 VALUES (?, ?, ?)

@@ -82,6 +82,18 @@ func NewFeatureWorkspaceResolutionID() string {
 	return "resolution-" + uuid.NewString()
 }
 
+func NewFeatureWorkspaceDiscoveryArtifactID() string {
+	return "discovery-artifact-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceDiscoveryRevisionID() string {
+	return "discovery-revision-" + uuid.NewString()
+}
+
+func NewFeatureWorkspaceIntegrationConsequenceID() string {
+	return "integration-" + uuid.NewString()
+}
+
 func NewFeatureWorkspaceRouteStateID() string {
 	return "route-" + uuid.NewString()
 }
