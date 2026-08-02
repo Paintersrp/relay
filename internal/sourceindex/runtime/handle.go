@@ -9,7 +9,7 @@ import (
 )
 
 type handle struct {
-	reader   *reader.Reader
+	reader   generationReader
 	timeout  time.Duration
 	release  func()
 	once     sync.Once
@@ -25,7 +25,7 @@ func (h *handle) FallbackCandidates() []reader.Candidate {
 	if h.closed {
 		return nil
 	}
-	return h.reader.FallbackCandidates()
+	return copyCandidates(h.reader.FallbackCandidates())
 }
 func (h *handle) IndexedTextCandidates(ctx context.Context, literal string) ([]reader.Candidate, error) {
 	h.mu.Lock()
@@ -36,9 +36,19 @@ func (h *handle) IndexedTextCandidates(ctx context.Context, literal string) ([]r
 	h.mu.Unlock()
 	q, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()
-	return h.reader.IndexedTextCandidates(q, literal)
+	candidates, err := h.reader.IndexedTextCandidates(q, literal)
+	return copyCandidates(candidates), err
 }
 func (h *handle) Close() error {
 	h.once.Do(func() { h.mu.Lock(); h.closed = true; h.mu.Unlock(); h.closeErr = h.reader.Close(); h.release() })
 	return h.closeErr
+}
+
+func copyCandidates(in []reader.Candidate) []reader.Candidate {
+	out := make([]reader.Candidate, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].Path = append([]byte(nil), in[i].Path...)
+	}
+	return out
 }

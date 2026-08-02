@@ -14,6 +14,8 @@ import (
 var transientFailures = map[string]bool{"cancelled": true, "source_unavailable": true, "indexer_start_failed": true, "publication_failed": true}
 
 var verifyPublishedGeneration = reader.VerifyPublishedGeneration
+var removeOwnedGeneration = fsatomic.RemoveOwnedGeneration
+var removeAllOwnedGenerationAttempts = fsatomic.RemoveAllOwnedGenerationAttempts
 
 func (m *Manager) reconcile(ctx context.Context, startup bool) error {
 	authorities, err := m.store.ListActiveSourceIndexAuthorities(ctx)
@@ -236,10 +238,10 @@ func (m *Manager) remove(id string) error {
 // removeUnlocked may only be called by code that demonstrably owns the
 // generation write lock.
 func (m *Manager) removeUnlocked(id string) error {
-	if err := fsatomic.RemoveOwnedGeneration(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeOwnedGeneration(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := fsatomic.RemoveAllOwnedGenerationAttempts(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeAllOwnedGenerationAttempts(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil

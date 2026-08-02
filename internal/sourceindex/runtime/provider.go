@@ -17,7 +17,18 @@ type identityAuthority interface {
 	ResolveSourceIndexIdentity(context.Context, workflowstore.OperationPacketVaultRelationship) (sourceindex.GenerationIdentity, error)
 }
 
-var openGenerationReader = reader.Open
+type generationReader interface {
+	Descriptor() reader.Descriptor
+	FallbackCandidates() []reader.Candidate
+	IndexedTextCandidates(context.Context, string) ([]reader.Candidate, error)
+	Close() error
+}
+
+var openGenerationReader = func(ctx context.Context, store reader.GenerationStore, config reader.Config, identity sourceindex.GenerationIdentity) (generationReader, error) {
+	return reader.Open(ctx, store, config, identity)
+}
+
+var beforeProviderFinalStateCheck = func() {}
 
 func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.SourceReadAuthority) (sourcegateway.SearchIndexHandle, error) {
 	if err := ctx.Err(); err != nil {
@@ -71,12 +82,28 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 		l.mu.RUnlock()
 		return nil, reader.ErrGenerationUnavailable
 	}
+	current, err := m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
+	if err != nil {
+		l.mu.RUnlock()
+		return nil, mapGenerationResolutionError(err)
+	}
+	if current.State != workflowstore.SourceIndexGenerationReady || current.Identity != identity {
+		l.mu.RUnlock()
+		return nil, reader.ErrGenerationUnavailable
+	}
 	active, err := m.store.IsSourceIndexAuthorityActive(ctx, identity)
 	if err != nil {
 		l.mu.RUnlock()
 		return nil, err
 	}
 	if !active {
+		l.mu.RUnlock()
+		return nil, reader.ErrGenerationUnavailable
+	}
+	m.mu.Lock()
+	available = m.started && !m.stopping
+	m.mu.Unlock()
+	if !available {
 		l.mu.RUnlock()
 		return nil, reader.ErrGenerationUnavailable
 	}
@@ -88,6 +115,7 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 		}
 		return nil, err
 	}
+	beforeProviderFinalStateCheck()
 	m.mu.Lock()
 	stopping := !m.started || m.stopping
 	if !stopping {

@@ -40,6 +40,9 @@ type localBuild struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 }
+
+var workerStarted = func() {}
+
 type Manager struct {
 	store             Store
 	authority         SourceAuthority
@@ -96,6 +99,13 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		m.doneOnce.Do(func() { close(m.done) })
 		return err
+	}
+	m.mu.Lock()
+	stopping := m.stopping
+	m.mu.Unlock()
+	if stopping {
+		m.doneOnce.Do(func() { close(m.done) })
+		return m.ctx.Err()
 	}
 	for range m.config.BuildParallelism {
 		m.wg.Add(1)
@@ -162,6 +172,7 @@ func (m *Manager) enqueue(id string) {
 }
 func (m *Manager) worker() {
 	defer m.wg.Done()
+	workerStarted()
 	for {
 		select {
 		case <-m.ctx.Done():
