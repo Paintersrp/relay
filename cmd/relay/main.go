@@ -54,7 +54,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error {
+func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (returnErr error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -109,18 +109,24 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 	}
 	var indexRuntime *sourceindexruntime.Manager
 	var sourceOptions []sourcegateway.Option
+	ownsRuntimeShutdown := false
 	if indexConfig.Enabled {
 		indexRuntime, err = sourceindexruntime.New(workflowStore, sourceVaults, indexConfig)
 		if err != nil {
 			return fmt.Errorf("construct source-index runtime: %w", err)
 		}
+		indexRuntime.SetLogger(log)
 		if err = indexRuntime.Start(ctx); err != nil {
 			return fmt.Errorf("start source-index runtime: %w", err)
 		}
+		ownsRuntimeShutdown = true
 		defer func() {
+			if !ownsRuntimeShutdown {
+				return
+			}
 			shutdown, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 			defer cancel()
-			_ = indexRuntime.Shutdown(shutdown)
+			returnErr = errors.Join(returnErr, indexRuntime.Shutdown(shutdown))
 		}()
 		sourceOptions = append(sourceOptions, sourcegateway.WithSearchIndexProvider(indexRuntime))
 	}
@@ -191,6 +197,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) error
 	go func() { ingressResult <- relayServer.ShutdownMCPIngress(shutdownContext) }()
 	go func() { mainResult <- httpServer.Shutdown(shutdownContext) }()
 	if indexRuntime != nil {
+		ownsRuntimeShutdown = false
 		go func() { indexResult <- indexRuntime.Shutdown(shutdownContext) }()
 	} else {
 		indexResult <- nil

@@ -3,7 +3,6 @@ package sourceindexruntime
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 
 	"relay/internal/sourceindex"
@@ -37,17 +36,12 @@ func (m *Manager) reconcile(ctx context.Context, startup bool) error {
 	}
 	m.mu.Lock()
 	m.active = active
-	repairs := m.repair
-	m.repair = map[string]bool{}
 	m.mu.Unlock()
 	rows, err := m.store.ListSourceIndexGenerations(ctx)
 	if err != nil {
 		return err
 	}
 	for _, row := range rows {
-		if repairs[row.GenerationID] {
-			active[row.GenerationID] = true
-		}
 		if err := m.reconcileGeneration(ctx, row, startup); err != nil {
 			return err
 		}
@@ -61,13 +55,39 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 	m.mu.Unlock()
 	if !active {
 		if row.State == workflowstore.SourceIndexGenerationBuilding {
-			return nil
+			m.mu.Lock()
+			local, owned := m.builds[row.GenerationID]
+			m.mu.Unlock()
+			if owned {
+				local.cancel()
+				m.wakeReconciliation()
+				select {
+				case <-local.done:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				var err error
+				row, err = m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
+				if err != nil {
+					return err
+				}
+			}
+			if row.State == workflowstore.SourceIndexGenerationBuilding {
+				if err := m.recoverBuilding(ctx, row); err != nil {
+					return err
+				}
+				var err error
+				row, err = m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
+				if err != nil {
+					return err
+				}
+			}
 		}
 		if row.State != workflowstore.SourceIndexGenerationRetired {
 			if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
 				return err
 			}
-			slog.Info("source_index_generation_retired", "generation_id", row.GenerationID)
+			m.logger.Info("source_index_generation_retired", "generation_id", row.GenerationID)
 		}
 		return m.remove(row.GenerationID)
 	}
@@ -75,7 +95,10 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 	case workflowstore.SourceIndexGenerationPending:
 		m.enqueue(row.GenerationID)
 	case workflowstore.SourceIndexGenerationBuilding:
-		if startup {
+		m.mu.Lock()
+		_, owned := m.builds[row.GenerationID]
+		m.mu.Unlock()
+		if !owned {
 			return m.recoverBuilding(ctx, row)
 		}
 	case workflowstore.SourceIndexGenerationReady:
@@ -104,19 +127,30 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 }
 
 func (m *Manager) recoverBuilding(ctx context.Context, row workflowstore.SourceIndexGeneration) error {
+	if row.State != workflowstore.SourceIndexGenerationBuilding {
+		return nil
+	}
 	d, err := reader.VerifyPublishedGeneration(ctx, reader.Config{IndexRoot: m.config.IndexRoot, ProtectedStorage: m.config.ProtectedStorage}, row.Identity)
 	if err == nil {
 		_, err = m.store.MarkSourceIndexGenerationReady(ctx, workflowstore.MarkSourceIndexGenerationReadyParams{GenerationID: row.GenerationID, GenerationManifestSHA256: d.GenerationManifestSHA256, CoverageManifestSHA256: d.CoverageManifestSHA256, ArtifactManifestSHA256: d.ArtifactManifestSHA256})
 		return err
 	}
-	_ = m.remove(row.GenerationID)
+	if err := m.removeUnlocked(row.GenerationID); err != nil {
+		return err
+	}
 	if _, err = m.store.MarkSourceIndexGenerationFailed(ctx, workflowstore.MarkSourceIndexGenerationFailedParams{GenerationID: row.GenerationID, FailureCode: "interrupted", FailureMessage: "source-index build was interrupted"}); err != nil {
 		return err
 	}
-	if _, err = m.store.RetrySourceIndexGeneration(ctx, row.GenerationID); err != nil {
-		return err
+	active, activeErr := m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
+	if activeErr != nil {
+		return activeErr
 	}
-	m.enqueue(row.GenerationID)
+	if active {
+		if _, err = m.store.RetrySourceIndexGeneration(ctx, row.GenerationID); err != nil {
+			return err
+		}
+		m.enqueue(row.GenerationID)
+	}
 	return nil
 }
 func (m *Manager) rebuild(ctx context.Context, row workflowstore.SourceIndexGeneration) error {
@@ -145,6 +179,9 @@ func (m *Manager) remove(id string) error {
 }
 func (m *Manager) removeUnlocked(id string) error {
 	if err := fsatomic.RemoveOwnedGeneration(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := fsatomic.RemoveOwnedGenerationStaging(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil

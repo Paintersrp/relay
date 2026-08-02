@@ -25,11 +25,14 @@ func RemoveOwnedGeneration(indexRoot, generationID string) error {
 
 // RemoveOwnedGenerationStaging removes one exact generation staging directory
 // through descriptors rooted at indexRoot.
-func RemoveOwnedGenerationStaging(indexRoot, generationID, nonce string) error {
-	if !validHex(generationID, 64) || !validHex(nonce, 32) {
+func RemoveOwnedGenerationStaging(indexRoot, generationID string, nonce ...string) error {
+	if !validHex(generationID, 64) || len(nonce) > 1 || len(nonce) == 1 && !validHex(nonce[0], 32) {
 		return os.ErrInvalid
 	}
-	return removeOwnedChild(indexRoot, "staging", generationID+"-"+nonce)
+	if len(nonce) == 1 {
+		return removeOwnedChild(indexRoot, "staging", generationID+"-"+nonce[0])
+	}
+	return removeOwnedStagingAttempts(indexRoot, generationID)
 }
 
 // RemoveOwnedStaging is retained for the supervisor's existing staging
@@ -79,6 +82,10 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 		}
 		return err
 	}
+	if err := validateCanonicalDirectory(fd); err != nil {
+		unix.Close(fd)
+		return err
+	}
 	if err := removeDirectory(fd); err != nil {
 		unix.Close(fd)
 		return err
@@ -96,7 +103,157 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 	if current.Dev != owned.Dev || current.Ino != owned.Ino || current.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return os.ErrInvalid
 	}
-	return unix.Unlinkat(parent, child, unix.AT_REMOVEDIR)
+	if err := unix.Unlinkat(parent, child, unix.AT_REMOVEDIR); err != nil {
+		return err
+	}
+	if err := unix.Fsync(parent); err != nil {
+		return err
+	}
+	return unix.Fsync(root)
+}
+
+func removeOwnedStagingAttempts(indexRoot, generationID string) error {
+	if !filepath.IsAbs(indexRoot) || filepath.Clean(indexRoot) != indexRoot {
+		return os.ErrInvalid
+	}
+	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS})
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(root)
+	parent, err := openVerifiedDirectory(root, "staging", nil)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	f := os.NewFile(uintptr(parent), "staging")
+	entries, readErr := f.ReadDir(-1)
+	closeErr := f.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	prefix, private := generationID+"-", ".relay-build-"+generationID+"-"
+	for _, entry := range entries {
+		name := entry.Name()
+		if ownedStagingName(name, prefix, private) {
+			if err := removeOwnedChild(indexRoot, "staging", name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func ownedStagingName(name, prefix, private string) bool {
+	if strings.HasPrefix(name, prefix) {
+		return validHex(strings.TrimPrefix(name, prefix), 32)
+	}
+	if !strings.HasPrefix(name, private) {
+		return false
+	}
+	rest := strings.TrimPrefix(name, private)
+	if len(rest) <= 33 || !validHex(rest[:32], 32) || rest[32] != '-' {
+		return false
+	}
+	return rest[33:] != ""
+}
+
+// validateCanonicalDirectory refuses arbitrary content even when it sits below
+// a correctly named owned directory. Interrupted staging may omit members.
+func validateCanonicalDirectory(fd int) error {
+	readFD, err := unix.Dup(fd)
+	if err != nil {
+		return err
+	}
+	f := os.NewFile(uintptr(readFD), "owned")
+	entries, err := f.ReadDir(-1)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	seen := map[[2]uint64]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		var stat unix.Stat_t
+		if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return err
+		}
+		key := [2]uint64{uint64(stat.Dev), uint64(stat.Ino)}
+		if seen[key] {
+			return os.ErrInvalid
+		}
+		seen[key] = true
+		mode := stat.Mode & unix.S_IFMT
+		if mode == unix.S_IFREG {
+			if stat.Nlink != 1 || (name != "generation.json" && name != "coverage.json" && name != "manifest.json") {
+				return os.ErrInvalid
+			}
+			continue
+		}
+		if mode != unix.S_IFDIR || name != "shards" {
+			return os.ErrInvalid
+		}
+		child, err := openVerifiedDirectory(fd, name, &stat)
+		if err != nil {
+			return err
+		}
+		err = validateShards(child)
+		closeErr := unix.Close(child)
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return nil
+}
+func validateShards(fd int) error {
+	readFD, err := unix.Dup(fd)
+	if err != nil {
+		return err
+	}
+	f := os.NewFile(uintptr(readFD), "shards")
+	entries, err := f.ReadDir(-1)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	seen := map[[2]uint64]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if len(name) != 12 || !strings.HasSuffix(name, ".zoekt") {
+			return os.ErrInvalid
+		}
+		for _, c := range name[:6] {
+			if c < '0' || c > '9' {
+				return os.ErrInvalid
+			}
+		}
+		var stat unix.Stat_t
+		if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return err
+		}
+		key := [2]uint64{uint64(stat.Dev), uint64(stat.Ino)}
+		if seen[key] || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
+			return os.ErrInvalid
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 func removeDirectory(fd int) error {

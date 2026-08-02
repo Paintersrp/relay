@@ -34,7 +34,7 @@ func (m *Manager) ResolveSourceIndexIdentity(ctx context.Context, relationship w
 		return err
 	})
 	if err != nil {
-		return sourceindex.GenerationIdentity{}, err
+		return sourceindex.GenerationIdentity{}, managerError(ctx, err, CodeVaultUnavailable)
 	}
 	return identity, nil
 }

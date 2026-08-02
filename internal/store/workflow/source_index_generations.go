@@ -183,11 +183,12 @@ func (s *Store) ListActiveSourceIndexAuthorities(ctx context.Context) ([]ActiveS
 	if s == nil {
 		return nil, ErrInvalidSourceIndexGeneration
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT v.id, v.vault_id, c.id, c.commit_oid, c.tree_oid
+	rows, err := s.db.QueryContext(ctx, `SELECT v.id, v.vault_id, MIN(c.id), c.commit_oid, c.tree_oid
 FROM source_vaults AS v
 JOIN source_vault_closures AS c ON c.vault_row_id = v.id AND c.state = 'ready'
 JOIN source_vault_retentions AS r ON r.closure_row_id = c.id AND r.state = 'active'
-ORDER BY v.vault_id, c.commit_oid, c.tree_oid, v.id, c.id`)
+GROUP BY v.id, v.vault_id, c.commit_oid, c.tree_oid
+ORDER BY v.vault_id, c.commit_oid, c.tree_oid, v.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +205,36 @@ ORDER BY v.vault_id, c.commit_oid, c.tree_oid, v.id, c.id`)
 		values = append(values, value)
 	}
 	return values, rows.Err()
+}
+
+// IsSourceIndexAuthorityActive is the authoritative build eligibility check.
+// It deliberately validates both the requested identity and the persisted rows
+// so malformed durable state fails closed.
+func (s *Store) IsSourceIndexAuthorityActive(ctx context.Context, identity sourceindex.GenerationIdentity) (bool, error) {
+	if s == nil {
+		return false, ErrInvalidSourceIndexGeneration
+	}
+	if _, err := sourceindex.GenerationID(identity); err != nil {
+		return false, fmt.Errorf("%w: identity", ErrInvalidSourceIndexGeneration)
+	}
+	var vaultRowID, closureRowID int64
+	var vaultID, commitOID, treeOID string
+	err := s.db.QueryRowContext(ctx, `SELECT v.id, v.vault_id, c.id, c.commit_oid, c.tree_oid
+FROM source_vaults AS v
+JOIN source_vault_closures AS c ON c.vault_row_id = v.id AND c.state = 'ready'
+JOIN source_vault_retentions AS r ON r.closure_row_id = c.id AND r.state = 'active'
+WHERE v.vault_id = ? AND c.commit_oid = ? AND c.tree_oid = ?
+ORDER BY c.id LIMIT 1`, identity.VaultID, identity.CommitOID, identity.TreeOID).Scan(&vaultRowID, &vaultID, &closureRowID, &commitOID, &treeOID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if vaultRowID < 1 || closureRowID < 1 || vaultID != identity.VaultID || !validLowerHex(commitOID, 40) || !validLowerHex(treeOID, 40) || commitOID != identity.CommitOID || treeOID != identity.TreeOID {
+		return false, ErrSourceIndexGenerationIntegrity
+	}
+	return true, nil
 }
 
 func (s *Store) BeginSourceIndexGenerationBuild(ctx context.Context, generationID string) (SourceIndexGeneration, error) {

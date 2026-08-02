@@ -1,6 +1,7 @@
 package sourceindexruntime
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,6 +46,12 @@ func TestLoadConfigEnabledValidation(t *testing.T) {
 	t.Setenv("RELAY_SOURCE_INDEX_BUILD_PARALLELISM", "2")
 	t.Setenv("RELAY_SOURCE_INDEX_QUERY_TIMEOUT_MS", "25")
 	c, err := LoadConfig(sourceindex.ProtectedStorage{})
+	if runtime.GOOS != "linux" {
+		if !errors.Is(err, ErrUnsupportedPlatform) {
+			t.Fatalf("enabled non-Linux config error = %v", err)
+		}
+		return
+	}
 	if err != nil || !c.Enabled || c.BuildParallelism != 2 || c.QueryTimeout != 25*time.Millisecond {
 		t.Fatalf("enabled config = %#v, err=%v", c, err)
 	}

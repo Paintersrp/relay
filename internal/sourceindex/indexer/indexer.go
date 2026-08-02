@@ -405,7 +405,7 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot inspect staging target")
 	}
-	tmp, e := os.MkdirTemp(parent, ".relay-build-")
+	tmp, e := os.MkdirTemp(parent, ".relay-build-"+r.GenerationID+"-"+r.StagingNonce+"-")
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create private build directory")
 	}

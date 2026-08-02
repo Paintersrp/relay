@@ -14,6 +14,8 @@ import (
 
 const fixedFileLimit int64 = 67108864
 
+var ErrUnsupportedPlatform = errors.New("source-index runtime unsupported on this platform")
+
 type Config struct {
 	Enabled          bool
 	IndexRoot        string
@@ -40,6 +42,9 @@ func LoadConfig(protected sourceindex.ProtectedStorage) (Config, error) {
 			}
 		}
 		return Config{FileLimitBytes: fixedFileLimit, BuildParallelism: 1, QueryTimeout: 5 * time.Second}, nil
+	}
+	if !runtimeSupported() {
+		return Config{}, ErrUnsupportedPlatform
 	}
 	if values[names[1]] == "" {
 		return Config{}, errors.New("RELAY_SOURCE_INDEXER_PATH is required")

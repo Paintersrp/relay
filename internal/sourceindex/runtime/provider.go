@@ -8,6 +8,7 @@ import (
 	"relay/internal/sourcegateway"
 	"relay/internal/sourceindex"
 	"relay/internal/sourceindex/reader"
+	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -19,6 +20,12 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	m.mu.Lock()
+	available := m.started && !m.stopping
+	m.mu.Unlock()
+	if !available {
+		return nil, reader.ErrGenerationUnavailable
+	}
 	resolver, ok := m.authority.(identityAuthority)
 	if !ok {
 		return nil, reader.ErrGenerationUnavailable
@@ -28,22 +35,23 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, reader.ErrGenerationUnavailable
+		if sourcevault.ErrorCode(err) == sourcevault.CodeVaultUnavailable {
+			return nil, reader.ErrGenerationUnavailable
+		}
+		return nil, err
 	}
 	row, _, err := m.store.CreateOrResolveSourceIndexGeneration(ctx, workflowstore.CreateOrResolveSourceIndexGenerationParams{Identity: identity})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, reader.ErrGenerationUnavailable
+		return nil, err
 	}
 	if row.State != workflowstore.SourceIndexGenerationReady {
 		if row.State == workflowstore.SourceIndexGenerationPending {
 			m.enqueue(row.GenerationID)
 		} else if row.State == workflowstore.SourceIndexGenerationFailed && transientFailures[row.FailureCode] || row.State == workflowstore.SourceIndexGenerationRetired {
-			m.mu.Lock()
-			m.repair[row.GenerationID] = true
-			m.mu.Unlock()
+			m.wakeReconciliation()
 		}
 		return nil, reader.ErrGenerationUnavailable
 	}
@@ -57,9 +65,7 @@ func (m *Manager) OpenSearchIndex(ctx context.Context, authority operations.Sour
 	if err != nil {
 		l.mu.RUnlock()
 		if errors.Is(err, reader.ErrGenerationIntegrity) {
-			m.mu.Lock()
-			m.repair[row.GenerationID] = true
-			m.mu.Unlock()
+			m.wakeReconciliation()
 		}
 		return nil, err
 	}
