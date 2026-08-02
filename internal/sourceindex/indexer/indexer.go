@@ -409,11 +409,17 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create private build directory")
 	}
+	exposed := false
+	defer func() {
+		if !exposed {
+			// The supervisor owns cleanup after a child crash. Normal returns use
+			// the same exact-attempt boundary rather than recursive RemoveAll.
+			_ = fsatomic.RemoveOwnedGenerationAttempt(r.IndexRoot, r.GenerationID, r.StagingNonce)
+		}
+	}()
 	if safeDirectory(parent) != nil || safeDirectory(tmp) != nil {
-		_ = os.RemoveAll(tmp)
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "unsafe staging directory")
 	}
-	defer os.RemoveAll(tmp)
 	entries, e := traverse(ctx, r)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, e
@@ -466,6 +472,7 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (indexerprotocol
 	if e = fsatomic.RenameNoReplace(tmp, target); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot expose staging generation")
 	}
+	exposed = true
 	if e = syncDirectory(parent); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot durably expose staging generation")
 	}

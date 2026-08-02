@@ -32,9 +32,20 @@ type runtimeReady struct {
 	MCPIngress server.MCPIngressSummary
 }
 
+type sourceIndexRuntime interface {
+	sourcegateway.SearchIndexProvider
+	Start(context.Context) error
+	Shutdown(context.Context) error
+	SetLogger(*slog.Logger)
+}
+
 var newWorkflowServer = server.NewWorkflow
 
 var listen = net.Listen
+
+var newSourceIndexRuntime = func(store *workflowstore.Store, authority *sourcevault.Manager, indexConfig sourceindexruntime.Config) (sourceIndexRuntime, error) {
+	return sourceindexruntime.New(store, authority, indexConfig)
+}
 
 func constructRelayServer(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []server.MCPHandler) (*server.Server, error) {
 	relayServer, err := newWorkflowServer(store, log, ownerInstanceID, sourceVaults, mcpHandlers)
@@ -107,11 +118,11 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 	if err != nil {
 		return fmt.Errorf("load source-index runtime configuration: %w", err)
 	}
-	var indexRuntime *sourceindexruntime.Manager
+	var indexRuntime sourceIndexRuntime
 	var sourceOptions []sourcegateway.Option
 	ownsRuntimeShutdown := false
 	if indexConfig.Enabled {
-		indexRuntime, err = sourceindexruntime.New(workflowStore, sourceVaults, indexConfig)
+		indexRuntime, err = newSourceIndexRuntime(workflowStore, sourceVaults, indexConfig)
 		if err != nil {
 			return fmt.Errorf("construct source-index runtime: %w", err)
 		}

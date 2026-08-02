@@ -1,21 +1,21 @@
 //go:build linux
 
-// Package fsatomic supplies the shared durable no-replace operations used by
-// source-index staging and publication.
+// Package fsatomic supplies descriptor-rooted source-index filesystem
+// operations. Cleanup is deliberately narrow: only canonical generation
+// objects and attributable build attempts may be removed.
 package fsatomic
 
 import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-// RemoveOwnedGeneration removes one exact generation directory through
-// descriptors rooted at indexRoot. Missing paths mean no owned generation can
-// remain.
 func RemoveOwnedGeneration(indexRoot, generationID string) error {
 	if !validHex(generationID, 64) {
 		return os.ErrInvalid
@@ -23,25 +23,24 @@ func RemoveOwnedGeneration(indexRoot, generationID string) error {
 	return removeOwnedChild(indexRoot, "generations", generationID)
 }
 
-// RemoveOwnedGenerationStaging removes one exact generation staging directory
-// through descriptors rooted at indexRoot.
-func RemoveOwnedGenerationStaging(indexRoot, generationID string, nonce ...string) error {
-	if !validHex(generationID, 64) || len(nonce) > 1 || len(nonce) == 1 && !validHex(nonce[0], 32) {
+func RemoveOwnedGenerationAttempt(indexRoot, generationID, nonce string) error {
+	if !validHex(generationID, 64) || !validHex(nonce, 32) {
 		return os.ErrInvalid
 	}
-	if len(nonce) == 1 {
-		return removeOwnedChild(indexRoot, "staging", generationID+"-"+nonce[0])
+	if err := validateOwnedAttemptNames(indexRoot, generationID); err != nil {
+		return err
 	}
-	return removeOwnedStagingAttempts(indexRoot, generationID)
+	if err := removeOwnedChild(indexRoot, "staging", generationID+"-"+nonce); err != nil {
+		return err
+	}
+	return removePrivateAttempt(indexRoot, generationID, nonce)
 }
 
-// RemoveOwnedStaging is retained for the supervisor's existing staging
-// cleanup boundary. New callers should use RemoveOwnedGenerationStaging.
-func RemoveOwnedStaging(indexRoot, child string) error {
-	if child == "" || strings.ContainsAny(child, `/\`) || child == "." || child == ".." {
+func RemoveAllOwnedGenerationAttempts(indexRoot, generationID string) error {
+	if !validHex(generationID, 64) {
 		return os.ErrInvalid
 	}
-	return removeOwnedChild(indexRoot, "staging", child)
+	return removeOwnedStagingAttempts(indexRoot, generationID)
 }
 
 func removeOwnedChild(indexRoot, parentName, child string) error {
@@ -49,8 +48,7 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 		return os.ErrInvalid
 	}
 	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{
-		Flags:   uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC),
-		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+		Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
 	})
 	if errors.Is(err, unix.ENOENT) {
 		return nil
@@ -82,11 +80,7 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 		}
 		return err
 	}
-	if err := validateCanonicalDirectory(fd); err != nil {
-		unix.Close(fd)
-		return err
-	}
-	if err := removeDirectory(fd); err != nil {
+	if err := removeDirectory(fd, true, map[[2]uint64]bool{}); err != nil {
 		unix.Close(fd)
 		return err
 	}
@@ -106,17 +100,16 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 	if err := unix.Unlinkat(parent, child, unix.AT_REMOVEDIR); err != nil {
 		return err
 	}
-	if err := unix.Fsync(parent); err != nil {
-		return err
-	}
-	return unix.Fsync(root)
+	return errors.Join(unix.Fsync(parent), unix.Fsync(root))
 }
 
 func removeOwnedStagingAttempts(indexRoot, generationID string) error {
 	if !filepath.IsAbs(indexRoot) || filepath.Clean(indexRoot) != indexRoot {
 		return os.ErrInvalid
 	}
-	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS})
+	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{
+		Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
 	if errors.Is(err, unix.ENOENT) {
 		return nil
 	}
@@ -131,157 +124,180 @@ func removeOwnedStagingAttempts(indexRoot, generationID string) error {
 	if err != nil {
 		return err
 	}
-	f := os.NewFile(uintptr(parent), "staging")
+	defer unix.Close(parent)
+	entries, err := listDirectory(parent)
+	if err != nil {
+		return err
+	}
+	prefix := generationID + "-"
+	private := ".relay-build-" + generationID + "-"
+	for _, entry := range entries {
+		name := entry.Name()
+		switch {
+		case strings.HasPrefix(name, prefix):
+			if !validHex(strings.TrimPrefix(name, prefix), 32) {
+				return os.ErrInvalid
+			}
+		case strings.HasPrefix(name, private):
+			rest := strings.TrimPrefix(name, private)
+			parts := strings.Split(rest, "-")
+			if len(parts) != 2 || !validHex(parts[0], 32) || !validPrivateSuffix(parts[1]) {
+				return os.ErrInvalid
+			}
+		default:
+			continue
+		}
+		if err := removeOwnedChild(indexRoot, "staging", name); err != nil {
+			return err
+		}
+	}
+	return errors.Join(unix.Fsync(parent), unix.Fsync(root))
+}
+
+func removePrivateAttempt(indexRoot, generationID, nonce string) error {
+	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{
+		Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(root)
+	parent, err := openVerifiedDirectory(root, "staging", nil)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(parent)
+	entries, err := listDirectory(parent)
+	if err != nil {
+		return err
+	}
+	prefix := ".relay-build-" + generationID + "-"
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(entry.Name(), prefix)
+		parts := strings.Split(rest, "-")
+		if len(parts) != 2 || !validHex(parts[0], 32) || !validPrivateSuffix(parts[1]) {
+			return os.ErrInvalid
+		}
+		if parts[0] == nonce {
+			if err := removeOwnedChild(indexRoot, "staging", entry.Name()); err != nil {
+				return err
+			}
+		}
+	}
+	return errors.Join(unix.Fsync(parent), unix.Fsync(root))
+}
+
+func validateOwnedAttemptNames(indexRoot, generationID string) error {
+	root, err := unix.Openat2(unix.AT_FDCWD, indexRoot, &unix.OpenHow{
+		Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(root)
+	parent, err := openVerifiedDirectory(root, "staging", nil)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(parent)
+	entries, err := listDirectory(parent)
+	if err != nil {
+		return err
+	}
+	canonical := generationID + "-"
+	private := ".relay-build-" + generationID + "-"
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, canonical) && !validHex(strings.TrimPrefix(name, canonical), 32) {
+			return os.ErrInvalid
+		}
+		if strings.HasPrefix(name, private) {
+			parts := strings.Split(strings.TrimPrefix(name, private), "-")
+			if len(parts) != 2 || !validHex(parts[0], 32) || !validPrivateSuffix(parts[1]) {
+				return os.ErrInvalid
+			}
+		}
+	}
+	return nil
+}
+
+func listDirectory(fd int) ([]os.DirEntry, error) {
+	dup, err := unix.Dup(fd)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(dup), "directory")
 	entries, readErr := f.ReadDir(-1)
 	closeErr := f.Close()
 	if readErr != nil {
-		return readErr
+		return nil, readErr
 	}
-	if closeErr != nil {
-		return closeErr
-	}
-	prefix, private := generationID+"-", ".relay-build-"+generationID+"-"
-	for _, entry := range entries {
-		name := entry.Name()
-		if ownedStagingName(name, prefix, private) {
-			if err := removeOwnedChild(indexRoot, "staging", name); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-func ownedStagingName(name, prefix, private string) bool {
-	if strings.HasPrefix(name, prefix) {
-		return validHex(strings.TrimPrefix(name, prefix), 32)
-	}
-	if !strings.HasPrefix(name, private) {
-		return false
-	}
-	rest := strings.TrimPrefix(name, private)
-	if len(rest) <= 33 || !validHex(rest[:32], 32) || rest[32] != '-' {
-		return false
-	}
-	return rest[33:] != ""
+	return entries, closeErr
 }
 
-// validateCanonicalDirectory refuses arbitrary content even when it sits below
-// a correctly named owned directory. Interrupted staging may omit members.
-func validateCanonicalDirectory(fd int) error {
-	readFD, err := unix.Dup(fd)
+func removeDirectory(fd int, root bool, seen map[[2]uint64]bool) error {
+	var self unix.Stat_t
+	if err := unix.Fstat(fd, &self); err != nil {
+		return err
+	}
+	key := [2]uint64{uint64(self.Dev), uint64(self.Ino)}
+	if seen[key] {
+		return os.ErrInvalid
+	}
+	seen[key] = true
+	entries, err := listDirectory(fd)
 	if err != nil {
 		return err
 	}
-	f := os.NewFile(uintptr(readFD), "owned")
-	entries, err := f.ReadDir(-1)
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	seen := map[[2]uint64]bool{}
-	for _, entry := range entries {
-		name := entry.Name()
-		var stat unix.Stat_t
-		if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			return err
-		}
-		key := [2]uint64{uint64(stat.Dev), uint64(stat.Ino)}
-		if seen[key] {
-			return os.ErrInvalid
-		}
-		seen[key] = true
-		mode := stat.Mode & unix.S_IFMT
-		if mode == unix.S_IFREG {
-			if stat.Nlink != 1 || (name != "generation.json" && name != "coverage.json" && name != "manifest.json") {
+	if root {
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	} else {
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+		for i, entry := range entries {
+			if !canonicalShardName(entry.Name()) {
 				return os.ErrInvalid
 			}
-			continue
-		}
-		if mode != unix.S_IFDIR || name != "shards" {
-			return os.ErrInvalid
-		}
-		child, err := openVerifiedDirectory(fd, name, &stat)
-		if err != nil {
-			return err
-		}
-		err = validateShards(child)
-		closeErr := unix.Close(child)
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-	}
-	return nil
-}
-func validateShards(fd int) error {
-	readFD, err := unix.Dup(fd)
-	if err != nil {
-		return err
-	}
-	f := os.NewFile(uintptr(readFD), "shards")
-	entries, err := f.ReadDir(-1)
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	seen := map[[2]uint64]bool{}
-	for _, entry := range entries {
-		name := entry.Name()
-		if len(name) != 12 || !strings.HasSuffix(name, ".zoekt") {
-			return os.ErrInvalid
-		}
-		for _, c := range name[:6] {
-			if c < '0' || c > '9' {
+			sequence, err := strconv.Atoi(entry.Name()[:6])
+			if err != nil || sequence != i {
 				return os.ErrInvalid
 			}
 		}
-		var stat unix.Stat_t
-		if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			return err
-		}
-		key := [2]uint64{uint64(stat.Dev), uint64(stat.Ino)}
-		if seen[key] || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
-			return os.ErrInvalid
-		}
-		seen[key] = true
-	}
-	return nil
-}
-
-func removeDirectory(fd int) error {
-	readFD, err := unix.Dup(fd)
-	if err != nil {
-		return err
-	}
-	f := os.NewFile(uintptr(readFD), "staging")
-	entries, err := f.ReadDir(-1)
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		var stat unix.Stat_t
-		if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		var inspected unix.Stat_t
+		if err := unix.Fstatat(fd, name, &inspected, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
-		if stat.Mode&unix.S_IFMT == unix.S_IFDIR {
-			child, err := openVerifiedDirectory(fd, name, &stat)
+		mode := inspected.Mode & unix.S_IFMT
+		if root {
+			if mode == unix.S_IFDIR && name != "shards" || mode == unix.S_IFREG && name != "generation.json" && name != "coverage.json" && name != "manifest.json" || mode != unix.S_IFDIR && mode != unix.S_IFREG {
+				return os.ErrInvalid
+			}
+		} else if mode != unix.S_IFREG || !canonicalShardName(name) {
+			return os.ErrInvalid
+		}
+		if mode == unix.S_IFDIR {
+			child, err := openVerifiedDirectory(fd, name, &inspected)
 			if err != nil {
 				return err
 			}
-			err = removeDirectory(child)
+			err = removeDirectory(child, false, seen)
 			closeErr := unix.Close(child)
 			if err != nil {
 				return err
@@ -289,24 +305,43 @@ func removeDirectory(fd int) error {
 			if closeErr != nil {
 				return closeErr
 			}
-			if err := unlinkOwnedDirectory(fd, name, &stat); err != nil {
+			if err := unlinkOwnedDirectory(fd, name, &inspected); err != nil {
 				return err
 			}
 			continue
 		}
-		if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
+		if inspected.Nlink != 1 {
 			return os.ErrInvalid
 		}
 		var current unix.Stat_t
 		if err := unix.Fstatat(fd, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
-		if current.Dev != stat.Dev || current.Ino != stat.Ino || current.Mode != stat.Mode || current.Nlink != stat.Nlink {
+		if current.Dev != inspected.Dev || current.Ino != inspected.Ino || current.Mode != inspected.Mode || current.Nlink != inspected.Nlink {
 			return os.ErrInvalid
 		}
+		key := [2]uint64{uint64(current.Dev), uint64(current.Ino)}
+		if seen[key] {
+			return os.ErrInvalid
+		}
+		seen[key] = true
 		if err := unix.Unlinkat(fd, name, 0); err != nil {
 			return err
 		}
+	}
+	if err := requireEmpty(fd); err != nil {
+		return err
+	}
+	return unix.Fsync(fd)
+}
+
+func requireEmpty(fd int) error {
+	entries, err := listDirectory(fd)
+	if err != nil {
+		return err
+	}
+	if len(entries) != 0 {
+		return os.ErrInvalid
 	}
 	return nil
 }
@@ -322,13 +357,9 @@ func unlinkOwnedDirectory(parent int, name string, inspected *unix.Stat_t) error
 	return unix.Unlinkat(parent, name, unix.AT_REMOVEDIR)
 }
 
-// openVerifiedDirectory binds traversal to an opened object.  openat2 prevents
-// path escape, symlinks, magic links, and mounts; fstat then binds an optional
-// inspected entry to that descriptor before recursion can continue.
 func openVerifiedDirectory(parent int, name string, inspected *unix.Stat_t) (int, error) {
 	fd, err := unix.Openat2(parent, name, &unix.OpenHow{
-		Flags:   uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC),
-		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
+		Flags: uint64(unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC), Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
 	})
 	if err != nil {
 		return -1, err
@@ -338,11 +369,35 @@ func openVerifiedDirectory(parent int, name string, inspected *unix.Stat_t) (int
 		unix.Close(fd)
 		return -1, err
 	}
-	if opened.Mode&unix.S_IFMT != unix.S_IFDIR || (inspected != nil && (opened.Dev != inspected.Dev || opened.Ino != inspected.Ino)) {
+	if opened.Mode&unix.S_IFMT != unix.S_IFDIR || inspected != nil && (opened.Dev != inspected.Dev || opened.Ino != inspected.Ino) {
 		unix.Close(fd)
 		return -1, os.ErrInvalid
 	}
 	return fd, nil
+}
+
+func canonicalShardName(name string) bool {
+	if len(name) != 12 || !strings.HasSuffix(name, ".zoekt") {
+		return false
+	}
+	for _, c := range name[:6] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validPrivateSuffix(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 func validHex(s string, length int) bool {

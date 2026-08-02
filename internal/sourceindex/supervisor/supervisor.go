@@ -321,7 +321,7 @@ func (s *Supervisor) cleanup(generationID, nonce string) error {
 	if _, err := sourceindex.StagingRelativeDirectory(generationID, nonce); err != nil {
 		return errors.New("invalid owned staging directory")
 	}
-	if err := fsatomic.RemoveOwnedGenerationStaging(s.config.IndexRoot, generationID, nonce); err != nil {
+	if err := fsatomic.RemoveOwnedGenerationAttempt(s.config.IndexRoot, generationID, nonce); err != nil {
 		return fmt.Errorf("cannot remove owned staging directory: %w", err)
 	}
 	return nil

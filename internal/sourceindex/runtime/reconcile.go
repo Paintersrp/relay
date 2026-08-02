@@ -13,6 +13,8 @@ import (
 
 var transientFailures = map[string]bool{"cancelled": true, "source_unavailable": true, "indexer_start_failed": true, "publication_failed": true}
 
+var verifyPublishedGeneration = reader.VerifyPublishedGeneration
+
 func (m *Manager) reconcile(ctx context.Context, startup bool) error {
 	authorities, err := m.store.ListActiveSourceIndexAuthorities(ctx)
 	if err != nil {
@@ -24,13 +26,13 @@ func (m *Manager) reconcile(ctx context.Context, startup bool) error {
 	}
 	active := make(map[string]bool, len(authorities))
 	for _, a := range authorities {
-		identity, e := sourceindex.NewGenerationIdentity(a.VaultID, a.CommitOID, a.TreeOID, digest)
-		if e != nil {
-			return e
+		identity, err := sourceindex.NewGenerationIdentity(a.VaultID, a.CommitOID, a.TreeOID, digest)
+		if err != nil {
+			return err
 		}
-		row, _, e := m.store.CreateOrResolveSourceIndexGeneration(ctx, workflowstore.CreateOrResolveSourceIndexGenerationParams{Identity: identity})
-		if e != nil {
-			return e
+		row, _, err := m.store.CreateOrResolveSourceIndexGeneration(ctx, workflowstore.CreateOrResolveSourceIndexGenerationParams{Identity: identity})
+		if err != nil {
+			return err
 		}
 		active[row.GenerationID] = true
 	}
@@ -42,46 +44,75 @@ func (m *Manager) reconcile(ctx context.Context, startup bool) error {
 		return err
 	}
 	for _, row := range rows {
-		if err := m.reconcileGeneration(ctx, row, startup); err != nil {
+		// The list above is only a wakeup snapshot. Every lifecycle decision uses
+		// the exact authoritative identity query below.
+		isActive, err := m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
+		if err != nil {
+			return err
+		}
+		if err := m.reconcileGeneration(ctx, row, isActive, startup); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.SourceIndexGeneration, startup bool) error {
-	m.mu.Lock()
-	active := m.active[row.GenerationID]
-	m.mu.Unlock()
+func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.SourceIndexGeneration, active bool, _ bool) error {
+	l := m.lock(row.GenerationID)
+	for {
+		l.mu.Lock()
+		current, err := m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
+		if err != nil {
+			l.mu.Unlock()
+			return err
+		}
+		active, err = m.store.IsSourceIndexAuthorityActive(ctx, current.Identity)
+		if err != nil {
+			l.mu.Unlock()
+			return err
+		}
+		m.mu.Lock()
+		local, owned := m.builds[current.GenerationID]
+		m.mu.Unlock()
+		if current.State == workflowstore.SourceIndexGenerationBuilding && owned && !active {
+			l.mu.Unlock()
+			local.cancel()
+			select {
+			case <-local.done:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if current.State == workflowstore.SourceIndexGenerationBuilding && owned && active {
+			l.mu.Unlock()
+			return nil
+		}
+		err = m.reconcileGenerationLocked(ctx, current, active)
+		l.mu.Unlock()
+		return err
+	}
+}
+
+// reconcileGenerationLocked performs every generation mutation while the
+// caller owns that generation's write lock.
+func (m *Manager) reconcileGenerationLocked(ctx context.Context, row workflowstore.SourceIndexGeneration, active bool) error {
 	if !active {
 		if row.State == workflowstore.SourceIndexGenerationBuilding {
 			m.mu.Lock()
-			local, owned := m.builds[row.GenerationID]
+			_, owned := m.builds[row.GenerationID]
 			m.mu.Unlock()
 			if owned {
-				local.cancel()
-				m.wakeReconciliation()
-				select {
-				case <-local.done:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-				var err error
-				row, err = m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
-				if err != nil {
-					return err
-				}
+				return nil
 			}
-			if row.State == workflowstore.SourceIndexGenerationBuilding {
-				if err := m.recoverBuilding(ctx, row); err != nil {
-					return err
-				}
-				var err error
-				row, err = m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
-				if err != nil {
-					return err
-				}
+			if err := m.recoverBuildingLocked(ctx, row, false); err != nil {
+				return err
 			}
+			updated, err := m.store.GetSourceIndexGeneration(ctx, row.GenerationID)
+			if err != nil {
+				return err
+			}
+			row = updated
 		}
 		if row.State != workflowstore.SourceIndexGenerationRetired {
 			if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
@@ -89,8 +120,9 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 			}
 			m.logger.Info("source_index_generation_retired", "generation_id", row.GenerationID)
 		}
-		return m.remove(row.GenerationID)
+		return m.removeUnlocked(row.GenerationID)
 	}
+
 	switch row.State {
 	case workflowstore.SourceIndexGenerationPending:
 		m.enqueue(row.GenerationID)
@@ -99,14 +131,14 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 		_, owned := m.builds[row.GenerationID]
 		m.mu.Unlock()
 		if !owned {
-			return m.recoverBuilding(ctx, row)
+			return m.recoverBuildingLocked(ctx, row, true)
 		}
 	case workflowstore.SourceIndexGenerationReady:
-		d, err := reader.VerifyPublishedGeneration(ctx, reader.Config{IndexRoot: m.config.IndexRoot, ProtectedStorage: m.config.ProtectedStorage}, row.Identity)
+		d, err := verifyPublishedGeneration(ctx, reader.Config{IndexRoot: m.config.IndexRoot, ProtectedStorage: m.config.ProtectedStorage}, row.Identity)
 		if err == nil && d.GenerationManifestSHA256 == row.GenerationManifestSHA256 && d.CoverageManifestSHA256 == row.CoverageManifestSHA256 && d.ArtifactManifestSHA256 == row.ArtifactManifestSHA256 {
 			return nil
 		}
-		return m.rebuild(ctx, row)
+		return m.rebuildLocked(ctx, row)
 	case workflowstore.SourceIndexGenerationFailed:
 		if transientFailures[row.FailureCode] && row.AttemptCount < 3 {
 			if _, err := m.store.RetrySourceIndexGeneration(ctx, row.GenerationID); err != nil {
@@ -115,7 +147,7 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 			m.enqueue(row.GenerationID)
 		}
 	case workflowstore.SourceIndexGenerationRetired:
-		if err := m.remove(row.GenerationID); err != nil {
+		if err := m.removeUnlocked(row.GenerationID); err != nil {
 			return err
 		}
 		if _, err := m.store.ReactivateSourceIndexGeneration(ctx, row.GenerationID); err != nil {
@@ -126,37 +158,59 @@ func (m *Manager) reconcileGeneration(ctx context.Context, row workflowstore.Sou
 	return nil
 }
 
-func (m *Manager) recoverBuilding(ctx context.Context, row workflowstore.SourceIndexGeneration) error {
+func (m *Manager) recoverBuildingLocked(ctx context.Context, row workflowstore.SourceIndexGeneration, active bool) error {
 	if row.State != workflowstore.SourceIndexGenerationBuilding {
-		return nil
+		return errors.New("source-index recovery requires a building generation")
 	}
-	d, err := reader.VerifyPublishedGeneration(ctx, reader.Config{IndexRoot: m.config.IndexRoot, ProtectedStorage: m.config.ProtectedStorage}, row.Identity)
-	if err == nil {
-		_, err = m.store.MarkSourceIndexGenerationReady(ctx, workflowstore.MarkSourceIndexGenerationReadyParams{GenerationID: row.GenerationID, GenerationManifestSHA256: d.GenerationManifestSHA256, CoverageManifestSHA256: d.CoverageManifestSHA256, ArtifactManifestSHA256: d.ArtifactManifestSHA256})
+	var err error
+	active, err = m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
+	if err != nil {
 		return err
+	}
+	d, verifyErr := verifyPublishedGeneration(ctx, reader.Config{IndexRoot: m.config.IndexRoot, ProtectedStorage: m.config.ProtectedStorage}, row.Identity)
+	if verifyErr == nil {
+		row, err := m.store.MarkSourceIndexGenerationReady(ctx, workflowstore.MarkSourceIndexGenerationReadyParams{GenerationID: row.GenerationID, GenerationManifestSHA256: d.GenerationManifestSHA256, CoverageManifestSHA256: d.CoverageManifestSHA256, ArtifactManifestSHA256: d.ArtifactManifestSHA256})
+		if err != nil {
+			return err
+		}
+		active, err = m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
+		if err != nil {
+			return err
+		}
+		if !active {
+			if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
+				return err
+			}
+			return m.removeUnlocked(row.GenerationID)
+		}
+		return nil
 	}
 	if err := m.removeUnlocked(row.GenerationID); err != nil {
 		return err
 	}
-	if _, err = m.store.MarkSourceIndexGenerationFailed(ctx, workflowstore.MarkSourceIndexGenerationFailedParams{GenerationID: row.GenerationID, FailureCode: "interrupted", FailureMessage: "source-index build was interrupted"}); err != nil {
+	row, err = m.store.MarkSourceIndexGenerationFailed(ctx, workflowstore.MarkSourceIndexGenerationFailedParams{GenerationID: row.GenerationID, FailureCode: "interrupted", FailureMessage: "source-index build was interrupted"})
+	if err != nil {
 		return err
 	}
-	active, activeErr := m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
-	if activeErr != nil {
-		return activeErr
+	active, err = m.store.IsSourceIndexAuthorityActive(ctx, row.Identity)
+	if err != nil {
+		return err
 	}
 	if active {
-		if _, err = m.store.RetrySourceIndexGeneration(ctx, row.GenerationID); err != nil {
+		if _, err := m.store.RetrySourceIndexGeneration(ctx, row.GenerationID); err != nil {
 			return err
 		}
 		m.enqueue(row.GenerationID)
+		return nil
+	}
+	if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
+		return err
 	}
 	return nil
 }
-func (m *Manager) rebuild(ctx context.Context, row workflowstore.SourceIndexGeneration) error {
+
+func (m *Manager) rebuildLocked(ctx context.Context, row workflowstore.SourceIndexGeneration) error {
 	l := m.lock(row.GenerationID)
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.retiring = true
 	defer func() { l.retiring = false }()
 	if _, err := m.store.RetireSourceIndexGeneration(ctx, row.GenerationID); err != nil {
@@ -171,17 +225,21 @@ func (m *Manager) rebuild(ctx context.Context, row workflowstore.SourceIndexGene
 	m.enqueue(row.GenerationID)
 	return nil
 }
+
 func (m *Manager) remove(id string) error {
 	l := m.lock(id)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return m.removeUnlocked(id)
 }
+
+// removeUnlocked may only be called by code that demonstrably owns the
+// generation write lock.
 func (m *Manager) removeUnlocked(id string) error {
 	if err := fsatomic.RemoveOwnedGeneration(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := fsatomic.RemoveOwnedGenerationStaging(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := fsatomic.RemoveAllOwnedGenerationAttempts(m.config.IndexRoot, id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil

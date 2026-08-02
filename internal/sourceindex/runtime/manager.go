@@ -58,6 +58,7 @@ type Manager struct {
 	wg                sync.WaitGroup
 	done              chan struct{}
 	doneOnce          sync.Once
+	stopLogOnce       sync.Once
 	logger            *slog.Logger
 }
 
@@ -93,6 +94,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.mu.Lock()
 		m.stopping = true
 		m.mu.Unlock()
+		m.doneOnce.Do(func() { close(m.done) })
 		return err
 	}
 	for range m.config.BuildParallelism {
@@ -122,7 +124,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Unlock()
 	select {
 	case <-m.done:
-		m.logger.Info("source_index_runtime_stopped")
+		m.stopLogOnce.Do(func() { m.logger.Info("source_index_runtime_stopped") })
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -173,20 +175,22 @@ func (m *Manager) runBuild(id string) {
 	defer func() { m.mu.Lock(); delete(m.queued, id); m.mu.Unlock() }()
 	l := m.lock(id)
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	row, err := m.store.GetSourceIndexGeneration(m.ctx, id)
 	if err != nil || row.State != workflowstore.SourceIndexGenerationPending {
+		l.mu.Unlock()
 		return
 	}
 	active, err := m.store.IsSourceIndexAuthorityActive(m.ctx, row.Identity)
 	if err != nil {
 		m.wakeReconciliation()
+		l.mu.Unlock()
 		return
 	}
 	if !active {
-		if err := m.reconcileGeneration(m.ctx, row, false); err != nil {
+		if err := m.reconcileGenerationLocked(m.ctx, row, false); err != nil {
 			m.logger.Error("source_index_reconciliation_failed")
 		}
+		l.mu.Unlock()
 		return
 	}
 	buildCtx, cancel := context.WithCancel(m.ctx)
@@ -195,27 +199,67 @@ func (m *Manager) runBuild(id string) {
 	if m.stopping {
 		m.mu.Unlock()
 		cancel()
+		l.mu.Unlock()
 		return
 	}
 	m.builds[id] = local
 	m.mu.Unlock()
-	defer func() { cancel(); close(local.done); m.mu.Lock(); delete(m.builds, id); m.mu.Unlock() }()
+	defer func() {
+		cancel()
+		l.mu.Unlock()
+		m.mu.Lock()
+		delete(m.builds, id)
+		m.mu.Unlock()
+		close(local.done)
+	}()
+	// The queue decision above is only a reservation. Re-read the exact row and
+	// authority immediately before handing control to the supervisor.
+	row, err = m.store.GetSourceIndexGeneration(m.ctx, id)
+	if err != nil || row.State != workflowstore.SourceIndexGenerationPending {
+		return
+	}
+	active, err = m.store.IsSourceIndexAuthorityActive(m.ctx, row.Identity)
+	if err != nil {
+		m.wakeReconciliation()
+		return
+	}
+	if !active {
+		if err := m.reconcileGenerationLocked(m.ctx, row, false); err != nil {
+			m.logger.Error("source_index_reconciliation_failed")
+		}
+		return
+	}
+	m.mu.Lock()
+	stopping := m.stopping
+	m.mu.Unlock()
+	if stopping {
+		return
+	}
 	ready, err := m.build.BuildGeneration(buildCtx, id)
 	if err == nil {
 		m.logger.Info("source_index_generation_ready", "generation_id", id, "attempt_count", ready.AttemptCount)
 		return
 	}
 	if errors.Is(err, supervisor.ErrPublicationAfterExposure) || errors.Is(err, supervisor.ErrPersistenceAfterPublication) {
-		m.wakeReconciliation()
 		current, e := m.store.GetSourceIndexGeneration(m.ctx, id)
 		if e != nil {
 			m.logger.Error("source_index_reconciliation_failed")
 			return
 		}
-		if e = m.recoverBuilding(m.ctx, current); e != nil {
+		if current.State != workflowstore.SourceIndexGenerationBuilding {
 			m.logger.Error("source_index_reconciliation_failed")
 			return
 		}
+		active, e := m.store.IsSourceIndexAuthorityActive(m.ctx, current.Identity)
+		if e != nil {
+			m.logger.Error("source_index_reconciliation_failed")
+			return
+		}
+		if e = m.recoverBuildingLocked(m.ctx, current, active); e != nil {
+			m.logger.Error("source_index_reconciliation_failed")
+			return
+		}
+		return
 	}
 	current, e := m.store.GetSourceIndexGeneration(m.ctx, id)
 	if e == nil {

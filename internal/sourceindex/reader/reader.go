@@ -398,7 +398,14 @@ func Open(ctx context.Context, store GenerationStore, config Config, identity so
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
+		switch {
+		case errors.Is(err, workflow.ErrInvalidSourceIndexGeneration), errors.Is(err, workflow.ErrSourceIndexGenerationIntegrity):
+			return nil, fmt.Errorf("%w: generation", ErrGenerationIntegrity)
+		case errors.Is(err, workflow.ErrSourceIndexGenerationNotFound), err.Error() == "not found":
+			return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
+		default:
+			return nil, err
+		}
 	}
 	id, _ := sourceindex.GenerationID(identity)
 	if row.Identity != identity || row.GenerationID != id || row.State != workflow.SourceIndexGenerationReady || row.FailureCode != "" || row.FailureMessage != "" || !validDigest(row.GenerationManifestSHA256) || !validDigest(row.CoverageManifestSHA256) || !validDigest(row.ArtifactManifestSHA256) {
@@ -482,7 +489,14 @@ func Open(ctx context.Context, store GenerationStore, config Config, identity so
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
+		switch {
+		case errors.Is(err, workflow.ErrInvalidSourceIndexGeneration), errors.Is(err, workflow.ErrSourceIndexGenerationIntegrity):
+			return nil, fmt.Errorf("%w: generation", ErrGenerationIntegrity)
+		case errors.Is(err, workflow.ErrSourceIndexGenerationNotFound), err.Error() == "not found":
+			return nil, fmt.Errorf("%w: generation", ErrGenerationUnavailable)
+		default:
+			return nil, err
+		}
 	}
 	if again.State != workflow.SourceIndexGenerationReady || again.Identity != identity || again.GenerationID != id || again.GenerationManifestSHA256 != row.GenerationManifestSHA256 || again.CoverageManifestSHA256 != row.CoverageManifestSHA256 || again.ArtifactManifestSHA256 != row.ArtifactManifestSHA256 {
 		_ = dir.Close()

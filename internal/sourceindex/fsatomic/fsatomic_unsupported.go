@@ -4,10 +4,10 @@ package fsatomic
 
 import "os"
 
-func RenameNoReplace(string, string) error                         { return os.ErrInvalid }
-func RemoveOwnedGeneration(string, string) error                   { return os.ErrInvalid }
-func RemoveOwnedGenerationStaging(string, string, ...string) error { return os.ErrInvalid }
-func RemoveOwnedStaging(string, string) error                      { return os.ErrInvalid }
+func RenameNoReplace(string, string) error                      { return os.ErrInvalid }
+func RemoveOwnedGeneration(string, string) error                { return os.ErrInvalid }
+func RemoveOwnedGenerationAttempt(string, string, string) error { return os.ErrInvalid }
+func RemoveAllOwnedGenerationAttempts(string, string) error     { return os.ErrInvalid }
 
 func SyncDirectory(path string) error {
 	f, err := os.Open(path)
