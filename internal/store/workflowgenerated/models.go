@@ -637,6 +637,32 @@ type Run struct {
 	PackageApprovalRowID  sql.NullInt64  `json:"package_approval_row_id"`
 }
 
+type SourceIndexGeneration struct {
+	ID                       int64          `json:"id"`
+	GenerationID             string         `json:"generation_id"`
+	IdentityVersion          string         `json:"identity_version"`
+	VaultID                  string         `json:"vault_id"`
+	CommitOid                string         `json:"commit_oid"`
+	TreeOid                  string         `json:"tree_oid"`
+	Engine                   string         `json:"engine"`
+	EngineRevision           string         `json:"engine_revision"`
+	BuildContractVersion     string         `json:"build_contract_version"`
+	BuildOptionsSha256       string         `json:"build_options_sha256"`
+	State                    string         `json:"state"`
+	AttemptCount             int64          `json:"attempt_count"`
+	GenerationManifestSha256 sql.NullString `json:"generation_manifest_sha256"`
+	CoverageManifestSha256   sql.NullString `json:"coverage_manifest_sha256"`
+	ArtifactManifestSha256   sql.NullString `json:"artifact_manifest_sha256"`
+	FailureCode              sql.NullString `json:"failure_code"`
+	FailureMessage           sql.NullString `json:"failure_message"`
+	CreatedAt                string         `json:"created_at"`
+	UpdatedAt                string         `json:"updated_at"`
+	BuildingStartedAt        sql.NullString `json:"building_started_at"`
+	ReadyAt                  sql.NullString `json:"ready_at"`
+	FailedAt                 sql.NullString `json:"failed_at"`
+	RetiredAt                sql.NullString `json:"retired_at"`
+}
+
 type SourcePathSelector struct {
 	ID                     int64  `json:"id"`
 	SelectorID             string `json:"selector_id"`
