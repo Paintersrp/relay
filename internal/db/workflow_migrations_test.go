@@ -165,20 +165,50 @@ func TestIntegratedDiscoveryFoundationMigrationPreservesLegacyWorkspacesAndDefau
 	if err := goose.UpTo(db, "workflow_migrations", 33); err != nil {
 		t.Fatal(err)
 	}
-	var projectID, workspaceID, ticketID int64
+	var projectID, workspaceID, planID, artifactID, ticketID int64
 	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-discovery-migration', 'Discovery Migration') RETURNING id`).Scan(&projectID); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug, state) VALUES ('workspace-discovery-legacy', ?, 'legacy', 'open') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.QueryRow(`SELECT version FROM feature_workspaces WHERE id = ?`, workspaceID).Scan(&ticketID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET version = version + 1 WHERE id = ?`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET version = version + 1 WHERE id = ?`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256) VALUES (?, 'plan-discovery-migration', 'legacy', ?) RETURNING id`, projectID, migrationTestHash).Scan(&planID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO artifacts (artifact_id, owner_type, plan_row_id, kind, relative_path, media_type, sha256, size_bytes) VALUES ('artifact-discovery-migration', 'plan', ?, 'requirements', 'plans/discovery-migration/requirements.json', 'application/json', ?, 2) RETURNING id`, planID, migrationTestHash).Scan(&artifactID); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_tickets (discovery_ticket_id, workspace_row_id, ticket_key, subject, state) VALUES ('discovery-legacy', ?, 'legacy', 'legacy ticket', 'resolved') RETURNING id`, workspaceID).Scan(&ticketID); err != nil {
+		t.Fatal(err)
+	}
+	for _, ticket := range []struct {
+		id, key, state, kind string
+	}{{"discovery-open", "open", "open", "resolved"}, {"discovery-blocked", "blocked", "blocked", "rejected"}, {"discovery-cancelled", "cancelled", "cancelled", "deferred"}} {
+		var rowID int64
+		if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_tickets (discovery_ticket_id, workspace_row_id, ticket_key, subject, state) VALUES (?, ?, ?, ?, ?) RETURNING id`, ticket.id, workspaceID, ticket.key, ticket.key, ticket.state).Scan(&rowID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO feature_workspace_ticket_resolutions (resolution_id, ticket_row_id, sequence, resolution_kind, artifact_row_id, artifact_sha256) VALUES (?, ?, 1, ?, ?, ?)`, "resolution-"+ticket.id, rowID, ticket.kind, artifactID, migrationTestHash); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_ticket_resolutions (resolution_id, ticket_row_id, sequence, resolution_kind, artifact_row_id, artifact_sha256) VALUES ('resolution-discovery-legacy', ?, 1, 'resolved', ?, ?)`, ticketID, artifactID, migrationTestHash); err != nil {
 		t.Fatal(err)
 	}
 	if err := AutoMigrateWorkflow(db); err != nil {
 		t.Fatal(err)
 	}
-	var enabled, metadata int
+	var enabled, metadata, discoveryArtifacts, discoveryRevisions, discoveryConsequences int
+	var currentRevision sql.NullInt64
 	var state string
 	if err := db.QueryRow(`SELECT discovery_capability_enabled, state FROM feature_workspaces WHERE id = ?`, workspaceID).Scan(&enabled, &state); err != nil {
 		t.Fatal(err)
@@ -186,8 +216,39 @@ func TestIntegratedDiscoveryFoundationMigrationPreservesLegacyWorkspacesAndDefau
 	if err := db.QueryRow(`SELECT count(*) FROM feature_workspace_discovery_work_item_metadata WHERE ticket_row_id = ?`, ticketID).Scan(&metadata); err != nil {
 		t.Fatal(err)
 	}
-	if enabled != 0 || metadata != 0 || state != "open" {
+	var workspaceVersion int
+	if err := db.QueryRow(`SELECT version FROM feature_workspaces WHERE id = ?`, workspaceID).Scan(&workspaceVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT current_discovery_revision_row_id FROM feature_workspaces WHERE id = ?`, workspaceID).Scan(&currentRevision); err != nil {
+		t.Fatal(err)
+	}
+	for table, target := range map[string]*int{"feature_workspace_discovery_artifacts": &discoveryArtifacts, "feature_workspace_integrated_discovery_revisions": &discoveryRevisions, "feature_workspace_discovery_integration_consequences": &discoveryConsequences} {
+		if err := db.QueryRow(`SELECT count(*) FROM ` + table).Scan(target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if enabled != 0 || metadata != 0 || state != "open" || workspaceVersion != 3 || currentRevision.Valid || discoveryArtifacts != 0 || discoveryRevisions != 0 || discoveryConsequences != 0 {
 		t.Fatalf("legacy discovery migration = enabled %d metadata %d state %q", enabled, metadata, state)
+	}
+	var ticketCount, resolutionCount int
+	if err := db.QueryRow(`SELECT count(*) FROM feature_workspace_discovery_tickets WHERE workspace_row_id = ?`, workspaceID).Scan(&ticketCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM feature_workspace_ticket_resolutions WHERE ticket_row_id IN (SELECT id FROM feature_workspace_discovery_tickets WHERE workspace_row_id = ?)`, workspaceID).Scan(&resolutionCount); err != nil {
+		t.Fatal(err)
+	}
+	if ticketCount != 4 || resolutionCount != 4 {
+		t.Fatalf("legacy ticket history counts = tickets %d resolutions %d", ticketCount, resolutionCount)
+	}
+	for _, expected := range []struct{ id, state, kind string }{{"discovery-legacy", "resolved", "resolved"}, {"discovery-open", "open", "resolved"}, {"discovery-blocked", "blocked", "rejected"}, {"discovery-cancelled", "cancelled", "deferred"}} {
+		var gotState, gotKind string
+		if err := db.QueryRow(`SELECT t.state, r.resolution_kind FROM feature_workspace_discovery_tickets AS t JOIN feature_workspace_ticket_resolutions AS r ON r.ticket_row_id = t.id WHERE t.discovery_ticket_id = ?`, expected.id).Scan(&gotState, &gotKind); err != nil {
+			t.Fatal(err)
+		}
+		if gotState != expected.state || gotKind != expected.kind {
+			t.Fatalf("legacy ticket %q = state %q kind %q", expected.id, gotState, gotKind)
+		}
 	}
 	if _, err := db.Exec(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug, state) VALUES ('workspace-discovery-new', ?, 'new', 'open')`, projectID); err != nil {
 		t.Fatal(err)

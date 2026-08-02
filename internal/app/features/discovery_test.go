@@ -74,6 +74,25 @@ func TestIntegratedDiscoveryRetainsExactBytesAndSeparatesTerminalIntegration(t *
 	}
 }
 
+func TestLegacyDiscoveryTicketWithoutMetadataRemainsPendingHistoricalWork(t *testing.T) {
+	fixture := newDiscoveryIntegrationFixture(t, "discovery-legacy-pending")
+	frontier, err := fixture.service.ReadIntegratedDiscoveryFrontier(fixture.ctx, fixture.workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := discoverySummary(t, frontier, "discovery-legacy-pending")
+	if !summary.PendingIntegration || summary.Historical {
+		t.Fatalf("legacy ticket representation = %#v", summary)
+	}
+	metadata, err := fixture.store.ListDiscoveryWorkItemMetadata(fixture.ctx, fixture.workspace.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata) != 0 {
+		t.Fatalf("legacy ticket gained metadata: %#v", metadata)
+	}
+}
+
 func TestIntegratedDiscoveryRejectsDisabledAndStaleMutationsWithoutStateChanges(t *testing.T) {
 	ctx := context.Background()
 	store, artifactRowID, _ := openFeatureServiceStore(t, ctx)
@@ -169,6 +188,7 @@ func TestMaterialDiscoveryIntegrationCreatesImmutableExactByteRevisionAndRollsBa
 	}
 
 	content := []byte("# Replacement\n\nExact bytes.\n")
+	expectedTicketVersion := fixture.tickets["discovery-a"].Version
 	consequence, updated, err := fixture.service.IntegrateDiscoveryResult(fixture.ctx, IntegrateDiscoveryResultInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: "discovery-a", ResolutionID: "resolution-discovery-a", Consequence: "integrated", ExpectedWorkspaceVersion: before.workspace.Version, ExpectedWorkItemVersion: fixture.tickets["discovery-a"].Version, ExpectedSHA256: discoveryTestDigest(content), Markdown: content, CreatedIdentity: "operator", EvidenceBasis: "terminal evidence"})
 	if err != nil {
 		t.Fatal(err)
@@ -180,13 +200,28 @@ func TestMaterialDiscoveryIntegrationCreatesImmutableExactByteRevisionAndRollsBa
 	if consequence.ProducedRevisionRowID.Int64 != frontier.Current.Revision.ID || frontier.Current.Revision.RevisionNumber != 2 || frontier.Current.Revision.PredecessorRevisionRowID.Int64 != before.current.ID || string(frontier.Current.Markdown) != string(content) || updated.CurrentDiscoveryRevisionRowID.Int64 != frontier.Current.Revision.ID {
 		t.Fatalf("material integration = consequence %#v workspace %#v current %#v", consequence, updated, frontier.Current)
 	}
-	if _, _, err := fixture.service.IntegrateDiscoveryResult(fixture.ctx, IntegrateDiscoveryResultInput{WorkspaceID: updated.WorkspaceID, TicketID: "discovery-a", ResolutionID: "resolution-discovery-a", Consequence: "integrated", ExpectedWorkspaceVersion: updated.Version, ExpectedWorkItemVersion: fixture.tickets["discovery-a"].Version + 1, ExpectedSHA256: discoveryTestDigest(content), Markdown: content, CreatedIdentity: "operator", EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrDuplicateDiscoveryIntegration) {
+	ticket, err := fixture.ticket("discovery-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Version != before.workspace.Version+1 || ticket.Version != expectedTicketVersion+1 {
+		t.Fatalf("material integration versions = workspace %d ticket %d", updated.Version, ticket.Version)
+	}
+	if frontier.Current.Artifact.SHA256 != discoveryTestDigest(content) || frontier.Current.Artifact.SizeBytes != int64(len(content)) || frontier.Current.Artifact.MediaType != "text/markdown" {
+		t.Fatalf("material artifact metadata = %#v", frontier.Current.Artifact)
+	}
+	duplicateBefore := fixture.state(t)
+	if _, _, err := fixture.service.IntegrateDiscoveryResult(fixture.ctx, IntegrateDiscoveryResultInput{WorkspaceID: updated.WorkspaceID, TicketID: "discovery-a", ResolutionID: "resolution-discovery-a", Consequence: "integrated", ExpectedWorkspaceVersion: updated.Version, ExpectedWorkItemVersion: ticket.Version, ExpectedSHA256: discoveryTestDigest(content), Markdown: content, CreatedIdentity: "operator", EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrDuplicateDiscoveryIntegration) {
 		t.Fatalf("duplicate integration error = %v", err)
+	}
+	if duplicateAfter := fixture.state(t); !reflect.DeepEqual(duplicateAfter, duplicateBefore) {
+		t.Fatalf("duplicate replay changed state: before=%#v after=%#v", duplicateBefore, duplicateAfter)
 	}
 	after := fixture.state(t)
 	if after.artifactCount != before.artifactCount+1 || after.workspace.Version != updated.Version || after.current.ID != frontier.Current.Revision.ID {
 		t.Fatalf("duplicate material integration changed state: %#v", after)
 	}
+	assertDiscoveryCounts(t, fixture.store, after.workspace.ID, before.artifactCount+1, 2, 1)
 
 	if err := os.WriteFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(frontier.Current.Artifact.RelativePath)), []byte("unverified replacement"), 0o600); err != nil {
 		t.Fatal(err)

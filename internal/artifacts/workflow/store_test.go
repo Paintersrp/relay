@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -203,5 +204,120 @@ func TestReadVerifiedFileRejectsMissingOrChangedContent(t *testing.T) {
 	}
 	if _, _, err := store.ReadVerifiedFile(file, 1024); err == nil {
 		t.Fatal("missing artifact was accepted")
+	}
+}
+
+func TestReadVerifiedFileFailsClosedForEveryRetainedIntegrityVariant(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.Begin("feature-discovery/workspace-integrity/artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("# retained discovery\n")
+	file, err := batch.Stage("integrated_discovery", "discovery.md", "text/markdown", original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.Promote(); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.PrepareCommit(); err != nil {
+		t.Fatal(err)
+	}
+	batch.Commit()
+	path := filepath.Join(root, filepath.FromSlash(file.RelativePath))
+	variants := []struct {
+		name  string
+		data  []byte
+		meta  File
+		limit int
+	}{
+		{name: "missing", data: nil, meta: file, limit: 1024},
+		{name: "same length modified", data: bytes.Repeat([]byte("x"), len(original)), meta: file, limit: 1024},
+		{name: "different length modified", data: []byte("different"), meta: file, limit: 1024},
+		{name: "truncated", data: original[:len(original)-1], meta: file, limit: 1024},
+		{name: "empty", data: []byte{}, meta: file, limit: 1024},
+		{name: "stored digest inconsistent", data: original, meta: func() File { value := file; value.SHA256 = strings.Repeat("0", 64); return value }(), limit: 1024},
+		{name: "stored size inconsistent", data: original, meta: func() File { value := file; value.SizeBytes++; return value }(), limit: 1024},
+		{name: "read limit exceeded", data: original, meta: file, limit: len(original) - 1},
+	}
+	for _, variant := range variants {
+		t.Run(variant.name, func(t *testing.T) {
+			if variant.name == "missing" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, variant.data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, data, err := store.ReadVerifiedFile(variant.meta, variant.limit)
+			if err == nil || data != nil {
+				t.Fatalf("integrity variant returned bytes: data=%q err=%v", data, err)
+			}
+			if variant.name == "missing" {
+				if err := os.WriteFile(path, original, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestBatchStageFailureLeavesNoTemporaryState(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.Begin("feature-discovery/workspace-stage-failure/artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := batch.Stage("integrated_discovery", "../discovery.md", "text/markdown", []byte("invalid")); err == nil {
+		t.Fatal("unsafe staging request succeeded")
+	}
+	if len(batch.Files()) != 0 {
+		t.Fatalf("failed stage retained files: %#v", batch.Files())
+	}
+	if err := batch.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".staging"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("staging state survived failed stage rollback: %v", entries)
+	}
+}
+
+func TestBatchPrepareFailureRemovesPromotedState(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.Begin("feature-discovery/workspace-prepare-failure/artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := batch.Stage("integrated_discovery", "discovery.md", "text/markdown", []byte("# prepare\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.Promote(); err != nil {
+		t.Fatal(err)
+	}
+	batch.stagingDir = string([]byte{0})
+	if err := batch.PrepareCommit(); err == nil {
+		t.Fatal("expected preparation failure")
+	}
+	_ = batch.Rollback()
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(file.RelativePath))); !os.IsNotExist(err) {
+		t.Fatalf("promoted artifact survived preparation failure: %v", err)
 	}
 }

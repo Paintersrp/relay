@@ -82,7 +82,7 @@ func (s *Service) StartIntegratedDiscovery(ctx context.Context, input StartInteg
 	if workspace.DiscoveryCapabilityEnabled != 1 {
 		return DiscoveryRevisionContent{}, workflowstore.FeatureWorkspace{}, ErrDiscoveryCapabilityDisabled
 	}
-	artifactID := workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
+	artifactID := s.discoveryArtifactID()
 	batch, err := s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
 	if err != nil {
 		return DiscoveryRevisionContent{}, workflowstore.FeatureWorkspace{}, err
@@ -112,7 +112,7 @@ func (s *Service) StartIntegratedDiscovery(ctx context.Context, input StartInteg
 		if err != nil {
 			return err
 		}
-		revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: workflowstore.NewFeatureWorkspaceDiscoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: 1, ArtifactRowID: artifact.ID, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
+		revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: s.discoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: 1, ArtifactRowID: artifact.ID, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
 		if err != nil {
 			return err
 		}
@@ -266,7 +266,7 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 		return workflowstore.DiscoveryIntegrationConsequence{}, workflowstore.FeatureWorkspace{}, ErrInvalidDiscoveryConsequence
 	}
 	material := input.Consequence == "integrated"
-	if material != (len(input.Markdown) > 0) || (material && (!validSHA256(input.ExpectedSHA256) || digest(input.Markdown) != input.ExpectedSHA256 || strings.TrimSpace(input.CreatedIdentity) == "")) || (!material && input.ExpectedSHA256 != "") {
+	if material != (len(input.Markdown) > 0) || (material && (!validSHA256(input.ExpectedSHA256) || digest(input.Markdown) != input.ExpectedSHA256 || strings.TrimSpace(input.CreatedIdentity) == "")) || (!material && (input.ExpectedSHA256 != "" || strings.TrimSpace(input.CreatedIdentity) != "")) || (input.Consequence == "no_material_change" && strings.TrimSpace(input.ReplacementTicketID) != "") {
 		return workflowstore.DiscoveryIntegrationConsequence{}, workflowstore.FeatureWorkspace{}, ErrInvalidDiscoveryConsequence
 	}
 	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, input.WorkspaceID)
@@ -280,7 +280,7 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 	var file workflowartifacts.File
 	artifactID := ""
 	if material {
-		artifactID = workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
+		artifactID = s.discoveryArtifactID()
 		batch, err = s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
 		if err != nil {
 			return workflowstore.DiscoveryIntegrationConsequence{}, workflowstore.FeatureWorkspace{}, err
@@ -367,7 +367,7 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 			if err != nil {
 				return err
 			}
-			revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: workflowstore.NewFeatureWorkspaceDiscoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: prior.RevisionNumber + 1, ArtifactRowID: artifact.ID, PredecessorRevisionRowID: sql.NullInt64{Int64: prior.ID, Valid: true}, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
+			revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: s.discoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: prior.RevisionNumber + 1, ArtifactRowID: artifact.ID, PredecessorRevisionRowID: sql.NullInt64{Int64: prior.ID, Valid: true}, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
 			if err != nil {
 				return err
 			}
@@ -483,3 +483,17 @@ func discoveryDependencySatisfied(ctx context.Context, store *workflowstore.Stor
 	return discoveryDependencySatisfied(ctx, store, tickets, consequences, consequence.ReplacementTicketRowID.Int64, seen)
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+
+func (s *Service) discoveryArtifactID() string {
+	if ids, ok := s.ids.(interface{ DiscoveryArtifactID() string }); ok {
+		return ids.DiscoveryArtifactID()
+	}
+	return workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
+}
+
+func (s *Service) discoveryRevisionID() string {
+	if ids, ok := s.ids.(interface{ DiscoveryRevisionID() string }); ok {
+		return ids.DiscoveryRevisionID()
+	}
+	return workflowstore.NewFeatureWorkspaceDiscoveryRevisionID()
+}

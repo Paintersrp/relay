@@ -19,6 +19,14 @@ import (
 type Store struct {
 	db        *sql.DB
 	artifacts *workflowartifacts.Store
+	// artifactBatchHooks is populated only by same-package tests to exercise
+	// failure points that the filesystem cannot make deterministic.
+	artifactBatchHooks *artifactBatchHooks
+}
+
+type artifactBatchHooks struct {
+	promote       func(*workflowartifacts.Batch) error
+	prepareCommit func(*workflowartifacts.Batch) error
 }
 
 func Open(dbPath, artifactRoot string) (*Store, error) {
@@ -147,10 +155,18 @@ func (s *Store) CommitArtifactBatch(ctx context.Context, batch *workflowartifact
 	if err := fn(&Tx{tx: tx}); err != nil {
 		return err
 	}
-	if err := batch.Promote(); err != nil {
+	promote := batch.Promote
+	if s.artifactBatchHooks != nil && s.artifactBatchHooks.promote != nil {
+		promote = func() error { return s.artifactBatchHooks.promote(batch) }
+	}
+	if err := promote(); err != nil {
 		return fmt.Errorf("promote workflow artifacts: %w", err)
 	}
-	if err := batch.PrepareCommit(); err != nil {
+	prepareCommit := batch.PrepareCommit
+	if s.artifactBatchHooks != nil && s.artifactBatchHooks.prepareCommit != nil {
+		prepareCommit = func() error { return s.artifactBatchHooks.prepareCommit(batch) }
+	}
+	if err := prepareCommit(); err != nil {
 		return fmt.Errorf("prepare workflow artifacts: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

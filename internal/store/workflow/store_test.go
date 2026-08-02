@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowgenerated "relay/internal/store/workflowgenerated"
 )
 
@@ -272,6 +273,34 @@ VALUES (?, ?, ?, ?, ?, 'accepted')`,
 		strings.Repeat("d", 64),
 	); err == nil {
 		t.Fatal("audit decision accepted a packet not owned by the audited run")
+	}
+}
+
+func TestCommitArtifactBatchPreparationFailureRollsBackDatabaseAndArtifacts(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	batch, err := store.ArtifactStore().Begin("feature-discovery/workspace-preparation-failure/artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := batch.Stage("integrated_discovery", "discovery.md", "text/markdown", []byte("# staged\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := errors.New("injected artifact preparation failure")
+	store.artifactBatchHooks = &artifactBatchHooks{prepareCommit: func(*workflowartifacts.Batch) error { return sentinel }}
+	err = store.CommitArtifactBatch(ctx, batch, func(tx *Tx) error {
+		_, err := tx.CreateRepositoryTarget(ctx, "preparation-failure-target", t.TempDir())
+		return err
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("preparation failure = %v", err)
+	}
+	if _, err := store.GetRepositoryTarget(ctx, "preparation-failure-target"); err == nil {
+		t.Fatal("database mutation survived preparation failure")
+	}
+	if _, err := os.Stat(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(file.RelativePath))); !os.IsNotExist(err) {
+		t.Fatalf("promoted artifact survived preparation failure: %v", err)
 	}
 }
 

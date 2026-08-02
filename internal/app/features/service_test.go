@@ -206,6 +206,16 @@ func (ids *featureTestIDs) GoverningArtifactApprovalID() string {
 	return "ga-approval-feature-" + string(rune('0'+ids.next))
 }
 
+func (ids *featureTestIDs) DiscoveryArtifactID() string {
+	ids.next++
+	return "discovery-artifact-feature-" + string(rune('0'+ids.next))
+}
+
+func (ids *featureTestIDs) DiscoveryRevisionID() string {
+	ids.next++
+	return "discovery-revision-feature-" + string(rune('0'+ids.next))
+}
+
 func openFeatureServiceStore(t *testing.T, ctx context.Context) (*workflowstore.Store, int64, int64) {
 	t.Helper()
 	root := t.TempDir()
