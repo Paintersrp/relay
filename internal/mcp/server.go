@@ -16,9 +16,10 @@ const toolsListPageSize = 16
 
 // Server is an MCP JSON-RPC application bound to one compiled role surface.
 type Server struct {
-	log             *slog.Logger
-	tools           []ToolDefinition
-	surfaceHandlers map[string]surfaceDispatch
+	log               *slog.Logger
+	tools             []ToolDefinition
+	surfaceHandlers   map[string]surfaceDispatch
+	completeToolsList bool
 }
 
 // toolRegistered checks if a tool is in the registry.
@@ -93,6 +94,12 @@ func (s *Server) handleToolsList(req Request) Response {
 	}
 
 	filtered := filterToolsList(s.tools, params)
+	if s.completeToolsList {
+		if params.Cursor != "" {
+			return errResponse(req.ID, CodeInvalidParams, "invalid params: cursor is not supported")
+		}
+		return okResponse(req.ID, ToolsListResult{Tools: filtered})
+	}
 	if start > len(filtered) {
 		return errResponse(req.ID, CodeInvalidParams, "invalid params: invalid cursor")
 	}

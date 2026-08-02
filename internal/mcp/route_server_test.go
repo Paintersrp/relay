@@ -36,34 +36,6 @@ func TestRouteServerUsesOnlyExactRouteHandlers(t *testing.T) {
 	}
 }
 
-func collectAllTools(t *testing.T, server *Server, params ToolsListParams) ToolsListResult {
-	t.Helper()
-	var all ToolsListResult
-	for {
-		rawParams, err := json.Marshal(params)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response := server.handleToolsList(Request{ID: json.RawMessage(`1`), Params: rawParams})
-		if response.Error != nil {
-			t.Fatal(response.Error)
-		}
-		encoded, err := json.Marshal(response.Result)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var page ToolsListResult
-		if err := json.Unmarshal(encoded, &page); err != nil {
-			t.Fatal(err)
-		}
-		all.Tools = append(all.Tools, page.Tools...)
-		if page.NextCursor == "" {
-			return all
-		}
-		params.Cursor = page.NextCursor
-	}
-}
-
 func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T) {
 	routes, err := routecontracts.BuildMCPRouteManifests()
 	if err != nil {
@@ -89,7 +61,10 @@ func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T
 		servers[surface.Surface] = server
 		registrationsBySurface[surface.Surface] = registrations
 
-		list := collectAllTools(t, server, ToolsListParams{})
+		list := listTools(t, server, ToolsListParams{})
+		if list.NextCursor != "" {
+			t.Fatalf("%s complete catalog next cursor=%q", surface.Surface, list.NextCursor)
+		}
 		if len(list.Tools) != len(surface.Tools) {
 			t.Fatalf("%s catalog tools=%d, want %d", surface.Surface, len(list.Tools), len(surface.Tools))
 		}
@@ -109,6 +84,16 @@ func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T
 		for index, definition := range server.tools {
 			assertAppToolMetadata(t, definition, registrations[index])
 		}
+		filtered := listTools(t, server, ToolsListParams{Query: "list"})
+		if filtered.NextCursor != "" {
+			t.Fatalf("%s filtered catalog next cursor=%q", surface.Surface, filtered.NextCursor)
+		}
+		for _, definition := range filtered.Tools {
+			if !strings.Contains(strings.ToLower(definition.Name), "list") && !strings.Contains(strings.ToLower(definition.Description), "list") {
+				t.Fatalf("%s filtered tool %q does not match query", surface.Surface, definition.Name)
+			}
+		}
+		assertToolFamilies(t, surface.Surface, list.Tools)
 
 		if surface.Surface == routecontracts.AppSurfaceWayfinder {
 			invalid := append([]AppToolRegistration(nil), registrations...)
@@ -119,34 +104,90 @@ func TestAppSurfaceServersListUniqueAliasesAndDispatchToBoundRoutes(t *testing.T
 		}
 	}
 
-	wayfinder := servers[routecontracts.AppSurfaceWayfinder]
 	collisions := appToolRegistrationsByInternalName(registrationsBySurface[routecontracts.AppSurfaceWayfinder], "list_projects")
 	if len(collisions) != 3 {
 		t.Fatalf("wayfinder list_projects aliases=%d", len(collisions))
 	}
-	for _, registration := range collisions[:2] {
-		response := callAppSurfaceTool(t, wayfinder, registration.AdvertisedName, registration.SurfaceContract)
-		if response.Error != nil {
-			t.Fatalf("%s response=%#v", registration.AdvertisedName, response.Error)
+	for surface, server := range servers {
+		registrations := registrationsBySurface[surface]
+		representatives := representativeAppToolsByRoute(registrations)
+		if len(representatives) != appRouteCount(registrations) {
+			t.Fatalf("%s representative routes=%d, want %d", surface, len(representatives), appRouteCount(registrations))
 		}
-		var result ToolCallResult
-		body, err := json.Marshal(response.Result)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(body, &result); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(toolResultText(result), registration.InternalRoutePath) {
-			t.Fatalf("%s did not reach bound route %s: %s", registration.AdvertisedName, registration.InternalRoutePath, toolResultText(result))
+		for _, registration := range representatives {
+			response := callAppSurfaceTool(t, server, registration.AdvertisedName, registration.SurfaceContract)
+			if response.Error != nil {
+				t.Fatalf("%s response=%#v", registration.AdvertisedName, response.Error)
+			}
+			var result ToolCallResult
+			body, err := json.Marshal(response.Result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(body, &result); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(toolResultText(result), registration.InternalRoutePath) {
+				t.Fatalf("%s did not reach bound route %s: %s", registration.AdvertisedName, registration.InternalRoutePath, toolResultText(result))
+			}
 		}
 	}
 	for _, name := range []string{"list_projects", "planner-authoring-v1__list_projects"} {
-		response := callAppSurfaceTool(t, wayfinder, name, "wayfinder-workspace.v1")
+		response := callAppSurfaceTool(t, servers[routecontracts.AppSurfaceWayfinder], name, "wayfinder-workspace.v1")
 		if response.Error == nil || response.Error.Code != CodeMethodNotFound {
 			t.Fatalf("unqualified or cross-role %q response=%#v", name, response)
 		}
 	}
+}
+
+func appRouteCount(registrations []AppToolRegistration) int {
+	routes := make(map[string]struct{})
+	for _, registration := range registrations {
+		routes[registration.InternalRoutePath] = struct{}{}
+	}
+	return len(routes)
+}
+
+func assertToolFamilies(t *testing.T, surface routecontracts.AppSurface, tools []ToolDefinition) {
+	t.Helper()
+	want := map[routecontracts.AppSurface][]string{
+		routecontracts.AppSurfaceWayfinder: {"wayfinder-workspace-v1__", "wayfinder-discovery-v1__", "wayfinder-investigation-v1__"},
+		routecontracts.AppSurfacePlanner:   {"planner-authoring-v1__", "planner-ticket-frontier-v1__"},
+		routecontracts.AppSurfaceAuditor:   {"auditor-review-v1__", "auditor-audit-v1__"},
+	}[surface]
+	for _, prefix := range want {
+		found := false
+		for _, tool := range tools {
+			if strings.HasPrefix(tool.Name, prefix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s catalog missing %q tools", surface, prefix)
+		}
+	}
+}
+
+func listTools(t *testing.T, server *Server, params ToolsListParams) ToolsListResult {
+	t.Helper()
+	rawParams, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := server.handleToolsList(Request{ID: json.RawMessage(`1`), Params: rawParams})
+	if response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	encoded, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result ToolsListResult
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func fakeAppSurfaceDispatchers(routes routecontracts.RouteSet) RouteDispatchers {
@@ -209,6 +250,23 @@ func appToolRegistrationsByInternalName(registrations []AppToolRegistration, int
 	for _, registration := range registrations {
 		if registration.InternalToolName == internalName {
 			result = append(result, registration)
+		}
+	}
+	return result
+}
+
+func representativeAppToolsByRoute(registrations []AppToolRegistration) []AppToolRegistration {
+	byRoute := make(map[string]AppToolRegistration)
+	for _, registration := range registrations {
+		if registration.InternalToolName == "list_projects" {
+			byRoute[registration.InternalRoutePath] = registration
+		}
+	}
+	result := make([]AppToolRegistration, 0, len(byRoute))
+	for _, registration := range registrations {
+		if representative, exists := byRoute[registration.InternalRoutePath]; exists && representative.AdvertisedName == registration.AdvertisedName {
+			result = append(result, registration)
+			delete(byRoute, registration.InternalRoutePath)
 		}
 	}
 	return result

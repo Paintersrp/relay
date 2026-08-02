@@ -75,7 +75,7 @@ func NewServerForAppSurface(log *slog.Logger, surface routecontracts.AppSurfaceM
 			string(registration.PublicSurface), registration.InternalToolName,
 		))
 	}
-	return &Server{log: log, tools: definitions, surfaceHandlers: dispatch}, nil
+	return &Server{log: log, tools: definitions, surfaceHandlers: dispatch, completeToolsList: true}, nil
 }
 
 func routeToolDefinition(name, description string, tool routecontracts.ToolManifest, manifest routecontracts.RouteManifest, publicSurface, internalToolName string) ToolDefinition {

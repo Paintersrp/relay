@@ -157,29 +157,21 @@ func assertPrivateRoute(t *testing.T, client *http.Client, routePath, address st
 	if !ok {
 		t.Fatalf("app surface missing for %s", routePath)
 	}
-	got := make([]string, 0, len(surface.Tools))
-	cursor := ""
-	for {
-		var params json.RawMessage
-		if cursor != "" {
-			params = mustJSON(t, map[string]string{"cursor": cursor})
-		}
-		listed := postRPC(t, client, target, "client-credential-must-be-stripped", mcp.Request{JSONRPC: mcp.JSONRPCVersion, ID: json.RawMessage(`2`), Method: "tools/list", Params: params})
-		if listed.Error != nil {
-			t.Fatalf("%s tools/list=%#v", routePath, listed.Error)
-		}
-		var tools mcp.ToolsListResult
-		data, _ := json.Marshal(listed.Result)
-		if err := json.Unmarshal(data, &tools); err != nil {
-			t.Fatal(err)
-		}
-		for _, tool := range tools.Tools {
-			got = append(got, tool.Name)
-		}
-		if tools.NextCursor == "" {
-			break
-		}
-		cursor = tools.NextCursor
+	listed := postRPC(t, client, target, "client-credential-must-be-stripped", mcp.Request{JSONRPC: mcp.JSONRPCVersion, ID: json.RawMessage(`2`), Method: "tools/list"})
+	if listed.Error != nil {
+		t.Fatalf("%s tools/list=%#v", routePath, listed.Error)
+	}
+	var tools mcp.ToolsListResult
+	data, _ := json.Marshal(listed.Result)
+	if err := json.Unmarshal(data, &tools); err != nil {
+		t.Fatal(err)
+	}
+	if tools.NextCursor != "" {
+		t.Fatalf("%s complete catalog next cursor=%q", routePath, tools.NextCursor)
+	}
+	got := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		got = append(got, tool.Name)
 	}
 	want := make([]string, len(surface.Tools))
 	for index, tool := range surface.Tools {
