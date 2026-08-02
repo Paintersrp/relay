@@ -63,6 +63,11 @@ type Supervisor struct {
 	store     GenerationStore
 	authority SourceAuthority
 	config    Config
+	child     func(context.Context, []byte, string) (indexerprotocol.BuildResponse, string, string, error)
+	verifier  func(indexerprotocol.BuildRequest, string, indexerprotocol.BuildResult) (verifiedResult, error)
+	publisher func(string, string) (PublicationResult, error)
+	cleaner   func(string, string) error
+	nonce     func() (string, error)
 }
 
 func New(store GenerationStore, authority SourceAuthority, config Config) (*Supervisor, error) {
@@ -114,7 +119,11 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 	if err != nil || digest != generation.Identity.BuildOptionsSHA256 {
 		return s.fail(ctx, generationID, "build_options_mismatch", "build options do not match generation", lease, "", err)
 	}
-	nonce, err := stagingNonce()
+	nonceFn := s.nonce
+	if nonceFn == nil {
+		nonceFn = stagingNonce
+	}
+	nonce, err := nonceFn()
 	if err != nil {
 		return s.fail(ctx, generationID, "indexer_start_failed", "cannot create staging nonce", lease, "", err)
 	}
@@ -123,7 +132,11 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 	if err != nil {
 		return s.fail(ctx, generationID, "indexer_start_failed", "cannot construct indexer request", lease, nonce, err)
 	}
-	response, code, message, err := s.runChild(ctx, requestBytes, generationID)
+	child := s.child
+	if child == nil {
+		child = s.runChild
+	}
+	response, code, message, err := child(ctx, requestBytes, generationID)
 	if err != nil {
 		if ctx.Err() != nil {
 			code, message = "cancelled", "source-index build cancelled"
@@ -133,11 +146,19 @@ func (s *Supervisor) BuildGeneration(ctx context.Context, generationID string) (
 	if response.Status == indexerprotocol.BuildStatusFailed {
 		return s.fail(ctx, generationID, response.Failure.Code, safeFailureMessage(response.Failure.Code), lease, nonce, errors.New("indexer reported failure"))
 	}
-	verified, err := s.verify(request, nonce, *response.Result)
+	verifier := s.verifier
+	if verifier == nil {
+		verifier = s.verify
+	}
+	verified, err := verifier(request, nonce, *response.Result)
 	if err != nil {
 		return s.fail(ctx, generationID, "verification_failed", "staged source-index verification failed", lease, nonce, ErrStagedVerification)
 	}
-	publication, err := s.publish(generationID, nonce)
+	publisher := s.publisher
+	if publisher == nil {
+		publisher = s.publish
+	}
+	publication, err := publisher(generationID, nonce)
 	if err != nil {
 		if publication.Exposed {
 			closeErr := lease.Close()
@@ -297,7 +318,11 @@ func (s *Supervisor) fail(lifecycle context.Context, generationID, code, message
 	cause = sanitizedError(cause)
 	var cleanupErr error
 	if nonce != "" {
-		cleanupErr = s.cleanup(generationID, nonce)
+		cleaner := s.cleaner
+		if cleaner == nil {
+			cleaner = s.cleanup
+		}
+		cleanupErr = cleaner(generationID, nonce)
 	}
 	if lease != nil {
 		cleanupErr = errors.Join(cleanupErr, lease.Close())
@@ -406,6 +431,23 @@ func sanitizedError(err error) error {
 	default:
 		return errors.New("source-index build failed")
 	}
+}
+
+func (s *Supervisor) finishChild(out *boundedBuffer, waitErr error, generationID string) (indexerprotocol.BuildResponse, string, string, error) {
+	response, parseErr := indexerprotocol.ParseBuildResponse(out.bytes())
+	if parseErr != nil {
+		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response is invalid", fmt.Errorf("%w: invalid response", ErrChildProtocol)
+	}
+	if response.GenerationID != "" && response.GenerationID != generationID {
+		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response generation does not match", fmt.Errorf("%w: generation mismatch", ErrChildProtocol)
+	}
+	if waitErr == nil && response.Status == indexerprotocol.BuildStatusSuccess && response.Result != nil && response.Failure == nil {
+		return response, "", "", nil
+	}
+	if waitErr != nil && response.Status == indexerprotocol.BuildStatusFailed && response.Failure != nil && response.Result == nil {
+		return response, "", "", nil
+	}
+	return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer process and response disagree", fmt.Errorf("%w: exit mismatch", ErrChildProtocol)
 }
 
 type boundedBuffer struct {

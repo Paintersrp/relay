@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os/exec"
 	"sync"
@@ -177,21 +176,4 @@ func (s *Supervisor) runChild(ctx context.Context, request []byte, generationID 
 		}
 		return s.finishChild(out, waitErr, generationID)
 	}
-}
-
-func (s *Supervisor) finishChild(out *boundedBuffer, waitErr error, generationID string) (indexerprotocol.BuildResponse, string, string, error) {
-	response, parseErr := indexerprotocol.ParseBuildResponse(out.bytes())
-	if parseErr != nil {
-		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response is invalid", fmt.Errorf("%w: invalid response", ErrChildProtocol)
-	}
-	if response.GenerationID != "" && response.GenerationID != generationID {
-		return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer response generation does not match", fmt.Errorf("%w: generation mismatch", ErrChildProtocol)
-	}
-	if waitErr == nil && response.Status == indexerprotocol.BuildStatusSuccess && response.Result != nil && response.Failure == nil {
-		return response, "", "", nil
-	}
-	if waitErr != nil && response.Status == indexerprotocol.BuildStatusFailed && response.Failure != nil && response.Result == nil {
-		return response, "", "", nil
-	}
-	return indexerprotocol.BuildResponse{}, "indexer_protocol_failed", "indexer process and response disagree", fmt.Errorf("%w: exit mismatch", ErrChildProtocol)
 }

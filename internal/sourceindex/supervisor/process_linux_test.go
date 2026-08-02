@@ -53,14 +53,21 @@ func TestRunChildOutputLimitsAreBounded(t *testing.T) {
 
 func TestRunChildCancellationAndObservationFailureAreBounded(t *testing.T) {
 	t.Run("cancellation", func(t *testing.T) {
+		original := observeChildExit
+		observing := make(chan struct{})
+		release := make(chan struct{})
+		observeChildExit = func(int) error {
+			close(observing)
+			<-release
+			return nil
+		}
+		t.Cleanup(func() { observeChildExit = original })
 		s := testProcessSupervisor(t, "(while :; do :; done) &\nwhile :; do :; done")
 		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-		}()
+		go func() { <-observing; cancel() }()
 		started := time.Now()
 		_, code, _, err := s.runChild(ctx, nil, strings.Repeat("a", 64))
+		close(release)
 		if code != "cancelled" || !errors.Is(err, context.Canceled) {
 			t.Fatalf("runChild code, err = %q, %v", code, err)
 		}
