@@ -164,3 +164,44 @@ func TestBatchRejectsUnsafeNamesAndNamespaces(t *testing.T) {
 	}
 	_ = batch.Rollback()
 }
+
+func TestReadVerifiedFileRejectsMissingOrChangedContent(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.Begin("feature-discovery/workspace-1/artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := batch.Stage("integrated_discovery", "discovery.md", "text/markdown", []byte("# Exact\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.Promote(); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.PrepareCommit(); err != nil {
+		t.Fatal(err)
+	}
+	batch.Commit()
+	if _, data, err := store.ReadVerifiedFile(file, 1024); err != nil || !bytes.Equal(data, []byte("# Exact\n")) {
+		t.Fatalf("verified read = %q, %v", data, err)
+	}
+	path := filepath.Join(root, filepath.FromSlash(file.RelativePath))
+	for _, replacement := range [][]byte{nil, []byte("# Changed\n"), []byte("# Exact")} {
+		if err := os.WriteFile(path, replacement, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := store.ReadVerifiedFile(file, 1024); err == nil {
+			t.Fatalf("unverified replacement %q was returned", replacement)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.ReadVerifiedFile(file, 1024); err == nil {
+		t.Fatal("missing artifact was accepted")
+	}
+}

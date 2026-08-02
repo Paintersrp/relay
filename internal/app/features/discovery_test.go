@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -70,6 +72,164 @@ func TestIntegratedDiscoveryRetainsExactBytesAndSeparatesTerminalIntegration(t *
 	if consequence.ConsequenceKind != "no_material_change" || updated.CurrentDiscoveryRevisionRowID.Int64 != started.Revision.ID {
 		t.Fatalf("integration = %#v %#v", consequence, updated)
 	}
+}
+
+func TestIntegratedDiscoveryRejectsDisabledAndStaleMutationsWithoutStateChanges(t *testing.T) {
+	ctx := context.Background()
+	store, artifactRowID, _ := openFeatureServiceStore(t, ctx)
+	service, err := NewServiceWithIDs(store, &featureTestIDs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := createFeatureWorkspace(ctx, store, "workspace-discovery-concurrency", "discovery-concurrency")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ticket workflowstore.FeatureWorkspaceDiscoveryTicket
+	var resolution workflowstore.FeatureWorkspaceTicketResolution
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var err error
+		ticket, err = tx.CreateFeatureWorkspaceDiscoveryTicket(ctx, workflowstore.CreateFeatureWorkspaceDiscoveryTicketParams{DiscoveryTicketID: "discovery-concurrency-item", WorkspaceRowID: workspace.ID, TicketKey: "item", Subject: "item"})
+		if err != nil {
+			return err
+		}
+		resolution, err = tx.CreateFeatureWorkspaceTicketResolution(ctx, workflowstore.CreateFeatureWorkspaceTicketResolutionParams{ResolutionID: "resolution-concurrency-item", TicketRowID: ticket.ID, Sequence: 1, ResolutionKind: "resolved", ArtifactRowID: sqlNullInt64(artifactRowID), ArtifactSha256: strings.Repeat("b", 64)})
+		if err != nil {
+			return err
+		}
+		ticket, err = tx.TransitionFeatureWorkspaceDiscoveryTicket(ctx, ticket.DiscoveryTicketID, "open", "resolved", ticket.Version)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := discoveryStoredState(t, ctx, store, workspace)
+	if _, err := service.UpdateDiscoveryWorkItem(ctx, DiscoveryWorkItemInput{WorkspaceID: workspace.WorkspaceID, TicketID: ticket.DiscoveryTicketID, Kind: "investigation", ExpectedVersion: ticket.Version}); !errors.Is(err, ErrDiscoveryCapabilityDisabled) {
+		t.Fatalf("disabled metadata error = %v", err)
+	}
+	if _, _, err := service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: workspace.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: resolution.ResolutionID, Consequence: "no_material_change", ExpectedWorkspaceVersion: workspace.Version, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrDiscoveryCapabilityDisabled) {
+		t.Fatalf("disabled integration error = %v", err)
+	}
+	if after := discoveryStoredState(t, ctx, store, workspace); !reflect.DeepEqual(after, before) {
+		t.Fatalf("disabled operations mutated state: before=%#v after=%#v", before, after)
+	}
+
+	workspace, err = service.SetIntegratedDiscoveryCapability(ctx, workspace.WorkspaceID, workspace.Version, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := []byte("# Initial\n")
+	staleWorkspace := workspace.Version
+	_, workspace, err = service.StartIntegratedDiscovery(ctx, StartIntegratedDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Markdown: initial, SHA256: discoveryTestDigest(initial), CreatedIdentity: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = discoveryStoredState(t, ctx, store, workspace)
+	if _, _, err := service.StartIntegratedDiscovery(ctx, StartIntegratedDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: staleWorkspace, Markdown: []byte("# Other\n"), SHA256: discoveryTestDigest([]byte("# Other\n")), CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryStaleState) {
+		t.Fatalf("stale initial error = %v", err)
+	}
+	if _, _, err := service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: workspace.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: resolution.ResolutionID, Consequence: "no_material_change", ExpectedWorkspaceVersion: staleWorkspace, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrDiscoveryStaleState) {
+		t.Fatalf("stale workspace integration error = %v", err)
+	}
+	if after := discoveryStoredState(t, ctx, store, workspace); !reflect.DeepEqual(after, before) {
+		t.Fatalf("stale workspace operations mutated state: before=%#v after=%#v", before, after)
+	}
+
+	updatedTicket, err := service.UpdateDiscoveryWorkItem(ctx, DiscoveryWorkItemInput{WorkspaceID: workspace.WorkspaceID, TicketID: ticket.DiscoveryTicketID, Kind: "investigation", ExpectedVersion: ticket.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = discoveryStoredState(t, ctx, store, current)
+	if _, err := service.UpdateDiscoveryWorkItem(ctx, DiscoveryWorkItemInput{WorkspaceID: current.WorkspaceID, TicketID: ticket.DiscoveryTicketID, Kind: "investigation", ExpectedVersion: ticket.Version}); !errors.Is(err, ErrDiscoveryStaleState) {
+		t.Fatalf("stale metadata error = %v", err)
+	}
+	if _, _, err := service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: current.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: resolution.ResolutionID, Consequence: "no_material_change", ExpectedWorkspaceVersion: current.Version, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrDiscoveryStaleState) {
+		t.Fatalf("stale work item integration error = %v", err)
+	}
+	if after := discoveryStoredState(t, ctx, store, current); !reflect.DeepEqual(after, before) {
+		t.Fatalf("stale work item operations mutated state: before=%#v after=%#v", before, after)
+	}
+	if updatedTicket.Version != ticket.Version+1 {
+		t.Fatalf("updated work item version = %d", updatedTicket.Version)
+	}
+}
+
+func TestMaterialDiscoveryIntegrationCreatesImmutableExactByteRevisionAndRollsBackFailures(t *testing.T) {
+	fixture := newDiscoveryIntegrationFixture(t, "discovery-a", "discovery-b")
+	before := fixture.state(t)
+	bad := []byte("# Replacement\n")
+	if _, _, err := fixture.service.IntegrateDiscoveryResult(fixture.ctx, IntegrateDiscoveryResultInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: "discovery-a", ResolutionID: "resolution-discovery-a", Consequence: "integrated", ExpectedWorkspaceVersion: before.workspace.Version, ExpectedWorkItemVersion: fixture.tickets["discovery-a"].Version, ExpectedSHA256: strings.Repeat("0", 64), Markdown: bad, CreatedIdentity: "operator", EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrInvalidDiscoveryConsequence) {
+		t.Fatalf("bad digest error = %v", err)
+	}
+	if after := fixture.state(t); !reflect.DeepEqual(after, before) {
+		t.Fatalf("invalid material integration mutated state: before=%#v after=%#v", before, after)
+	}
+
+	content := []byte("# Replacement\n\nExact bytes.\n")
+	consequence, updated, err := fixture.service.IntegrateDiscoveryResult(fixture.ctx, IntegrateDiscoveryResultInput{WorkspaceID: fixture.workspace.WorkspaceID, TicketID: "discovery-a", ResolutionID: "resolution-discovery-a", Consequence: "integrated", ExpectedWorkspaceVersion: before.workspace.Version, ExpectedWorkItemVersion: fixture.tickets["discovery-a"].Version, ExpectedSHA256: discoveryTestDigest(content), Markdown: content, CreatedIdentity: "operator", EvidenceBasis: "terminal evidence"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, err := fixture.service.ReadIntegratedDiscoveryFrontier(fixture.ctx, fixture.workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if consequence.ProducedRevisionRowID.Int64 != frontier.Current.Revision.ID || frontier.Current.Revision.RevisionNumber != 2 || frontier.Current.Revision.PredecessorRevisionRowID.Int64 != before.current.ID || string(frontier.Current.Markdown) != string(content) || updated.CurrentDiscoveryRevisionRowID.Int64 != frontier.Current.Revision.ID {
+		t.Fatalf("material integration = consequence %#v workspace %#v current %#v", consequence, updated, frontier.Current)
+	}
+	if _, _, err := fixture.service.IntegrateDiscoveryResult(fixture.ctx, IntegrateDiscoveryResultInput{WorkspaceID: updated.WorkspaceID, TicketID: "discovery-a", ResolutionID: "resolution-discovery-a", Consequence: "integrated", ExpectedWorkspaceVersion: updated.Version, ExpectedWorkItemVersion: fixture.tickets["discovery-a"].Version + 1, ExpectedSHA256: discoveryTestDigest(content), Markdown: content, CreatedIdentity: "operator", EvidenceBasis: "terminal evidence"}); !errors.Is(err, ErrDuplicateDiscoveryIntegration) {
+		t.Fatalf("duplicate integration error = %v", err)
+	}
+	after := fixture.state(t)
+	if after.artifactCount != before.artifactCount+1 || after.workspace.Version != updated.Version || after.current.ID != frontier.Current.Revision.ID {
+		t.Fatalf("duplicate material integration changed state: %#v", after)
+	}
+
+	if err := os.WriteFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(frontier.Current.Artifact.RelativePath)), []byte("unverified replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.ReadIntegratedDiscoveryFrontier(fixture.ctx, fixture.workspace.WorkspaceID); !errors.Is(err, ErrDiscoveryIntegrity) {
+		t.Fatalf("modified retained artifact error = %v", err)
+	}
+}
+
+type discoveryPersistedState struct {
+	workspace    workflowstore.FeatureWorkspace
+	metadata     []workflowstore.DiscoveryWorkItemMetadata
+	artifacts    int
+	revisions    int
+	consequences int
+}
+
+func discoveryStoredState(t *testing.T, ctx context.Context, store *workflowstore.Store, workspace workflowstore.FeatureWorkspace) discoveryPersistedState {
+	t.Helper()
+	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := store.ListDiscoveryWorkItemMetadata(ctx, current.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := discoveryPersistedState{workspace: current, metadata: metadata}
+	for _, table := range []string{"feature_workspace_discovery_artifacts", "feature_workspace_integrated_discovery_revisions", "feature_workspace_discovery_integration_consequences"} {
+		var count int
+		if err := store.DB().QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE workspace_row_id = ?", current.ID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		switch table {
+		case "feature_workspace_discovery_artifacts":
+			state.artifacts = count
+		case "feature_workspace_integrated_discovery_revisions":
+			state.revisions = count
+		case "feature_workspace_discovery_integration_consequences":
+			state.consequences = count
+		}
+	}
+	return state
 }
 
 func discoveryTestDigest(data []byte) string {
@@ -270,9 +430,6 @@ func (f *discoveryIntegrationFixture) state(t *testing.T) discoveryIntegrationSt
 	frontier, err := f.service.ReadIntegratedDiscoveryFrontier(f.ctx, workspace.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if string(frontier.Current.Markdown) != string(f.initial) {
-		t.Fatalf("initial artifact changed = %q", frontier.Current.Markdown)
 	}
 	var artifactCount int
 	if err := f.store.DB().QueryRowContext(f.ctx, `SELECT count(*) FROM feature_workspace_discovery_artifacts WHERE workspace_row_id = ?`, workspace.ID).Scan(&artifactCount); err != nil {

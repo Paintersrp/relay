@@ -155,6 +155,51 @@ func TestSourceIndexGenerationSchemaUpgradeAndGuards(t *testing.T) {
 	assertExecFails(t, db, `DELETE FROM source_index_generations WHERE generation_id = ?`, id)
 }
 
+func TestIntegratedDiscoveryFoundationMigrationPreservesLegacyWorkspacesAndDefaultsDisabled(t *testing.T) {
+	db := openMigrationTestDB(t, "integrated-discovery-foundation")
+	defer db.Close()
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 33); err != nil {
+		t.Fatal(err)
+	}
+	var projectID, workspaceID, ticketID int64
+	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-discovery-migration', 'Discovery Migration') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug, state) VALUES ('workspace-discovery-legacy', ?, 'legacy', 'open') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_tickets (discovery_ticket_id, workspace_row_id, ticket_key, subject, state) VALUES ('discovery-legacy', ?, 'legacy', 'legacy ticket', 'resolved') RETURNING id`, workspaceID).Scan(&ticketID); err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+	var enabled, metadata int
+	var state string
+	if err := db.QueryRow(`SELECT discovery_capability_enabled, state FROM feature_workspaces WHERE id = ?`, workspaceID).Scan(&enabled, &state); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM feature_workspace_discovery_work_item_metadata WHERE ticket_row_id = ?`, ticketID).Scan(&metadata); err != nil {
+		t.Fatal(err)
+	}
+	if enabled != 0 || metadata != 0 || state != "open" {
+		t.Fatalf("legacy discovery migration = enabled %d metadata %d state %q", enabled, metadata, state)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug, state) VALUES ('workspace-discovery-new', ?, 'new', 'open')`, projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT discovery_capability_enabled FROM feature_workspaces WHERE workspace_id = 'workspace-discovery-new'`).Scan(&enabled); err != nil {
+		t.Fatal(err)
+	}
+	if enabled != 0 {
+		t.Fatalf("new workspace discovery capability = %d", enabled)
+	}
+}
+
 func openMigrationTestDB(t *testing.T, name string) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:relay-migration-%s-%s?mode=memory&cache=shared", name, strings.ReplaceAll(t.Name(), "/", "-")))
