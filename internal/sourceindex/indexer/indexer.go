@@ -51,6 +51,26 @@ type document struct{ path, content []byte }
 
 var commandContext = exec.CommandContext
 
+// Build seams retain the production pipeline while allowing deterministic
+// phase failures in package tests. They are deliberately package-private.
+var (
+	repositoryCheck       = repository
+	makePrivateDirectory  = os.Mkdir
+	traverseTree          = traverse
+	classifyContent       = classify
+	newCoverageManifest   = sourceindex.NewCoverageManifest
+	buildShards           = shards
+	listArtifactFiles     = artifactFiles
+	newArtifactManifest   = sourceindex.NewArtifactManifest
+	newGenerationManifest = sourceindex.NewGenerationManifest
+	writeArtifact         = write
+	verifyStaged          = Verify
+	syncPreparedBuild     = syncBuild
+	renamePrivateBuild    = fsatomic.RenameNoReplace
+	syncStagingParent     = syncDirectory
+	cleanupAttempt        = fsatomic.RemoveOwnedGenerationAttempt
+)
+
 func gitEnv() []string {
 	out := make([]string, 0)
 	for _, e := range os.Environ() {
@@ -386,7 +406,7 @@ func syncBuild(root, parent string) error {
 	return syncDirectory(parent)
 }
 func Build(ctx context.Context, r indexerprotocol.BuildRequest) (result indexerprotocol.BuildResult, err error) {
-	if e := repository(ctx, r); e != nil {
+	if e := repositoryCheck(ctx, r); e != nil {
 		return indexerprotocol.BuildResult{}, e
 	}
 	target, e := sourceindex.StagingDirectory(r.IndexRoot, r.GenerationID, r.StagingNonce)
@@ -409,75 +429,75 @@ func Build(ctx context.Context, r indexerprotocol.BuildRequest) (result indexerp
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("unsafe_path", "unsafe private build path")
 	}
-	e = os.Mkdir(tmp, 0700)
+	e = makePrivateDirectory(tmp, 0700)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot create private build directory")
 	}
 	exposed := false
 	defer func() {
 		if !exposed {
-			if cleanupErr := fsatomic.RemoveOwnedGenerationAttempt(r.IndexRoot, r.GenerationID, r.StagingNonce); cleanupErr != nil {
-				err = errors.Join(err, fail("artifact_write_failed", "cannot remove private build directory"))
+			if cleanupErr := cleanupAttempt(r.IndexRoot, r.GenerationID, r.StagingNonce); cleanupErr != nil {
+				err = errors.Join(err, fail("artifact_write_failed", "cannot remove private build directory"), cleanupErr)
 			}
 		}
 	}()
 	if safeDirectory(parent) != nil || safeDirectory(tmp) != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "unsafe staging directory")
 	}
-	entries, e := traverse(ctx, r)
+	entries, e := traverseTree(ctx, r)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, e
 	}
-	coverage, docs, e := classify(ctx, r, entries)
+	coverage, docs, e := classifyContent(ctx, r, entries)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, e
 	}
-	cm, e := sourceindex.NewCoverageManifest(r.GenerationID, r.Identity.CommitOID, r.Identity.TreeOID, coverage)
+	cm, e := newCoverageManifest(r.GenerationID, r.Identity.CommitOID, r.Identity.TreeOID, coverage)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("internal", "coverage construction failed")
 	}
 	cb, _ := sourceindex.MarshalCoverageManifest(cm)
-	if e = write(filepath.Join(tmp, sourceindex.CoverageManifestFileName), cb); e != nil {
+	if e = writeArtifact(filepath.Join(tmp, sourceindex.CoverageManifestFileName), cb); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot write coverage manifest")
 	}
-	count, e := shards(tmp, r, docs, ShardContentLimitBytes)
+	count, e := buildShards(tmp, r, docs, ShardContentLimitBytes)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("index_build_failed", "cannot build zoekt shard")
 	}
-	af, e := artifactFiles(tmp)
+	af, e := listArtifactFiles(tmp)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot enumerate artifacts")
 	}
-	am, e := sourceindex.NewArtifactManifest(r.GenerationID, af)
+	am, e := newArtifactManifest(r.GenerationID, af)
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("internal", "artifact manifest construction failed")
 	}
 	ab, _ := sourceindex.MarshalArtifactManifest(am)
-	if e = write(filepath.Join(tmp, sourceindex.ArtifactManifestFileName), ab); e != nil {
+	if e = writeArtifact(filepath.Join(tmp, sourceindex.ArtifactManifestFileName), ab); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot write artifact manifest")
 	}
-	gm, e := sourceindex.NewGenerationManifest(r.Identity, digest(cb), digest(ab))
+	gm, e := newGenerationManifest(r.Identity, digest(cb), digest(ab))
 	if e != nil {
 		return indexerprotocol.BuildResult{}, fail("internal", "generation manifest construction failed")
 	}
 	gb, _ := sourceindex.MarshalGenerationManifest(gm)
-	if e = write(filepath.Join(tmp, sourceindex.GenerationManifestFileName), gb); e != nil {
+	if e = writeArtifact(filepath.Join(tmp, sourceindex.GenerationManifestFileName), gb); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot write generation manifest")
 	}
-	if e = Verify(tmp, r, count); e != nil {
+	if e = verifyStaged(tmp, r, count); e != nil {
 		return indexerprotocol.BuildResult{}, fail("verification_failed", "staged generation verification failed")
 	}
 	if e = ctx.Err(); e != nil {
 		return indexerprotocol.BuildResult{}, fail("cancelled", "build cancelled")
 	}
-	if e = syncBuild(tmp, parent); e != nil {
+	if e = syncPreparedBuild(tmp, parent); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot durably prepare staging generation")
 	}
-	if e = fsatomic.RenameNoReplace(tmp, target); e != nil {
+	if e = renamePrivateBuild(tmp, target); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot expose staging generation")
 	}
 	exposed = true
-	if e = syncDirectory(parent); e != nil {
+	if e = syncStagingParent(parent); e != nil {
 		return indexerprotocol.BuildResult{}, fail("artifact_write_failed", "cannot durably expose staging generation")
 	}
 	rel, _ := sourceindex.StagingRelativeDirectory(r.GenerationID, r.StagingNonce)

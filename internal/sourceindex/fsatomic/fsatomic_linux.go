@@ -18,6 +18,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// These remain descriptor-rooted operations. Tests replace them only to make
+// races and durability failures reproducible at precise call boundaries.
+var (
+	enumerateDirectory = listDirectory
+	inspectAt          = unix.Fstatat
+	unlinkAt           = unix.Unlinkat
+	syncDirectoryFD    = unix.Fsync
+)
+
 func RemoveOwnedGeneration(indexRoot, generationID string) error {
 	if !validHex(generationID, 64) {
 		return os.ErrInvalid
@@ -98,7 +107,7 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 		return err
 	}
 	var current unix.Stat_t
-	if err := unix.Fstatat(parent, child, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := inspectAt(parent, child, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		if errors.Is(err, unix.ENOENT) {
 			return nil
 		}
@@ -107,10 +116,10 @@ func removeOwnedChild(indexRoot, parentName, child string) error {
 	if current.Dev != owned.Dev || current.Ino != owned.Ino || current.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return os.ErrInvalid
 	}
-	if err := unix.Unlinkat(parent, child, unix.AT_REMOVEDIR); err != nil {
+	if err := unlinkAt(parent, child, unix.AT_REMOVEDIR); err != nil {
 		return err
 	}
-	return errors.Join(unix.Fsync(parent), unix.Fsync(root))
+	return errors.Join(syncDirectoryFD(parent), syncDirectoryFD(root))
 }
 
 func removeOwnedStagingAttempts(indexRoot, generationID string) error {
@@ -138,7 +147,7 @@ func removeOwnedStagingAttempts(indexRoot, generationID string) error {
 	// Repeated scans ensure a concurrent valid creator cannot make cleanup
 	// appear complete based on a stale listing.
 	for pass := 0; pass < 64; pass++ {
-		entries, err := listDirectory(parent)
+		entries, err := enumerateDirectory(parent)
 		if err != nil {
 			return err
 		}
@@ -157,7 +166,7 @@ func removeOwnedStagingAttempts(indexRoot, generationID string) error {
 			}
 		}
 		if !matched {
-			final, err := listDirectory(parent)
+			final, err := enumerateDirectory(parent)
 			if err != nil {
 				return err
 			}
@@ -169,7 +178,7 @@ func removeOwnedStagingAttempts(indexRoot, generationID string) error {
 					return os.ErrInvalid
 				}
 			}
-			return errors.Join(unix.Fsync(parent), unix.Fsync(root))
+			return errors.Join(syncDirectoryFD(parent), syncDirectoryFD(root))
 		}
 	}
 	return os.ErrInvalid
@@ -194,7 +203,7 @@ func validateOwnedAttemptNames(indexRoot, generationID string) error {
 		return err
 	}
 	defer unix.Close(parent)
-	entries, err := listDirectory(parent)
+	entries, err := enumerateDirectory(parent)
 	if err != nil {
 		return err
 	}
@@ -248,7 +257,7 @@ func removeDirectory(fd int, root bool, seen map[[2]uint64]bool) error {
 		return os.ErrInvalid
 	}
 	seen[key] = true
-	entries, err := listDirectory(fd)
+	entries, err := enumerateDirectory(fd)
 	if err != nil {
 		return err
 	}
@@ -269,7 +278,7 @@ func removeDirectory(fd int, root bool, seen map[[2]uint64]bool) error {
 	for _, entry := range entries {
 		name := entry.Name()
 		var inspected unix.Stat_t
-		if err := unix.Fstatat(fd, name, &inspected, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if err := inspectAt(fd, name, &inspected, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
 		mode := inspected.Mode & unix.S_IFMT
@@ -305,7 +314,7 @@ func removeDirectory(fd int, root bool, seen map[[2]uint64]bool) error {
 			return os.ErrInvalid
 		}
 		var current unix.Stat_t
-		if err := unix.Fstatat(fd, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if err := inspectAt(fd, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
 		if current.Dev != inspected.Dev || current.Ino != inspected.Ino || current.Mode != inspected.Mode || current.Nlink != inspected.Nlink {
@@ -316,18 +325,18 @@ func removeDirectory(fd int, root bool, seen map[[2]uint64]bool) error {
 			return os.ErrInvalid
 		}
 		seen[key] = true
-		if err := unix.Unlinkat(fd, name, 0); err != nil {
+		if err := unlinkAt(fd, name, 0); err != nil {
 			return err
 		}
 	}
 	if err := requireEmpty(fd); err != nil {
 		return err
 	}
-	return unix.Fsync(fd)
+	return syncDirectoryFD(fd)
 }
 
 func requireEmpty(fd int) error {
-	entries, err := listDirectory(fd)
+	entries, err := enumerateDirectory(fd)
 	if err != nil {
 		return err
 	}
@@ -339,13 +348,13 @@ func requireEmpty(fd int) error {
 
 func unlinkOwnedDirectory(parent int, name string, inspected *unix.Stat_t) error {
 	var current unix.Stat_t
-	if err := unix.Fstatat(parent, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := inspectAt(parent, name, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return err
 	}
 	if current.Dev != inspected.Dev || current.Ino != inspected.Ino || current.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return os.ErrInvalid
 	}
-	return unix.Unlinkat(parent, name, unix.AT_REMOVEDIR)
+	return unlinkAt(parent, name, unix.AT_REMOVEDIR)
 }
 
 func openVerifiedDirectory(parent int, name string, inspected *unix.Stat_t) (int, error) {
