@@ -25,20 +25,40 @@ func TestRepositoryTestsDoNotOpenEmptyWorkflowDatabasesDirectly(t *testing.T) {
 }
 
 func TestDirectEmptyWorkflowOpenDetection(t *testing.T) {
-	source := `package sample
-import (
-  "path/filepath"
-  workflowstore "relay/internal/store/workflow"
-)
-func fixture(t interface{ TempDir() string }) { _, _ = workflowstore.Open(filepath.Join(t.TempDir(), "workflow.db"), t.TempDir()) }
-`
-	file, err := parser.ParseFile(token.NewFileSet(), "fixture_test.go", source, 0)
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name, packagePath, source string
+		want                        int
+	}{
+		{"inline filepath.Join", "sample", `package sample; import ("path/filepath"; workflowstore "relay/internal/store/workflow"); func f() { workflowstore.Open(filepath.Join("a", "b"), "c") }`, 1},
+		{"assigned path", "sample", `package sample; import workflowstore "relay/internal/store/workflow"; func f() { path := "workflow.db"; workflowstore.Open(path, "c") }`, 1},
+		{"helper path", "sample", `package sample; import workflowstore "relay/internal/store/workflow"; func path() string { return "workflow.db" }; func f() { workflowstore.Open(path(), "c") }`, 1},
+		{"aliased import", "sample", `package sample; import ws "relay/internal/store/workflow"; func f() { ws.Open("a", "b") }`, 1},
+		{"dot import", "sample", `package sample; import . "relay/internal/store/workflow"; func f() { Open("a", "b") }`, 1},
+		{"local package", "internal/store/workflow", `package workflow; func f() { Open("a", "b") }`, 1},
+		{"allowed migration", "internal/mcp/wayfinder_cold_start_test.go", `package mcp; import workflowstore "relay/internal/store/workflow"; func f() { workflowstore.Open("a", "b") }`, 0},
+		{"ordinary reopen", "sample", `package sample; import workflowstore "relay/internal/store/workflow"; func f() { workflowstore.Open("a", "b") }`, 1},
 	}
-	if got := prohibitedCalls(token.NewFileSet(), file, "sample", "fixture_test.go", map[string]bool{"workflowstore": true}); len(got) != 1 {
-		t.Fatalf("prohibited calls = %v, want one", got)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			set := token.NewFileSet()
+			file, err := parser.ParseFile(set, "fixture_test.go", test.source, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			aliases := workflowStoreAliases(file)
+			got := 0
+			if _, allowed := workflowStoreOpenAllowlist[test.packagePath]; !allowed {
+				got = len(prohibitedCalls(set, file, test.packagePath, test.packagePath, aliases))
+			}
+			if got != test.want {
+				t.Fatalf("prohibited calls = %d, want %d", got, test.want)
+			}
+		})
 	}
+}
+
+var workflowStoreOpenAllowlist = map[string]string{
+	"internal/mcp/wayfinder_cold_start_test.go": "exercises workflow schema migration upgrade from a legacy database",
 }
 
 func directEmptyWorkflowOpens(root string) ([]string, error) {
@@ -55,26 +75,32 @@ func directEmptyWorkflowOpens(root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		aliases := map[string]bool{}
-		for _, spec := range file.Imports {
-			if strings.Trim(spec.Path.Value, `"`) != "relay/internal/store/workflow" {
-				continue
-			}
-			name := "workflowstore"
-			if spec.Name != nil {
-				name = spec.Name.Name
-			}
-			aliases[name] = true
-		}
+		aliases := workflowStoreAliases(file)
 		relative, _ := filepath.Rel(root, path)
-		if filepath.ToSlash(relative) == "internal/mcp/wayfinder_cold_start_test.go" {
-			return nil // Explicit migration-upgrade fixture.
+		relative = filepath.ToSlash(relative)
+		if _, allowed := workflowStoreOpenAllowlist[relative]; allowed {
+			return nil
 		}
 		packagePath := filepath.ToSlash(filepath.Dir(relative))
 		violations = append(violations, prohibitedCalls(set, file, packagePath, relative, aliases)...)
 		return nil
 	})
 	return violations, err
+}
+
+func workflowStoreAliases(file *ast.File) map[string]bool {
+	aliases := map[string]bool{}
+	for _, spec := range file.Imports {
+		if strings.Trim(spec.Path.Value, `"`) != "relay/internal/store/workflow" {
+			continue
+		}
+		name := "workflowstore"
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		aliases[name] = true
+	}
+	return aliases
 }
 
 func prohibitedCalls(set *token.FileSet, file *ast.File, packagePath, path string, aliases map[string]bool) []string {
@@ -90,9 +116,9 @@ func prohibitedCalls(set *token.FileSet, file *ast.File, packagePath, path strin
 			name, ok := fun.X.(*ast.Ident)
 			direct = ok && aliases[name.Name] && fun.Sel.Name == "Open"
 		case *ast.Ident:
-			direct = packagePath == "internal/store/workflow" && fun.Name == "Open"
+			direct = (packagePath == "internal/store/workflow" || aliases["."]) && fun.Name == "Open"
 		}
-		if !direct || !createsPathInline(call.Args[0]) {
+		if !direct {
 			return true
 		}
 		position := set.Position(call.Pos())
@@ -100,13 +126,4 @@ func prohibitedCalls(set *token.FileSet, file *ast.File, packagePath, path strin
 		return true
 	})
 	return violations
-}
-
-func createsPathInline(expression ast.Expr) bool {
-	call, ok := expression.(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	return ok && (selector.Sel.Name == "Join" || selector.Sel.Name == "TempDir")
 }

@@ -91,16 +91,8 @@ func TestRunMutationLeaseHasOneConcurrentWinner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	firstStore, err := workflowstore.Open(databasePath, filepath.Join(root, "first-artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = firstStore.Close() })
-	secondStore, err := workflowstore.Open(databasePath, filepath.Join(root, "second-artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = secondStore.Close() })
+	firstStore := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "first-artifacts"), workflowstore.Open)
+	secondStore := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "second-artifacts"), workflowstore.Open)
 	firstService, err := NewService(firstStore)
 	if err != nil {
 		t.Fatal(err)

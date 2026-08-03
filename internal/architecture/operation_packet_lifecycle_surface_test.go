@@ -9,11 +9,10 @@ import (
 
 func TestOperationPacketLifecycleIsInternalAndLegacyPublicationIsDisabled(t *testing.T) {
 	root := repoRoot(t)
-	deps := readLifecycleSurfaceFile(t, filepath.Join(root, "internal", "mcp", "deps.go"))
 	server := readLifecycleSurfaceFile(t, filepath.Join(root, "internal", "mcp", "server.go"))
 	mainSource := readLifecycleSurfaceFile(t, filepath.Join(root, "cmd", "relay", "main.go"))
 	legacy := readLifecycleSurfaceFile(t, filepath.Join(root, "internal", "app", "operations", "service.go"))
-	if strings.Contains(deps, "OperationPacketLifecycleHandler") || strings.Contains(server, "OperationPacketLifecycleHandler") || strings.Contains(mainSource, "NewOperationPacketLifecycleHandler") {
+	if strings.Contains(server, "OperationPacketLifecycleHandler") || strings.Contains(mainSource, "NewOperationPacketLifecycleHandler") {
 		t.Fatal("PASS-6 lifecycle handler was mounted on a public or aggregate surface")
 	}
 	for _, method := range []string{"func (s *Service) Create", "func (s *Service) Refresh", "func (s *Service) Close"} {

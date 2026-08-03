@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +21,38 @@ func TestResolveSourceVaultDirForUsesDurablePlatformData(t *testing.T) {
 			want, wantErr := filepath.Abs(test.want)
 			if err != nil || wantErr != nil || explicit || got != filepath.Clean(want) {
 				t.Fatalf("ResolveSourceVaultDirFor() = %q, %v, %v; want %q, false, nil", got, explicit, err, filepath.Clean(want))
+			}
+		})
+	}
+}
+
+func TestResolveSourceVaultDirCollectsOnlyRequiredProcessState(t *testing.T) {
+	failingHome := func() (string, error) { return "", errors.New("home unavailable") }
+	tests := []struct {
+		name    string
+		goos    string
+		env     map[string]string
+		wantErr bool
+	}{
+		{"windows uses local app data", "windows", map[string]string{"LOCALAPPDATA": `C:\\Relay`}, false},
+		{"xdg bypasses home", "linux", map[string]string{"XDG_DATA_HOME": "/var/lib/relay"}, false},
+		{"macos requires home", "darwin", nil, true},
+		{"unix fallback requires home", "linux", nil, true},
+		{"explicit bypasses defaults", "linux", map[string]string{"RELAY_SOURCE_VAULT_DIR": "vault"}, false},
+		{"empty explicit override", "linux", map[string]string{"RELAY_SOURCE_VAULT_DIR": " "}, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, explicit, err := resolveSourceVaultDir(processSourceVaultState{
+				goos: test.goos,
+				lookupEnv: func(key string) (string, bool) { value, ok := test.env[key]; return value, ok },
+				homeDir: failingHome,
+			})
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ResolveSourceVaultDir() = %q, %v, %v", got, explicit, err)
+			}
+			if test.name == "explicit bypasses defaults" && !explicit {
+				t.Fatal("explicit override indicator was not preserved")
 			}
 		})
 	}

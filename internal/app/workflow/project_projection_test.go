@@ -2,12 +2,12 @@ package workflow
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	workflowruns "relay/internal/app/runs/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -32,22 +32,17 @@ func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	createdPlan, _ := seedHistoricalPlan(t, ctx, store, project.ID, "plan-read-model", "project-read-model")
-	runs, err := workflowruns.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	createdRun, err := runs.CreateRun(ctx, workflowruns.CreateRunInput{
-		FeatureSlug:      "project-read-model",
-		RepoTarget:       "relay",
-		Branch:           "main",
-		BaseCommit:       strings.Repeat("a", 40),
-		CanonicalJSON:    []byte("{}\n"),
-		RenderedMarkdown: []byte("# Brief\n"),
-		PlanID:           createdPlan.PlanID,
-		PassNumber:       1,
-	})
-	if err != nil {
+	createdPlan, createdPass := seedHistoricalPlan(t, ctx, store, project.ID, "plan-read-model", "project-read-model")
+	var createdRun workflowstore.Run
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var err error
+		createdRun, err = tx.CreateRun(ctx, workflowstore.CreateRunParams{
+			RunID: "run-project-read-model", FeatureSlug: "project-read-model", RepoTarget: "relay",
+			Status: workflowstore.RunStatusCreated, Branch: "main", BaseCommit: strings.Repeat("a", 40),
+			PlanRowID: sql.NullInt64{Int64: createdPlan.ID, Valid: true}, PlanPassRowID: sql.NullInt64{Int64: createdPass.ID, Valid: true},
+		})
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
@@ -68,7 +63,7 @@ func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T
 	if planDetail.Project.ProjectID != project.ProjectID || planDetail.Project.Status != workflowstore.ProjectStatusArchived {
 		t.Fatalf("Plan Project = %+v", planDetail.Project)
 	}
-	runDetail, err := service.GetRun(ctx, createdRun.Run.RunID)
+	runDetail, err := service.GetRun(ctx, createdRun.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +108,10 @@ func seedHistoricalPlan(t *testing.T, ctx context.Context, store *workflowstore.
 			Name:       "Pass",
 			RepoTarget: "relay",
 		})
+		if err != nil {
+			return err
+		}
+		pass, err = tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusPlanned, workflowstore.PassStatusInProgress)
 		return err
 	}); err != nil {
 		t.Fatal(err)

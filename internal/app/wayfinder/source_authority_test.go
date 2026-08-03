@@ -32,11 +32,7 @@ func TestSourceAuthorityRetainsExactClosureAcrossRestartAndDetectsStaleIdentity(
 	if err := fixture.store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := workflowstore.Open(fixture.databasePath, fixture.artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = reopened.Close() })
+	reopened := workflowfixture.OpenAt(t, fixture.databasePath, fixture.artifactRoot, workflowstore.Open)
 	authority, err = newSourceAuthority(reopened, fixture.vault)
 	if err != nil {
 		t.Fatal(err)

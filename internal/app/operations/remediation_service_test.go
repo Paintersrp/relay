@@ -10,7 +10,7 @@ import (
 func TestCoordinatedPacketReadsFailClosedWhenRequiredAuthorityIsUnavailable(t *testing.T) {
 	ctx := context.Background()
 	publication, store := openAuthorityPublicationRemediationService(t, ctx)
-	input := authorityPublicationCreateInput(t, "mutation-corrupt", "opkt-corrupt", "artifact-corrupt", "planner.plan", "planner-plan.v1")
+	input := authorityPublicationCreateInput(t, "mutation-corrupt", "opkt-corrupt", "artifact-corrupt", "planner.transition_plan", "planner-authoring.v1")
 	created, err := publication.Publish(ctx, input)
 	if err != nil {
 		t.Fatal(err)

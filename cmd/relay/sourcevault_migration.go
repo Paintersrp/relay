@@ -16,6 +16,7 @@ import (
 )
 
 const migrationManifestName = ".relay-source-vault-migration.json"
+const migrationManifestTemporaryName = migrationManifestName + ".tmp"
 
 type migrationManifest struct {
 	Version         int    `json:"version"`
@@ -64,12 +65,20 @@ func migrateLegacySourceVault(destination string, explicit bool) (*legacyVaultMi
 		return nil, fmt.Errorf("inspect source-vault destination: %w", err)
 	}
 	if populated {
+		if err := recoverMigrationManifest(destination, legacy); err != nil {
+			return nil, fmt.Errorf("recover source-vault migration metadata: %w", err)
+		}
 		manifest, err := readMigrationManifest(destination)
 		if err != nil || !sameMigration(manifest, legacy, destination) || (manifest.State != "verified" && manifest.State != "promoted" && manifest.State != "reconciled") {
 			return nil, fmt.Errorf("legacy source-vault root %q and destination %q both contain independent storage; choose RELAY_SOURCE_VAULT_DIR explicitly rather than merging storage", legacy, destination)
 		}
-		if err := verifyTreeDigest(destination, manifest.TreeDigest); err != nil {
-			return nil, fmt.Errorf("verify promoted source-vault storage: %w", err)
+		if err := verifyTreeDigest(legacy, manifest.TreeDigest); err != nil {
+			return nil, fmt.Errorf("legacy source-vault migration conflict: retained legacy storage no longer matches migration source: %w", err)
+		}
+		if manifest.State != "reconciled" {
+			if err := verifyTreeDigest(destination, manifest.TreeDigest); err != nil {
+				return nil, fmt.Errorf("verify promoted source-vault storage: %w", err)
+			}
 		}
 		return &legacyVaultMigration{legacy: legacy, destination: destination}, nil
 	}
@@ -145,6 +154,23 @@ func (m *legacyVaultMigration) cleanup() error {
 	if m == nil {
 		return nil
 	}
+	hasLegacy, err := populatedDirectory(m.legacy)
+	if err != nil {
+		return fmt.Errorf("inspect retained legacy source-vault storage: %w", err)
+	}
+	if !hasLegacy {
+		return nil
+	}
+	manifest, err := readMigrationManifest(m.destination)
+	if err != nil {
+		return fmt.Errorf("read source-vault migration manifest: %w", err)
+	}
+	if !sameMigration(manifest, m.legacy, m.destination) || manifest.State != "reconciled" {
+		return fmt.Errorf("invalid reconciled source-vault migration state")
+	}
+	if err := verifyTreeDigest(m.legacy, manifest.TreeDigest); err != nil {
+		return fmt.Errorf("legacy source-vault migration conflict: retained legacy storage no longer matches migration source: %w", err)
+	}
 	return removeLegacyStorage(m.legacy)
 }
 
@@ -182,12 +208,57 @@ func readMigrationManifest(root string) (migrationManifest, error) {
 	return manifest, nil
 }
 
+// recoverMigrationManifest ensures metadata is never mistaken for vault data.
+// A final manifest wins; a valid matching temporary manifest is only promoted
+// when no final manifest survived the interruption.
+func recoverMigrationManifest(root, legacy string) error {
+	finalPath := filepath.Join(root, migrationManifestName)
+	temporaryPath := filepath.Join(root, migrationManifestTemporaryName)
+	_, finalErr := os.Stat(finalPath)
+	_, temporaryErr := os.Stat(temporaryPath)
+	if finalErr == nil {
+		if temporaryErr == nil {
+			if err := os.Remove(temporaryPath); err != nil {
+				return fmt.Errorf("remove stale temporary manifest: %w", err)
+			}
+		}
+		return nil
+	}
+	if !errors.Is(finalErr, os.ErrNotExist) {
+		return finalErr
+	}
+	if errors.Is(temporaryErr, os.ErrNotExist) {
+		return nil
+	}
+	if temporaryErr != nil {
+		return temporaryErr
+	}
+	data, err := os.ReadFile(temporaryPath)
+	if err != nil {
+		return err
+	}
+	var manifest migrationManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("invalid temporary manifest: %w", err)
+	}
+	if !sameMigration(manifest, legacy, root) {
+		return fmt.Errorf("temporary manifest belongs to a different migration")
+	}
+	if manifest.State != "verified" && manifest.State != "promoted" && manifest.State != "reconciled" {
+		return fmt.Errorf("temporary manifest has invalid state %q", manifest.State)
+	}
+	if err := os.Rename(temporaryPath, finalPath); err != nil {
+		return fmt.Errorf("promote temporary manifest: %w", err)
+	}
+	return nil
+}
+
 func writeMigrationManifest(root string, manifest migrationManifest) error {
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		return err
 	}
-	temporary := filepath.Join(root, migrationManifestName+".tmp")
+	temporary := filepath.Join(root, migrationManifestTemporaryName)
 	f, err := os.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -210,7 +281,7 @@ func copyTree(source, destination string) error {
 			return walkErr
 		}
 		rel, err := filepath.Rel(source, path)
-		if err != nil || rel == migrationManifestName {
+		if err != nil || migrationMetadataPath(rel) {
 			return err
 		}
 		target := filepath.Join(destination, rel)
@@ -304,7 +375,7 @@ func treeEntries(root string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
-		if rel == "." || rel == migrationManifestName {
+		if rel == "." || migrationMetadataPath(rel) {
 			return nil
 		}
 		if entry.IsDir() {
@@ -326,6 +397,10 @@ func treeEntries(root string) (map[string]string, error) {
 		return nil
 	})
 	return entries, err
+}
+
+func migrationMetadataPath(relative string) bool {
+	return relative == migrationManifestName || relative == migrationManifestTemporaryName
 }
 
 func fileSHA256(path string) ([sha256.Size]byte, error) {

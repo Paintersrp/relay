@@ -500,11 +500,7 @@ func TestConfirmReclassifiesConcurrentInsertionsAfterTransactionEnds(t *testing.
 			root := t.TempDir()
 			dbPath := filepath.Join(root, "relay.sqlite")
 			firstStore := openInspectionTestStore(t, dbPath)
-			secondStore, err := workflowstore.Open(dbPath, filepath.Join(root, "artifacts-second"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = secondStore.Close() })
+			secondStore := workflowfixture.OpenAt(t, dbPath, filepath.Join(root, "artifacts-second"), workflowstore.Open)
 
 			repositoryPath := t.TempDir()
 			registry, err := NewRegistryWithRunner(

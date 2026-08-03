@@ -31,7 +31,7 @@ func TestLegacyLifecycleMethodsRequireCompleteCoordinator(t *testing.T) {
 func TestReadAndAuthorizationRemainAvailableForCoordinatedPackets(t *testing.T) {
 	ctx := context.Background()
 	publication, store := openAuthorityPublicationRemediationService(t, ctx)
-	input := authorityPublicationCreateInput(t, "mutation-read", "opkt-read", "artifact-read", "planner.plan", "planner-plan.v1")
+	input := authorityPublicationCreateInput(t, "mutation-read", "opkt-read", "artifact-read", "wayfinder.workspace", "wayfinder-workspace.v1")
 	created, err := publication.Publish(ctx, input)
 	if err != nil {
 		t.Fatal(err)
@@ -44,12 +44,16 @@ func TestReadAndAuthorizationRemainAvailableForCoordinatedPackets(t *testing.T) 
 	if err != nil || view.Summary.PacketID != created.Packet.PacketID {
 		t.Fatalf("view = %#v err=%v", view, err)
 	}
-	mutation, err := service.AuthorizeMutation(ctx, MutationRequest{PacketID: created.Packet.PacketID, SurfaceContract: "planner-plan.v1", OperationID: "planner.plan", Action: "submit_plan"})
+	operation, ok := registry.Lookup("wayfinder.workspace")
+	if !ok || len(operation.AllowedNonSourceActions) == 0 {
+		t.Fatal("workspace has no allowed action")
+	}
+	mutation, err := service.AuthorizeMutation(ctx, MutationRequest{PacketID: created.Packet.PacketID, SurfaceContract: "wayfinder-workspace.v1", OperationID: "wayfinder.workspace", Action: operation.AllowedNonSourceActions[0]})
 	if err != nil || !mutation.Allowed {
 		t.Fatalf("mutation authorization = %#v err=%v", mutation, err)
 	}
 	read, err := service.AuthorizeRead(ctx, ReadRequest{PacketID: created.Packet.PacketID, DependencyClass: workflowstore.OperationPacketDependencyPacketDocument, DependencyKey: input.PacketArtifactID})
-	if err != nil || read.OwnerIdentity != input.PacketArtifactID || read.Summary.OperationID != registry.OperationID("planner.plan") {
+	if err != nil || read.OwnerIdentity != input.PacketArtifactID || read.Summary.OperationID != registry.OperationID("wayfinder.workspace") {
 		t.Fatalf("read authorization = %#v err=%v", read, err)
 	}
 }

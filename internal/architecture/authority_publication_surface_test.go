@@ -68,7 +68,7 @@ func TestAuthorityPublicationReconcilesBeforeServerConstruction(t *testing.T) {
 	text := string(data)
 	constructor := strings.Index(text, "operations.NewAuthorityPublicationService")
 	reconcile := strings.Index(text, "authorityPublications.Reconcile")
-	server := strings.Index(text, "server.NewWorkflow")
+	server := strings.LastIndex(text, "constructRelayServer(")
 	if constructor < 0 || reconcile < 0 || server < 0 || constructor >= reconcile || reconcile >= server {
 		t.Fatalf("%s does not reconcile packet authority before server construction", rel(t, root, path))
 	}

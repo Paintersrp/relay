@@ -25,7 +25,7 @@ func TestAuthorityPublicationResolveClassifiesMissReplayAndConflict(t *testing.T
 	if err != nil || replay.Kind != AuthorityPublicationResolutionReplay || replay.Result.Packet.PacketID != committed.Packet.PacketID || replay.Result.Mutation.ResultSHA256 != committed.Mutation.ResultSHA256 {
 		t.Fatalf("replay = %#v err=%v", replay, err)
 	}
-	other := semanticidentity.CreateOperationPacket{SurfaceContract: "planner-authoring.v1", OperationID: "planner.design", ProjectID: "project-test"}
+	other := semanticidentity.CreateOperationPacket{SurfaceContract: "planner-authoring.v1", OperationID: "planner.transition_plan", ProjectID: "project-test"}
 	fingerprint, err := semanticidentity.BuildFingerprint(other)
 	if err != nil {
 		t.Fatal(err)

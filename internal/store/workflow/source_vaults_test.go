@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	relaydb "relay/internal/db"
+	"relay/internal/testsupport/workflowfixture"
 
 	"github.com/pressly/goose/v3"
 )
@@ -354,11 +355,7 @@ func TestSourceVaultConcurrentReleaseAcrossIndependentStoresIsIdempotent(t *test
 	ctx := context.Background()
 	root := t.TempDir()
 	databasePath := filepath.Join(root, "workflow.sqlite")
-	firstStore, err := Open(databasePath, filepath.Join(root, "artifacts-one"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = firstStore.Close() })
+	firstStore := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "artifacts-one"), Open)
 	_, closure := seedReadySourceVaultClosure(t, ctx, firstStore)
 	var retention SourceVaultRetention
 	if err := firstStore.WithTx(ctx, func(tx *Tx) error {
@@ -372,11 +369,7 @@ func TestSourceVaultConcurrentReleaseAcrossIndependentStoresIsIdempotent(t *test
 		t.Fatal(err)
 	}
 
-	secondStore, err := Open(databasePath, filepath.Join(root, "artifacts-two"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = secondStore.Close() })
+	secondStore := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "artifacts-two"), Open)
 
 	start := make(chan struct{})
 	type releaseResult struct {

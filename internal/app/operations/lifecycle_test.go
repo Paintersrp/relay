@@ -237,7 +237,7 @@ func lifecycleDesignIdentity(projectID string, sha string) semanticidentity.Crea
 	clearance := registry.SensitiveDataClearance{PolicyVersion: registry.SensitiveDataClearancePolicyVersion, SubjectSHA256: sha, Confirmed: true}
 	return semanticidentity.CreateOperationPacket{
 		SurfaceContract: "planner-authoring.v1",
-		OperationID:     "planner.design",
+		OperationID:     "planner.shared_design",
 		ProjectID:       projectID,
 		InputFileCount:  1,
 		DeclaredFiles:   []semanticidentity.DeclaredFile{{FileIndex: 0, ExpectedSHA256: sha}},
@@ -330,7 +330,7 @@ func TestLifecycleGovernanceAuthorityChangeBeforePublicationFailsClosed(t *testi
 	clearance := registry.SensitiveDataClearance{PolicyVersion: registry.SensitiveDataClearancePolicyVersion, SubjectSHA256: sha, Confirmed: true}
 	identity := semanticidentity.CreateOperationPacket{
 		SurfaceContract: "planner-authoring.v1",
-		OperationID:     "planner.design",
+		OperationID:     "planner.shared_design",
 		ProjectID:       fixture.projectID,
 		InputFileCount:  1,
 		DeclaredFiles:   []semanticidentity.DeclaredFile{{FileIndex: 0, ExpectedSHA256: sha}},
@@ -419,7 +419,7 @@ func TestLifecycleCreateReplayPrecedesUploadedFileAcquisition(t *testing.T) {
 	index := int64(0)
 	clearance := registry.SensitiveDataClearance{PolicyVersion: registry.SensitiveDataClearancePolicyVersion, SubjectSHA256: sha, Confirmed: true}
 	identity := semanticidentity.CreateOperationPacket{
-		SurfaceContract: "planner-authoring.v1", OperationID: "planner.design", ProjectID: fixture.projectID,
+		SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", ProjectID: fixture.projectID,
 		InputFileCount: 1, DeclaredFiles: []semanticidentity.DeclaredFile{{FileIndex: 0, ExpectedSHA256: sha}},
 		Inputs: []semanticidentity.InputBinding{{InputName: "approved_requirements", SourceKind: "uploaded_file", DisplayName: "requirements.md", MediaType: "text/markdown", ExpectedSHA256: sha, Source: semanticidentity.InputBindingSource{FileIndex: &index}}},
 		Attestations: []semanticidentity.AttestationRequest{

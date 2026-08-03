@@ -124,7 +124,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 		return fmt.Errorf("record source-vault migration reconciliation: %w", err)
 	}
 	if err := legacyMigration.cleanup(); err != nil {
-		log.Warn("remove migrated legacy source-vault storage", "error", err)
+		log.Warn("remove migrated legacy source-vault storage", "legacy_path", legacyMigration.legacy, "destination_path", legacyMigration.destination, "error", err)
 	}
 	authorityPublications, err := operations.NewAuthorityPublicationService(workflowStore, sourceVaults)
 	if err != nil {

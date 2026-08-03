@@ -30,14 +30,13 @@ import (
 	appwayfinder "relay/internal/app/wayfinder"
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
-	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager) (http.Handler, error) {
+func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults sourceVaultRuntime) (http.Handler, error) {
 	handler, _, err := buildWorkflowRuntime(workflowStore, log, ownerInstanceID, sourceVaults, nil)
 	if err != nil {
 		return nil, err
@@ -45,7 +44,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	return handler, nil
 }
 
-func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults *sourcevault.Manager, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor, error) {
+func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, ownerInstanceID string, sourceVaults sourceVaultRuntime, mcpHandlers []MCPHandler) (http.Handler, []MCPRouteDescriptor, error) {
 	if workflowStore == nil {
 		return nil, nil, fmt.Errorf("construct workflow runtime: workflow store is required")
 	}

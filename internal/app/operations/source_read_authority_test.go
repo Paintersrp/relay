@@ -43,7 +43,7 @@ func TestResolveSourceReadAuthorityPreservesActiveSupersededAndClosedPacketIdent
 		t.Fatalf("closed = %#v err=%v", closed, err)
 	}
 	wrong := request
-	wrong.OperationID = registry.OperationID("planner.design")
+	wrong.OperationID = registry.OperationID("planner.shared_design")
 	if _, err := service.ResolveSourceReadAuthority(fixture.ctx, wrong); ErrorCode(err) != CodePacketRouteMismatch {
 		t.Fatalf("wrong route error = %v", err)
 	}

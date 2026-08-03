@@ -57,11 +57,7 @@ func TestWorkspaceResumesAndProtectsVersionedDiscoveryMutations(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := workflowstore.Open(databasePath, artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = reopened.Close() })
+	reopened := workflowfixture.OpenAt(t, databasePath, artifactRoot, workflowstore.Open)
 	resumed, err := NewServiceWithIDs(reopened, &wayfinderTestIDs{})
 	if err != nil {
 		t.Fatal(err)

@@ -224,11 +224,7 @@ func TestResolveReplayConflictRestartAndResponseWriteRecovery(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	store, err = workflowstore.Open(dbPath, artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store = workflowfixture.OpenAt(t, dbPath, artifactRoot, workflowstore.Open)
 	service = mustService(t, store)
 	resolution, err = service.Resolve(ctx, input.Key, input.Fingerprint)
 	if err != nil || resolution.Kind != ResolutionReplay {

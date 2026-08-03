@@ -10,6 +10,7 @@ import (
 
 	relaydb "relay/internal/db"
 	workflowgenerated "relay/internal/store/workflowgenerated"
+	"relay/internal/testsupport/workflowfixture"
 
 	"github.com/pressly/goose/v3"
 )
@@ -190,21 +191,13 @@ func TestRepositoryBranchMutationLeaseAllowsOneActiveLeaseAcrossStores(t *testin
 	ctx := context.Background()
 	root := t.TempDir()
 	databasePath := filepath.Join(root, "workflow.sqlite")
-	firstStore, err := Open(databasePath, filepath.Join(root, "artifacts-one"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = firstStore.Close() })
+	firstStore := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "artifacts-one"), Open)
 	if _, err := firstStore.DB().Exec(`
 INSERT INTO repository_targets (repo_target, local_path)
 VALUES ('relay', '/repo')`); err != nil {
 		t.Fatal(err)
 	}
-	secondStore, err := Open(databasePath, filepath.Join(root, "artifacts-two"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = secondStore.Close() })
+	secondStore := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "artifacts-two"), Open)
 
 	start := make(chan struct{})
 	results := make(chan error, 2)
