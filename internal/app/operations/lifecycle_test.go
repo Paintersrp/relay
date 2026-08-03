@@ -104,7 +104,7 @@ func openLifecycleFixture(t *testing.T) lifecycleFixture {
 
 	projectRepo := makeLifecycleGitRepo(t, filepath.Join(root, "project-repo"), map[string]string{"README.md": "project source\n"})
 	specsRepo := makeLifecycleGitRepo(t, filepath.Join(root, "relay-specs"), map[string]string{
-		"planner-source-manifest.json":        `{"manifest_version":"1.0","domains":{"requirements":["contracts/cross-cutting.md","contracts/requirements.md"],"design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"delivery_ticket":["contracts/cross-cutting.md","contracts/delivery-ticket.md"],"ticket_design_brief":["contracts/cross-cutting.md","contracts/ticket-design-brief.md"]}}` + "\n",
+		"planner-source-manifest.json":        `{"manifest_version":"1.0","domains":{"requirements":["contracts/cross-cutting.md","contracts/requirements.md"],"design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"shared_design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"delivery_ticket":["contracts/cross-cutting.md","contracts/delivery-ticket.md"],"ticket_design_brief":["contracts/cross-cutting.md","contracts/ticket-design-brief.md"]}}` + "\n",
 		"contracts/cross-cutting.md":          "# Cross-cutting\n",
 		"contracts/delivery-ticket.md":        "# Delivery Ticket\n",
 		"contracts/ticket-design-brief.md":    "# Ticket Design Brief\n",
@@ -416,25 +416,33 @@ func TestLifecycleCreateReplayPrecedesUploadedFileAcquisition(t *testing.T) {
 	data := []byte("approved requirements")
 	sha := lifecycleSHA(data)
 	fixture.fetcher.files["requirements"] = data
-	index := int64(0)
-	clearance := registry.SensitiveDataClearance{PolicyVersion: registry.SensitiveDataClearancePolicyVersion, SubjectSHA256: sha, Confirmed: true}
-	identity := semanticidentity.CreateOperationPacket{
-		SurfaceContract: "planner-authoring.v1", OperationID: "planner.requirements", ProjectID: fixture.projectID,
-		InputFileCount: 1, DeclaredFiles: []semanticidentity.DeclaredFile{{FileIndex: 0, ExpectedSHA256: sha}},
-		Inputs: []semanticidentity.InputBinding{{InputName: "approved_requirements", SourceKind: "uploaded_file", DisplayName: "requirements.md", MediaType: "text/markdown", ExpectedSHA256: sha, Source: semanticidentity.InputBindingSource{FileIndex: &index}}},
-		Attestations: []semanticidentity.AttestationRequest{
-			{Kind: "approved_artifact", InputName: "approved_requirements", SubjectSHA256: sha, Approved: true},
-			{Kind: "sensitive_data_clearance", InputName: "approved_requirements", Clearance: &clearance},
-		},
+	identity := lifecycleDesignIdentity(fixture.projectID, sha)
+	identity.ComparisonAnchors = []semanticidentity.ComparisonAnchorRequest{{
+		RepositoryKey:   "project",
+		AnchorName:      "reviewed-source-basis",
+		Purpose:         "reviewed_source_basis",
+		CommitOID:       strings.TrimSpace(runLifecycleGit(t, fixture.projectRepo, "rev-parse", "HEAD")),
+		ExpectedTreeOID: strings.TrimSpace(runLifecycleGit(t, fixture.projectRepo, "rev-parse", "HEAD^{tree}")),
+	}}
+	request := CreateLifecycleInput{
+		MutationID: "create-design",
+		Identity:   identity,
+		Files: []fileacquisition.FileParameter{{
+			FileID:   "requirements",
+			FileName: "requirements.md",
+			MIMEType: "text/markdown",
+		}},
 	}
-	request := CreateLifecycleInput{MutationID: "create-design", Identity: identity, Files: []fileacquisition.FileParameter{{FileID: "requirements", FileName: "requirements.md", MIMEType: "text/markdown"}}}
 	first, err := fixture.service.Create(fixture.ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if first.Replay || first.Packet.Summary.OperationID != "planner.shared_design" || first.Packet.Summary.SurfaceContract != "planner-authoring.v1" || first.Packet.Summary.Role != "planner" || fixture.fetcher.callCount() != 1 {
+		t.Fatalf("created = %#v calls=%d", first, fixture.fetcher.callCount())
+	}
 	fixture.fetcher.setFail(true)
 	second, err := fixture.service.Create(fixture.ctx, request)
-	if err != nil || !second.Replay || second.Packet.Summary.PacketID != first.Packet.Summary.PacketID || fixture.fetcher.callCount() != 1 {
+	if err != nil || !second.Replay || second.Packet.Summary.PacketID != first.Packet.Summary.PacketID || second.Mutation.ResultSHA256 != first.Mutation.ResultSHA256 || fixture.fetcher.callCount() != 1 {
 		t.Fatalf("replay = %#v calls=%d err=%v", second, fixture.fetcher.callCount(), err)
 	}
 }

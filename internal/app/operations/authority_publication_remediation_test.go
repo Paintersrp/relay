@@ -24,12 +24,12 @@ func TestAuthorityPublicationCreateRefreshAndReplayUseLifecycleAuthority(t *test
 	ctx := context.Background()
 	service, store := openAuthorityPublicationRemediationService(t, ctx)
 
-	create := authorityPublicationCreateInput(t, "mutation-create", "opkt-create", "artifact-create", "planner.transition_plan", "planner-authoring.v1")
+	create := authorityPublicationCreateInput(t, "mutation-create", "opkt-create", "artifact-create")
 	created, err := service.Publish(ctx, create)
 	if err != nil {
 		t.Fatal(err)
 	}
-	createRetry := authorityPublicationCreateInput(t, "mutation-create", "opkt-create-loser", "artifact-create-retry", "planner.transition_plan", "planner-authoring.v1")
+	createRetry := authorityPublicationCreateInput(t, "mutation-create", "opkt-create-loser", "artifact-create-retry")
 	createWinner, err := service.Publish(ctx, createRetry)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestAuthorityPublicationCreateRefreshAndReplayUseLifecycleAuthority(t *test
 		t.Fatalf("losing create packet lookup = %v", err)
 	}
 
-	refresh := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh", "artifact-refresh", "planner.transition_plan", "planner-authoring.v1")
+	refresh := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh", "artifact-refresh")
 	refreshed, err := service.Publish(ctx, refresh)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestAuthorityPublicationCreateRefreshAndReplayUseLifecycleAuthority(t *test
 	if prior.LifecycleState != workflowstore.OperationPacketLifecycleSuperseded || !prior.ReplacementPacketRowID.Valid || prior.ReplacementPacketRowID.Int64 != refreshed.Packet.ID || !refreshed.Packet.PriorPacketRowID.Valid || refreshed.Packet.PriorPacketRowID.Int64 != prior.ID {
 		t.Fatalf("refresh lineage prior=%#v replacement=%#v", prior, refreshed.Packet)
 	}
-	refreshRetry := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh-loser", "artifact-refresh-retry", "planner.transition_plan", "planner-authoring.v1")
+	refreshRetry := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-refresh", "opkt-refresh-loser", "artifact-refresh-retry")
 	refreshWinner, err := service.Publish(ctx, refreshRetry)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestAuthorityPublicationRejectsUnboundAndMismatchedLifecycleResults(t *test
 
 	t.Run("unbound create winner", func(t *testing.T) {
 		service, store := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationCreateInput(t, "mutation-unbound", "opkt-unbound", "artifact-unbound", "planner.transition_plan", "planner-authoring.v1")
+		input := authorityPublicationCreateInput(t, "mutation-unbound", "opkt-unbound", "artifact-unbound")
 		mutationService, err := idempotency.New(store)
 		if err != nil {
 			t.Fatal(err)
@@ -88,7 +88,7 @@ func TestAuthorityPublicationRejectsUnboundAndMismatchedLifecycleResults(t *test
 
 	t.Run("create result names another packet", func(t *testing.T) {
 		service, _ := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationCreateInput(t, "mutation-wrong-create", "opkt-wrong-create", "artifact-wrong-create", "planner.transition_plan", "planner-authoring.v1")
+		input := authorityPublicationCreateInput(t, "mutation-wrong-create", "opkt-wrong-create", "artifact-wrong-create")
 		original := input.Mutation
 		input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
 			packet, identity, err := original(ctx, tx, mutation)
@@ -106,11 +106,11 @@ func TestAuthorityPublicationRejectsUnboundAndMismatchedLifecycleResults(t *test
 
 	t.Run("refresh result names another replacement", func(t *testing.T) {
 		service, _ := openAuthorityPublicationRemediationService(t, ctx)
-		created, err := service.Publish(ctx, authorityPublicationCreateInput(t, "mutation-prior", "opkt-prior", "artifact-prior", "planner.transition_plan", "planner-authoring.v1"))
+		created, err := service.Publish(ctx, authorityPublicationCreateInput(t, "mutation-prior", "opkt-prior", "artifact-prior"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		input := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-wrong-refresh", "opkt-wrong-refresh", "artifact-wrong-refresh", "planner.transition_plan", "planner-authoring.v1")
+		input := authorityPublicationRefreshInput(t, created.Packet.PacketID, "mutation-wrong-refresh", "opkt-wrong-refresh", "artifact-wrong-refresh")
 		original := input.Mutation
 		input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
 			packet, identity, err := original(ctx, tx, mutation)
@@ -142,7 +142,7 @@ func TestAuthorityPublicationRejectsNonPublicationMutationTools(t *testing.T) {
 func TestAuthorityPublicationRejectsPacketOperationAuthorityMismatch(t *testing.T) {
 	ctx := context.Background()
 	service, _ := openAuthorityPublicationRemediationService(t, ctx)
-	input := authorityPublicationCreateInput(t, "mutation-operation-mismatch", "opkt-operation-mismatch", "artifact-operation-mismatch", "planner.transition_plan", "planner-authoring.v1")
+	input := authorityPublicationCreateInput(t, "mutation-operation-mismatch", "opkt-operation-mismatch", "artifact-operation-mismatch")
 	input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
 		packet, err := tx.CreateOperationPacket(ctx, workflowstore.CreateOperationPacketParams{
 			PacketID: input.PacketID, PacketSHA256: mutation.PacketArtifact.SHA256,
@@ -170,7 +170,7 @@ func TestAuthorityPublicationSanitizesCallbackPromotionAndCommitFailures(t *test
 
 	t.Run("callback diagnostics", func(t *testing.T) {
 		service, _ := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationCreateInput(t, "mutation-callback-diagnostic", "opkt-callback-diagnostic", "artifact-callback-diagnostic", "planner.transition_plan", "planner-authoring.v1")
+		input := authorityPublicationCreateInput(t, "mutation-callback-diagnostic", "opkt-callback-diagnostic", "artifact-callback-diagnostic")
 		input.Mutation = func(context.Context, *workflowstore.Tx, PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
 			return workflowstore.OperationPacket{}, nil, errors.New("password=do-not-render C:\\private\\workflow.sqlite")
 		}
@@ -180,7 +180,7 @@ func TestAuthorityPublicationSanitizesCallbackPromotionAndCommitFailures(t *test
 
 	t.Run("promotion diagnostics", func(t *testing.T) {
 		service, _ := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationCreateInput(t, "mutation-promotion-diagnostic", "opkt-promotion-diagnostic", "artifact-promotion-diagnostic", "planner.transition_plan", "planner-authoring.v1")
+		input := authorityPublicationCreateInput(t, "mutation-promotion-diagnostic", "opkt-promotion-diagnostic", "artifact-promotion-diagnostic")
 		original := input.Mutation
 		input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
 			if err := os.MkdirAll(filepath.Dir(mutation.PacketArtifact.AbsolutePath), 0o700); err != nil {
@@ -194,7 +194,7 @@ func TestAuthorityPublicationSanitizesCallbackPromotionAndCommitFailures(t *test
 
 	t.Run("commit diagnostics and promoted rollback", func(t *testing.T) {
 		service, store := openAuthorityPublicationRemediationService(t, ctx)
-		input := authorityPublicationCreateInput(t, "mutation-commit-diagnostic", "opkt-commit-diagnostic", "artifact-commit-diagnostic", "planner.transition_plan", "planner-authoring.v1")
+		input := authorityPublicationCreateInput(t, "mutation-commit-diagnostic", "opkt-commit-diagnostic", "artifact-commit-diagnostic")
 		original := input.Mutation
 		var publicationID string
 		input.Mutation = func(ctx context.Context, tx *workflowstore.Tx, mutation PublicationMutationInput) (workflowstore.OperationPacket, semanticidentity.ResultIdentity, error) {
@@ -239,8 +239,11 @@ func openAuthorityPublicationRemediationService(t *testing.T, ctx context.Contex
 	return service, store
 }
 
-func authorityPublicationCreateInput(t *testing.T, mutationID, packetID, packetArtifactID string, operationID registry.OperationID, surface registry.SurfaceContractID) AuthorityPublicationInput {
+// These helpers test the low-level coordinated publication transaction and intentionally do not replace lifecycle packet construction.
+func authorityPublicationCreateInput(t *testing.T, mutationID string, packetID string, packetArtifactID string) AuthorityPublicationInput {
 	t.Helper()
+	const operationID registry.OperationID = "planner.transition_plan"
+	const surface registry.SurfaceContractID = "planner-authoring.v1"
 	request := semanticidentity.CreateOperationPacket{SurfaceContract: surface, OperationID: operationID, ProjectID: "project-test"}
 	fingerprint, err := semanticidentity.BuildFingerprint(request)
 	if err != nil {
@@ -277,8 +280,9 @@ func authorityPublicationCreateInput(t *testing.T, mutationID, packetID, packetA
 	return input
 }
 
-func authorityPublicationRefreshInput(t *testing.T, priorPacketID, mutationID, packetID, packetArtifactID string, operationID registry.OperationID, surface registry.SurfaceContractID) AuthorityPublicationInput {
+func authorityPublicationRefreshInput(t *testing.T, priorPacketID string, mutationID string, packetID string, packetArtifactID string) AuthorityPublicationInput {
 	t.Helper()
+	const surface registry.SurfaceContractID = "planner-authoring.v1"
 	request := semanticidentity.RefreshOperationPacket{SurfaceContract: surface, ExpectedPacketID: priorPacketID}
 	fingerprint, err := semanticidentity.BuildFingerprint(request)
 	if err != nil {
