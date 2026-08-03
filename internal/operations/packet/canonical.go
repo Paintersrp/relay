@@ -100,6 +100,30 @@ func writeWorkflowReference(out *bytes.Buffer, value WorkflowReference) {
 	writeFieldName(out, "kind", false)
 	writeString(out, string(value.Kind))
 	switch value.Kind {
+	case "feature_workspace":
+		writeFieldName(out, "workspace_id", true)
+		writeString(out, value.WorkspaceID)
+		writeFieldName(out, "workspace_version", true)
+		writeInt(out, value.WorkspaceVersion)
+		writeFieldName(out, "route_state_id", true)
+		writeString(out, value.RouteStateID)
+		writeFieldName(out, "route_sequence", true)
+		writeInt(out, value.RouteSequence)
+		writeFieldName(out, "route_workspace_version", true)
+		writeInt(out, value.RouteWorkspaceVersion)
+		writeFieldName(out, "route_state", true)
+		writeString(out, value.RouteState)
+	case "delivery_ticket":
+		writeFieldName(out, "workspace_id", true)
+		writeString(out, value.WorkspaceID)
+		writeFieldName(out, "ticket_id", true)
+		writeString(out, value.TicketID)
+		writeFieldName(out, "revision_id", true)
+		writeInt(out, value.RevisionID)
+		writeFieldName(out, "revision_number", true)
+		writeInt(out, value.RevisionNumber)
+		writeFieldName(out, "source_closure_id", true)
+		writeString(out, value.SourceClosureID)
 	case "plan":
 		writeFieldName(out, "plan_id", true)
 		writeString(out, value.PlanID)
@@ -284,7 +308,7 @@ func writeInputSource(out *bytes.Buffer, value InputSource) {
 		writeString(out, value.ArtifactID)
 	case InputSourceWorkflowRecord:
 		writeFieldName(out, "workflow_reference", true)
-		writeWorkflowReference(out, value.WorkflowReference)
+		writeWorkflowRecordReference(out, value.WorkflowReference)
 		writeFieldName(out, "snapshot_artifact_id", true)
 		writeString(out, value.SnapshotArtifactID)
 		writeFieldName(out, "snapshot_sha256", true)
@@ -300,6 +324,52 @@ func writeInputSource(out *bytes.Buffer, value InputSource) {
 		writePathIdentity(out, value.Path)
 		writeFieldName(out, "blob_oid", true)
 		writeString(out, value.BlobOID)
+	}
+	out.WriteByte('}')
+}
+
+func writeWorkflowRecordReference(out *bytes.Buffer, value WorkflowRecordReference) {
+	out.WriteByte('{')
+	writeFieldName(out, "kind", false)
+	writeString(out, value.Kind)
+	switch value.Kind {
+	case "plan_artifact":
+		writeFieldName(out, "plan_id", true)
+		writeString(out, value.PlanID)
+		writeFieldName(out, "artifact_id", true)
+		writeString(out, value.ArtifactID)
+		writeFieldName(out, "artifact_sha256", true)
+		writeString(out, value.ArtifactSHA256)
+	case "pass_record":
+		writeFieldName(out, "plan_id", true)
+		writeString(out, value.PlanID)
+		writeFieldName(out, "pass_id", true)
+		writeString(out, value.PassID)
+		writeFieldName(out, "pass_number", true)
+		writeInt(out, value.PassNumber)
+	case "run_execution_spec":
+		writeFieldName(out, "run_id", true)
+		writeString(out, value.RunID)
+		writeFieldName(out, "artifact_id", true)
+		writeString(out, value.ArtifactID)
+		writeFieldName(out, "artifact_sha256", true)
+		writeString(out, value.ArtifactSHA256)
+	case "audit_packet":
+		writeFieldName(out, "run_id", true)
+		writeString(out, value.RunID)
+		writeFieldName(out, "audit_packet_id", true)
+		writeString(out, value.AuditPacketID)
+		writeFieldName(out, "audit_packet_sha256", true)
+		writeString(out, value.AuditPacketSHA256)
+	case "audit_decision":
+		writeFieldName(out, "run_id", true)
+		writeString(out, value.RunID)
+		writeFieldName(out, "audit_decision_id", true)
+		writeString(out, value.AuditDecisionID)
+		writeFieldName(out, "decision", true)
+		writeString(out, value.Decision)
+		writeFieldName(out, "recorded_at", true)
+		writeString(out, value.RecordedAt)
 	}
 	out.WriteByte('}')
 }

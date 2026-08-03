@@ -364,6 +364,16 @@ type authoringProjectWire struct {
 }
 type authoringWorkflowReferenceWire struct {
 	Kind                    string `json:"kind"`
+	WorkspaceID             string `json:"workspace_id"`
+	WorkspaceVersion        int64  `json:"workspace_version"`
+	RouteStateID            string `json:"route_state_id"`
+	RouteSequence           int64  `json:"route_sequence"`
+	RouteWorkspaceVersion   int64  `json:"route_workspace_version"`
+	RouteState              string `json:"route_state"`
+	TicketID                string `json:"ticket_id"`
+	RevisionID              int64  `json:"revision_id"`
+	RevisionNumber          int64  `json:"revision_number"`
+	SourceClosureID         string `json:"source_closure_id"`
 	PlanID                  string `json:"plan_id"`
 	CanonicalArtifactID     string `json:"canonical_artifact_id"`
 	CanonicalArtifactSHA256 string `json:"canonical_artifact_sha256"`
@@ -377,6 +387,20 @@ type authoringWorkflowReferenceWire struct {
 	AuditDecisionID         string `json:"audit_decision_id"`
 	Decision                string `json:"decision"`
 	RecordedAt              string `json:"recorded_at"`
+}
+type authoringWorkflowRecordReferenceWire struct {
+	Kind              string `json:"kind"`
+	PlanID            string `json:"plan_id"`
+	PassID            string `json:"pass_id"`
+	PassNumber        int64  `json:"pass_number"`
+	RunID             string `json:"run_id"`
+	ArtifactID        string `json:"artifact_id"`
+	ArtifactSHA256    string `json:"artifact_sha256"`
+	AuditPacketID     string `json:"audit_packet_id"`
+	AuditPacketSHA256 string `json:"audit_packet_sha256"`
+	AuditDecisionID   string `json:"audit_decision_id"`
+	Decision          string `json:"decision"`
+	RecordedAt        string `json:"recorded_at"`
 }
 type authoringAttestationWire struct {
 	Kind                    string                  `json:"kind"`
@@ -419,17 +443,17 @@ type authoringInputWire struct {
 	Source          authoringSourceWire `json:"source"`
 }
 type authoringSourceWire struct {
-	Kind                string                         `json:"kind"`
-	FileIndex           int64                          `json:"file_index"`
-	ArtifactID          string                         `json:"artifact_id"`
-	WorkflowReference   authoringWorkflowReferenceWire `json:"workflow_reference"`
-	SnapshotArtifactID  string                         `json:"snapshot_artifact_id"`
-	SnapshotSHA256      string                         `json:"snapshot_sha256"`
-	RepositoryBindingID string                         `json:"repository_binding_id"`
-	CommitOID           string                         `json:"commit_oid"`
-	TreeOID             string                         `json:"tree_oid"`
-	Path                authoringPathWire              `json:"path"`
-	BlobOID             string                         `json:"blob_oid"`
+	Kind                string                               `json:"kind"`
+	FileIndex           int64                                `json:"file_index"`
+	ArtifactID          string                               `json:"artifact_id"`
+	WorkflowReference   authoringWorkflowRecordReferenceWire `json:"workflow_reference"`
+	SnapshotArtifactID  string                               `json:"snapshot_artifact_id"`
+	SnapshotSHA256      string                               `json:"snapshot_sha256"`
+	RepositoryBindingID string                               `json:"repository_binding_id"`
+	CommitOID           string                               `json:"commit_oid"`
+	TreeOID             string                               `json:"tree_oid"`
+	Path                authoringPathWire                    `json:"path"`
+	BlobOID             string                               `json:"blob_oid"`
 }
 type authoringPathWire struct {
 	PathID          string `json:"path_id"`
@@ -527,7 +551,10 @@ func authoringPacketDocument(w authoringPacketWire) packet.Document {
 }
 
 func authoringWorkflowReference(w authoringWorkflowReferenceWire) packet.WorkflowReference {
-	return packet.WorkflowReference{Kind: registry.WorkflowReferenceKind(w.Kind), PlanID: w.PlanID, CanonicalArtifactID: w.CanonicalArtifactID, CanonicalArtifactSHA256: w.CanonicalArtifactSHA256, PassID: w.PassID, PassNumber: w.PassNumber, RunID: w.RunID, ExecutionSpecArtifactID: w.ExecutionSpecArtifactID, ExecutionSpecSHA256: w.ExecutionSpecSHA256, AuditPacketID: w.AuditPacketID, AuditPacketSHA256: w.AuditPacketSHA256, AuditDecisionID: w.AuditDecisionID, Decision: w.Decision, RecordedAt: w.RecordedAt}
+	return packet.WorkflowReference{Kind: registry.WorkflowReferenceKind(w.Kind), WorkspaceID: w.WorkspaceID, WorkspaceVersion: w.WorkspaceVersion, RouteStateID: w.RouteStateID, RouteSequence: w.RouteSequence, RouteWorkspaceVersion: w.RouteWorkspaceVersion, RouteState: w.RouteState, TicketID: w.TicketID, RevisionID: w.RevisionID, RevisionNumber: w.RevisionNumber, SourceClosureID: w.SourceClosureID, PlanID: w.PlanID, CanonicalArtifactID: w.CanonicalArtifactID, CanonicalArtifactSHA256: w.CanonicalArtifactSHA256, PassID: w.PassID, PassNumber: w.PassNumber, RunID: w.RunID, ExecutionSpecArtifactID: w.ExecutionSpecArtifactID, ExecutionSpecSHA256: w.ExecutionSpecSHA256, AuditPacketID: w.AuditPacketID, AuditPacketSHA256: w.AuditPacketSHA256, AuditDecisionID: w.AuditDecisionID, Decision: w.Decision, RecordedAt: w.RecordedAt}
+}
+func authoringWorkflowRecordReference(w authoringWorkflowRecordReferenceWire) packet.WorkflowRecordReference {
+	return packet.WorkflowRecordReference{Kind: w.Kind, PlanID: w.PlanID, PassID: w.PassID, PassNumber: w.PassNumber, RunID: w.RunID, ArtifactID: w.ArtifactID, ArtifactSHA256: w.ArtifactSHA256, AuditPacketID: w.AuditPacketID, AuditPacketSHA256: w.AuditPacketSHA256, AuditDecisionID: w.AuditDecisionID, Decision: w.Decision, RecordedAt: w.RecordedAt}
 }
 func authoringAttestation(w authoringAttestationWire) packet.Attestation {
 	var clearance *packet.SensitiveDataClearance
@@ -540,7 +567,7 @@ func authoringInput(w authoringInputWire) packet.InputBinding {
 	return packet.InputBinding{InputName: w.InputName, InputRole: registry.InputRole(w.InputRole), SourceKind: registry.InputSourceKind(w.SourceKind), DisplayName: w.DisplayName, MediaType: w.MediaType, SHA256: w.SHA256, SizeBytes: w.SizeBytes, AttestationKind: registry.AttestationKind(w.AttestationKind), Source: authoringSource(w.Source)}
 }
 func authoringSource(w authoringSourceWire) packet.InputSource {
-	return packet.InputSource{Kind: registry.InputSourceKind(w.Kind), FileIndex: w.FileIndex, ArtifactID: w.ArtifactID, WorkflowReference: authoringWorkflowReference(w.WorkflowReference), SnapshotArtifactID: w.SnapshotArtifactID, SnapshotSHA256: w.SnapshotSHA256, RepositoryBindingID: w.RepositoryBindingID, CommitOID: w.CommitOID, TreeOID: w.TreeOID, Path: authoringPath(w.Path), BlobOID: w.BlobOID}
+	return packet.InputSource{Kind: registry.InputSourceKind(w.Kind), FileIndex: w.FileIndex, ArtifactID: w.ArtifactID, WorkflowReference: authoringWorkflowRecordReference(w.WorkflowReference), SnapshotArtifactID: w.SnapshotArtifactID, SnapshotSHA256: w.SnapshotSHA256, RepositoryBindingID: w.RepositoryBindingID, CommitOID: w.CommitOID, TreeOID: w.TreeOID, Path: authoringPath(w.Path), BlobOID: w.BlobOID}
 }
 func authoringPath(w authoringPathWire) packet.PathIdentity {
 	return packet.PathIdentity{PathID: w.PathID, ByteLength: w.ByteLength, PathBytesBase64: w.PathBytesBase64}

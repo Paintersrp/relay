@@ -203,6 +203,123 @@ func newRemediationLifecycleFixture(t *testing.T) remediationLifecycleFixture {
 	return fixture
 }
 
+func TestResolveCurrentWorkspaceAndDeliveryTicketReferences(t *testing.T) {
+	fixture := newRemediationLifecycleFixture(t)
+	project, err := fixture.store.GetProjectByProjectID(fixture.ctx, fixture.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := fixture.store.GetFeatureWorkspaceByWorkspaceID(fixture.ctx, fixture.workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route workflowstore.FeatureWorkspaceRouteState
+	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
+		route, err = tx.CreateFeatureWorkspaceRouteState(fixture.ctx, workflowstore.CreateFeatureWorkspaceRouteStateParams{RouteStateID: "route-remediation-1", WorkspaceRowID: workspace.ID, Sequence: 1, WorkspaceVersion: workspace.Version + 1, State: "ready"})
+		if err != nil {
+			return err
+		}
+		workspace, err = tx.AdvanceFeatureWorkspaceRouteState(fixture.ctx, route.ID, "open", workspace.WorkspaceID, workspace.Version)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaceReference, err := fixture.service.resolveWorkflowReference(fixture.ctx, project, semanticidentity.WorkflowReferenceRequest{Kind: "feature_workspace", WorkspaceID: workspace.WorkspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspaceReference.WorkspaceVersion != workspace.Version || workspaceReference.RouteStateID != route.RouteStateID || workspaceReference.RouteWorkspaceVersion != route.WorkspaceVersion {
+		t.Fatalf("workspace reference = %#v", workspaceReference)
+	}
+	ticketReference, err := fixture.service.resolveWorkflowReference(fixture.ctx, project, semanticidentity.WorkflowReferenceRequest{Kind: "delivery_ticket", WorkspaceID: workspace.WorkspaceID, TicketID: fixture.ticket.TicketID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticketReference.RevisionID != fixture.revision.ID || ticketReference.RevisionNumber != fixture.revision.RevisionNumber || ticketReference.SourceClosureID != fixture.closure.ClosureID {
+		t.Fatalf("ticket reference = %#v", ticketReference)
+	}
+	workflowArtifact := fixture.authorityLayers[0].artifact
+	workflowRecord, workflowBytes, err := fixture.service.materializeWorkflowRecord(fixture.ctx, semanticidentity.WorkflowRecordInputReference{Kind: "run_execution_spec", RunID: fixture.run.RunID, ArtifactID: workflowArtifact.ArtifactID, ExpectedSHA256: workflowArtifact.SHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workflowRecord.Kind != "run_execution_spec" || workflowRecord.RunID != fixture.run.RunID || workflowRecord.ArtifactID != workflowArtifact.ArtifactID || workflowRecord.ArtifactSHA256 != workflowArtifact.SHA256 || !bytes.Equal(workflowBytes, fixture.authorityLayers[0].bytes) {
+		t.Fatalf("workflow record = %#v, bytes = %q", workflowRecord, workflowBytes)
+	}
+
+	if _, err := fixture.service.prepareWorkflowReferences(fixture.ctx, project, []semanticidentity.WorkflowReferenceRequest{{Kind: "feature_workspace", WorkspaceID: workspace.WorkspaceID}, {Kind: "feature_workspace", WorkspaceID: workspace.WorkspaceID}}); err == nil {
+		t.Fatal("duplicate workspace references were accepted")
+	}
+
+	var foreignWorkspace, noRouteWorkspace workflowstore.FeatureWorkspace
+	var wrongWorkspaceTicket, noRevisionTicket workflowstore.DeliveryTicket
+	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
+		foreignProject, createErr := tx.CreateProject(fixture.ctx, workflowstore.CreateProjectParams{ProjectID: "project-foreign-reference", Name: "Foreign", Description: "foreign reference"})
+		if createErr != nil {
+			return createErr
+		}
+		foreignWorkspace, createErr = tx.CreateFeatureWorkspace(fixture.ctx, workflowstore.CreateFeatureWorkspaceParams{WorkspaceID: "workspace-foreign-reference", ProjectRowID: foreignProject.ID, FeatureSlug: "foreign-reference"})
+		if createErr != nil {
+			return createErr
+		}
+		noRouteWorkspace, createErr = tx.CreateFeatureWorkspace(fixture.ctx, workflowstore.CreateFeatureWorkspaceParams{WorkspaceID: "workspace-no-route-reference", ProjectRowID: project.ID, FeatureSlug: "no-route-reference"})
+		if createErr != nil {
+			return createErr
+		}
+		wrongWorkspaceTicket, createErr = tx.CreateDeliveryTicket(fixture.ctx, workflowstore.CreateDeliveryTicketParams{TicketID: "TICKET-WRONG-WORKSPACE-REFERENCE", WorkspaceRowID: noRouteWorkspace.ID, ExternalPriority: 1})
+		if createErr != nil {
+			return createErr
+		}
+		noRevisionTicket, createErr = tx.CreateDeliveryTicket(fixture.ctx, workflowstore.CreateDeliveryTicketParams{TicketID: "TICKET-NO-REVISION-REFERENCE", WorkspaceRowID: workspace.ID, ExternalPriority: 2})
+		return createErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	invalidRequests := []semanticidentity.WorkflowReferenceRequest{
+		{Kind: "feature_workspace", WorkspaceID: foreignWorkspace.WorkspaceID},
+		{Kind: "feature_workspace", WorkspaceID: noRouteWorkspace.WorkspaceID},
+		{Kind: "delivery_ticket", WorkspaceID: workspace.WorkspaceID, TicketID: wrongWorkspaceTicket.TicketID},
+		{Kind: "delivery_ticket", WorkspaceID: workspace.WorkspaceID, TicketID: noRevisionTicket.TicketID},
+	}
+	for _, request := range invalidRequests {
+		if _, err := fixture.service.resolveWorkflowReference(fixture.ctx, project, request); err == nil {
+			t.Fatalf("invalid reference accepted: %#v", request)
+		}
+	}
+
+	var cancelledTicket workflowstore.DeliveryTicket
+	var cancelled workflowstore.DeliveryTicketRevision
+	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
+		cancelledTicket, err = tx.CreateDeliveryTicket(fixture.ctx, workflowstore.CreateDeliveryTicketParams{TicketID: "TICKET-CANCELLED-REFERENCE", WorkspaceRowID: workspace.ID, ExternalPriority: 3})
+		if err != nil {
+			return err
+		}
+		cancelled, err = tx.CreateDeliveryTicketRevision(fixture.ctx, workflowstore.CreateDeliveryTicketRevisionParams{DeliveryTicketRowID: cancelledTicket.ID, RevisionNumber: 1, CancellationReason: sql.NullString{String: "cancelled", Valid: true}, RepoTarget: fixture.revision.RepoTarget, Branch: fixture.revision.Branch, BaseCommit: fixture.revision.BaseCommit, SourceClosureRowID: fixture.closure.ID, SourcePath: fixture.revision.SourcePath, Goal: fixture.revision.Goal, Context: fixture.revision.Context, TransitionApplicability: fixture.revision.TransitionApplicability})
+		if err != nil {
+			return err
+		}
+		_, err = tx.SetDeliveryTicketCurrentRevision(fixture.ctx, cancelledTicket.TicketID, cancelled.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cancelledRequest := semanticidentity.WorkflowReferenceRequest{Kind: "delivery_ticket", WorkspaceID: workspace.WorkspaceID, TicketID: cancelledTicket.TicketID}
+	if _, err := fixture.service.resolveWorkflowReference(fixture.ctx, project, cancelledRequest); err == nil {
+		t.Fatal("cancelled current revision was accepted")
+	}
+	request := semanticidentity.WorkflowReferenceRequest{Kind: "delivery_ticket", WorkspaceID: workspace.WorkspaceID, TicketID: fixture.ticket.TicketID}
+	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
+		_, err = tx.TransitionSourceVaultClosure(fixture.ctx, workflowstore.TransitionSourceVaultClosureParams{ClosureID: fixture.closure.ClosureID, ExpectedState: workflowstore.SourceVaultClosureStateReady, NextState: workflowstore.SourceVaultClosureStateUnavailable, FailureReason: sql.NullString{String: "operation_cancelled", Valid: true}, TransitionAt: "2026-08-03T00:00:00.000000000Z"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.resolveWorkflowReference(fixture.ctx, project, request); err == nil {
+		t.Fatal("non-ready source closure was accepted")
+	}
+}
+
 func createRemediationArtifact(t *testing.T, store *workflowstore.Store, ctx context.Context, runRowID int64, name, kind string, data []byte) workflowstore.Artifact {
 	t.Helper()
 	batch, err := store.ArtifactStore().Begin(filepath.ToSlash(filepath.Join("runs", fmt.Sprintf("run-remediation-%s", name))))

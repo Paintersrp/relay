@@ -79,13 +79,14 @@ type SourcePathSelector struct {
 }
 
 type WorkflowReferenceRequest struct {
-	Kind                      string `json:"kind"`
-	PlanID                    string `json:"plan_id,omitempty"`
-	PassID                    string `json:"pass_id,omitempty"`
-	RunID                     string `json:"run_id,omitempty"`
-	AuditPacketID             string `json:"audit_packet_id,omitempty"`
-	ExpectedAuditPacketSHA256 string `json:"expected_audit_packet_sha256,omitempty"`
-	AuditDecisionID           string `json:"audit_decision_id,omitempty"`
+	Kind string `json:"kind"`
+
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	TicketID    string `json:"ticket_id,omitempty"`
+
+	RunID string `json:"run_id,omitempty"`
+
+	AuditDecisionID string `json:"audit_decision_id,omitempty"`
 }
 
 type AttestationRequest struct {

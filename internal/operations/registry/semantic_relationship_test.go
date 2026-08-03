@@ -1,39 +1,33 @@
 package registry
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestWorkflowReferenceSemanticMultiplicityAndRelationships(t *testing.T) {
 	references := []map[string]any{
-		{"kind": "pass", "plan_id": "plan-b", "pass_id": "pass-b"},
-		{"kind": "plan", "plan_id": "plan-b"},
-		{"kind": "pass", "plan_id": "plan-a", "pass_id": "pass-a"},
-		{"kind": "plan", "plan_id": "plan-a"},
+		{"kind": "delivery_ticket", "workspace_id": "workspace-1", "ticket_id": "ticket-1"},
+		{"kind": "feature_workspace", "workspace_id": "workspace-1"},
 	}
-	if err := validateAndSortReferences(references, []WorkflowReferenceKind{"plan", "pass"}); err != nil {
-		t.Fatalf("multiple distinct references of one kind were rejected: %v", err)
+	if err := validateAndSortReferences(references, []WorkflowReferenceKind{"feature_workspace", "delivery_ticket"}); err != nil {
+		t.Fatalf("current references were rejected: %v", err)
 	}
-	if references[0]["kind"] != "plan" || references[0]["plan_id"] != "plan-a" || references[2]["kind"] != "pass" || references[2]["plan_id"] != "plan-a" {
+	if references[0]["kind"] != "feature_workspace" || references[1]["kind"] != "delivery_ticket" {
 		t.Fatalf("canonical reference order = %#v", references)
 	}
 
-	duplicateTuple := []map[string]any{
+	duplicateKind := []map[string]any{
 		{"kind": "run", "run_id": "run-1"},
-		{"kind": "audit_packet", "run_id": "run-1", "audit_packet_id": "packet-1", "expected_audit_packet_sha256": strings.Repeat("a", 64)},
-		{"kind": "audit_packet", "run_id": "run-1", "audit_packet_id": "packet-1", "expected_audit_packet_sha256": strings.Repeat("b", 64)},
+		{"kind": "run", "run_id": "run-2"},
 	}
-	if err := validateAndSortReferences(duplicateTuple, []WorkflowReferenceKind{"run", "audit_packet"}); err == nil {
-		t.Fatal("duplicate audit-packet identity tuple was accepted")
+	if err := validateAndSortReferences(duplicateKind, []WorkflowReferenceKind{"run"}); err == nil {
+		t.Fatal("duplicate run kind was accepted")
 	}
 
-	mismatchedPass := []map[string]any{
-		{"kind": "plan", "plan_id": "plan-1"},
-		{"kind": "pass", "plan_id": "plan-2", "pass_id": "pass-1"},
+	mismatchedWorkspace := []map[string]any{
+		{"kind": "feature_workspace", "workspace_id": "workspace-1"},
+		{"kind": "delivery_ticket", "workspace_id": "workspace-2", "ticket_id": "ticket-1"},
 	}
-	if err := validateAndSortReferences(mismatchedPass, []WorkflowReferenceKind{"plan", "pass"}); err == nil {
-		t.Fatal("pass unrelated to the supplied plan was accepted")
+	if err := validateAndSortReferences(mismatchedWorkspace, []WorkflowReferenceKind{"feature_workspace", "delivery_ticket"}); err == nil {
+		t.Fatal("ticket unrelated to the supplied workspace was accepted")
 	}
 
 	mismatchedDecision := []map[string]any{
@@ -45,22 +39,9 @@ func TestWorkflowReferenceSemanticMultiplicityAndRelationships(t *testing.T) {
 	}
 }
 
-func TestWorkflowRecordInputsRequireEqualOrDerivableReferences(t *testing.T) {
-	inputs := []map[string]any{{
-		"input_name":  "current_audit_packet",
-		"source_kind": "workflow_record",
-		"source": map[string]any{
-			"workflow_record": map[string]any{
-				"kind":            "audit_packet",
-				"run_id":          "run-1",
-				"audit_packet_id": "packet-1",
-			},
-		},
-	}}
-	if err := validateWorkflowRecordReferenceLinks(inputs, []map[string]any{{"kind": "run", "run_id": "run-1"}}); err != nil {
-		t.Fatalf("audit packet was not derived from its run: %v", err)
-	}
-	if err := validateWorkflowRecordReferenceLinks(inputs, []map[string]any{{"kind": "run", "run_id": "run-2"}}); err == nil {
-		t.Fatal("workflow record unrelated to packet references was accepted")
+func TestAuditDecisionDoesNotRequireRunReference(t *testing.T) {
+	references := []map[string]any{{"kind": "audit_decision", "run_id": "run-1", "audit_decision_id": "decision-1"}}
+	if err := validateAndSortReferences(references, []WorkflowReferenceKind{"audit_decision"}); err != nil {
+		t.Fatalf("audit-decision-only reference was rejected: %v", err)
 	}
 }

@@ -55,6 +55,16 @@ type ProjectBinding struct {
 
 type WorkflowReference struct {
 	Kind                    registry.WorkflowReferenceKind
+	WorkspaceID             string
+	WorkspaceVersion        int64
+	RouteStateID            string
+	RouteSequence           int64
+	RouteWorkspaceVersion   int64
+	RouteState              string
+	TicketID                string
+	RevisionID              int64
+	RevisionNumber          int64
+	SourceClosureID         string
 	PlanID                  string
 	CanonicalArtifactID     string
 	CanonicalArtifactSHA256 string
@@ -68,6 +78,27 @@ type WorkflowReference struct {
 	AuditDecisionID         string
 	Decision                string
 	RecordedAt              string
+}
+
+type WorkflowRecordReference struct {
+	Kind string
+
+	PlanID string
+
+	PassID     string
+	PassNumber int64
+
+	RunID string
+
+	ArtifactID     string
+	ArtifactSHA256 string
+
+	AuditPacketID     string
+	AuditPacketSHA256 string
+
+	AuditDecisionID string
+	Decision        string
+	RecordedAt      string
 }
 
 type Attestation struct {
@@ -104,7 +135,7 @@ type InputSource struct {
 	Kind                registry.InputSourceKind
 	FileIndex           int64
 	ArtifactID          string
-	WorkflowReference   WorkflowReference
+	WorkflowReference   WorkflowRecordReference
 	SnapshotArtifactID  string
 	SnapshotSHA256      string
 	RepositoryBindingID string

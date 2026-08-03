@@ -15,8 +15,8 @@ import (
 
 const (
 	RegistryVersion         = "relay.operation-registry.v1"
-	OperationRegistryBytes  = 952
-	OperationRegistrySHA256 = "8b42903ba06090e8dacb0e673c9cdfa480c97cb5ab1404d17de79be0c580dc0b"
+	OperationRegistryBytes  = 990
+	OperationRegistrySHA256 = "38d6d59184ccc48c1e546334cb039f7cd4de9d3921e50bca8c7e12a558c12064"
 )
 
 type Role string
@@ -250,6 +250,15 @@ func validateRegistryBytes(registryRaw []byte) (registryDocument, error) {
 
 	if err := validateUniqueStrings("workflow reference rank", toStrings(document.WorkflowReferenceRank)); err != nil {
 		return registryDocument{}, err
+	}
+	expectedWorkflowRank := []WorkflowReferenceKind{"feature_workspace", "delivery_ticket", "run", "audit_decision", "plan", "pass", "audit_packet"}
+	if len(document.WorkflowReferenceRank) != len(expectedWorkflowRank) {
+		return registryDocument{}, errors.New("workflow reference rank has unexpected cardinality")
+	}
+	for index, kind := range expectedWorkflowRank {
+		if document.WorkflowReferenceRank[index] != kind {
+			return registryDocument{}, errors.New("workflow reference rank differs")
+		}
 	}
 	if err := validateUniqueStrings("attestation rank", toStrings(document.AttestationRank)); err != nil {
 		return registryDocument{}, err

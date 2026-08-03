@@ -389,6 +389,9 @@ func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage,
 		required = []string{"surface_contract", "packet_id"}
 	}
 	input := objectSchema(required, inputProperties)
+	if tool == "create_operation_packet" || tool == "refresh_operation_packet" {
+		input["$defs"] = map[string]any{"WorkflowReferenceRequest": workflowReferenceRequestSchema()}
+	}
 	var output map[string]any
 	switch tool {
 	case "get_active_operation_packet":
@@ -406,6 +409,20 @@ func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage,
 	}
 	output = map[string]any{"oneOf": []any{output}}
 	return marshalSchema(input), marshalSchema(output)
+}
+
+func workflowReferenceRequestSchema() map[string]any {
+	identifier := func() map[string]any { return map[string]any{"type": "string", "minLength": 1, "maxLength": 255} }
+	branch := func(kind string, required []string, properties map[string]any) map[string]any {
+		properties["kind"] = map[string]any{"type": "string", "const": kind}
+		return objectSchema(append([]string{"kind"}, required...), properties)
+	}
+	return map[string]any{"oneOf": []any{
+		branch("feature_workspace", []string{"workspace_id"}, map[string]any{"workspace_id": identifier()}),
+		branch("delivery_ticket", []string{"workspace_id", "ticket_id"}, map[string]any{"workspace_id": identifier(), "ticket_id": identifier()}),
+		branch("run", []string{"run_id"}, map[string]any{"run_id": identifier()}),
+		branch("audit_decision", []string{"run_id", "audit_decision_id"}, map[string]any{"run_id": identifier(), "audit_decision_id": identifier()}),
+	}}
 }
 
 func objectSchema(required []string, properties map[string]any) map[string]any {

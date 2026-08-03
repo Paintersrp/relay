@@ -330,9 +330,6 @@ func normalizePacketRequest(tool string, operation OperationDefinition, request 
 	if err := validateAndSortReferences(references, operation.WorkflowReferenceKinds); err != nil {
 		return err
 	}
-	if err := validateWorkflowRecordReferenceLinks(inputs, references); err != nil {
-		return err
-	}
 	request["workflow_references"] = mapsToAny(references)
 
 	if err := sortUniqueObjects(primaryRevisions, []string{"repository_key"}); err != nil {
@@ -642,9 +639,9 @@ func validateAndSortReferences(references []map[string]any, required []WorkflowR
 		rank[string(kind)] = index
 	}
 	seen := make(map[string]struct{}, len(references))
+	seenKinds := make(map[string]struct{}, len(references))
 	presentKinds := make(map[string]bool, len(required))
-	planIDs := make(map[string]struct{})
-	runIDs := make(map[string]struct{})
+	var workspaceID, runID string
 	for _, reference := range references {
 		kind, ok := reference["kind"].(string)
 		if !ok || kind == "" {
@@ -662,12 +659,16 @@ func validateAndSortReferences(references []map[string]any, required []WorkflowR
 			return fmt.Errorf("workflow reference %q identity is duplicated", kind)
 		}
 		seen[key] = struct{}{}
+		if _, duplicate := seenKinds[kind]; duplicate {
+			return fmt.Errorf("workflow reference kind %q is duplicated", kind)
+		}
+		seenKinds[kind] = struct{}{}
 		presentKinds[kind] = true
 		switch kind {
-		case "plan":
-			planIDs[reference["plan_id"].(string)] = struct{}{}
+		case "feature_workspace":
+			workspaceID = reference["workspace_id"].(string)
 		case "run":
-			runIDs[reference["run_id"].(string)] = struct{}{}
+			runID = reference["run_id"].(string)
 		}
 	}
 	for _, kind := range required {
@@ -677,13 +678,13 @@ func validateAndSortReferences(references []map[string]any, required []WorkflowR
 	}
 	for _, reference := range references {
 		switch reference["kind"] {
-		case "pass":
-			if _, ok := planIDs[reference["plan_id"].(string)]; !ok {
-				return errors.New("pass workflow reference does not belong to a supplied plan")
+		case "delivery_ticket":
+			if workspaceID != "" && reference["workspace_id"] != workspaceID {
+				return errors.New("delivery ticket workflow reference does not belong to the supplied workspace")
 			}
-		case "audit_packet", "audit_decision":
-			if _, ok := runIDs[reference["run_id"].(string)]; !ok {
-				return errors.New("audit workflow reference does not belong to a supplied run")
+		case "audit_decision":
+			if runID != "" && reference["run_id"] != runID {
+				return errors.New("audit decision workflow reference does not belong to the supplied run")
 			}
 		}
 	}
@@ -710,31 +711,33 @@ func workflowReferenceRequestIdentity(reference map[string]any) (string, error) 
 		return value, nil
 	}
 	switch kind {
-	case "plan":
-		return require("plan_id")
-	case "pass":
-		planID, err := require("plan_id")
+	case "feature_workspace":
+		if len(reference) != 2 {
+			return "", errors.New("feature workspace workflow reference is not closed")
+		}
+		return require("workspace_id")
+	case "delivery_ticket":
+		if len(reference) != 3 {
+			return "", errors.New("delivery ticket workflow reference is not closed")
+		}
+		workspaceID, err := require("workspace_id")
 		if err != nil {
 			return "", err
 		}
-		passID, err := require("pass_id")
+		ticketID, err := require("ticket_id")
 		if err != nil {
 			return "", err
 		}
-		return planID + "\x00" + passID, nil
+		return workspaceID + "\x00" + ticketID, nil
 	case "run":
+		if len(reference) != 2 {
+			return "", errors.New("run workflow reference is not closed")
+		}
 		return require("run_id")
-	case "audit_packet":
-		runID, err := require("run_id")
-		if err != nil {
-			return "", err
-		}
-		packetID, err := require("audit_packet_id")
-		if err != nil {
-			return "", err
-		}
-		return runID + "\x00" + packetID, nil
 	case "audit_decision":
+		if len(reference) != 3 {
+			return "", errors.New("audit decision workflow reference is not closed")
+		}
 		runID, err := require("run_id")
 		if err != nil {
 			return "", err
@@ -747,51 +750,6 @@ func workflowReferenceRequestIdentity(reference map[string]any) (string, error) 
 	default:
 		return "", fmt.Errorf("workflow reference kind %q is unsupported", kind)
 	}
-}
-
-func validateWorkflowRecordReferenceLinks(inputs, references []map[string]any) error {
-	for _, input := range inputs {
-		if input["source_kind"] != "workflow_record" {
-			continue
-		}
-		source, ok := input["source"].(map[string]any)
-		if !ok {
-			return errors.New("workflow_record source object is required")
-		}
-		record, ok := source["workflow_record"].(map[string]any)
-		if !ok || !workflowRecordReferencePresent(record, references) {
-			return errors.New("workflow_record input is not represented by workflow_references")
-		}
-	}
-	return nil
-}
-
-func workflowRecordReferencePresent(record map[string]any, references []map[string]any) bool {
-	for _, reference := range references {
-		switch record["kind"] {
-		case "plan_artifact":
-			if reference["kind"] == "plan" && reference["plan_id"] == record["plan_id"] {
-				return true
-			}
-		case "pass_record":
-			if reference["kind"] == "pass" && reference["plan_id"] == record["plan_id"] && reference["pass_id"] == record["pass_id"] {
-				return true
-			}
-		case "run_execution_spec":
-			if reference["kind"] == "run" && reference["run_id"] == record["run_id"] {
-				return true
-			}
-		case "audit_packet":
-			if reference["kind"] == "run" && reference["run_id"] == record["run_id"] {
-				return true
-			}
-		case "audit_decision":
-			if reference["kind"] == "audit_decision" && reference["run_id"] == record["run_id"] && reference["audit_decision_id"] == record["audit_decision_id"] {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func validateAndSortAnchors(anchors []map[string]any, allowed []AnchorPurpose) error {

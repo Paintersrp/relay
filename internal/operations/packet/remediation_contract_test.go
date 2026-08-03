@@ -14,47 +14,27 @@ import (
 )
 
 func TestCanonicalPacketGoldenMatrix(t *testing.T) {
-	operations, err := registry.All()
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name      string
+		reference WorkflowReference
+		want      string
+	}{
+		{"feature_workspace", WorkflowReference{Kind: "feature_workspace", WorkspaceID: "workspace-1", WorkspaceVersion: 2, RouteStateID: "route-1", RouteSequence: 3, RouteWorkspaceVersion: 1, RouteState: "ready"}, `{"kind":"feature_workspace","workspace_id":"workspace-1","workspace_version":2,"route_state_id":"route-1","route_sequence":3,"route_workspace_version":1,"route_state":"ready"}`},
+		{"delivery_ticket", WorkflowReference{Kind: "delivery_ticket", WorkspaceID: "workspace-1", TicketID: "ticket-1", RevisionID: 7, RevisionNumber: 2, SourceClosureID: "closure-1"}, `{"kind":"delivery_ticket","workspace_id":"workspace-1","ticket_id":"ticket-1","revision_id":7,"revision_number":2,"source_closure_id":"closure-1"}`},
+		{"run", WorkflowReference{Kind: "run", RunID: "run-1", ExecutionSpecArtifactID: "artifact-1", ExecutionSpecSHA256: strings.Repeat("a", 64)}, `{"kind":"run","run_id":"run-1","execution_spec_artifact_id":"artifact-1","execution_spec_sha256":"` + strings.Repeat("a", 64) + `"}`},
+		{"audit_decision", WorkflowReference{Kind: "audit_decision", RunID: "run-1", AuditDecisionID: "decision-1", Decision: "accepted", RecordedAt: "2026-07-15T16:04:05.123456789Z"}, `{"kind":"audit_decision","run_id":"run-1","audit_decision_id":"decision-1","decision":"accepted","recorded_at":"2026-07-15T16:04:05.123456789Z"}`},
 	}
-	golden := map[registry.OperationID]string{
-		"planner.requirements":                        "85795fd50edc820c121ced5adc4df7d17f6f7d63e9c2f791b5b55bdb038678a3",
-		"planner.design":                              "4942332a201f0b13ffd2b0e0eac4b3b30bb35d3a7988e204ff432af2d412f80d",
-		"planner.plan":                                "1266dc23e7b0e58a86b74d87fdc92f32fa2c151c799c83f72ce5275aca4f0d67",
-		"planner.one_shot_execution_spec":             "bd3a918357b6413595409906d3331c7dc75150cd6bda385ad8471a0692ee5ec9",
-		"planner.selected_pass_design_brief":          "fdaa31a7c0ef160b4eca880002db9e9486980b5d4ea18c0083927a92d7f3ce4e",
-		"planner.selected_pass_execution_spec":        "e709d99b63049c8f2f003cda2725662e02ba21e1c4a431672d3855f1991eb7f4",
-		"auditor.requirements_review":                 "d09336e735d7671e57e67a65b8dbb70ea75a74ac81d8b960bd01b0afbfab3137",
-		"auditor.design_review":                       "1c3d6c0a3eff242f3376a5168c7c43a790fc6c2916d44e68a7769278f2ff4d1e",
-		"auditor.plan_review":                         "b77ce5eff7cc7500b3845e97f6b7ec36c6da3d2b23b0ea16f5ce9db8271c2127",
-		"auditor.selected_pass_design_brief_review":   "ba873b584d81c92b26ec4c5bed109cbed2278ae23c057a43ce061b711db75cb0",
-		"auditor.one_shot_execution_spec_review":      "a93e98ea0e22061c8ca9162e7560ab322cb267b46c73ddeadca8e84c9393e58e",
-		"auditor.selected_pass_execution_spec_review": "f716e4336b395b9b6780517c5ca5724360104c455b49f880bb067e2423a2d2d2",
-		"auditor.audit":                               "61def2a371b0bfa82f628ca24aaafc9cfd9de2f0cc067beaec8c565a581c2090",
-	}
-	if len(operations) != len(golden) {
-		t.Fatalf("operation count = %d, golden count = %d", len(operations), len(golden))
-	}
-	for _, operation := range operations {
-		document := goldenDocument(t, operation)
-		first, err := NewSnapshot(document)
-		if err != nil {
-			t.Fatalf("%s: %v", operation.OperationID, err)
-		}
-		second, err := NewSnapshot(document)
-		if err != nil {
-			t.Fatalf("%s second snapshot: %v", operation.OperationID, err)
-		}
-		if string(first.Bytes()) != string(second.Bytes()) || first.SHA256() != second.SHA256() {
-			t.Fatalf("%s is not deterministic", operation.OperationID)
-		}
-		if got, want := first.SHA256(), golden[operation.OperationID]; got != want {
-			t.Fatalf("%s sha256 = %s, want %s", operation.OperationID, got, want)
-		}
-		if first.SizeBytes() != int64(len(first.Bytes())) || first.MediaType() != MediaType {
-			t.Fatalf("%s snapshot identity is inconsistent", operation.OperationID)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateWorkflowReference(test.reference); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			writeWorkflowReference(&output, test.reference)
+			if output.String() != test.want {
+				t.Fatalf("canonical reference = %s, want %s", output.String(), test.want)
+			}
+		})
 	}
 }
 
@@ -131,58 +111,40 @@ func TestRemediationHistoricalAuthorityPolicy(t *testing.T) {
 }
 
 func TestWorkflowReferenceMultiplicityAndRelationships(t *testing.T) {
-	operation, ok := registry.Lookup("planner.selected_pass_execution_spec")
+	operation, ok := registry.Lookup("planner.transition_plan")
 	if !ok {
-		t.Fatal("selected-pass operation is missing")
+		t.Fatal("transition-plan operation is missing")
 	}
-	document := goldenDocument(t, operation)
-	document.WorkflowReferences = append(document.WorkflowReferences,
-		goldenRef("plan", "2"),
-		goldenRef("pass", "2"),
-	)
-	if _, err := NewSnapshot(document); err != nil {
-		t.Fatalf("multiple distinct references of one kind were rejected: %v", err)
-	}
-
 	duplicate := goldenDocument(t, operation)
-	duplicate.WorkflowReferences = append(duplicate.WorkflowReferences, duplicate.WorkflowReferences[0])
+	duplicate.WorkflowReferences = append(duplicate.WorkflowReferences, goldenRef("feature_workspace", "2"))
 	if _, err := NewSnapshot(duplicate); validationCode(err) != "workflow_reference_duplicate" {
-		t.Fatalf("duplicate identity error = %v", err)
+		t.Fatalf("duplicate kind error = %v", err)
 	}
 
-	mismatchedPass := goldenDocument(t, operation)
-	for index := range mismatchedPass.WorkflowReferences {
-		if mismatchedPass.WorkflowReferences[index].Kind == "pass" {
-			mismatchedPass.WorkflowReferences[index].PlanID = "plan-missing"
+	mismatchedTicket := goldenDocument(t, operation)
+	for index := range mismatchedTicket.WorkflowReferences {
+		if mismatchedTicket.WorkflowReferences[index].Kind == "delivery_ticket" {
+			mismatchedTicket.WorkflowReferences[index].WorkspaceID = "workspace-missing"
 		}
 	}
-	if _, err := NewSnapshot(mismatchedPass); validationCode(err) != "workflow_reference_relationship" {
-		t.Fatalf("mismatched plan/pass error = %v", err)
+	if _, err := NewSnapshot(mismatchedTicket); validationCode(err) != "workflow_reference_relationship" {
+		t.Fatalf("mismatched workspace/ticket error = %v", err)
 	}
 
-	remediation, ok := registry.Lookup("auditor.remediation_execution_spec")
-	if !ok {
-		t.Fatal("remediation operation is missing")
-	}
-	mismatchedDecision := goldenDocument(t, remediation)
-	for index := range mismatchedDecision.WorkflowReferences {
-		if mismatchedDecision.WorkflowReferences[index].Kind == "audit_decision" {
-			mismatchedDecision.WorkflowReferences[index].RunID = "run-missing"
-		}
-	}
-	if _, err := NewSnapshot(mismatchedDecision); validationCode(err) != "workflow_reference_relationship" {
+	mismatchedDecision := []WorkflowReference{goldenRef("run", "1"), goldenRef("audit_decision", "2")}
+	if err := validateWorkflowReferenceRelationships(mismatchedDecision); validationCode(err) != "workflow_reference_relationship" {
 		t.Fatalf("mismatched run/decision error = %v", err)
 	}
 }
 
-func TestWorkflowRecordMustBeRepresentedByPacketReferences(t *testing.T) {
+func TestWorkflowRecordIsValidatedIndependentlyFromPacketReferences(t *testing.T) {
 	operations, err := registry.All()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, operation := range operations {
 		for slotIndex, slot := range operation.RequiredInputs {
-			if !containsSourceKind(slot.AllowedSourceKinds, InputSourceWorkflowRecord) || len(operation.WorkflowReferenceKinds) == 0 {
+			if !containsSourceKind(slot.AllowedSourceKinds, InputSourceWorkflowRecord) {
 				continue
 			}
 			document := goldenDocument(t, operation)
@@ -191,12 +153,12 @@ func TestWorkflowRecordMustBeRepresentedByPacketReferences(t *testing.T) {
 			input.SourceKind = InputSourceWorkflowRecord
 			input.Source = InputSource{
 				Kind:               InputSourceWorkflowRecord,
-				WorkflowReference:  goldenRef(operation.WorkflowReferenceKinds[0], "missing"),
+				WorkflowReference:  WorkflowRecordReference{Kind: "plan_artifact", PlanID: "plan-independent", ArtifactID: "artifact-independent", ArtifactSHA256: strings.Repeat("6", 64)},
 				SnapshotArtifactID: "artifact-unrepresented",
 				SnapshotSHA256:     strings.Repeat("6", 64),
 			}
-			if _, err := NewSnapshot(document); validationCode(err) != "workflow_record_reference" {
-				t.Fatalf("%s unrepresented workflow record error = %v", operation.OperationID, err)
+			if _, err := NewSnapshot(document); err != nil {
+				t.Fatalf("%s independent workflow record error = %v", operation.OperationID, err)
 			}
 			return
 		}
@@ -305,6 +267,10 @@ func goldenDocument(t *testing.T, op registry.OperationDefinition) Document {
 		SourcePolicy:          op.SourcePolicy, HistoricalAuthority: op.HistoricalAuthority,
 		AllowedActions: append([]registry.AllowedAction(nil), op.AllowedNonSourceActions...), ReadinessState: ReadinessReady,
 	}
+	if op.Role == "wayfinder" && op.ManifestDomain == "" {
+		d.RelaySpecs = GovernanceBinding{}
+		d.ManifestDomain = ManifestDomainBinding{}
+	}
 	for _, kind := range op.WorkflowReferenceKinds {
 		d.WorkflowReferences = append(d.WorkflowReferences, goldenRef(kind, "1"))
 	}
@@ -331,6 +297,10 @@ func goldenDocument(t *testing.T, op registry.OperationDefinition) Document {
 }
 func goldenRef(kind registry.WorkflowReferenceKind, suffix string) WorkflowReference {
 	switch kind {
+	case "feature_workspace":
+		return WorkflowReference{Kind: kind, WorkspaceID: "workspace-" + suffix, WorkspaceVersion: 2, RouteStateID: "route-" + suffix, RouteSequence: 1, RouteWorkspaceVersion: 1, RouteState: "ready"}
+	case "delivery_ticket":
+		return WorkflowReference{Kind: kind, WorkspaceID: "workspace-" + suffix, TicketID: "ticket-" + suffix, RevisionID: 1, RevisionNumber: 1, SourceClosureID: "closure-" + suffix}
 	case "plan":
 		return WorkflowReference{Kind: kind, PlanID: "plan-" + suffix, CanonicalArtifactID: "artifact-plan-" + suffix, CanonicalArtifactSHA256: strings.Repeat("1", 64)}
 	case "pass":
@@ -389,7 +359,7 @@ func derivedSource(kind registry.InputSourceKind, references []WorkflowReference
 		source.FileIndex = 0
 		source.ArtifactID = "artifact-uploaded-test"
 	case InputSourceWorkflowRecord:
-		source.WorkflowReference = references[0]
+		source.WorkflowReference = WorkflowRecordReference{Kind: "plan_artifact", PlanID: "plan-derived", ArtifactID: "artifact-derived", ArtifactSHA256: strings.Repeat("4", 64)}
 		source.SnapshotArtifactID = "artifact-snapshot-test"
 		source.SnapshotSHA256 = strings.Repeat("4", 64)
 	case InputSourceCommittedSource:
@@ -440,31 +410,20 @@ func goldenAtt(slot registry.InputSlotDefinition, input InputBinding) Attestatio
 func goldenClearance(input InputBinding) Attestation {
 	return Attestation{Kind: "sensitive_data_clearance", InputName: input.InputName, Clearance: &SensitiveDataClearance{PolicyVersion: "relay.canonical-artifact-sensitive-data.v1", SubjectSHA256: input.SHA256, Confirmed: true}}
 }
-func refForPolicy(policy string, refs []WorkflowReference) WorkflowReference {
-	desired := registry.WorkflowReferenceKind("plan")
+func refForPolicy(policy string, refs []WorkflowReference) WorkflowRecordReference {
 	switch policy {
 	case "pass_or_artifact":
-		desired = "pass"
+		return WorkflowRecordReference{Kind: "pass_record", PlanID: "plan-1", PassID: "pass-1", PassNumber: 1}
 	case "run_execution_spec":
-		desired = "run"
+		return WorkflowRecordReference{Kind: "run_execution_spec", RunID: "run-1", ArtifactID: "artifact-spec-1", ArtifactSHA256: strings.Repeat("2", 64)}
 	case "audit_packet":
-		for _, r := range refs {
-			if r.Kind == "run" {
-				return WorkflowReference{Kind: "audit_packet", RunID: r.RunID, AuditPacketID: "audit-packet-1", AuditPacketSHA256: strings.Repeat("3", 64)}
-			}
-		}
+		return WorkflowRecordReference{Kind: "audit_packet", RunID: "run-1", AuditPacketID: "audit-packet-1", AuditPacketSHA256: strings.Repeat("3", 64)}
 	case "audit_decision":
-		desired = "audit_decision"
+		return WorkflowRecordReference{Kind: "audit_decision", RunID: "run-1", AuditDecisionID: "audit-decision-1", Decision: "needs_revision", RecordedAt: "2026-07-15T16:04:05.123456789Z"}
+	case "artifact", "plan_artifact":
+		return WorkflowRecordReference{Kind: "plan_artifact", PlanID: "plan-1", ArtifactID: "artifact-plan-1", ArtifactSHA256: strings.Repeat("1", 64)}
 	}
-	for _, r := range refs {
-		if r.Kind == desired {
-			return r
-		}
-	}
-	for _, r := range refs {
-		return r
-	}
-	return WorkflowReference{}
+	return WorkflowRecordReference{}
 }
 func requiredPurposes(policy registry.HistoricalAuthorityPolicy) []registry.AnchorPurpose {
 	switch policy {

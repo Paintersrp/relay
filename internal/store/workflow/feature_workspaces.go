@@ -43,6 +43,18 @@ func (s *Store) GetFeatureWorkspaceByRowID(ctx context.Context, rowID int64) (Fe
 	return getFeatureWorkspaceByRowID(ctx, s.db, rowID)
 }
 
+func (s *Store) GetFeatureWorkspaceRouteStateByRowID(ctx context.Context, rowID int64) (FeatureWorkspaceRouteState, error) {
+	var value FeatureWorkspaceRouteState
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, route_state_id, workspace_row_id, sequence, workspace_version, state, ticket_row_id, created_at
+FROM feature_workspace_route_states
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.RouteStateID, &value.WorkspaceRowID, &value.Sequence,
+		&value.WorkspaceVersion, &value.State, &value.TicketRowID, &value.CreatedAt,
+	)
+	return value, err
+}
+
 func (s *Store) GetFeatureWorkspaceAuthorityRevisionByRowID(ctx context.Context, rowID int64) (FeatureWorkspaceAuthorityRevision, error) {
 	return getFeatureWorkspaceAuthorityRevisionByRowID(ctx, s.db, rowID)
 }

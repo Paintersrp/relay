@@ -56,7 +56,6 @@ type repositoryPreparation struct {
 
 type workflowPreparation struct {
 	references []packet.WorkflowReference
-	byKey      map[string]packet.WorkflowReference
 }
 
 type remediationSeedInput struct {
@@ -268,7 +267,7 @@ func (s *LifecycleService) preparePacket(ctx context.Context, request lifecycleR
 	packetID := s.ids.PacketID()
 	packetArtifactID := s.ids.ArtifactID()
 
-	workflow, err := s.prepareWorkflowReferences(ctx, request.workflowReferences)
+	workflow, err := s.prepareWorkflowReferences(ctx, project, request.workflowReferences)
 	if err != nil {
 		return preparedPacketAuthority{}, err
 	}
@@ -574,7 +573,7 @@ func (s *LifecycleService) materializeInputs(ctx context.Context, operation regi
 			if source.Source.WorkflowRecord == nil {
 				return nil, nil, &Error{Code: CodeInvalidPacketDocument}
 			}
-			reference, data, err := s.materializeWorkflowRecord(ctx, *source.Source.WorkflowRecord, workflow)
+			reference, data, err := s.materializeWorkflowRecord(ctx, *source.Source.WorkflowRecord)
 			if err != nil || digestBytes(data) != source.ExpectedSHA256 {
 				return nil, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
 			}
@@ -1199,42 +1198,63 @@ func (s *LifecycleService) readFeatureAuthorityLayer(ctx context.Context, layer 
 	return data, nil
 }
 
-func (s *LifecycleService) prepareWorkflowReferences(ctx context.Context, requests []semanticidentity.WorkflowReferenceRequest) (workflowPreparation, error) {
-	result := workflowPreparation{byKey: make(map[string]packet.WorkflowReference)}
+func (s *LifecycleService) prepareWorkflowReferences(ctx context.Context, project workflowstore.Project, requests []semanticidentity.WorkflowReferenceRequest) (workflowPreparation, error) {
+	result := workflowPreparation{}
+	seenKinds := make(map[registry.WorkflowReferenceKind]struct{}, len(requests))
+	seenIdentities := make(map[string]struct{}, len(requests))
 	for _, request := range requests {
-		reference, err := s.resolveWorkflowReference(ctx, request)
+		reference, err := s.resolveWorkflowReference(ctx, project, request)
 		if err != nil {
 			return workflowPreparation{}, err
 		}
+		if _, duplicate := seenKinds[reference.Kind]; duplicate {
+			return workflowPreparation{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		seenKinds[reference.Kind] = struct{}{}
+		key := workflowReferenceKey(reference)
+		if key == "" {
+			return workflowPreparation{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		identityKey := string(reference.Kind) + "\x00" + key
+		if _, duplicate := seenIdentities[identityKey]; duplicate {
+			return workflowPreparation{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		seenIdentities[identityKey] = struct{}{}
 		result.references = append(result.references, reference)
-		result.byKey[workflowReferenceKey(reference)] = reference
 	}
 	return result, nil
 }
 
-func (s *LifecycleService) resolveWorkflowReference(ctx context.Context, request semanticidentity.WorkflowReferenceRequest) (packet.WorkflowReference, error) {
+func (s *LifecycleService) resolveWorkflowReference(ctx context.Context, project workflowstore.Project, request semanticidentity.WorkflowReferenceRequest) (packet.WorkflowReference, error) {
 	switch request.Kind {
-	case "plan":
-		plan, err := s.store.GetPlanByPlanID(ctx, request.PlanID)
-		if err != nil {
-			return packet.WorkflowReference{}, err
-		}
-		artifacts, listErr := s.store.ListArtifactsByPlan(ctx, plan.ID)
-		artifact, err := findArtifactBySHA(artifacts, plan.CanonicalSHA256, listErr)
-		if err != nil {
-			return packet.WorkflowReference{}, err
-		}
-		return packet.WorkflowReference{Kind: "plan", PlanID: plan.PlanID, CanonicalArtifactID: artifact.ArtifactID, CanonicalArtifactSHA256: artifact.SHA256}, nil
-	case "pass":
-		plan, err := s.store.GetPlanByPlanID(ctx, request.PlanID)
-		if err != nil {
-			return packet.WorkflowReference{}, err
-		}
-		pass, err := s.store.GetPlanPassByPassID(ctx, request.PassID)
-		if err != nil || pass.PlanRowID != plan.ID {
+	case "feature_workspace":
+		workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, request.WorkspaceID)
+		if err != nil || workspace.ProjectRowID != project.ID || !workspace.CurrentRouteStateRowID.Valid {
 			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
 		}
-		return packet.WorkflowReference{Kind: "pass", PlanID: plan.PlanID, PassID: pass.PassID, PassNumber: pass.PassNumber}, nil
+		route, err := s.store.GetFeatureWorkspaceRouteStateByRowID(ctx, workspace.CurrentRouteStateRowID.Int64)
+		if err != nil || route.ID != workspace.CurrentRouteStateRowID.Int64 || route.WorkspaceRowID != workspace.ID || route.RouteStateID == "" || route.Sequence < 1 || route.WorkspaceVersion < 1 || route.State == "" {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		return packet.WorkflowReference{Kind: "feature_workspace", WorkspaceID: workspace.WorkspaceID, WorkspaceVersion: workspace.Version, RouteStateID: route.RouteStateID, RouteSequence: route.Sequence, RouteWorkspaceVersion: route.WorkspaceVersion, RouteState: route.State}, nil
+	case "delivery_ticket":
+		workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, request.WorkspaceID)
+		if err != nil || workspace.ProjectRowID != project.ID {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		ticket, err := s.store.GetDeliveryTicketByTicketID(ctx, request.TicketID)
+		if err != nil || ticket.WorkspaceRowID != workspace.ID || !ticket.CurrentRevisionRowID.Valid {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		revision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, ticket.CurrentRevisionRowID.Int64)
+		if err != nil || revision.ID != ticket.CurrentRevisionRowID.Int64 || revision.DeliveryTicketRowID != ticket.ID || revision.CancellationReason.Valid || revision.ID < 1 || revision.RevisionNumber < 1 {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		closure, err := s.store.GetSourceVaultClosureByRowID(ctx, revision.SourceClosureRowID)
+		if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.ClosureID == "" {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		return packet.WorkflowReference{Kind: "delivery_ticket", WorkspaceID: workspace.WorkspaceID, TicketID: ticket.TicketID, RevisionID: revision.ID, RevisionNumber: revision.RevisionNumber, SourceClosureID: closure.ClosureID}, nil
 	case "run":
 		run, err := s.store.GetRunByRunID(ctx, request.RunID)
 		if err != nil {
@@ -1249,16 +1269,6 @@ func (s *LifecycleService) resolveWorkflowReference(ctx context.Context, request
 			return packet.WorkflowReference{}, err
 		}
 		return packet.WorkflowReference{Kind: "run", RunID: run.RunID, ExecutionSpecArtifactID: artifact.ArtifactID, ExecutionSpecSHA256: artifact.SHA256}, nil
-	case "audit_packet":
-		run, err := s.store.GetRunByRunID(ctx, request.RunID)
-		if err != nil {
-			return packet.WorkflowReference{}, err
-		}
-		value, err := s.store.GetCurrentAuditPacketByRun(ctx, run.ID)
-		if err != nil || value.AuditPacketID != request.AuditPacketID || value.PacketSHA256 != request.ExpectedAuditPacketSHA256 {
-			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
-		}
-		return packet.WorkflowReference{Kind: "audit_packet", RunID: run.RunID, AuditPacketID: value.AuditPacketID, AuditPacketSHA256: value.PacketSHA256}, nil
 	case "audit_decision":
 		run, err := s.store.GetRunByRunID(ctx, request.RunID)
 		if err != nil {
@@ -1282,30 +1292,30 @@ func canonicalPersistedTime(value string) string {
 	return canonicalTime(parsed)
 }
 
-func (s *LifecycleService) materializeWorkflowRecord(ctx context.Context, source semanticidentity.WorkflowRecordInputReference, workflow workflowPreparation) (packet.WorkflowReference, []byte, error) {
-	var reference packet.WorkflowReference
+func (s *LifecycleService) materializeWorkflowRecord(ctx context.Context, source semanticidentity.WorkflowRecordInputReference) (packet.WorkflowRecordReference, []byte, error) {
+	var reference packet.WorkflowRecordReference
 	var data []byte
 	var err error
 	switch source.Kind {
 	case "plan_artifact":
 		plan, loadErr := s.store.GetPlanByPlanID(ctx, source.PlanID)
 		if loadErr != nil {
-			return packet.WorkflowReference{}, nil, loadErr
+			return packet.WorkflowRecordReference{}, nil, loadErr
 		}
 		artifact, loadErr := s.store.GetArtifactByArtifactID(ctx, source.ArtifactID)
 		if loadErr != nil || !artifact.PlanRowID.Valid || artifact.PlanRowID.Int64 != plan.ID || artifact.SHA256 != source.ExpectedSHA256 {
-			return packet.WorkflowReference{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
+			return packet.WorkflowRecordReference{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
 		}
 		data, err = readWorkflowArtifact(s.store, artifact)
-		reference = workflow.byKey["plan\x00"+plan.PlanID]
+		reference = packet.WorkflowRecordReference{Kind: source.Kind, PlanID: plan.PlanID, ArtifactID: artifact.ArtifactID, ArtifactSHA256: artifact.SHA256}
 	case "pass_record":
 		plan, loadErr := s.store.GetPlanByPlanID(ctx, source.PlanID)
 		if loadErr != nil {
-			return packet.WorkflowReference{}, nil, loadErr
+			return packet.WorkflowRecordReference{}, nil, loadErr
 		}
 		pass, loadErr := s.store.GetPlanPassByPassID(ctx, source.PassID)
 		if loadErr != nil || pass.PlanRowID != plan.ID {
-			return packet.WorkflowReference{}, nil, &Error{Code: CodeInvalidPacketDocument}
+			return packet.WorkflowRecordReference{}, nil, &Error{Code: CodeInvalidPacketDocument}
 		}
 		data, err = canonicalJSON(struct {
 			PlanID     string `json:"plan_id"`
@@ -1315,41 +1325,41 @@ func (s *LifecycleService) materializeWorkflowRecord(ctx context.Context, source
 			RepoTarget string `json:"repo_target"`
 			Status     string `json:"status"`
 		}{plan.PlanID, pass.PassID, pass.PassNumber, pass.Name, pass.RepoTarget, pass.Status})
-		reference = workflow.byKey["pass\x00"+plan.PlanID+"\x00"+pass.PassID]
+		reference = packet.WorkflowRecordReference{Kind: source.Kind, PlanID: plan.PlanID, PassID: pass.PassID, PassNumber: pass.PassNumber}
 	case "run_execution_spec":
 		run, loadErr := s.store.GetRunByRunID(ctx, source.RunID)
 		if loadErr != nil {
-			return packet.WorkflowReference{}, nil, loadErr
+			return packet.WorkflowRecordReference{}, nil, loadErr
 		}
 		artifact, loadErr := s.store.GetArtifactByArtifactID(ctx, source.ArtifactID)
 		if loadErr != nil || !artifact.RunRowID.Valid || artifact.RunRowID.Int64 != run.ID || artifact.SHA256 != source.ExpectedSHA256 {
-			return packet.WorkflowReference{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
+			return packet.WorkflowRecordReference{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
 		}
 		data, err = readWorkflowArtifact(s.store, artifact)
-		reference = workflow.byKey["run\x00"+run.RunID]
+		reference = packet.WorkflowRecordReference{Kind: source.Kind, RunID: run.RunID, ArtifactID: artifact.ArtifactID, ArtifactSHA256: artifact.SHA256}
 	case "audit_packet":
 		run, loadErr := s.store.GetRunByRunID(ctx, source.RunID)
 		if loadErr != nil {
-			return packet.WorkflowReference{}, nil, loadErr
+			return packet.WorkflowRecordReference{}, nil, loadErr
 		}
 		value, loadErr := s.store.GetCurrentAuditPacketByRun(ctx, run.ID)
 		if loadErr != nil || value.AuditPacketID != source.AuditPacketID || value.PacketSHA256 != source.ExpectedSHA256 {
-			return packet.WorkflowReference{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
+			return packet.WorkflowRecordReference{}, nil, retainedAuthorityError(workflowstore.OperationPacketDependencyWorkflowSnapshot)
 		}
 		artifact, loadErr := s.store.GetArtifactByRowID(ctx, value.ArtifactRowID)
 		if loadErr != nil {
-			return packet.WorkflowReference{}, nil, loadErr
+			return packet.WorkflowRecordReference{}, nil, loadErr
 		}
 		data, err = readWorkflowArtifact(s.store, artifact)
-		reference = workflow.byKey["audit_packet\x00"+run.RunID+"\x00"+value.AuditPacketID]
+		reference = packet.WorkflowRecordReference{Kind: source.Kind, RunID: run.RunID, AuditPacketID: value.AuditPacketID, AuditPacketSHA256: value.PacketSHA256}
 	case "audit_decision":
 		run, loadErr := s.store.GetRunByRunID(ctx, source.RunID)
 		if loadErr != nil {
-			return packet.WorkflowReference{}, nil, loadErr
+			return packet.WorkflowRecordReference{}, nil, loadErr
 		}
 		value, loadErr := s.store.GetAuditDecisionByDecisionID(ctx, source.AuditDecisionID)
 		if loadErr != nil || value.RunRowID != run.ID {
-			return packet.WorkflowReference{}, nil, &Error{Code: CodeInvalidPacketDocument}
+			return packet.WorkflowRecordReference{}, nil, &Error{Code: CodeInvalidPacketDocument}
 		}
 		data, err = canonicalJSON(struct {
 			AuditDecisionID string `json:"audit_decision_id"`
@@ -1359,12 +1369,12 @@ func (s *LifecycleService) materializeWorkflowRecord(ctx context.Context, source
 			Decision        string `json:"decision"`
 			RecordedAt      string `json:"recorded_at"`
 		}{value.AuditDecisionID, run.RunID, value.AuditedCommit, value.PacketSHA256, value.Decision, value.CreatedAt})
-		reference = workflow.byKey["audit_decision\x00"+run.RunID+"\x00"+value.AuditDecisionID]
+		reference = packet.WorkflowRecordReference{Kind: source.Kind, RunID: run.RunID, AuditDecisionID: value.AuditDecisionID, Decision: value.Decision, RecordedAt: canonicalPersistedTime(value.CreatedAt)}
 	default:
-		return packet.WorkflowReference{}, nil, &Error{Code: CodeInvalidPacketDocument}
+		return packet.WorkflowRecordReference{}, nil, &Error{Code: CodeInvalidPacketDocument}
 	}
 	if err != nil || reference.Kind == "" {
-		return packet.WorkflowReference{}, nil, errOrInvalid(err)
+		return packet.WorkflowRecordReference{}, nil, errOrInvalid(err)
 	}
 	return reference, data, nil
 }
@@ -1566,16 +1576,14 @@ func findArtifactBySHA(values []workflowstore.Artifact, sha string, err error) (
 
 func workflowReferenceKey(value packet.WorkflowReference) string {
 	switch value.Kind {
-	case "plan":
-		return "plan\x00" + value.PlanID
-	case "pass":
-		return "pass\x00" + value.PlanID + "\x00" + value.PassID
+	case "feature_workspace":
+		return value.WorkspaceID
+	case "delivery_ticket":
+		return value.WorkspaceID + "\x00" + value.TicketID
 	case "run":
-		return "run\x00" + value.RunID
-	case "audit_packet":
-		return "audit_packet\x00" + value.RunID + "\x00" + value.AuditPacketID
+		return value.RunID
 	case "audit_decision":
-		return "audit_decision\x00" + value.RunID + "\x00" + value.AuditDecisionID
+		return value.RunID + "\x00" + value.AuditDecisionID
 	default:
 		return ""
 	}

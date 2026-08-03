@@ -109,9 +109,6 @@ func validateAndCanonicalize(input Document) (Document, registry.OperationDefini
 	if err != nil {
 		return Document{}, registry.OperationDefinition{}, err
 	}
-	if err := validateWorkflowInputReferences(result.Inputs, result.WorkflowReferences); err != nil {
-		return Document{}, registry.OperationDefinition{}, err
-	}
 	result.Attestations, err = canonicalAttestations(input.Attestations, result.Inputs, operation, refreshing)
 	if err != nil {
 		return Document{}, registry.OperationDefinition{}, err
@@ -152,6 +149,7 @@ func canonicalWorkflowReferences(values []WorkflowReference, operation registry.
 		allowed[kind] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(values))
+	seenKinds := make(map[registry.WorkflowReferenceKind]struct{}, len(values))
 	presentKinds := make(map[registry.WorkflowReferenceKind]bool, len(allowed))
 	out := append([]WorkflowReference(nil), values...)
 	for _, value := range out {
@@ -161,6 +159,10 @@ func canonicalWorkflowReferences(values []WorkflowReference, operation registry.
 		if err := validateWorkflowReference(value); err != nil {
 			return nil, err
 		}
+		if _, duplicate := seenKinds[value.Kind]; duplicate {
+			return nil, invalid("workflow_reference_duplicate")
+		}
+		seenKinds[value.Kind] = struct{}{}
 		key := string(value.Kind) + "\x00" + workflowReferenceKey(value)
 		if _, duplicate := seen[key]; duplicate {
 			return nil, invalid("workflow_reference_duplicate")
@@ -190,20 +192,33 @@ func canonicalWorkflowReferences(values []WorkflowReference, operation registry.
 }
 
 func validateWorkflowReferenceRelationships(values []WorkflowReference) error {
-	planIDs := make(map[string]struct{})
+	workspaceIDs := make(map[string]struct{})
 	runIDs := make(map[string]struct{})
 	for _, value := range values {
 		switch value.Kind {
-		case "plan":
-			planIDs[value.PlanID] = struct{}{}
+		case "feature_workspace":
+			workspaceIDs[value.WorkspaceID] = struct{}{}
 		case "run":
 			runIDs[value.RunID] = struct{}{}
 		}
 	}
 	for _, value := range values {
 		switch value.Kind {
+		case "delivery_ticket":
+			if len(workspaceIDs) != 0 {
+				if _, ok := workspaceIDs[value.WorkspaceID]; !ok {
+					return invalid("workflow_reference_relationship")
+				}
+			}
 		case "pass":
-			if _, ok := planIDs[value.PlanID]; !ok {
+			// Legacy retained packet compatibility only.
+			planPresent := false
+			for _, candidate := range values {
+				if candidate.Kind == "plan" && candidate.PlanID == value.PlanID {
+					planPresent = true
+				}
+			}
+			if !planPresent {
 				return invalid("workflow_reference_relationship")
 			}
 		case "audit_packet", "audit_decision":
@@ -220,30 +235,19 @@ func validateWorkflowReferenceRelationships(values []WorkflowReference) error {
 	return nil
 }
 
-func validateWorkflowInputReferences(inputs []InputBinding, references []WorkflowReference) error {
-	for _, input := range inputs {
-		if input.SourceKind != InputSourceWorkflowRecord {
-			continue
-		}
-		if !workflowInputReferencePresent(input.Source.WorkflowReference, references) {
-			return invalid("workflow_record_reference")
-		}
-	}
-	return nil
-}
-
-func workflowInputReferencePresent(record WorkflowReference, references []WorkflowReference) bool {
-	for _, reference := range references {
-		if reference.Kind == record.Kind && reference == record {
-			return true
-		}
-	}
-	return false
-}
-
 func validateWorkflowReference(value WorkflowReference) error {
 	var expected WorkflowReference
 	switch value.Kind {
+	case "feature_workspace":
+		if validateOpaqueID(value.WorkspaceID) != nil || value.WorkspaceVersion < 1 || validateOpaqueID(value.RouteStateID) != nil || value.RouteSequence < 1 || value.RouteWorkspaceVersion < 1 || value.RouteState == "" {
+			return invalid("workflow_reference_feature_workspace")
+		}
+		expected = WorkflowReference{Kind: value.Kind, WorkspaceID: value.WorkspaceID, WorkspaceVersion: value.WorkspaceVersion, RouteStateID: value.RouteStateID, RouteSequence: value.RouteSequence, RouteWorkspaceVersion: value.RouteWorkspaceVersion, RouteState: value.RouteState}
+	case "delivery_ticket":
+		if validateOpaqueID(value.WorkspaceID) != nil || validateOpaqueID(value.TicketID) != nil || value.RevisionID < 1 || value.RevisionNumber < 1 || validateOpaqueID(value.SourceClosureID) != nil {
+			return invalid("workflow_reference_delivery_ticket")
+		}
+		expected = WorkflowReference{Kind: value.Kind, WorkspaceID: value.WorkspaceID, TicketID: value.TicketID, RevisionID: value.RevisionID, RevisionNumber: value.RevisionNumber, SourceClosureID: value.SourceClosureID}
 	case "plan":
 		if validateOpaqueID(value.PlanID) != nil || validateOpaqueID(value.CanonicalArtifactID) != nil || !validSHA256(value.CanonicalArtifactSHA256) {
 			return invalid("workflow_reference_plan")
@@ -280,6 +284,10 @@ func validateWorkflowReference(value WorkflowReference) error {
 
 func workflowReferenceKey(value WorkflowReference) string {
 	switch value.Kind {
+	case "feature_workspace":
+		return value.WorkspaceID
+	case "delivery_ticket":
+		return value.WorkspaceID + "\x00" + value.TicketID
 	case "plan":
 		return value.PlanID
 	case "pass":
@@ -715,7 +723,7 @@ func validateInputSource(value InputSource) error {
 		}
 		expected = InputSource{Kind: value.Kind, ArtifactID: value.ArtifactID}
 	case InputSourceWorkflowRecord:
-		if validateWorkflowReference(value.WorkflowReference) != nil || validateOpaqueID(value.SnapshotArtifactID) != nil || !validSHA256(value.SnapshotSHA256) {
+		if validateWorkflowRecordReference(value.WorkflowReference) != nil || validateOpaqueID(value.SnapshotArtifactID) != nil || !validSHA256(value.SnapshotSHA256) {
 			return invalid("input_source_workflow_record")
 		}
 		expected = InputSource{Kind: value.Kind, WorkflowReference: value.WorkflowReference, SnapshotArtifactID: value.SnapshotArtifactID, SnapshotSHA256: value.SnapshotSHA256}
@@ -729,6 +737,43 @@ func validateInputSource(value InputSource) error {
 	}
 	if !reflect.DeepEqual(value, expected) {
 		return invalid("input_source_closed")
+	}
+	return nil
+}
+
+func validateWorkflowRecordReference(value WorkflowRecordReference) error {
+	var expected WorkflowRecordReference
+	switch value.Kind {
+	case "plan_artifact":
+		if validateOpaqueID(value.PlanID) != nil || validateOpaqueID(value.ArtifactID) != nil || !validSHA256(value.ArtifactSHA256) {
+			return invalid("workflow_record_reference")
+		}
+		expected = WorkflowRecordReference{Kind: value.Kind, PlanID: value.PlanID, ArtifactID: value.ArtifactID, ArtifactSHA256: value.ArtifactSHA256}
+	case "pass_record":
+		if validateOpaqueID(value.PlanID) != nil || validateOpaqueID(value.PassID) != nil || value.PassNumber < 1 {
+			return invalid("workflow_record_reference")
+		}
+		expected = WorkflowRecordReference{Kind: value.Kind, PlanID: value.PlanID, PassID: value.PassID, PassNumber: value.PassNumber}
+	case "run_execution_spec":
+		if validateOpaqueID(value.RunID) != nil || validateOpaqueID(value.ArtifactID) != nil || !validSHA256(value.ArtifactSHA256) {
+			return invalid("workflow_record_reference")
+		}
+		expected = WorkflowRecordReference{Kind: value.Kind, RunID: value.RunID, ArtifactID: value.ArtifactID, ArtifactSHA256: value.ArtifactSHA256}
+	case "audit_packet":
+		if validateOpaqueID(value.RunID) != nil || validateOpaqueID(value.AuditPacketID) != nil || !validSHA256(value.AuditPacketSHA256) {
+			return invalid("workflow_record_reference")
+		}
+		expected = WorkflowRecordReference{Kind: value.Kind, RunID: value.RunID, AuditPacketID: value.AuditPacketID, AuditPacketSHA256: value.AuditPacketSHA256}
+	case "audit_decision":
+		if validateOpaqueID(value.RunID) != nil || validateOpaqueID(value.AuditDecisionID) != nil || (value.Decision != "accepted" && value.Decision != "needs_revision") || validateTimestamp(value.RecordedAt) != nil {
+			return invalid("workflow_record_reference")
+		}
+		expected = WorkflowRecordReference{Kind: value.Kind, RunID: value.RunID, AuditDecisionID: value.AuditDecisionID, Decision: value.Decision, RecordedAt: value.RecordedAt}
+	default:
+		return invalid("workflow_record_reference")
+	}
+	if !reflect.DeepEqual(value, expected) {
+		return invalid("workflow_record_reference_closed")
 	}
 	return nil
 }
@@ -894,7 +939,7 @@ func validateDocumentUTF8(value Document) error {
 		stringsToCheck = append(stringsToCheck, value.PriorPacket.PacketID, value.PriorPacket.PacketSHA256)
 	}
 	for _, reference := range value.WorkflowReferences {
-		stringsToCheck = append(stringsToCheck, string(reference.Kind), reference.PlanID, reference.CanonicalArtifactID, reference.CanonicalArtifactSHA256, reference.PassID, reference.RunID, reference.ExecutionSpecArtifactID, reference.ExecutionSpecSHA256, reference.AuditPacketID, reference.AuditPacketSHA256, reference.AuditDecisionID, reference.Decision, reference.RecordedAt)
+		stringsToCheck = append(stringsToCheck, string(reference.Kind), reference.WorkspaceID, reference.RouteStateID, reference.RouteState, reference.TicketID, reference.SourceClosureID, reference.PlanID, reference.CanonicalArtifactID, reference.CanonicalArtifactSHA256, reference.PassID, reference.RunID, reference.ExecutionSpecArtifactID, reference.ExecutionSpecSHA256, reference.AuditPacketID, reference.AuditPacketSHA256, reference.AuditDecisionID, reference.Decision, reference.RecordedAt)
 	}
 	for _, attestation := range value.Attestations {
 		stringsToCheck = append(stringsToCheck, string(attestation.Kind), attestation.InputName, attestation.SubjectSHA256, attestation.SelectedMode, attestation.ReviewedCandidateSHA256, attestation.ReviewResult)
@@ -905,7 +950,7 @@ func validateDocumentUTF8(value Document) error {
 	for _, input := range value.Inputs {
 		stringsToCheck = append(stringsToCheck, input.InputName, string(input.InputRole), string(input.SourceKind), input.DisplayName, input.MediaType, input.SHA256, string(input.AttestationKind), string(input.Source.Kind), input.Source.ArtifactID, input.Source.SnapshotArtifactID, input.Source.SnapshotSHA256, input.Source.RepositoryBindingID, input.Source.CommitOID, input.Source.TreeOID, input.Source.Path.PathID, input.Source.Path.PathBytesBase64, input.Source.BlobOID)
 		reference := input.Source.WorkflowReference
-		stringsToCheck = append(stringsToCheck, string(reference.Kind), reference.PlanID, reference.CanonicalArtifactID, reference.CanonicalArtifactSHA256, reference.PassID, reference.RunID, reference.ExecutionSpecArtifactID, reference.ExecutionSpecSHA256, reference.AuditPacketID, reference.AuditPacketSHA256, reference.AuditDecisionID, reference.Decision, reference.RecordedAt)
+		stringsToCheck = append(stringsToCheck, reference.Kind, reference.PlanID, reference.PassID, reference.RunID, reference.ArtifactID, reference.ArtifactSHA256, reference.AuditPacketID, reference.AuditPacketSHA256, reference.AuditDecisionID, reference.Decision, reference.RecordedAt)
 	}
 	for _, repository := range value.Repositories {
 		stringsToCheck = append(stringsToCheck, repository.RepositoryKey, repository.RepositoryTarget, repository.RevisionSource, repository.ConfiguredWorkingBranchRef, repository.CommitOID, repository.TreeOID)

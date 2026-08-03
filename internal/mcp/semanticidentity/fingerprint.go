@@ -134,9 +134,38 @@ func validatePacketRequest(
 			return err
 		}
 	}
+	seenReferenceKinds := make(map[string]struct{}, len(workflowReferences))
+	var workspaceID, runID string
 	for _, value := range workflowReferences {
 		if err := validateWorkflowReference(value); err != nil {
 			return err
+		}
+		if _, duplicate := seenReferenceKinds[value.Kind]; duplicate {
+			return ErrInvalidRequestIdentity
+		}
+		seenReferenceKinds[value.Kind] = struct{}{}
+		switch value.Kind {
+		case "feature_workspace":
+			workspaceID = value.WorkspaceID
+		case "delivery_ticket":
+			if workspaceID != "" && workspaceID != value.WorkspaceID {
+				return ErrInvalidRequestIdentity
+			}
+		case "run":
+			runID = value.RunID
+		case "audit_decision":
+			if runID != "" && runID != value.RunID {
+				return ErrInvalidRequestIdentity
+			}
+		}
+	}
+	// Relationships are order-independent.
+	for _, value := range workflowReferences {
+		if value.Kind == "delivery_ticket" && workspaceID != "" && value.WorkspaceID != workspaceID {
+			return ErrInvalidRequestIdentity
+		}
+		if value.Kind == "audit_decision" && runID != "" && value.RunID != runID {
+			return ErrInvalidRequestIdentity
 		}
 	}
 	for _, value := range attestations {
@@ -306,26 +335,21 @@ func validateSourcePath(value SourcePathSelector) error {
 func validateWorkflowReference(value WorkflowReferenceRequest) error {
 	var expected WorkflowReferenceRequest
 	switch value.Kind {
-	case "plan":
-		if !validOpaque(value.PlanID) {
+	case "feature_workspace":
+		if !validOpaque(value.WorkspaceID) {
 			return ErrInvalidRequestIdentity
 		}
-		expected = WorkflowReferenceRequest{Kind: value.Kind, PlanID: value.PlanID}
-	case "pass":
-		if !validOpaque(value.PlanID) || !validOpaque(value.PassID) {
+		expected = WorkflowReferenceRequest{Kind: value.Kind, WorkspaceID: value.WorkspaceID}
+	case "delivery_ticket":
+		if !validOpaque(value.WorkspaceID) || !validOpaque(value.TicketID) {
 			return ErrInvalidRequestIdentity
 		}
-		expected = WorkflowReferenceRequest{Kind: value.Kind, PlanID: value.PlanID, PassID: value.PassID}
+		expected = WorkflowReferenceRequest{Kind: value.Kind, WorkspaceID: value.WorkspaceID, TicketID: value.TicketID}
 	case "run":
 		if !validOpaque(value.RunID) {
 			return ErrInvalidRequestIdentity
 		}
 		expected = WorkflowReferenceRequest{Kind: value.Kind, RunID: value.RunID}
-	case "audit_packet":
-		if !validOpaque(value.RunID) || !validOpaque(value.AuditPacketID) || !validSHA256(value.ExpectedAuditPacketSHA256) {
-			return ErrInvalidRequestIdentity
-		}
-		expected = WorkflowReferenceRequest{Kind: value.Kind, RunID: value.RunID, AuditPacketID: value.AuditPacketID, ExpectedAuditPacketSHA256: value.ExpectedAuditPacketSHA256}
 	case "audit_decision":
 		if !validOpaque(value.RunID) || !validOpaque(value.AuditDecisionID) {
 			return ErrInvalidRequestIdentity
