@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -56,6 +57,48 @@ type repositoryPreparation struct {
 
 type workflowPreparation struct {
 	references []packet.WorkflowReference
+}
+
+type derivedPreparation struct {
+	inputs           []packet.InputBinding
+	currentInputName string
+	currentBytes     []byte
+}
+
+type featureWorkspaceRouteInput struct {
+	WorkspaceID           string `json:"workspace_id"`
+	FeatureSlug           string `json:"feature_slug"`
+	WorkspaceVersion      int64  `json:"workspace_version"`
+	WorkspaceState        string `json:"workspace_state"`
+	RouteStateID          string `json:"route_state_id"`
+	RouteSequence         int64  `json:"route_sequence"`
+	RouteWorkspaceVersion int64  `json:"route_workspace_version"`
+	RouteState            string `json:"route_state"`
+}
+
+type transitionApplicabilityInput struct {
+	WorkspaceID             string `json:"workspace_id"`
+	FeatureSlug             string `json:"feature_slug"`
+	WorkspaceVersion        int64  `json:"workspace_version"`
+	TicketID                string `json:"ticket_id"`
+	RevisionID              int64  `json:"revision_id"`
+	RevisionNumber          int64  `json:"revision_number"`
+	SourceClosureID         string `json:"source_closure_id"`
+	TransitionApplicability string `json:"transition_applicability"`
+}
+
+type selectionIdentityInput struct {
+	WorkspaceID         string `json:"workspace_id"`
+	FeatureSlug         string `json:"feature_slug"`
+	WorkspaceVersion    int64  `json:"workspace_version"`
+	SelectionID         string `json:"selection_id"`
+	SelectionState      string `json:"selection_state"`
+	TicketID            string `json:"ticket_id"`
+	RevisionID          int64  `json:"revision_id"`
+	RevisionNumber      int64  `json:"revision_number"`
+	ApprovalID          string `json:"approval_id"`
+	AuthorityRevisionID string `json:"authority_revision_id"`
+	SourceClosureID     string `json:"source_closure_id"`
 }
 
 type remediationSeedInput struct {
@@ -295,9 +338,12 @@ func (s *LifecycleService) preparePacket(ctx context.Context, request lifecycleR
 	if err != nil {
 		return preparedPacketAuthority{}, err
 	}
-	inputs = append(inputs, derived...)
+	inputs = append(inputs, derived.inputs...)
 	attestations := materializeAttestations(request.attestations)
 	if err := s.revalidateRepositoryAuthority(ctx, operation, repositories, governanceRevision); err != nil {
+		return preparedPacketAuthority{}, err
+	}
+	if err := s.revalidateCurrentPlannerDerivedInput(ctx, operation, workflow, derived); err != nil {
 		return preparedPacketAuthority{}, err
 	}
 
@@ -444,10 +490,10 @@ func (s *LifecycleService) prepareRepositories(ctx context.Context, project work
 }
 
 func (s *LifecycleService) prepareGovernance(ctx context.Context, packetID string, operation registry.OperationDefinition, request lifecycleRequest, repositories repositoryPreparation) (packet.GovernanceBinding, packet.ManifestDomainBinding, []PublicationVaultInput, workflowrepos.ResolvedRevision, error) {
-	if operation.Role == "wayfinder" && operation.ManifestDomain == "" {
-		// Wayfinder bootstrap packets are authorized by the selected Project's
-		// registered repositories. They have no planner/auditor manifest domain
-		// and therefore do not fabricate a second governance identity.
+	if operation.ManifestDomain == "" {
+		// Published manifestless packets, including Wayfinder bootstrap and the
+		// Planner ticket frontier, bind Project repositories without fabricating
+		// a Planner or Auditor governance identity.
 		return packet.GovernanceBinding{}, packet.ManifestDomainBinding{}, nil, workflowrepos.ResolvedRevision{}, nil
 	}
 	manifestPath := governanceManifestPath(operation.Role)
@@ -499,7 +545,7 @@ func (s *LifecycleService) revalidateRepositoryAuthority(ctx context.Context, op
 			return &sourcevault.Error{Code: sourcevault.CodeStaleConfiguredAuthority}
 		}
 	}
-	if operation.Role == "wayfinder" && operation.ManifestDomain == "" {
+	if operation.ManifestDomain == "" {
 		return nil
 	}
 	explicit := ""
@@ -609,19 +655,31 @@ func (s *LifecycleService) materializeInputs(ctx context.Context, operation regi
 	return inputs, vaultEdges, nil
 }
 
-func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operation registry.OperationDefinition, workflow workflowPreparation, builder *retainedBuilder) ([]packet.InputBinding, error) {
+func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operation registry.OperationDefinition, workflow workflowPreparation, builder *retainedBuilder) (derivedPreparation, error) {
 	if len(operation.DerivedInputs) == 0 {
-		return nil, nil
+		return derivedPreparation{}, nil
 	}
-	if operation.OperationID == "planner.delivery_ticket_remediation" {
-		return s.materializeRemediationDerivedInputs(ctx, workflow, builder)
+	switch operation.OperationID {
+	case "planner.delivery_ticket", "planner.ticket_frontier":
+		return s.materializeCurrentPlannerDerivedInput(ctx, operation, workflow, builder, "current_feature_workspace_route", s.loadCurrentFeatureWorkspaceRoute)
+	case "planner.transition_plan":
+		return s.materializeCurrentPlannerDerivedInput(ctx, operation, workflow, builder, "current_transition_applicability", s.loadCurrentTransitionApplicability)
+	case "planner.ticket_design_brief":
+		return s.materializeCurrentPlannerDerivedInput(ctx, operation, workflow, builder, "current_selection_identity", s.loadCurrentSelectionIdentity)
+	case "planner.delivery_ticket_remediation":
+		inputs, err := s.materializeRemediationDerivedInputs(ctx, workflow, builder)
+		return derivedPreparation{inputs: inputs}, err
+	case "planner.ticket_design_brief_remediation":
+		inputs, err := s.materializeRemediationBriefDerivedInputs(ctx, workflow, builder)
+		return derivedPreparation{inputs: inputs}, err
+	case "auditor.audit":
+		return s.materializeAuditDerivedInputs(ctx, operation, workflow, builder)
+	default:
+		return derivedPreparation{}, &Error{Code: CodeInvalidPacketDocument}
 	}
-	if operation.OperationID == "planner.ticket_design_brief_remediation" {
-		return s.materializeRemediationBriefDerivedInputs(ctx, workflow, builder)
-	}
-	if operation.OperationID != "auditor.audit" {
-		return nil, &Error{Code: CodeInvalidPacketDocument}
-	}
+}
+
+func (s *LifecycleService) materializeAuditDerivedInputs(ctx context.Context, operation registry.OperationDefinition, workflow workflowPreparation, builder *retainedBuilder) (derivedPreparation, error) {
 	var runReference packet.WorkflowReference
 	for _, value := range workflow.references {
 		if value.Kind == "run" {
@@ -630,38 +688,255 @@ func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operati
 		}
 	}
 	if runReference.RunID == "" {
-		return nil, &Error{Code: CodeInvalidPacketDocument}
+		return derivedPreparation{}, &Error{Code: CodeInvalidPacketDocument}
 	}
 	run, err := s.store.GetRunByRunID(ctx, runReference.RunID)
 	if err != nil {
-		return nil, err
+		return derivedPreparation{}, err
 	}
 	auditPacket, err := s.store.GetCurrentAuditPacketByRun(ctx, run.ID)
 	if err != nil {
-		return nil, err
+		return derivedPreparation{}, err
 	}
 	artifact, err := s.store.GetArtifactByRowID(ctx, auditPacket.ArtifactRowID)
 	if err != nil {
-		return nil, err
+		return derivedPreparation{}, err
 	}
 	data, err := readWorkflowArtifact(s.store, artifact)
 	if err != nil {
-		return nil, err
+		return derivedPreparation{}, err
 	}
 	sections, err := auditDerivedSections(data)
 	if err != nil {
-		return nil, &Error{Code: CodeInvalidPacketDocument}
+		return derivedPreparation{}, &Error{Code: CodeInvalidPacketDocument}
 	}
 	inputs := make([]packet.InputBinding, 0, len(operation.DerivedInputs))
 	for _, slot := range operation.DerivedInputs {
 		section, ok := sections[slot.InputName]
 		if !ok {
-			return nil, &Error{Code: CodeInvalidPacketDocument}
+			return derivedPreparation{}, &Error{Code: CodeInvalidPacketDocument}
 		}
 		artifactID := builder.add(workflowstore.OperationPacketRetainedArtifactWorkflowSnapshot, "application/json", section, workflowstore.OperationPacketDependencyWorkflowSnapshot, slot.InputName)
 		inputs = append(inputs, packet.InputBinding{InputName: slot.InputName, InputRole: slot.InputRole, SourceKind: packet.InputSourceInlineText, DisplayName: slot.InputName + ".json", MediaType: "application/json", SHA256: digestBytes(section), SizeBytes: int64(len(section)), AttestationKind: slot.AttestationKind, Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: artifactID}})
 	}
-	return inputs, nil
+	return derivedPreparation{inputs: inputs}, nil
+}
+
+type currentPlannerDerivedLoader func(context.Context, workflowPreparation) (string, []byte, error)
+
+func (s *LifecycleService) materializeCurrentPlannerDerivedInput(ctx context.Context, operation registry.OperationDefinition, workflow workflowPreparation, builder *retainedBuilder, expectedName string, loader currentPlannerDerivedLoader) (derivedPreparation, error) {
+	name, data, err := loader(ctx, workflow)
+	if err != nil || name != expectedName {
+		return derivedPreparation{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	input, err := publishCurrentPlannerDerivedInput(operation, expectedName, data, builder)
+	if err != nil {
+		return derivedPreparation{}, err
+	}
+	return derivedPreparation{inputs: []packet.InputBinding{input}, currentInputName: name, currentBytes: append([]byte(nil), data...)}, nil
+}
+
+func publishCurrentPlannerDerivedInput(operation registry.OperationDefinition, expectedName string, data []byte, builder *retainedBuilder) (packet.InputBinding, error) {
+	if len(operation.DerivedInputs) != 1 {
+		return packet.InputBinding{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	slot := operation.DerivedInputs[0]
+	if slot.InputName != expectedName || slot.WorkflowRecordPolicy != "derived" || len(slot.AllowedSourceKinds) != 0 || slot.AttestationKind != "derived_authority" {
+		return packet.InputBinding{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	artifactID := builder.add(workflowstore.OperationPacketRetainedArtifactWorkflowSnapshot, "application/json", data, workflowstore.OperationPacketDependencyWorkflowSnapshot, slot.InputName)
+	return packet.InputBinding{InputName: slot.InputName, InputRole: slot.InputRole, SourceKind: packet.InputSourceInlineText, DisplayName: slot.InputName + ".json", MediaType: "application/json", SHA256: digestBytes(data), SizeBytes: int64(len(data)), AttestationKind: slot.AttestationKind, Source: packet.InputSource{Kind: packet.InputSourceInlineText, ArtifactID: artifactID}}, nil
+}
+
+func requiredWorkflowReference(workflow workflowPreparation, kind registry.WorkflowReferenceKind) (packet.WorkflowReference, error) {
+	var found packet.WorkflowReference
+	count := 0
+	for _, reference := range workflow.references {
+		if reference.Kind == kind {
+			found = reference
+			count++
+		}
+	}
+	if count != 1 {
+		return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var expected packet.WorkflowReference
+	switch kind {
+	case "feature_workspace":
+		if found.WorkspaceID == "" || found.WorkspaceVersion < 1 || found.RouteStateID == "" || found.RouteSequence < 1 || found.RouteWorkspaceVersion < 1 || found.RouteState == "" {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		expected = packet.WorkflowReference{Kind: kind, WorkspaceID: found.WorkspaceID, WorkspaceVersion: found.WorkspaceVersion, RouteStateID: found.RouteStateID, RouteSequence: found.RouteSequence, RouteWorkspaceVersion: found.RouteWorkspaceVersion, RouteState: found.RouteState}
+	case "delivery_ticket":
+		if found.WorkspaceID == "" || found.TicketID == "" || found.RevisionID < 1 || found.RevisionNumber < 1 || found.SourceClosureID == "" {
+			return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+		}
+		expected = packet.WorkflowReference{Kind: kind, WorkspaceID: found.WorkspaceID, TicketID: found.TicketID, RevisionID: found.RevisionID, RevisionNumber: found.RevisionNumber, SourceClosureID: found.SourceClosureID}
+	default:
+		return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if found != expected {
+		return packet.WorkflowReference{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	return found, nil
+}
+
+func (s *LifecycleService) loadCurrentFeatureWorkspaceRoute(ctx context.Context, workflow workflowPreparation) (string, []byte, error) {
+	reference, err := requiredWorkflowReference(workflow, "feature_workspace")
+	if err != nil {
+		return "", nil, err
+	}
+	workspace, route, err := s.loadReferencedReadyWorkspaceRoute(ctx, reference)
+	if err != nil {
+		return "", nil, err
+	}
+	data, err := canonicalJSON(featureWorkspaceRouteInput{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, WorkspaceVersion: workspace.Version, WorkspaceState: workspace.State, RouteStateID: route.RouteStateID, RouteSequence: route.Sequence, RouteWorkspaceVersion: route.WorkspaceVersion, RouteState: route.State})
+	return "current_feature_workspace_route", data, err
+}
+
+func (s *LifecycleService) loadReferencedReadyWorkspaceRoute(ctx context.Context, reference packet.WorkflowReference) (workflowstore.FeatureWorkspace, workflowstore.FeatureWorkspaceRouteState, error) {
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, reference.WorkspaceID)
+	if err != nil || workspace.WorkspaceID != reference.WorkspaceID || workspace.FeatureSlug == "" || workspace.State != "open" || workspace.Version < 1 || !workspace.CurrentRouteStateRowID.Valid {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	route, err := s.store.GetFeatureWorkspaceRouteStateByRowID(ctx, workspace.CurrentRouteStateRowID.Int64)
+	if err != nil || route.WorkspaceRowID != workspace.ID || route.ID != workspace.CurrentRouteStateRowID.Int64 || route.RouteStateID != reference.RouteStateID || route.Sequence != reference.RouteSequence || route.WorkspaceVersion != reference.RouteWorkspaceVersion || route.State != reference.RouteState || workspace.Version != reference.WorkspaceVersion || route.WorkspaceVersion != workspace.Version || route.State != "ready" {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	return workspace, route, nil
+}
+
+func (s *LifecycleService) loadCurrentTransitionApplicability(ctx context.Context, workflow workflowPreparation) (string, []byte, error) {
+	workspaceReference, ticketReference, workspace, ticket, revision, closure, err := s.loadCurrentReferencedTicket(ctx, workflow)
+	_ = workspaceReference
+	if err != nil || revision.TransitionApplicability != "required" {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	data, err := canonicalJSON(transitionApplicabilityInput{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, WorkspaceVersion: workspace.Version, TicketID: ticket.TicketID, RevisionID: revision.ID, RevisionNumber: revision.RevisionNumber, SourceClosureID: closure.ClosureID, TransitionApplicability: revision.TransitionApplicability})
+	if ticketReference.TicketID != ticket.TicketID {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	return "current_transition_applicability", data, err
+}
+
+func (s *LifecycleService) loadCurrentReferencedTicket(ctx context.Context, workflow workflowPreparation) (packet.WorkflowReference, packet.WorkflowReference, workflowstore.FeatureWorkspace, workflowstore.DeliveryTicket, workflowstore.DeliveryTicketRevision, workflowstore.SourceVaultClosure, error) {
+	workspaceReference, err := requiredWorkflowReference(workflow, "feature_workspace")
+	if err != nil {
+		return packet.WorkflowReference{}, packet.WorkflowReference{}, workflowstore.FeatureWorkspace{}, workflowstore.DeliveryTicket{}, workflowstore.DeliveryTicketRevision{}, workflowstore.SourceVaultClosure{}, err
+	}
+	ticketReference, err := requiredWorkflowReference(workflow, "delivery_ticket")
+	if err != nil || workspaceReference.WorkspaceID != ticketReference.WorkspaceID {
+		return packet.WorkflowReference{}, packet.WorkflowReference{}, workflowstore.FeatureWorkspace{}, workflowstore.DeliveryTicket{}, workflowstore.DeliveryTicketRevision{}, workflowstore.SourceVaultClosure{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	workspace, _, err := s.loadReferencedReadyWorkspaceRoute(ctx, workspaceReference)
+	if err != nil {
+		return packet.WorkflowReference{}, packet.WorkflowReference{}, workflowstore.FeatureWorkspace{}, workflowstore.DeliveryTicket{}, workflowstore.DeliveryTicketRevision{}, workflowstore.SourceVaultClosure{}, err
+	}
+	ticket, err := s.store.GetDeliveryTicketByTicketID(ctx, ticketReference.TicketID)
+	if err != nil || ticket.WorkspaceRowID != workspace.ID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != ticketReference.RevisionID {
+		return packet.WorkflowReference{}, packet.WorkflowReference{}, workflowstore.FeatureWorkspace{}, workflowstore.DeliveryTicket{}, workflowstore.DeliveryTicketRevision{}, workflowstore.SourceVaultClosure{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	revision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, ticketReference.RevisionID)
+	if err != nil || revision.DeliveryTicketRowID != ticket.ID || revision.ID != ticketReference.RevisionID || revision.RevisionNumber != ticketReference.RevisionNumber || revision.CancellationReason.Valid || revision.SourceClosureRowID < 1 {
+		return packet.WorkflowReference{}, packet.WorkflowReference{}, workflowstore.FeatureWorkspace{}, workflowstore.DeliveryTicket{}, workflowstore.DeliveryTicketRevision{}, workflowstore.SourceVaultClosure{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	closure, err := s.store.GetSourceVaultClosureByRowID(ctx, revision.SourceClosureRowID)
+	if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.ClosureID == "" || closure.ClosureID != ticketReference.SourceClosureID {
+		return packet.WorkflowReference{}, packet.WorkflowReference{}, workflowstore.FeatureWorkspace{}, workflowstore.DeliveryTicket{}, workflowstore.DeliveryTicketRevision{}, workflowstore.SourceVaultClosure{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	return workspaceReference, ticketReference, workspace, ticket, revision, closure, nil
+}
+
+func (s *LifecycleService) loadCurrentSelectionIdentity(ctx context.Context, workflow workflowPreparation) (string, []byte, error) {
+	_, _, workspace, ticket, revision, closure, err := s.loadCurrentReferencedTicket(ctx, workflow)
+	if err != nil || !workspace.CurrentAuthorityRevisionRowID.Valid {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	authority, err := s.store.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+	if err != nil || authority.WorkspaceRowID != workspace.ID || authority.AuthorityRevisionID == "" || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != revision.SourceClosureRowID {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	selections, err := s.store.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var selection workflowstore.DeliveryTicketSelection
+	for _, candidate := range selections {
+		if candidate.State == "active" {
+			if selection.ID != 0 {
+				return "", nil, &Error{Code: CodeInvalidPacketDocument}
+			}
+			selection = candidate
+		}
+	}
+	if selection.ID == 0 || selection.WorkspaceRowID != workspace.ID || selection.SelectionID == "" || !selection.SourceClosureRowID.Valid || selection.SourceClosureRowID.Int64 != revision.SourceClosureRowID {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	members, err := s.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+	if err != nil || len(members) != 1 || members[0].SelectionRowID != selection.ID || members[0].Sequence != 1 || members[0].RevisionRowID != revision.ID || members[0].ApprovalRowID < 1 {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	approvals, err := s.store.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
+	if err != nil {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	var approval workflowstore.DeliveryTicketRevisionApproval
+	for _, candidate := range approvals {
+		if candidate.ID == members[0].ApprovalRowID {
+			approval = candidate
+			break
+		}
+	}
+	if approval.ID == 0 || approval.RevisionRowID != revision.ID || approval.ApprovalKind != "delivery" || approval.ApprovalState != "approved" || approval.ApprovalID == "" || approval.SourceClosureRowID != revision.SourceClosureRowID || !approval.AuthorityRevisionRowID.Valid || approval.AuthorityRevisionRowID.Int64 != authority.ID {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	dependencies, err := s.store.ListDeliveryTicketRevisionDependencies(ctx, revision.ID)
+	if err != nil {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	for _, dependency := range dependencies {
+		if dependency.Outcome != "satisfied" {
+			return "", nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		dependencyRevision, loadErr := s.store.GetDeliveryTicketRevisionByRowID(ctx, dependency.DependsOnRevisionRowID)
+		if loadErr != nil {
+			return "", nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		dependencyTicket, loadErr := s.store.GetDeliveryTicketByRowID(ctx, dependencyRevision.DeliveryTicketRowID)
+		if loadErr != nil || dependencyTicket.WorkspaceRowID != workspace.ID || !dependencyTicket.CurrentRevisionRowID.Valid || dependencyTicket.CurrentRevisionRowID.Int64 != dependencyRevision.ID {
+			return "", nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+		if _, loadErr = s.store.GetDeliveryTicketRevisionSatisfaction(ctx, dependencyRevision.ID); loadErr != nil {
+			return "", nil, &Error{Code: CodeInvalidPacketDocument}
+		}
+	}
+	if _, err = s.store.GetDeliveryTicketRevisionSatisfaction(ctx, revision.ID); err == nil || !errors.Is(err, sql.ErrNoRows) {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	}
+	data, err := canonicalJSON(selectionIdentityInput{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, WorkspaceVersion: workspace.Version, SelectionID: selection.SelectionID, SelectionState: selection.State, TicketID: ticket.TicketID, RevisionID: revision.ID, RevisionNumber: revision.RevisionNumber, ApprovalID: approval.ApprovalID, AuthorityRevisionID: authority.AuthorityRevisionID, SourceClosureID: closure.ClosureID})
+	return "current_selection_identity", data, err
+}
+
+func (s *LifecycleService) revalidateCurrentPlannerDerivedInput(ctx context.Context, operation registry.OperationDefinition, workflow workflowPreparation, prepared derivedPreparation) error {
+	if prepared.currentInputName == "" {
+		return nil
+	}
+	var loader currentPlannerDerivedLoader
+	switch operation.OperationID {
+	case "planner.delivery_ticket", "planner.ticket_frontier":
+		loader = s.loadCurrentFeatureWorkspaceRoute
+	case "planner.transition_plan":
+		loader = s.loadCurrentTransitionApplicability
+	case "planner.ticket_design_brief":
+		loader = s.loadCurrentSelectionIdentity
+	default:
+		return &Error{Code: CodeInvalidPacketDocument}
+	}
+	name, data, err := loader(ctx, workflow)
+	if err != nil || name != prepared.currentInputName || !bytes.Equal(data, prepared.currentBytes) {
+		return &Error{Code: CodeInvalidPacketDocument}
+	}
+	return nil
 }
 
 func (s *LifecycleService) materializeRemediationDerivedInputs(ctx context.Context, workflow workflowPreparation, builder *retainedBuilder) ([]packet.InputBinding, error) {
