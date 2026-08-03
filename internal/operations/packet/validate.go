@@ -117,7 +117,7 @@ func validateAndCanonicalize(input Document) (Document, registry.OperationDefini
 	if err != nil {
 		return Document{}, registry.OperationDefinition{}, err
 	}
-	if operation.Role == "wayfinder" && operation.ManifestDomain == "" {
+	if operation.ManifestDomain == "" {
 		if input.RelaySpecs.RepositoryKey != "" || input.RelaySpecs.RepositoryTarget != "" || input.RelaySpecs.CommitOID != "" || input.ManifestDomain.ManifestBlobOID != "" || input.ManifestDomain.Domain != "" || len(input.ManifestDomain.Members) != 0 {
 			return Document{}, registry.OperationDefinition{}, invalid("wayfinder_governance")
 		}
@@ -637,7 +637,7 @@ func canonicalRepositories(values []RepositoryBinding, operation registry.Operat
 
 func historicalAnchorPolicy(policy registry.HistoricalAuthorityPolicy) ([]registry.AnchorPurpose, []registry.AnchorPurpose, error) {
 	switch policy {
-	case "none", "explicit_comparison_anchors":
+	case "none", "explicit_comparison_anchors", "current_authority_only", "selected_ticket_revision", "selected_ticket_and_completed_dependencies":
 		return nil, nil, nil
 	case "plan_and_completed_dependency_anchors":
 		return []registry.AnchorPurpose{"plan_base"}, []registry.AnchorPurpose{"plan_base", "completed_dependency"}, nil

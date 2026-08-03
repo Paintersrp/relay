@@ -13,7 +13,7 @@ import (
 	"relay/internal/operations/registry"
 )
 
-func TestCanonicalPacketGoldenMatrix(t *testing.T) {
+func TestCanonicalWorkflowReferenceShapes(t *testing.T) {
 	tests := []struct {
 		name      string
 		reference WorkflowReference
@@ -33,6 +33,78 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 			writeWorkflowReference(&output, test.reference)
 			if output.String() != test.want {
 				t.Fatalf("canonical reference = %s, want %s", output.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestCanonicalPacketGoldenMatrix(t *testing.T) {
+	golden := map[registry.OperationID]string{
+		"wayfinder.workspace":                     "822db2c1bc5d93adf971a2ab617f0de6ad616a13051b3d3c47d0052c919aefdf",
+		"wayfinder.discovery":                     "f641316670fa8fd20c097b10cda24789917964370cc135c749df4b0df90bfd0d",
+		"wayfinder.investigation":                 "3bf06b1487f8293745b66d3c392dd2394f4c8f4eea0b2a57aa92e6bfb1a75892",
+		"planner.requirements":                    "1a93a39c76b23b6e97f5bed93ab6f417cfe74d7904341e2475a07a547f6ff56a",
+		"planner.shared_design":                   "614ec5e463328d41eaf7dd88760eac6316b79d896c6fdc3f73a34668c5005b35",
+		"planner.delivery_ticket":                 "ff5398edf99b1d3f777ed332314c6a2b543096dd9a8848855701dca45a406e2f",
+		"planner.transition_plan":                 "a9b62500699a4a698c01c82cde227fbc58218bff2bdc3f4d8209584df90eae4e",
+		"planner.ticket_design_brief":             "58aba60d602bce04c897df9e3a1a0ac85747c0f417f2a74cbb1467151d5ea6ae",
+		"planner.ticket_design_brief_remediation": "bdb3f92a845fc7cefb56316b9d18f7db61fc8f65c323f766b4c9cdc3e5ca7108",
+		"planner.delivery_ticket_remediation":     "548885cf95fad1d6d6a62d5e2fb01c0087361054ea9160ac4b6ec831a29b8f67",
+		"planner.ticket_frontier":                 "cc2543f6c137b72f02a10ede96a274eb040aa879cf813446d58a81e86934332a",
+		"auditor.requirements_review":             "6dc8b3ce1b0f986da3bf02e567722a85d51b1365d43c23b3ec85a380fbb00ed7",
+		"auditor.shared_design_review":            "d4e8083e5ef32b707cdf8c51b58393ad5b126cf064edcb086410b1fabbba2d54",
+		"auditor.delivery_ticket_review":          "a6c040fadad2b49e3e5216622ef5461f498328d95e6b8b358a6800d90f55901f",
+		"auditor.transition_plan_review":          "de2d11931658dde282c9ea4b9dbb4172b88ff7d6a2b66115bded7f4d645d9824",
+		"auditor.ticket_design_brief_review":      "89fe39f5d25e30d3034de3f398a0f8242af360200f37dc5cf400967a3f63ed40",
+		"auditor.audit":                           "a9e055f4b9fde3e17f848309926937a9ffbf554cb80efeac7d5e6f9a71d4f0b3",
+	}
+
+	operations, err := registry.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != len(golden) {
+		t.Fatalf("published registry has %d operations, golden matrix has %d", len(operations), len(golden))
+	}
+	published := make(map[registry.OperationID]struct{}, len(operations))
+	for _, operation := range operations {
+		published[operation.OperationID] = struct{}{}
+	}
+	for operationID := range golden {
+		if _, ok := published[operationID]; !ok {
+			t.Fatalf("golden matrix contains unpublished operation %q", operationID)
+		}
+	}
+
+	for _, operation := range operations {
+		operationID := operation.OperationID
+		t.Run(string(operationID), func(t *testing.T) {
+			expectedSHA256, ok := golden[operationID]
+			if !ok {
+				t.Fatalf("published operation %q is missing from golden matrix", operationID)
+			}
+			first, err := NewSnapshot(goldenDocument(t, operation))
+			if err != nil {
+				t.Fatalf("first snapshot: %v", err)
+			}
+			second, err := NewSnapshot(goldenDocument(t, operation))
+			if err != nil {
+				t.Fatalf("second snapshot: %v", err)
+			}
+			if !bytes.Equal(first.Bytes(), second.Bytes()) {
+				t.Fatal("canonical packet bytes differ between constructions")
+			}
+			if first.SHA256() != second.SHA256() {
+				t.Fatalf("canonical packet SHA-256 differs: %s != %s", first.SHA256(), second.SHA256())
+			}
+			if first.SHA256() != expectedSHA256 {
+				t.Fatalf("canonical packet SHA-256 = %s, want %s", first.SHA256(), expectedSHA256)
+			}
+			if first.SizeBytes() != int64(len(first.Bytes())) {
+				t.Fatalf("packet size = %d, encoded length = %d", first.SizeBytes(), len(first.Bytes()))
+			}
+			if first.MediaType() != MediaType {
+				t.Fatalf("packet media type = %q, want %q", first.MediaType(), MediaType)
 			}
 		})
 	}
@@ -264,10 +336,10 @@ func goldenDocument(t *testing.T, op registry.OperationDefinition) Document {
 		Repositories:          []RepositoryBinding{{RepositoryKey: "relay", RepositoryTarget: "relay", BindingOrder: 1, RevisionSource: RevisionSourceExplicitCommit, RepositoryTargetConfigurationVersion: 1, CommitOID: strings.Repeat("1", 40), TreeOID: strings.Repeat("2", 40)}},
 		RelaySpecs:            GovernanceBinding{RepositoryKey: "relay-specs", RepositoryTarget: "relay-specs", Reserved: true, RevisionSource: RevisionSourceExplicitCommit, RepositoryTargetConfigurationVersion: 1, CommitOID: strings.Repeat("a", 40), TreeOID: strings.Repeat("b", 40)},
 		ManifestDomain:        ManifestDomainBinding{ManifestPath: goldenPath("auditor-source-manifest.json"), ManifestBlobOID: strings.Repeat("c", 40), ManifestSHA256: strings.Repeat("d", 64), Domain: op.ManifestDomain, Members: []ManifestMember{{MemberOrder: 1, Path: goldenPath("contracts/cross-cutting.md"), BlobOID: strings.Repeat("e", 40), ByteSize: 123, SHA256: strings.Repeat("f", 64)}}},
-		SourcePolicy:          op.SourcePolicy, HistoricalAuthority: op.HistoricalAuthority,
+		SourcePolicy:          goldenSourcePolicy(op.SourcePolicy), HistoricalAuthority: op.HistoricalAuthority,
 		AllowedActions: append([]registry.AllowedAction(nil), op.AllowedNonSourceActions...), ReadinessState: ReadinessReady,
 	}
-	if op.Role == "wayfinder" && op.ManifestDomain == "" {
+	if op.ManifestDomain == "" {
 		d.RelaySpecs = GovernanceBinding{}
 		d.ManifestDomain = ManifestDomainBinding{}
 	}
@@ -301,18 +373,13 @@ func goldenRef(kind registry.WorkflowReferenceKind, suffix string) WorkflowRefer
 		return WorkflowReference{Kind: kind, WorkspaceID: "workspace-" + suffix, WorkspaceVersion: 2, RouteStateID: "route-" + suffix, RouteSequence: 1, RouteWorkspaceVersion: 1, RouteState: "ready"}
 	case "delivery_ticket":
 		return WorkflowReference{Kind: kind, WorkspaceID: "workspace-" + suffix, TicketID: "ticket-" + suffix, RevisionID: 1, RevisionNumber: 1, SourceClosureID: "closure-" + suffix}
-	case "plan":
-		return WorkflowReference{Kind: kind, PlanID: "plan-" + suffix, CanonicalArtifactID: "artifact-plan-" + suffix, CanonicalArtifactSHA256: strings.Repeat("1", 64)}
-	case "pass":
-		return WorkflowReference{Kind: kind, PlanID: "plan-" + suffix, PassID: "pass-" + suffix, PassNumber: 1}
 	case "run":
 		return WorkflowReference{Kind: kind, RunID: "run-" + suffix, ExecutionSpecArtifactID: "artifact-spec-" + suffix, ExecutionSpecSHA256: strings.Repeat("2", 64)}
-	case "audit_packet":
-		return WorkflowReference{Kind: kind, RunID: "run-" + suffix, AuditPacketID: "audit-packet-" + suffix, AuditPacketSHA256: strings.Repeat("3", 64)}
 	case "audit_decision":
 		return WorkflowReference{Kind: kind, RunID: "run-" + suffix, AuditDecisionID: "audit-decision-" + suffix, Decision: "needs_revision", RecordedAt: "2026-07-15T16:04:05.123456789Z"}
+	default:
+		panic("unknown workflow-reference kind: " + string(kind))
 	}
-	return WorkflowReference{Kind: kind}
 }
 func goldenInput(slot registry.InputSlotDefinition, fileIndex int64, refs []WorkflowReference, index int) InputBinding {
 	kind := registry.InputSourceKind("")
@@ -327,6 +394,9 @@ func goldenInput(slot registry.InputSlotDefinition, fileIndex int64, refs []Work
 		if kind != "" {
 			break
 		}
+	}
+	if kind == "" {
+		panic("input slot has no supported source kind: " + slot.InputName)
 	}
 	source := InputSource{Kind: kind}
 	switch kind {
@@ -404,6 +474,8 @@ func goldenAtt(slot registry.InputSlotDefinition, input InputBinding) Attestatio
 		a.Complete = true
 	case "operator_confirmation", "separate_session_authorship":
 		a.Confirmed = true
+	default:
+		panic("unknown attestation kind: " + string(slot.AttestationKind))
 	}
 	return a
 }
@@ -422,8 +494,9 @@ func refForPolicy(policy string, refs []WorkflowReference) WorkflowRecordReferen
 		return WorkflowRecordReference{Kind: "audit_decision", RunID: "run-1", AuditDecisionID: "audit-decision-1", Decision: "needs_revision", RecordedAt: "2026-07-15T16:04:05.123456789Z"}
 	case "artifact", "plan_artifact":
 		return WorkflowRecordReference{Kind: "plan_artifact", PlanID: "plan-1", ArtifactID: "artifact-plan-1", ArtifactSHA256: strings.Repeat("1", 64)}
+	default:
+		panic("unknown workflow-record policy: " + policy)
 	}
-	return WorkflowRecordReference{}
 }
 func requiredPurposes(policy registry.HistoricalAuthorityPolicy) []registry.AnchorPurpose {
 	switch policy {
@@ -437,8 +510,19 @@ func requiredPurposes(policy registry.HistoricalAuthorityPolicy) []registry.Anch
 		return []registry.AnchorPurpose{"run_base", "audited_commit"}
 	case "candidate_audited_and_run_base_anchors":
 		return []registry.AnchorPurpose{"reviewed_source_basis", "run_base", "audited_commit"}
+	case "none", "explicit_comparison_anchors", "current_authority_only", "selected_ticket_revision", "selected_ticket_and_completed_dependencies", "audited_ticket_and_current_authority", "remediation_ticket_and_current_authority":
+		return nil
+	default:
+		panic("unknown historical-authority policy: " + string(policy))
 	}
-	return nil
+}
+func goldenSourcePolicy(policy registry.SourcePolicy) registry.SourcePolicy {
+	switch policy {
+	case "current_clean_project_required_source", "current_clean_project_optional_source", "current_workspace_route", "exact_packet_source_basis_optional_source", "exact_review_source_basis", "authoritative_run_audit_packet":
+		return policy
+	default:
+		panic("unknown source policy: " + string(policy))
+	}
 }
 func goldenPath(s string) PathIdentity {
 	b := []byte(s)
