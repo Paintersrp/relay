@@ -13,6 +13,7 @@ import (
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 type submissionFixture struct {
@@ -24,12 +25,8 @@ type submissionFixture struct {
 
 func newSubmissionFixture(t *testing.T) *submissionFixture {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	repositoryPath := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repositoryPath, 0o755); err != nil {
 		t.Fatal(err)

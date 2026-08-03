@@ -13,12 +13,7 @@ import (
 
 func TestWorkflowReadModelsResolveProjectWithoutGatingArchivedPlans(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store, root := openApplicationWorkflowStore(t)
 	repositoryPath := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repositoryPath, 0o755); err != nil {
 		t.Fatal(err)

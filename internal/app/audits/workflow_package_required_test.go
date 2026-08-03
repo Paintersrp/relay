@@ -13,16 +13,13 @@ import (
 
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestWorkflowAuditPackageRequiredRejectsNonPackageRunWithoutEffects(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	repoPath := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"relay/internal/testsupport/workflowfixture"
+
 	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowgenerated "relay/internal/store/workflowgenerated"
 )
@@ -502,13 +504,8 @@ func createConstraintRun(t *testing.T, ctx context.Context, store *Store, runID 
 
 func openWorkflowTestStore(t *testing.T) (*Store, string) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store, root
+	store := workflowfixture.Open(t, Open)
+	return store, filepath.Dir(store.ArtifactStore().Root())
 }
 
 func assertWorkflowCount(t *testing.T, db *sql.DB, table string, want int64) {

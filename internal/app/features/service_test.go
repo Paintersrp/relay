@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	workflowtickets "relay/internal/app/tickets"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestAuthorityPublicationKeepsReplacementHistoryAndAllowsNoAuthority(t *testing.T) {
@@ -218,12 +218,7 @@ func (ids *featureTestIDs) DiscoveryRevisionID() string {
 
 func openFeatureServiceStore(t *testing.T, ctx context.Context) (*workflowstore.Store, int64, int64) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
 	var projectID, planID, first, second int64
 	if err := store.DB().QueryRowContext(ctx, `INSERT INTO projects (project_id, name) VALUES ('project-feature-service', 'Features') RETURNING id`).Scan(&projectID); err != nil {
 		t.Fatal(err)

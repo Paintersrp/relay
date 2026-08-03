@@ -20,6 +20,7 @@ import (
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 const workflowPackageEvidenceOperations = `{"schema_version":"1.0","feature_slug":"checkout","repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`
@@ -126,12 +127,7 @@ func packageEvidenceOutcomeInput(runID string, mode executor.EffectiveExecutorBr
 
 func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage string) *packageEvidenceFixture {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
 	ctx := context.Background()
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)

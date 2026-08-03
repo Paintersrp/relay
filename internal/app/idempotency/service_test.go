@@ -15,6 +15,7 @@ import (
 	"relay/internal/mcp/semanticidentity"
 	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 type countingStore struct {
@@ -112,11 +113,7 @@ func TestCommitArtifactBatchCommitsAndRollsBackDomainAndMutationTogether(t *test
 	ctx := context.Background()
 	dir := t.TempDir()
 	artifactRoot := filepath.Join(dir, "artifacts")
-	store, err := workflowstore.Open(filepath.Join(dir, "workflow.db"), artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.OpenAt(t, filepath.Join(dir, "workflow.db"), artifactRoot, workflowstore.Open)
 	service := mustService(t, store)
 
 	successInput := validPacketInput(t, "mutation-artifact-success", validPacketRequest("project-artifact-success"))
@@ -187,10 +184,7 @@ func TestResolveReplayConflictRestartAndResponseWriteRecovery(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "workflow.db")
 	artifactRoot := filepath.Join(dir, "artifacts")
-	store, err := workflowstore.Open(dbPath, artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := workflowfixture.OpenAt(t, dbPath, artifactRoot, workflowstore.Open)
 	service := mustService(t, store)
 	input := validPacketInput(t, "mutation-replay", validPacketRequest("project-replay"))
 
@@ -427,12 +421,7 @@ func TestServiceRejectsKeyFingerprintAndStoredResultCorruption(t *testing.T) {
 
 func openStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.db"), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.Open(t, workflowstore.Open)
 }
 
 func validPacketInput(t *testing.T, mutationID string, request semanticidentity.CreateOperationPacket) RecordSuccessInput {

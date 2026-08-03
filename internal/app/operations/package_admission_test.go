@@ -2,7 +2,6 @@ package operations
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +9,7 @@ import (
 	"relay/internal/executor"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 type fakePackageWorkflowOwner struct {
@@ -37,11 +37,7 @@ func (fakeMutationLeaseReconciler) ReconcileMutationLease(context.Context, strin
 }
 
 func TestPackageWorkflowPrepareDelegatesDirectly(t *testing.T) {
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.sqlite"), filepath.Join(t.TempDir(), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
 	owner := &fakePackageWorkflowOwner{detail: packages.Detail{Package: workflowstore.ExecutionPackage{PackageID: "package-1", PackageSha256: strings.Repeat("a", 64)}}}
 	service, err := NewPackageWorkflowService(owner, fakeMutationLeaseReconciler{}, store)
 	if err != nil {

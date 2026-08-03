@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"testing"
 
+	"relay/internal/testsupport/workflowfixture"
+
 	workflowartifacts "relay/internal/artifacts/workflow"
 )
 
@@ -143,13 +145,7 @@ func TestOperationPacketPublicationRejectsEarlyMarkerAndPostMarkerChild(t *testi
 
 func openPublicationStore(t *testing.T) *Store {
 	t.Helper()
-	directory := t.TempDir()
-	store, err := Open(filepath.Join(directory, "workflow.db"), filepath.Join(directory, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.Open(t, Open)
 }
 
 func sealedPacketPublication(t *testing.T, store *Store, publicationID string) (*workflowartifacts.PublicationBatch, workflowartifacts.File) {

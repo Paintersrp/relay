@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 // Plan and Pass writes are retired. The service keeps exactly one read-only
@@ -87,13 +88,8 @@ func TestGetPlanRejectsUnknownAndBlankPlanID(t *testing.T) {
 
 func openPlanTestStore(t *testing.T) (*workflowstore.Store, string) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store, root
+	store := workflowfixture.Open(t, workflowstore.Open)
+	return store, filepath.Dir(store.ArtifactStore().Root())
 }
 
 func createPlanTestProject(t *testing.T, ctx context.Context, store *workflowstore.Store) string {

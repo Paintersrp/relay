@@ -19,6 +19,7 @@ import (
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestSearchByteLiteralReturnsOverlapsAcrossPageSizeChanges(t *testing.T) {
@@ -398,6 +399,33 @@ func TestSearchConcurrentRequestsAreIndependent(t *testing.T) {
 	}
 }
 
+func TestSearchScansChunkWindowsAndFindsBoundaryMatchOnce(t *testing.T) {
+	commitOID := strings.Repeat("1", 40)
+	rootTree := strings.Repeat("2", 40)
+	blobOID := strings.Repeat("3", 40)
+	blob := bytes.Repeat([]byte{'x'}, int(searchBlobChunkBytes+32))
+	copy(blob[searchBlobChunkBytes-1:], []byte("ab"))
+	base := &fidelityVaultFake{
+		trees: map[string][]sourcevault.RetainedTreeEntry{rootTree: {{Name: []byte("a"), Mode: "100644", ObjectType: "blob", ObjectOID: blobOID}}},
+		blobs: map[string][]byte{blobOID: blob}, nodes: map[string]sourcevault.RetainedCommitNode{},
+	}
+	reads := 0
+	vault := &searchVaultWrapper{base: base, blob: func(ctx context.Context, request sourcevault.ReadRetainedBlobRangeRequest) (sourcevault.ReadRetainedBlobRangeResult, error) {
+		reads++
+		return base.ReadRetainedBlobRange(ctx, request)
+	}}
+	result, err := newSearchService(t, searchAuthorityResolver{authority: fidelityAuthority(commitOID, rootTree, "", 1)}, vault, nil).Search(context.Background(), byteSearchRequest([]byte("ab")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads > 3 {
+		t.Fatalf("retained blob reads = %d, want O(chunks)", reads)
+	}
+	if len(result.Matches) != 1 || result.Matches[0].ByteOffset != searchBlobChunkBytes-1 {
+		t.Fatalf("boundary matches = %#v", result.Matches)
+	}
+}
+
 func TestSearchUsesRetainedGitAfterSourceRepositoryRemoval(t *testing.T) {
 	ctx := context.Background()
 	repo := newSearchGitRepository(t)
@@ -415,12 +443,8 @@ func TestSearchUsesRetainedGitAfterSourceRepositoryRemoval(t *testing.T) {
 	commitOID := runSearchGit(t, repo, "rev-parse", "HEAD")
 	treeOID := runSearchGit(t, repo, "rev-parse", "HEAD^{tree}")
 
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		_, createErr := tx.CreateRepositoryTargetWithConfiguration(ctx, workflowstore.CreateRepositoryTargetParams{RepoTarget: "relay", LocalPath: repo, ConfiguredBranchRef: sql.NullString{String: "refs/heads/main", Valid: true}})
 		return createErr
@@ -1549,12 +1573,8 @@ func TestSearchRealRetainedGitCoversModesPathsAndNoSourceFallback(t *testing.T) 
 		t.Fatalf("link tree entry=%q", linkEntry)
 	}
 
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		_, createErr := tx.CreateRepositoryTargetWithConfiguration(ctx, workflowstore.CreateRepositoryTargetParams{RepoTarget: "relay", LocalPath: repo, ConfiguredBranchRef: sql.NullString{String: "refs/heads/main", Valid: true}})
 		return createErr

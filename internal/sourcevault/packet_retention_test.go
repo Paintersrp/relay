@@ -2,10 +2,10 @@ package sourcevault
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestRetainPreparedInTxSupportsMultiplePacketEdgesAndConflicts(t *testing.T) {
@@ -130,13 +130,7 @@ func TestRetainPreparedInvestigationInTxRollsBackWithCallerTransaction(t *testin
 
 func openPacketRetentionStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
-	directory := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(directory, "workflow.db"), filepath.Join(directory, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.Open(t, workflowstore.Open)
 }
 
 func createReadyPacketRetentionClosures(t *testing.T, ctx context.Context, store *workflowstore.Store) (workflowstore.SourceVault, workflowstore.SourceVaultClosure, workflowstore.SourceVaultClosure) {

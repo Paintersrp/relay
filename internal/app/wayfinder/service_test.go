@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestWorkspaceResumesAndProtectsVersionedDiscoveryMutations(t *testing.T) {
@@ -110,12 +111,8 @@ func (ids *wayfinderTestIDs) InvestigationID() string   { return ids.id("investi
 
 func openWayfinderServiceStore(t *testing.T, ctx context.Context) (*workflowstore.Store, int64, string, string) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	var projectID, planID, artifactID int64
 	if err := store.DB().QueryRowContext(ctx, `INSERT INTO projects (project_id, name) VALUES ('project-wayfinder-service', 'Wayfinder') RETURNING id`).Scan(&projectID); err != nil {
 		t.Fatal(err)

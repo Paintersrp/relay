@@ -13,6 +13,7 @@ import (
 	"time"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 type scriptedInspectionRunner struct {
@@ -818,12 +819,7 @@ func readyRunner(t *testing.T, root string, remoteURL string) func(string, ...st
 
 func openInspectionTestStore(t *testing.T, dbPath string) *workflowstore.Store {
 	t.Helper()
-	store, err := workflowstore.Open(dbPath, filepath.Join(filepath.Dir(dbPath), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.OpenAt(t, dbPath, filepath.Join(filepath.Dir(dbPath), "artifacts"), workflowstore.Open)
 }
 
 func requireGit(t *testing.T) {

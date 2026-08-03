@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -313,12 +312,7 @@ func TestBeginPreparedAdaptiveExecutionRejectsInvalidDurableState(t *testing.T) 
 func newPreparedAdaptiveFixture(t *testing.T) *preparedAdaptiveFixture {
 	t.Helper()
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store, _ := openRunTestStore(t)
 	db := store.DB()
 	if _, err := db.Exec(`INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('relay', 'C:/relay', 'refs/heads/main', 1)`); err != nil {
 		t.Fatal(err)
@@ -351,6 +345,7 @@ func newPreparedAdaptiveFixture(t *testing.T) *preparedAdaptiveFixture {
 	if _, err := db.Exec(`UPDATE runs SET execution_package_row_id = ? WHERE id = ?`, packageID, run.ID); err != nil {
 		t.Fatal(err)
 	}
+	var err error
 	run, err = store.GetRunByRunID(ctx, run.RunID)
 	if err != nil {
 		t.Fatal(err)

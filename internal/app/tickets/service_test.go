@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"relay/internal/app/approvals"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestPublishApprovalPriorityReplacementAndCancellation(t *testing.T) {
@@ -124,11 +124,7 @@ func TestReadinessRejectsStaleAuthorityAndDependencyRevision(t *testing.T) {
 
 func ticketFixture(t *testing.T) (*workflowstore.Store, string, workflowstore.SourceVaultClosure, string) {
 	t.Helper()
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.sqlite"), filepath.Join(t.TempDir(), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
 	ctx := context.Background()
 	if _, err := store.DB().ExecContext(ctx, `INSERT INTO projects (project_id, name) VALUES ('project-ticket', 'Ticket')`); err != nil {
 		t.Fatal(err)

@@ -9,16 +9,13 @@ import (
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/sourcegateway"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestOpenAndNewForwardSourceGatewayOptions(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	fetcher := fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
 		return fileacquisition.FetchedFile{}, errors.New("test fetcher must not run")
 	})

@@ -42,6 +42,57 @@ func TestRetainedTreeAndBlobRangeUseExactVaultAuthority(t *testing.T) {
 	}
 }
 
+func TestRetainedReadSessionVerifiesClosureOnceAndCachesTrees(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	first := commitFile(t, repo, "payload.bin", []byte("payload"), "payload")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "refs/heads/main")
+	manager := openSourceVaultManager(t, ctx, store)
+	imported, err := manager.ImportClosure(ctx, ImportRequest{Revision: configuredRevision(storeTarget(t, ctx, store, "relay"), first.commit, first.tree)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retention, err := manager.RetainClosure(ctx, RetainRequest{ClosureID: imported.Closure.ClosureID, OwnerClass: workflowstore.SourceVaultOwnerOperationPacket, OwnerIdentity: "packet-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := newFakeGit()
+	git.refs[imported.Closure.RefName] = first.commit
+	git.trees[first.commit] = first.tree
+	git.objects[first.tree] = rawTreeEntry("100644", []byte("payload.bin"), first.blob)
+	git.objects[first.blob] = []byte("payload")
+	manager.git = git
+	relationship := workflowstore.OperationPacketVaultRelationship{OwnerIdentity: retention.OwnerIdentity, RetentionRowID: retention.ID, ClosureRowID: imported.Closure.ID, VaultRowID: imported.Vault.ID, CommitOID: first.commit, TreeOID: first.tree}
+	session, err := manager.OpenRetainedReadSession(ctx, relationship)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	for range 2 {
+		if _, err := session.ReadRetainedTree(ctx, ReadRetainedTreeRequest{TreeOID: first.tree}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ReadRetainedBlobRange(ctx, ReadRetainedBlobRangeRequest{BlobOID: first.blob, Offset: 0, Limit: 3}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git.mu.Lock()
+	defer git.mu.Unlock()
+	verify, trees := 0, 0
+	for _, call := range git.calls {
+		if call == "verify_vault" {
+			verify++
+		}
+		if call == "read_tree" {
+			trees++
+		}
+	}
+	if verify != 1 || trees != 1 {
+		t.Fatalf("verify calls=%d tree reads=%d", verify, trees)
+	}
+}
+
 func TestCommandGitTreeParserPreservesInvalidUTF8AndDeterministicOrder(t *testing.T) {
 	invalid := rawTreeEntry("100755", []byte{0xff, 'x'}, strings.Repeat("3", 40))
 	raw := append(append(rawTreeEntry("100644", []byte("a.txt"), strings.Repeat("1", 40)), rawTreeEntry("40000", []byte("a"), strings.Repeat("2", 40))...), invalid...)

@@ -91,6 +91,10 @@ type VaultReader interface {
 	ReadRetainedTree(context.Context, sourcevault.ReadRetainedTreeRequest) (sourcevault.ReadRetainedTreeResult, error)
 	ReadRetainedBlobRange(context.Context, sourcevault.ReadRetainedBlobRangeRequest) (sourcevault.ReadRetainedBlobRangeResult, error)
 }
+type RetainedSessionVaultReader interface {
+	VaultReader
+	OpenRetainedReadSession(context.Context, workflowstore.OperationPacketVaultRelationship) (sourcevault.RetainedReadSession, error)
+}
 type SelectorStore interface {
 	CreateOrGetSourcePathSelector(context.Context, workflowstore.CreateOrGetSourcePathSelectorParams) (workflowstore.SourcePathSelector, error)
 	GetSourcePathSelector(context.Context, string) (workflowstore.SourcePathSelector, error)

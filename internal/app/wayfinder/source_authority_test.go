@@ -12,6 +12,7 @@ import (
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
 	workflowgenerated "relay/internal/store/workflowgenerated"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestSourceAuthorityRetainsExactClosureAcrossRestartAndDetectsStaleIdentity(t *testing.T) {
@@ -106,11 +107,7 @@ func newSourceAuthorityFixture(t *testing.T, ctx context.Context) sourceAuthorit
 	directory := t.TempDir()
 	databasePath := filepath.Join(directory, "workflow.sqlite")
 	artifactRoot := filepath.Join(directory, "artifacts")
-	store, err := workflowstore.Open(databasePath, artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.OpenAt(t, databasePath, artifactRoot, workflowstore.Open)
 	var vault workflowstore.SourceVault
 	var first, second workflowstore.SourceVaultClosure
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {

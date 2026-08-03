@@ -9,16 +9,13 @@ import (
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestAuthorityPublicationReconcileRemovesResidueAndPreservesLegacyRetention(t *testing.T) {
 	ctx := context.Background()
-	directory := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(directory, "workflow.db"), filepath.Join(directory, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	directory := filepath.Dir(store.ArtifactStore().Root())
 	vaults, err := sourcevault.Open(ctx, filepath.Join(directory, "source-vaults"), store)
 	if err != nil {
 		t.Fatal(err)

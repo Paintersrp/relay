@@ -7,16 +7,12 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestRegistryRequiresExplicitGloballyUniqueKeysAndPaths(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "relay.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	registry, err := NewRegistry(store)
 	if err != nil {
 		t.Fatal(err)
@@ -40,12 +36,7 @@ func TestRegistryRequiresExplicitGloballyUniqueKeysAndPaths(t *testing.T) {
 
 func TestRegistryResolveNeverCreatesUnknownTargets(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "relay.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	registry, err := NewRegistry(store)
 	if err != nil {
 		t.Fatal(err)
@@ -70,11 +61,7 @@ func TestRegistryResolveNeverCreatesUnknownTargets(t *testing.T) {
 func TestRegistryRejectsUnsafeKeysAndNonDirectories(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "relay.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	registry, err := NewRegistry(store)
 	if err != nil {
 		t.Fatal(err)

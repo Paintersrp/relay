@@ -2,22 +2,17 @@ package operations
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"relay/internal/operations/packet"
 	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestLegacyLifecycleMethodsRequireCompleteCoordinator(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	service, err := NewService(store)
 	if err != nil {
 		t.Fatal(err)

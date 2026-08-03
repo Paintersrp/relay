@@ -117,15 +117,7 @@ func newApplicationRepositoryFixture(
 	t *testing.T,
 ) (*workflowstore.Store, *workflowrepos.Registry, string) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(
-		filepath.Join(root, "workflow.sqlite"),
-		filepath.Join(root, "artifacts"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store, _ := openApplicationWorkflowStore(t)
 	repo := appNewGitRepository(t)
 	if err := store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
 		_, err := tx.CreateRepositoryTargetWithConfiguration(

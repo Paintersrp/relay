@@ -15,6 +15,7 @@ import (
 	"relay/internal/speccompiler"
 	workflow "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 const packageOperations = `{"schema_version":"1.0","feature_slug":"checkout","repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`
@@ -306,12 +307,7 @@ func TestServiceApproveWrongPackageSHAIsAtomic(t *testing.T) {
 
 func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflow.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflow.Open)
 	ctx := context.Background()
 
 	baseCommit := strings.Repeat("a", 40)

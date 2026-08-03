@@ -13,6 +13,8 @@ import (
 	"relay/internal/sourcevault"
 )
 
+const searchBlobChunkBytes int64 = 64 << 10
+
 type searchCandidateSource interface {
 	Next(context.Context) (searchCandidate, bool, error)
 }
@@ -165,6 +167,16 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResu
 	prepared, err := s.prepareSearch(ctx, request)
 	if err != nil {
 		return SearchResult{}, err
+	}
+	if vault, ok := s.vault.(RetainedSessionVaultReader); ok {
+		session, openErr := vault.OpenRetainedReadSession(ctx, prepared.authority.Relationship)
+		if openErr != nil {
+			return SearchResult{}, mapSearchVaultError(openErr)
+		}
+		defer session.Close()
+		operation := *s
+		operation.vault = session
+		s = &operation
 	}
 	if request.Cursor != "" {
 		if prepared.backend.Backend == searchBackendScanner {
@@ -373,11 +385,17 @@ func (s *Service) matchRetainedSearchCandidate(ctx context.Context, prepared pre
 			state.phase = searchPhaseLiteralScan
 			return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionBudgetIncomplete, false, true)
 		}
-		page, err := s.vault.ReadRetainedBlobRange(ctx, sourcevault.ReadRetainedBlobRangeRequest{Relationship: prepared.authority.Relationship, BlobOID: candidate.BlobOID, Offset: state.nextOffset, Limit: int64(len(prepared.literal))})
+		literalBytes := int64(len(prepared.literal))
+		candidateCount := remaining / literalBytes
+		if candidateCount > searchBlobChunkBytes {
+			candidateCount = searchBlobChunkBytes
+		}
+		readLimit := candidateCount + literalBytes - 1
+		page, err := s.vault.ReadRetainedBlobRange(ctx, sourcevault.ReadRetainedBlobRangeRequest{Relationship: prepared.authority.Relationship, BlobOID: candidate.BlobOID, Offset: state.nextOffset, Limit: readLimit})
 		if err != nil {
 			return SearchResult{}, false, mapSearchVaultError(err)
 		}
-		if page.BlobOID != candidate.BlobOID || page.Offset != state.nextOffset || page.TotalSize < 0 || page.Offset+int64(len(page.Bytes)) > page.TotalSize || int64(len(page.Bytes)) > int64(len(prepared.literal)) {
+		if page.BlobOID != candidate.BlobOID || page.Offset != state.nextOffset || page.TotalSize < 0 || page.Offset+int64(len(page.Bytes)) > page.TotalSize || int64(len(page.Bytes)) > readLimit {
 			return SearchResult{}, false, &Error{Code: CodeObjectMismatch}
 		}
 		if state.totalSizeKnown && page.TotalSize != state.totalSize {
@@ -385,22 +403,30 @@ func (s *Service) matchRetainedSearchCandidate(ctx context.Context, prepared pre
 		}
 		state.totalSize = page.TotalSize
 		state.totalSizeKnown = true
-		result.ExaminedBytes += int64(len(page.Bytes))
-		if int64(len(page.Bytes)) < int64(len(prepared.literal)) {
+		if int64(len(page.Bytes)) < literalBytes {
+			result.ExaminedBytes += int64(len(page.Bytes))
 			if page.Offset+int64(len(page.Bytes)) != page.TotalSize {
 				return SearchResult{}, false, &Error{Code: CodeObjectMismatch}
 			}
 			return result, true, nil
 		}
-		if bytes.Equal(page.Bytes, prepared.literal) {
-			result.Matches = append(result.Matches, SearchMatch{MatchID: searchMatchID(prepared.authority, prepared.request.Mode, prepared.queryID, prepared.filterID, candidate.Identity.PathID, candidate.BlobOID, state.nextOffset, int64(len(prepared.literal)), state.ordinal), Path: candidate.Identity, FileMode: candidate.Mode, BlobOID: candidate.BlobOID, ByteOffset: state.nextOffset, MatchLength: int64(len(prepared.literal)), OccurrenceOrdinal: state.ordinal})
-			state.ordinal++
-			state.nextOffset++
-			if len(result.Matches) == prepared.request.Limit {
-				return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionPageIncomplete, false, false)
+		availableCandidates := int64(len(page.Bytes)) - literalBytes + 1
+		if availableCandidates > candidateCount {
+			availableCandidates = candidateCount
+		}
+		for index := int64(0); index < availableCandidates; index++ {
+			start := int(index)
+			result.ExaminedBytes += literalBytes
+			if bytes.Equal(page.Bytes[start:start+len(prepared.literal)], prepared.literal) {
+				result.Matches = append(result.Matches, SearchMatch{MatchID: searchMatchID(prepared.authority, prepared.request.Mode, prepared.queryID, prepared.filterID, candidate.Identity.PathID, candidate.BlobOID, state.nextOffset, literalBytes, state.ordinal), Path: candidate.Identity, FileMode: candidate.Mode, BlobOID: candidate.BlobOID, ByteOffset: state.nextOffset, MatchLength: literalBytes, OccurrenceOrdinal: state.ordinal})
+				state.ordinal++
+				state.nextOffset++
+				if len(result.Matches) == prepared.request.Limit {
+					return s.finishSearchCandidateIncomplete(prepared, result, candidate, state, SearchCompletionPageIncomplete, false, false)
+				}
+			} else {
+				state.nextOffset++
 			}
-		} else {
-			state.nextOffset++
 		}
 	}
 }

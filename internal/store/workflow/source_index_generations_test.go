@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"relay/internal/testsupport/workflowfixture"
+
 	"relay/internal/sourceindex"
 )
 
@@ -290,10 +292,7 @@ func TestSourceIndexGenerationReopens(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	reopened := workflowfixture.OpenAt(t, filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"), Open)
 	defer reopened.Close()
 	loaded, err := reopened.GetSourceIndexGeneration(ctx, generation.GenerationID)
 	if err != nil || loaded.Identity != identity || loaded.State != SourceIndexGenerationRetired || loaded.AttemptCount != 1 || loaded.GenerationManifestSHA256 != strings.Repeat("1", 64) || loaded.RetiredAt == "" {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 type projectTestIDs struct {
@@ -190,11 +191,5 @@ func TestProjectDetailChildCollectionsRespectExplicitBounds(t *testing.T) {
 
 func openProjectTestStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.Open(t, workflowstore.Open)
 }

@@ -14,12 +14,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"relay/internal/sourcevaultpolicy"
 	workflowstore "relay/internal/store/workflow"
 )
 
 const gitDiagnosticLimit = 64 << 10
+const retainedGitCommandTimeout = 30 * time.Second
 
 var zeroOID = strings.Repeat("0", 40)
 
@@ -438,6 +440,8 @@ func (g *commandGit) DeleteRef(ctx context.Context, vaultPath, refName, commitOI
 }
 
 func (g *commandGit) ReadObject(ctx context.Context, vaultPath, oid, expectedType string, maxBytes int64) ([]byte, error) {
+	ctx, cancel := boundedGitContext(ctx)
+	defer cancel()
 	if err := requireObjectType(ctx, vaultPath, true, oid, expectedType, "", ""); err != nil {
 		return nil, &Error{Code: CodeObjectUnavailable}
 	}
@@ -465,6 +469,8 @@ func (g *commandGit) ReadObject(ctx context.Context, vaultPath, oid, expectedTyp
 }
 
 func (g *commandGit) ReadTree(ctx context.Context, vaultPath, treeOID string) ([]RetainedTreeEntry, error) {
+	ctx, cancel := boundedGitContext(ctx)
+	defer cancel()
 	if err := requireObjectType(ctx, vaultPath, true, treeOID, "tree", "", ""); err != nil {
 		return nil, &Error{Code: CodeObjectUnavailable}
 	}
@@ -487,27 +493,13 @@ func (g *commandGit) ReadTree(ctx context.Context, vaultPath, treeOID string) ([
 }
 
 func (g *commandGit) ReadBlobRange(ctx context.Context, vaultPath, blobOID string, offset, limit int64) (ReadRetainedBlobRangeResult, error) {
+	ctx, cancel := boundedGitContext(ctx)
+	defer cancel()
 	if offset < 0 || limit <= 0 {
 		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
 	}
-	if err := requireObjectType(ctx, vaultPath, true, blobOID, "blob", "", ""); err != nil {
-		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
-	}
-	sizeText, err := runGit(ctx, workflowstore.SourceVaultFailureVaultGitStartFailed, vaultPath, true, "cat-file", "-s", blobOID)
-	if err != nil {
-		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
-	}
-	totalSize, err := strconv.ParseInt(strings.TrimSpace(sizeText), 10, 64)
-	if err != nil || totalSize < 0 {
-		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
-	}
-	if offset > totalSize {
-		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
-	}
-	if offset == totalSize {
-		return ReadRetainedBlobRangeResult{BlobOID: blobOID, Offset: offset, TotalSize: totalSize, Bytes: []byte{}}, nil
-	}
-	cmd := gitCommand(ctx, vaultPath, true, "cat-file", "blob", blobOID)
+	cmd := gitCommand(ctx, vaultPath, true, "cat-file", "--batch")
+	cmd.Stdin = strings.NewReader(blobOID + "\n")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
@@ -517,8 +509,27 @@ func (g *commandGit) ReadBlobRange(ctx context.Context, vaultPath, blobOID strin
 	if err := cmd.Start(); err != nil {
 		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
 	}
+	buffered := bufio.NewReader(stdout)
+	header, readErr := buffered.ReadString('\n')
+	fields := strings.Fields(header)
+	if readErr != nil || len(fields) != 3 || fields[0] != blobOID || fields[1] != "blob" {
+		killProcess(cmd)
+		_ = cmd.Wait()
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	totalSize, parseErr := strconv.ParseInt(fields[2], 10, 64)
+	if parseErr != nil || totalSize < 0 {
+		killProcess(cmd)
+		_ = cmd.Wait()
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
+	}
+	if offset > totalSize {
+		killProcess(cmd)
+		_ = cmd.Wait()
+		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeInvalidRequest}
+	}
 	if offset > 0 {
-		if _, err := io.CopyN(io.Discard, stdout, offset); err != nil {
+		if _, err := io.CopyN(io.Discard, buffered, offset); err != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
@@ -529,12 +540,12 @@ func (g *commandGit) ReadBlobRange(ctx context.Context, vaultPath, blobOID strin
 		length = limit
 	}
 	data := make([]byte, length)
-	if _, err := io.ReadFull(stdout, data); err != nil {
+	if _, err := io.ReadFull(buffered, data); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
 	}
-	if _, err := io.Copy(io.Discard, stdout); err != nil {
+	if _, err := io.CopyN(io.Discard, buffered, totalSize-offset-length+1); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return ReadRetainedBlobRangeResult{}, &Error{Code: CodeObjectUnavailable}
@@ -650,6 +661,8 @@ func chooseUnavailableCode(bare bool) string {
 }
 
 func runGit(ctx context.Context, startReason, path string, bare bool, args ...string) (string, error) {
+	ctx, cancel := boundedGitContext(ctx)
+	defer cancel()
 	cmd := gitCommand(ctx, path, bare, args...)
 	stdout := newLimitedBuffer(gitDiagnosticLimit)
 	stderr := newLimitedBuffer(gitDiagnosticLimit)
@@ -676,6 +689,13 @@ func runGit(ctx context.Context, startReason, path string, bare bool, args ...st
 		return "", &gitFailure{code: code, err: commandFailure(err, stderr.String())}
 	}
 	return stdout.String(), nil
+}
+
+func boundedGitContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, retainedGitCommandTimeout)
 }
 
 func gitCommand(ctx context.Context, path string, bare bool, args ...string) *exec.Cmd {

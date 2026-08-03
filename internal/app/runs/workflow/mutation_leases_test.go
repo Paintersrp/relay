@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestRunMutationLeaseScopesAndLifecycle(t *testing.T) {
@@ -84,10 +85,7 @@ func TestRunMutationLeaseHasOneConcurrentWinner(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	databasePath := filepath.Join(root, "workflow.sqlite")
-	seed, err := workflowstore.Open(databasePath, filepath.Join(root, "seed-artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	seed := workflowfixture.OpenAt(t, databasePath, filepath.Join(root, "seed-artifacts"), workflowstore.Open)
 	seedMutationLeaseRuns(t, ctx, seed)
 	if err := seed.Close(); err != nil {
 		t.Fatal(err)
@@ -154,13 +152,7 @@ func TestRunMutationLeaseHasOneConcurrentWinner(t *testing.T) {
 
 func openMutationLeaseStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.Open(t, workflowstore.Open)
 }
 
 func seedMutationLeaseRuns(t *testing.T, ctx context.Context, store *workflowstore.Store) {

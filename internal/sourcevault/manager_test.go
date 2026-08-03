@@ -17,6 +17,7 @@ import (
 
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestManagerPreservesExactClosureAcrossSourceChangesAndRetentionGenerations(t *testing.T) {
@@ -601,18 +602,12 @@ func runTestGit(t *testing.T, repo string, args ...string) string {
 
 func openSourceVaultTestStoreAt(t *testing.T, dbPath, artifactRoot string) *workflowstore.Store {
 	t.Helper()
-	store, err := workflowstore.Open(dbPath, artifactRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return workflowfixture.OpenAt(t, dbPath, artifactRoot, workflowstore.Open)
 }
 
 func openSourceVaultTestStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
-	root := t.TempDir()
-	return openSourceVaultTestStoreAt(t, filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
+	return workflowfixture.Open(t, workflowstore.Open)
 }
 
 func openSourceVaultManager(t *testing.T, ctx context.Context, store *workflowstore.Store) *Manager {

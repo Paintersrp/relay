@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestBranchAwareInspectConfirmLifecycle(t *testing.T) {
@@ -524,15 +525,8 @@ func newBranchTestRegistry(t *testing.T) (*Registry, *workflowstore.Store, strin
 
 func openRepositoryWorkflowStore(t *testing.T) (*workflowstore.Store, string) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(
-		filepath.Join(root, "workflow.sqlite"),
-		filepath.Join(root, "artifacts"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	return store, root
 }
 

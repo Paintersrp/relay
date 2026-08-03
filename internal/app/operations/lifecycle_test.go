@@ -21,6 +21,7 @@ import (
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 type lifecycleTestIDs struct{ next atomic.Int64 }
@@ -98,12 +99,8 @@ type lifecycleFixture struct {
 func openLifecycleFixture(t *testing.T) lifecycleFixture {
 	t.Helper()
 	ctx := context.Background()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 
 	projectRepo := makeLifecycleGitRepo(t, filepath.Join(root, "project-repo"), map[string]string{"README.md": "project source\n"})
 	specsRepo := makeLifecycleGitRepo(t, filepath.Join(root, "relay-specs"), map[string]string{

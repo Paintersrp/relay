@@ -8,16 +8,13 @@ import (
 	"testing"
 
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestResolvePathBlobUsesTheResolvedTreeAndExactPath(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.OpenAt(t, filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"), workflowstore.Open)
 	repo := filepath.Join(root, "repo")
 	if err := os.MkdirAll(filepath.Join(repo, "nested"), 0o755); err != nil {
 		t.Fatal(err)

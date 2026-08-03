@@ -14,6 +14,7 @@ import (
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestResolveWorkflowRunStage(t *testing.T) {
@@ -155,12 +156,8 @@ func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 
 func openWorkflowRouteTestStore(t *testing.T) (*workflowstore.Store, *workflowapp.Service) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	service, err := workflowapp.NewService(store)
 	if err != nil {
 		t.Fatal(err)

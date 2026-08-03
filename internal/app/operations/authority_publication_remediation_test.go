@@ -17,6 +17,7 @@ import (
 	"relay/internal/operations/registry"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func TestAuthorityPublicationCreateRefreshAndReplayUseLifecycleAuthority(t *testing.T) {
@@ -225,12 +226,8 @@ const (
 
 func openAuthorityPublicationRemediationService(t *testing.T, ctx context.Context) (*AuthorityPublicationService, *workflowstore.Store) {
 	t.Helper()
-	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.Open(t, workflowstore.Open)
+	root := filepath.Dir(store.ArtifactStore().Root())
 	vaults, err := sourcevault.Open(ctx, filepath.Join(root, "source-vaults"), store)
 	if err != nil {
 		t.Fatal(err)
