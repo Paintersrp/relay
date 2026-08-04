@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+
+	"relay/internal/operations/registry"
 )
 
 func TestMCPMutationResultPersistenceImmutabilityAndExactKey(t *testing.T) {
@@ -117,6 +119,68 @@ func TestMCPMutationResultDatabaseClosesSurfaceToolKindAndSize(t *testing.T) {
 				t.Fatal("invalid mutation result row was accepted")
 			}
 		})
+	}
+}
+
+func TestMCPMutationResultPersistsEveryPublishedOperationSurface(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	operations, err := registry.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		t.Run(string(operation.OperationID), func(t *testing.T) {
+			if operation.Role == "" {
+				t.Fatal("published operation role is empty")
+			}
+			resultJSON := `{"operation_id":"` + string(operation.OperationID) + `"}`
+			if err := store.WithTx(ctx, func(tx *Tx) error {
+				_, err := tx.CreateMCPMutationResult(ctx, CreateMCPMutationResultParams{
+					SurfaceContractID:       string(operation.SurfaceContract),
+					ToolName:                "create_operation_packet",
+					MutationID:              "published-" + string(operation.OperationID),
+					SurfaceManifestSHA256:   strings.Repeat("a", 64),
+					SemanticIdentityVersion: "relay.semantic.create-operation-packet.v1",
+					SemanticRequestSHA256:   strings.Repeat("b", 64),
+					ResultKind:              "create_operation_packet_result",
+					ResultIdentityJSON:      resultJSON,
+					ResultSHA256:            mutationResultSHA(resultJSON),
+				})
+				return err
+			}); err != nil {
+				t.Fatalf("operation %q surface %q role %q did not persist: %v", operation.OperationID, operation.SurfaceContract, operation.Role, err)
+			}
+		})
+	}
+}
+
+func TestMCPMutationResultPersistsPlannerTicketFrontierExactly(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	resultJSON := `{"operation_id":"planner.ticket_frontier"}`
+	params := CreateMCPMutationResultParams{
+		SurfaceContractID:       "planner-ticket-frontier.v1",
+		ToolName:                "create_operation_packet",
+		MutationID:              "planner-ticket-frontier",
+		SurfaceManifestSHA256:   strings.Repeat("a", 64),
+		SemanticIdentityVersion: "relay.semantic.create-operation-packet.v1",
+		SemanticRequestSHA256:   strings.Repeat("b", 64),
+		ResultKind:              "create_operation_packet_result",
+		ResultIdentityJSON:      resultJSON,
+		ResultSHA256:            mutationResultSHA(resultJSON),
+	}
+	var created MCPMutationResult
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		created, err = tx.CreateMCPMutationResult(ctx, params)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.GetMCPMutationResult(ctx, MCPMutationKey{SurfaceContractID: params.SurfaceContractID, ToolName: params.ToolName, MutationID: params.MutationID})
+	if err != nil || stored.ID != created.ID || stored.SurfaceContractID != params.SurfaceContractID || stored.ToolName != params.ToolName || stored.MutationID != params.MutationID || stored.ResultIdentityJSON != params.ResultIdentityJSON || stored.ResultSHA256 != params.ResultSHA256 {
+		t.Fatalf("stored frontier mutation = %#v, err=%v", stored, err)
 	}
 }
 

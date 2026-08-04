@@ -106,6 +106,71 @@ func TestWayfinderPacketSchemaUpgradeFromPreChangeDatabase(t *testing.T) {
 	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('unknown-surface.v1', 'create_operation_packet', 'upgrade-invalid-surface', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
 }
 
+func TestPlannerTicketFrontierMutationResultSchemaUpgradePreservesRows(t *testing.T) {
+	db := openMigrationTestDB(t, "planner-ticket-frontier")
+	defer db.Close()
+
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 35); err != nil {
+		t.Fatal(err)
+	}
+
+	type mutationRow struct {
+		id, surface, tool, mutation, manifest, version, request, kind, document, result, committed string
+	}
+	rows := []mutationRow{
+		{"1", "wayfinder-workspace.v1", "create_operation_packet", "preserve-wayfinder-workspace", migrationTestHash, "v1", migrationTestHash, "create_operation_packet_result", "{}", migrationTestHash, testTimestamp()},
+		{"2", "wayfinder-discovery.v1", "refresh_operation_packet", "preserve-wayfinder-discovery", migrationTestHash, "v2", migrationTestHash, "refresh_operation_packet_result", "{}", migrationTestHash, testTimestamp()},
+		{"3", "wayfinder-investigation.v1", "close_operation_packet", "preserve-wayfinder-investigation", migrationTestHash, "v3", migrationTestHash, "close_operation_packet_result", "{}", migrationTestHash, testTimestamp()},
+		{"4", "planner-authoring.v1", "create_operation_packet", "preserve-planner-authoring", migrationTestHash, "v4", migrationTestHash, "create_operation_packet_result", "{}", migrationTestHash, testTimestamp()},
+		{"5", "planner-plan.v1", "submit_plan", "preserve-planner-plan", migrationTestHash, "v5", migrationTestHash, "submit_plan_result", "{}", migrationTestHash, testTimestamp()},
+		{"6", "planner-execution.v1", "create_run", "preserve-planner-execution", migrationTestHash, "v6", migrationTestHash, "create_run_result", "{}", migrationTestHash, testTimestamp()},
+		{"7", "auditor-review.v1", "create_operation_packet", "preserve-auditor-review", migrationTestHash, "v7", migrationTestHash, "create_operation_packet_result", "{}", migrationTestHash, testTimestamp()},
+		{"8", "auditor-audit.v1", "record_audit_decision", "preserve-auditor-audit", migrationTestHash, "v8", migrationTestHash, "record_audit_decision_result", "{}", migrationTestHash, testTimestamp()},
+		{"9", "auditor-remediation.v1", "create_run", "preserve-auditor-remediation", migrationTestHash, "v9", migrationTestHash, "create_run_result", "{}", migrationTestHash, testTimestamp()},
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`INSERT INTO mcp_mutation_results (id, surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256, committed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, row.id, row.surface, row.tool, row.mutation, row.manifest, row.version, row.request, row.kind, row.document, row.result, row.committed); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := goose.Up(db, "workflow_migrations"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mcp_mutation_results`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != len(rows) {
+		t.Fatalf("mutation row count = %d, want %d", count, len(rows))
+	}
+	for _, want := range rows {
+		var got mutationRow
+		if err := db.QueryRow(`SELECT id, surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256, committed_at FROM mcp_mutation_results WHERE id = ?`, want.id).Scan(&got.id, &got.surface, &got.tool, &got.mutation, &got.manifest, &got.version, &got.request, &got.kind, &got.document, &got.result, &got.committed); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("preserved mutation row = %#v, want %#v", got, want)
+		}
+	}
+	var foreignKeyErrors int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyErrors); err != nil {
+		t.Fatal(err)
+	}
+	if foreignKeyErrors != 0 {
+		t.Fatalf("foreign key errors = %d", foreignKeyErrors)
+	}
+
+	insertMutationResult(t, db, 10, "planner-ticket-frontier.v1", "create_operation_packet", "planner-ticket-frontier", "create_operation_packet_result")
+	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('unknown-surface.v1', 'create_operation_packet', 'unknown-surface', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('planner-ticket-frontier.v1', 'unknown.operation', 'unknown-operation', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('planner-ticket-frontier.v1', 'submit_plan', 'mismatched-valid-pair', ?, 'v1', ?, 'submit_plan_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+}
+
 func TestSourceIndexGenerationSchemaUpgradeAndGuards(t *testing.T) {
 	db := openMigrationTestDB(t, "source-index-generation")
 	defer db.Close()

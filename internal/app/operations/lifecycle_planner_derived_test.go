@@ -202,6 +202,13 @@ func TestLifecycleDeliveryTicketMaterializesCurrentFeatureWorkspaceRoute(t *test
 func TestLifecycleTicketFrontierMaterializesCurrentFeatureWorkspaceRoute(t *testing.T) {
 	f := newPlannerDerivedFixture(t, false)
 	result := createPlannerDerivedPacket(t, f, "planner.ticket_frontier", "")
+	if result.Replay || result.Packet.Summary.OperationID != "planner.ticket_frontier" || result.Packet.Summary.SurfaceContract != "planner-ticket-frontier.v1" || result.Packet.Summary.Role != "planner" {
+		t.Fatalf("frontier packet = %#v", result)
+	}
+	mutation, err := f.store.GetMCPMutationResult(f.ctx, workflowstore.MCPMutationKey{SurfaceContractID: "planner-ticket-frontier.v1", ToolName: string(registry.MutationToolCreateOperationPacket), MutationID: "create-planner.ticket_frontier"})
+	if err != nil || mutation.SurfaceContractID != "planner-ticket-frontier.v1" || mutation.ToolName != string(registry.MutationToolCreateOperationPacket) || mutation.MutationID != "create-planner.ticket_frontier" {
+		t.Fatalf("persisted frontier mutation = %#v, err=%v", mutation, err)
+	}
 	data, _, _ := readPlannerDerivedInput(t, f, result, "current_feature_workspace_route")
 	expected, _ := canonicalJSON(featureWorkspaceRouteInput{f.workspace.WorkspaceID, f.workspace.FeatureSlug, f.workspace.Version, "open", f.route.RouteStateID, f.route.Sequence, f.route.WorkspaceVersion, "ready"})
 	if !bytes.Equal(data, expected) {
@@ -211,8 +218,38 @@ func TestLifecycleTicketFrontierMaterializesCurrentFeatureWorkspaceRoute(t *test
 	if err := json.Unmarshal(result.Packet.DocumentBytes, &document); err != nil {
 		t.Fatal(err)
 	}
-	if string(document["relay_specs"]) != "{}" || string(document["manifest_domain"]) != "{}" {
+	var relaySpecs struct {
+		RepositoryKey string `json:"repository_key"`
+		CommitOID     string `json:"commit_oid"`
+	}
+	var manifestDomain struct {
+		Domain  string            `json:"domain"`
+		Members []json.RawMessage `json:"members"`
+	}
+	if err := json.Unmarshal(document["relay_specs"], &relaySpecs); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(document["manifest_domain"], &manifestDomain); err != nil {
+		t.Fatal(err)
+	}
+	if relaySpecs.RepositoryKey != "" || relaySpecs.CommitOID != "" || manifestDomain.Domain != "" || len(manifestDomain.Members) != 0 {
 		t.Fatalf("manifestless governance was fabricated: %s %s", document["relay_specs"], document["manifest_domain"])
+	}
+	var before int
+	if err := f.store.DB().QueryRow(`SELECT COUNT(*) FROM operation_packets`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	operation, _ := registry.Lookup("planner.ticket_frontier")
+	replay, err := f.service.Create(f.ctx, CreateLifecycleInput{MutationID: "create-planner.ticket_frontier", Identity: semanticidentity.CreateOperationPacket{SurfaceContract: operation.SurfaceContract, OperationID: operation.OperationID, ProjectID: f.projectID, WorkflowReferences: f.workflowReferences(t, "")}})
+	if err != nil || !replay.Replay || replay.Packet.Summary.PacketID != result.Packet.Summary.PacketID {
+		t.Fatalf("frontier replay = %#v, err=%v", replay, err)
+	}
+	var after int
+	if err := f.store.DB().QueryRow(`SELECT COUNT(*) FROM operation_packets`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("replay published a second packet: before=%d after=%d", before, after)
 	}
 }
 
@@ -366,6 +403,87 @@ func TestCurrentPlannerDerivedInputRevalidationRejectsAuthorityDrift(t *testing.
 		}
 		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
 	})
+
+	t.Run("transition_applicability_changed", func(t *testing.T) {
+		f := newPlannerDerivedFixture(t, false)
+		ticket, _ := createPlannerTicket(t, f, "required", false)
+		operation, _ := registry.Lookup("planner.transition_plan")
+		workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
+		prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		current, err := f.store.GetDeliveryTicketByTicketID(f.ctx, ticket.TicketID)
+		if err != nil || !current.CurrentRevisionRowID.Valid {
+			t.Fatalf("current ticket = %#v, err=%v", current, err)
+		}
+		if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
+			replacement, createErr := tx.CreateDeliveryTicketRevision(f.ctx, workflowstore.CreateDeliveryTicketRevisionParams{DeliveryTicketRowID: ticket.ID, RevisionNumber: 2, ReplacesRevisionRowID: current.CurrentRevisionRowID, RepoTarget: "project", Branch: "main", BaseCommit: f.closure.CommitOID, SourceClosureRowID: f.closure.ID, SourcePath: "tickets/not-required.json", Goal: "Replace transition applicability.", Context: "Authority drift.", TransitionApplicability: "not_required"})
+			if createErr != nil {
+				return createErr
+			}
+			_, createErr = tx.SetDeliveryTicketCurrentRevision(f.ctx, ticket.TicketID, replacement.ID)
+			return createErr
+		}); err != nil {
+			t.Fatal(err)
+		}
+		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
+	})
+
+	t.Run("source_closure_state_changed", func(t *testing.T) {
+		f := newPlannerDerivedFixture(t, false)
+		ticket, _ := createPlannerTicket(t, f, "required", false)
+		operation, _ := registry.Lookup("planner.transition_plan")
+		workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
+		prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.store.DB().Exec(`UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'operation_cancelled', verified_at = NULL WHERE id = ?`, f.closure.ID); err != nil {
+			t.Fatal(err)
+		}
+		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
+	})
+
+	t.Run("active_selection_consumed", func(t *testing.T) {
+		f := newPlannerDerivedFixture(t, true)
+		ticket, _ := createPlannerTicket(t, f, "not_required", true)
+		operation, _ := registry.Lookup("planner.ticket_design_brief")
+		workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
+		prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
+			_, err := tx.TransitionDeliveryTicketSelection(f.ctx, "selection-planner-derived", "superseded")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
+	})
+
+	t.Run("approval_invalidated_by_authority_replacement", func(t *testing.T) {
+		f := newPlannerDerivedFixture(t, true)
+		ticket, _ := createPlannerTicket(t, f, "not_required", true)
+		operation, _ := registry.Lookup("planner.ticket_design_brief")
+		workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
+		prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
+			authority, createErr := tx.CreateFeatureWorkspaceAuthorityRevision(f.ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{AuthorityRevisionID: "authority-planner-derived-invalidated", WorkspaceRowID: f.workspace.ID, RevisionNumber: 2, SourceClosureRowID: sql.NullInt64{Int64: f.closure.ID, Valid: true}})
+			if createErr != nil {
+				return createErr
+			}
+			_, createErr = tx.SetFeatureWorkspaceAuthorityRevision(f.ctx, authority.ID, f.workspace.WorkspaceID, f.workspace.Version)
+			return createErr
+		}); err != nil {
+			t.Fatal(err)
+		}
+		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
+	})
 }
 
 func resolvedPlannerWorkflow(t *testing.T, f plannerDerivedFixture, ticketID string) workflowPreparation {
@@ -387,5 +505,118 @@ func assertPlannerRevalidationInvalid(t *testing.T, ctx context.Context, service
 	var lifecycleErr *Error
 	if !errors.As(err, &lifecycleErr) || lifecycleErr.Code != CodeInvalidPacketDocument {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestCurrentFeatureWorkspaceRouteRejectsClosedReferenceMatrix(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*plannerDerivedFixture, *workflowPreparation)
+	}{
+		{"workspace_has_no_current_route", func(f *plannerDerivedFixture, _ *workflowPreparation) {
+			_, _ = f.store.DB().Exec(`UPDATE feature_workspaces SET current_route_state_row_id = NULL, version = version + 1 WHERE id = ?`, f.workspace.ID)
+		}},
+		{"current_route_belongs_to_another_workspace", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteStateID = "route-another-workspace"
+		}},
+		{"workspace_is_closed", func(f *plannerDerivedFixture, _ *workflowPreparation) {
+			_, _ = f.store.DB().Exec(`UPDATE feature_workspaces SET state = 'closed', version = version + 1 WHERE id = ?`, f.workspace.ID)
+		}},
+		{"route_state_discovery", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteState = "discovery"
+		}},
+		{"route_state_blocked", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteState = "blocked"
+		}},
+		{"route_state_resolved", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteState = "resolved"
+		}},
+		{"route_state_closed", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteState = "closed"
+		}},
+		{"resolved_reference_names_obsolete_route", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteStateID = "route-obsolete"
+		}},
+		{"route_sequence_differs_from_reference", func(_ *plannerDerivedFixture, workflow *workflowPreparation) { workflow.references[0].RouteSequence++ }},
+		{"route_workspace_version_differs_from_reference", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteWorkspaceVersion++
+		}},
+		{"route_workspace_version_differs_from_current_workspace", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteWorkspaceVersion++
+		}},
+		{"workspace_version_differs_from_resolved_reference", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].WorkspaceVersion++
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			f := newPlannerDerivedFixture(t, false)
+			workflow := resolvedPlannerWorkflow(t, f, "")
+			test.edit(&f, &workflow)
+			_, _, err := f.service.loadCurrentFeatureWorkspaceRoute(f.ctx, workflow)
+			assertPlannerLoaderInvalid(t, err)
+			assertNoPlannerPackets(t, f)
+		})
+	}
+}
+
+func TestCurrentTransitionApplicabilityRejectsClosedReferenceMatrix(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*plannerDerivedFixture, *workflowPreparation)
+	}{
+		{"applicability_not_required", func(f *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[1].RevisionNumber = 2
+			workflow.references[1].RevisionID++
+		}},
+		{"revision_cancelled", func(_ *plannerDerivedFixture, workflow *workflowPreparation) { workflow.references[1].RevisionID++ }},
+		{"referenced_revision_no_longer_current", func(_ *plannerDerivedFixture, workflow *workflowPreparation) { workflow.references[1].RevisionID++ }},
+		{"ticket_belongs_to_another_workspace", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[1].WorkspaceID = "workspace-other"
+		}},
+		{"revision_belongs_to_another_ticket", func(_ *plannerDerivedFixture, workflow *workflowPreparation) { workflow.references[1].RevisionID++ }},
+		{"revision_number_differs_from_reference", func(_ *plannerDerivedFixture, workflow *workflowPreparation) { workflow.references[1].RevisionNumber++ }},
+		{"closure_not_ready", func(f *plannerDerivedFixture, _ *workflowPreparation) {
+			_, _ = f.store.DB().Exec(`UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'operation_cancelled', verified_at = NULL WHERE id = ?`, f.closure.ID)
+		}},
+		{"closure_id_differs_from_reference", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[1].SourceClosureID = "closure-other"
+		}},
+		{"workspace_route_no_longer_ready", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].RouteState = "blocked"
+		}},
+		{"workspace_route_or_version_changed_after_resolution", func(_ *plannerDerivedFixture, workflow *workflowPreparation) {
+			workflow.references[0].WorkspaceVersion++
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			f := newPlannerDerivedFixture(t, false)
+			ticket, _ := createPlannerTicket(t, f, "required", false)
+			workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
+			test.edit(&f, &workflow)
+			_, _, err := f.service.loadCurrentTransitionApplicability(f.ctx, workflow)
+			assertPlannerLoaderInvalid(t, err)
+			assertNoPlannerPackets(t, f)
+		})
+	}
+}
+
+func assertPlannerLoaderInvalid(t *testing.T, err error) {
+	t.Helper()
+	var lifecycleErr *Error
+	if !errors.As(err, &lifecycleErr) || lifecycleErr.Code != CodeInvalidPacketDocument {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func assertNoPlannerPackets(t *testing.T, f plannerDerivedFixture) {
+	t.Helper()
+	var count int
+	if err := f.store.DB().QueryRow(`SELECT COUNT(*) FROM operation_packets`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid authority reached publication: packets=%d", count)
 	}
 }
