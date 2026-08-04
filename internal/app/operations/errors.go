@@ -10,6 +10,7 @@ var (
 
 type Error struct {
 	Code                   string
+	Reason                 string
 	Replacement            *ReplacementPacketIdentity
 	MissingDependencyClass string
 }

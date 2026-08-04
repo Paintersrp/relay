@@ -84,6 +84,19 @@ func (s *Store) ListDeliveryTicketRevisionApprovals(ctx context.Context, revisio
 	return workflowgenerated.New(s.db).ListDeliveryTicketRevisionApprovals(ctx, revisionRowID)
 }
 
+func (s *Store) GetDeliveryTicketRevisionApprovalByRowID(ctx context.Context, rowID int64) (DeliveryTicketRevisionApproval, error) {
+	var value DeliveryTicketRevisionApproval
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at, authority_revision_row_id
+FROM delivery_ticket_revision_approvals
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.ApprovalID, &value.RevisionRowID, &value.ApprovalKind,
+		&value.ApprovalState, &value.Rationale, &value.SourceClosureRowID, &value.CreatedAt,
+		&value.AuthorityRevisionRowID,
+	)
+	return value, err
+}
+
 func (s *Store) GetDeliveryTicketSelectionBySelectionID(ctx context.Context, selectionID string) (DeliveryTicketSelection, error) {
 	return workflowgenerated.New(s.db).GetDeliveryTicketSelectionBySelectionID(ctx, selectionID)
 }

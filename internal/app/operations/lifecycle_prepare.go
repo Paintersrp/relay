@@ -800,7 +800,22 @@ func (s *LifecycleService) loadReferencedReadyWorkspaceRoute(ctx context.Context
 		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument}
 	}
 	route, err := s.store.GetFeatureWorkspaceRouteStateByRowID(ctx, workspace.CurrentRouteStateRowID.Int64)
-	if err != nil || route.WorkspaceRowID != workspace.ID || route.ID != workspace.CurrentRouteStateRowID.Int64 || route.RouteStateID != reference.RouteStateID || route.Sequence != reference.RouteSequence || route.WorkspaceVersion != reference.RouteWorkspaceVersion || route.State != reference.RouteState || workspace.Version != reference.WorkspaceVersion || route.WorkspaceVersion != workspace.Version || route.State != "ready" {
+	if err != nil || route.WorkspaceRowID != workspace.ID || route.ID != workspace.CurrentRouteStateRowID.Int64 {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument}
+	}
+	if route.RouteStateID != reference.RouteStateID {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument, Reason: "route_id_mismatch"}
+	}
+	if route.Sequence != reference.RouteSequence {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument, Reason: "route_sequence_mismatch"}
+	}
+	if route.WorkspaceVersion != reference.RouteWorkspaceVersion {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument, Reason: "route_workspace_version_mismatch"}
+	}
+	if route.State != reference.RouteState || workspace.Version != reference.WorkspaceVersion {
+		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument, Reason: "workspace_version_mismatch"}
+	}
+	if route.WorkspaceVersion != workspace.Version || route.State != "ready" {
 		return workflowstore.FeatureWorkspace{}, workflowstore.FeatureWorkspaceRouteState{}, &Error{Code: CodeInvalidPacketDocument}
 	}
 	return workspace, route, nil
@@ -873,21 +888,17 @@ func (s *LifecycleService) loadCurrentSelectionIdentity(ctx context.Context, wor
 		return "", nil, &Error{Code: CodeInvalidPacketDocument}
 	}
 	members, err := s.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
-	if err != nil || len(members) != 1 || members[0].SelectionRowID != selection.ID || members[0].Sequence != 1 || members[0].RevisionRowID != revision.ID || members[0].ApprovalRowID < 1 {
+	if err != nil || len(members) != 1 || members[0].SelectionRowID != selection.ID || members[0].Sequence != 1 || members[0].ApprovalRowID < 1 {
 		return "", nil, &Error{Code: CodeInvalidPacketDocument}
 	}
-	approvals, err := s.store.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
-	if err != nil {
-		return "", nil, &Error{Code: CodeInvalidPacketDocument}
+	if members[0].RevisionRowID != revision.ID {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument, Reason: "selection_target_mismatch"}
 	}
-	var approval workflowstore.DeliveryTicketRevisionApproval
-	for _, candidate := range approvals {
-		if candidate.ID == members[0].ApprovalRowID {
-			approval = candidate
-			break
-		}
+	approval, err := s.store.GetDeliveryTicketRevisionApprovalByRowID(ctx, members[0].ApprovalRowID)
+	if err != nil || approval.RevisionRowID != revision.ID {
+		return "", nil, &Error{Code: CodeInvalidPacketDocument, Reason: "approval_revision_mismatch"}
 	}
-	if approval.ID == 0 || approval.RevisionRowID != revision.ID || approval.ApprovalKind != "delivery" || approval.ApprovalState != "approved" || approval.ApprovalID == "" || approval.SourceClosureRowID != revision.SourceClosureRowID || !approval.AuthorityRevisionRowID.Valid || approval.AuthorityRevisionRowID.Int64 != authority.ID {
+	if approval.ApprovalKind != "delivery" || approval.ApprovalState != "approved" || approval.ApprovalID == "" || approval.SourceClosureRowID != revision.SourceClosureRowID || !approval.AuthorityRevisionRowID.Valid || approval.AuthorityRevisionRowID.Int64 != authority.ID {
 		return "", nil, &Error{Code: CodeInvalidPacketDocument}
 	}
 	dependencies, err := s.store.ListDeliveryTicketRevisionDependencies(ctx, revision.ID)
@@ -903,11 +914,14 @@ func (s *LifecycleService) loadCurrentSelectionIdentity(ctx context.Context, wor
 			return "", nil, &Error{Code: CodeInvalidPacketDocument}
 		}
 		dependencyTicket, loadErr := s.store.GetDeliveryTicketByRowID(ctx, dependencyRevision.DeliveryTicketRowID)
-		if loadErr != nil || dependencyTicket.WorkspaceRowID != workspace.ID || !dependencyTicket.CurrentRevisionRowID.Valid || dependencyTicket.CurrentRevisionRowID.Int64 != dependencyRevision.ID {
+		if loadErr != nil || dependencyTicket.WorkspaceRowID != workspace.ID {
+			return "", nil, &Error{Code: CodeInvalidPacketDocument, Reason: "dependency_workspace_mismatch"}
+		}
+		if !dependencyTicket.CurrentRevisionRowID.Valid || dependencyTicket.CurrentRevisionRowID.Int64 != dependencyRevision.ID {
 			return "", nil, &Error{Code: CodeInvalidPacketDocument}
 		}
 		if _, loadErr = s.store.GetDeliveryTicketRevisionSatisfaction(ctx, dependencyRevision.ID); loadErr != nil {
-			return "", nil, &Error{Code: CodeInvalidPacketDocument}
+			return "", nil, &Error{Code: CodeInvalidPacketDocument, Reason: "dependency_satisfaction_missing"}
 		}
 	}
 	if _, err = s.store.GetDeliveryTicketRevisionSatisfaction(ctx, revision.ID); err == nil || !errors.Is(err, sql.ErrNoRows) {
