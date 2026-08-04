@@ -1,4 +1,5 @@
 -- +goose Up
+-- +goose NO TRANSACTION
 -- This is a forward-only allowlist expansion. SQLite requires rebuilding the
 -- table to retain its existing constraints while admitting the published
 -- Planner frontier surface.

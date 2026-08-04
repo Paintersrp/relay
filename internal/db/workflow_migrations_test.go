@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -137,16 +138,34 @@ func TestPlannerTicketFrontierMutationResultSchemaUpgradePreservesRows(t *testin
 			t.Fatal(err)
 		}
 	}
+	createMigrationPublicationGraph(t, db)
+	preserved := make(map[string][][]any)
+	for _, table := range []string{
+		"mcp_mutation_results",
+		"operation_packets",
+		"operation_packet_publications",
+		"operation_packet_retention_dependencies",
+		"operation_packet_retained_artifacts",
+		"operation_packet_artifact_bindings",
+		"operation_packet_vault_relationships",
+	} {
+		preserved[table] = snapshotMigrationTable(t, db, table)
+	}
 
 	if err := goose.Up(db, "workflow_migrations"); err != nil {
 		t.Fatal(err)
+	}
+	for table, want := range preserved {
+		if got := snapshotMigrationTable(t, db, table); !reflect.DeepEqual(got, want) {
+			t.Fatalf("preserved %s = %#v, want %#v", table, got, want)
+		}
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM mcp_mutation_results`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != len(rows) {
-		t.Fatalf("mutation row count = %d, want %d", count, len(rows))
+	if count != len(rows)+1 {
+		t.Fatalf("mutation row count = %d, want %d", count, len(rows)+1)
 	}
 	for _, want := range rows {
 		var got mutationRow
@@ -164,11 +183,29 @@ func TestPlannerTicketFrontierMutationResultSchemaUpgradePreservesRows(t *testin
 	if foreignKeyErrors != 0 {
 		t.Fatalf("foreign key errors = %d", foreignKeyErrors)
 	}
+	for _, name := range []string{
+		"mcp_mutation_result_immutable_update",
+		"mcp_mutation_result_delete_guard",
+		"operation_packet_publication_mutation_result_update_guard",
+		"operation_packet_publication_mutation_result_delete_guard",
+		"operation_packet_publication_closure_guard",
+		"operation_packet_publication_mutation_result_authority_guard",
+	} {
+		var objectCount int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = ?`, name).Scan(&objectCount); err != nil {
+			t.Fatal(err)
+		}
+		if objectCount != 1 {
+			t.Fatalf("schema object %q count = %d", name, objectCount)
+		}
+	}
 
 	insertMutationResult(t, db, 10, "planner-ticket-frontier.v1", "create_operation_packet", "planner-ticket-frontier", "create_operation_packet_result")
 	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('unknown-surface.v1', 'create_operation_packet', 'unknown-surface', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
-	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('planner-ticket-frontier.v1', 'unknown.operation', 'unknown-operation', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('planner-ticket-frontier.v1', 'unknown.operation', 'unknown-mutation-tool', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
 	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('planner-ticket-frontier.v1', 'submit_plan', 'mismatched-valid-pair', ?, 'v1', ?, 'submit_plan_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+	assertExecFails(t, db, `UPDATE mcp_mutation_results SET result_sha256 = ? WHERE id = 1`, strings.Repeat("b", 64))
+	assertExecFails(t, db, `DELETE FROM mcp_mutation_results WHERE id = 1`)
 }
 
 func TestSourceIndexGenerationSchemaUpgradeAndGuards(t *testing.T) {
@@ -324,6 +361,65 @@ func TestIntegratedDiscoveryFoundationMigrationPreservesLegacyWorkspacesAndDefau
 	if enabled != 0 {
 		t.Fatalf("new workspace discovery capability = %d", enabled)
 	}
+}
+
+func createMigrationPublicationGraph(t *testing.T, db *sql.DB) {
+	t.Helper()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`INSERT INTO operation_packet_artifacts (id, artifact_id, relative_path, sha256, size_bytes) VALUES (10, 'artifact-upgrade-publication', 'operation-packets/artifact-upgrade-publication.json', ?, 2)`, migrationTestHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(`INSERT INTO operation_packets (id, packet_id, packet_sha256, role, operation_id, surface_contract_id, project_id, created_at, packet_artifact_row_id, coordinated_publication_id) VALUES (10, 'opkt-upgrade-publication', ?, 'planner', 'planner-authoring', 'planner-authoring.v1', 'project-upgrade', ?, 10, 'publication-upgrade-publication')`, migrationTestHash, testTimestamp()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(`INSERT INTO operation_packet_retention_dependencies (packet_row_id, dependency_class, dependency_key, required, attached, retained, owner_identity) VALUES (10, 'packet_document', 'artifact-upgrade-publication', 1, 1, 1, 'artifact-upgrade-publication')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(`INSERT INTO mcp_mutation_results (id, surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES (20, 'planner-authoring.v1', 'create_operation_packet', 'upgrade-publication', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(`INSERT INTO operation_packet_artifact_bindings (publication_id, packet_row_id, sequence, dependency_class, dependency_key, packet_artifact_row_id) VALUES ('publication-upgrade-publication', 10, 0, 'packet_document', 'artifact-upgrade-publication', 10)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(`INSERT INTO operation_packet_publications (publication_id, packet_row_id, packet_artifact_row_id, mutation_result_row_id, namespace, manifest_sha256, expected_retained_artifact_count, expected_binding_count, expected_dependency_count, expected_vault_relationship_count) VALUES ('publication-upgrade-publication', 10, 10, 20, 'operation-packet-publications/publication-upgrade-publication', ?, 0, 1, 1, 0)`, migrationTestHash); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func snapshotMigrationTable(t *testing.T, db *sql.DB, table string) [][]any {
+	t.Helper()
+	rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values [][]any
+	for rows.Next() {
+		row := make([]any, len(columns))
+		pointers := make([]any, len(columns))
+		for i := range row {
+			pointers[i] = &row[i]
+		}
+		if err := rows.Scan(pointers...); err != nil {
+			t.Fatal(err)
+		}
+		values = append(values, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return values
 }
 
 func openMigrationTestDB(t *testing.T, name string) *sql.DB {

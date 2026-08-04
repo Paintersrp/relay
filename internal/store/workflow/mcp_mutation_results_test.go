@@ -122,7 +122,7 @@ func TestMCPMutationResultDatabaseClosesSurfaceToolKindAndSize(t *testing.T) {
 	}
 }
 
-func TestMCPMutationResultPersistsEveryPublishedOperationSurface(t *testing.T) {
+func TestMCPMutationResultAcceptsEveryPublishedOperationPacketSurface(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openWorkflowTestStore(t)
 	operations, err := registry.All()
@@ -131,9 +131,6 @@ func TestMCPMutationResultPersistsEveryPublishedOperationSurface(t *testing.T) {
 	}
 	for _, operation := range operations {
 		t.Run(string(operation.OperationID), func(t *testing.T) {
-			if operation.Role == "" {
-				t.Fatal("published operation role is empty")
-			}
 			resultJSON := `{"operation_id":"` + string(operation.OperationID) + `"}`
 			if err := store.WithTx(ctx, func(tx *Tx) error {
 				_, err := tx.CreateMCPMutationResult(ctx, CreateMCPMutationResultParams{
@@ -149,7 +146,7 @@ func TestMCPMutationResultPersistsEveryPublishedOperationSurface(t *testing.T) {
 				})
 				return err
 			}); err != nil {
-				t.Fatalf("operation %q surface %q role %q did not persist: %v", operation.OperationID, operation.SurfaceContract, operation.Role, err)
+				t.Fatalf("operation %q surface %q did not persist: %v", operation.OperationID, operation.SurfaceContract, err)
 			}
 		})
 	}
