@@ -29,7 +29,7 @@ func TestSharedPacketRouteContractsAreBoundToTheirMountedRoute(t *testing.T) {
 
 func isSharedPacketToolForTest(name string) bool {
 	switch name {
-	case "get_active_operation_packet", "create_operation_packet", "refresh_operation_packet", "close_operation_packet", "read_operation_input", "list_operation_repositories":
+	case "list_projects", "get_active_operation_packet", "create_operation_packet", "refresh_operation_packet", "close_operation_packet", "read_operation_input", "list_operation_repositories":
 		return true
 	default:
 		return false

@@ -7,10 +7,119 @@ import (
 	"testing"
 
 	appoperations "relay/internal/app/operations"
+	workflowprojects "relay/internal/app/projects/workflow"
 	apptickets "relay/internal/app/tickets"
 	"relay/internal/mcp/routecontracts"
 	"relay/internal/operations/registry"
 )
+
+func TestListProjectsRouteContractsAcceptOnlyMountedSurface(t *testing.T) {
+	store := coldStartStore(t, t.TempDir(), false)
+	t.Cleanup(func() { _ = store.Close() })
+	projects, err := workflowprojects.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Projects: projects})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, manifest := range routes.Manifests {
+		t.Run(manifest.SurfaceContract, func(t *testing.T) {
+			handlers, err := BuildRouteHandlers(manifest, dispatchers)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server, err := NewServerForRoute(nil, manifest, handlers)
+			if err != nil {
+				t.Fatal(err)
+			}
+			matching := coldStartCall(t, server, "list_projects", map[string]any{
+				"surface_contract": manifest.SurfaceContract,
+				"status":           "active",
+				"limit":            100,
+			})
+			if matching.Error != nil {
+				t.Fatalf("matching surface rejected: %v", matching.Error)
+			}
+			var listed struct {
+				Projects []any `json:"projects"`
+			}
+			coldStartDecode(t, matching, &listed)
+
+			foreign := "wayfinder-workspace.v1"
+			if foreign == manifest.SurfaceContract {
+				foreign = "auditor-audit.v1"
+			}
+			if response := coldStartCall(t, server, "list_projects", map[string]any{"surface_contract": foreign}); response.Error == nil {
+				t.Fatal("foreign surface was accepted")
+			}
+			if response := coldStartCall(t, server, "list_projects", map[string]any{"surface_contract": manifest.SurfaceContract, "unknown": true}); response.Error == nil {
+				t.Fatal("unknown field was accepted")
+			}
+		})
+	}
+}
+
+func TestWayfinderListProjectsTransportEnrichmentPreservesRouteAuthority(t *testing.T) {
+	store := coldStartStore(t, t.TempDir(), false)
+	t.Cleanup(func() { _ = store.Close() })
+	projects, err := workflowprojects.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Projects: projects})
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wayfinder routecontracts.AppSurfaceManifest
+	for _, surface := range surfaces.Surfaces {
+		if surface.Surface == routecontracts.AppSurfaceWayfinder {
+			wayfinder = surface
+			break
+		}
+	}
+	registrations, err := BuildAppSurfaceHandlers(wayfinder, dispatchers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServerForAppSurface(nil, wayfinder, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const tool = "wayfinder-workspace-v1__list_projects"
+	clientVisible := map[string]any{"limit": 100, "status": "active"}
+	response := coldStartCall(t, server, tool, clientVisible)
+	if response.Error != nil {
+		t.Fatalf("transport-enriched call failed: %v", response.Error)
+	}
+	var listed struct {
+		Projects []any `json:"projects"`
+	}
+	coldStartDecode(t, response, &listed)
+
+	matching := map[string]any{"limit": 100, "status": "active", "surface_contract": "wayfinder-workspace.v1"}
+	if response := coldStartCall(t, server, tool, matching); response.Error != nil {
+		t.Fatalf("matching client surface rejected: %v", response.Error)
+	}
+	conflicting := map[string]any{"limit": 100, "status": "active", "surface_contract": "auditor-review.v1"}
+	if response := coldStartCall(t, server, tool, conflicting); response.Error == nil || !strings.Contains(response.Error.Message, "conflicts with mounted route") {
+		t.Fatalf("conflicting client surface was silently overwritten: %#v", response.Error)
+	}
+}
 
 func TestRouteSourceDispatchersUseEachRouteManifest(t *testing.T) {
 	set, err := routecontracts.BuildMCPRouteManifests()

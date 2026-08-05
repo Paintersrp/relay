@@ -123,10 +123,14 @@ func newPacketLifecycleHandler(manifest routecontracts.RouteManifest, name strin
 	case "list_projects":
 		return func(raw json.RawMessage) ToolCallResult {
 			var in struct {
-				Status string `json:"status"`
-				Limit  int    `json:"limit"`
+				SurfaceContract registry.SurfaceContractID `json:"surface_contract"`
+				Status          string                     `json:"status"`
+				Limit           int                        `json:"limit"`
 			}
 			if err := brokerDecodeStrict(raw, &in); err != nil {
+				return toolErr(err.Error())
+			}
+			if err := requirePacketRoute(manifest, in.SurfaceContract, ""); err != nil {
 				return toolErr(err.Error())
 			}
 			values, err := services.Projects.ListProjects(context.Background(), workflowprojects.ListProjectsInput{Status: in.Status, Limit: in.Limit})

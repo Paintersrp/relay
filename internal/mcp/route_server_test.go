@@ -186,7 +186,11 @@ func TestAppSurfaceRouteBoundDispatchPassesRegisteredSurfaceContractToHandler(t 
 		t.Fatal(err)
 	}
 
-	for _, arguments := range []json.RawMessage{json.RawMessage(`{}`), json.RawMessage(`{"surface_contract":"auditor-review.v1"}`)} {
+	matchingSurface, err := json.Marshal(selected.SurfaceContract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range []json.RawMessage{json.RawMessage(`{}`), json.RawMessage(`{"surface_contract":` + string(matchingSurface) + `}`)} {
 		if _, err := server.dispatchSurfaceTool(selected.AdvertisedName, arguments); err != nil {
 			t.Fatalf("dispatch %s: %v", arguments, err)
 		}

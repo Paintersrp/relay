@@ -72,22 +72,11 @@ func SpecializeRouteSchema(raw json.RawMessage, surface SurfaceContractID, tool 
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return append(json.RawMessage(nil), raw...)
 	}
-	if tool != "list_projects" && !isSharedPacketTool(tool) && !OwnedSourceToolContract(tool) && !schemaHasSurfaceContract(root) {
+	if !isSharedPacketTool(tool) && !OwnedSourceToolContract(tool) && !schemaHasSurfaceContract(root) {
 		return append(json.RawMessage(nil), raw...)
-	}
-	if tool == "list_projects" {
-		properties, _ := root["properties"].(map[string]any)
-		if properties == nil {
-			properties = map[string]any{}
-			root["properties"] = properties
-		}
-		properties["surface_contract"] = map[string]any{"type": "string"}
 	}
 	root["$id"] = fmt.Sprintf("urn:relay:mcp:%s:%s:%s:v1", surface, tool, schemaDirection(root))
 	specializeRouteSchemaNode(root, string(surface), operations)
-	if tool == "list_projects" {
-		removeRequiredSchemaField(root, "surface_contract")
-	}
 	encoded, err := json.Marshal(root)
 	if err != nil {
 		return append(json.RawMessage(nil), raw...)
@@ -102,20 +91,6 @@ func schemaHasSurfaceContract(root map[string]any) bool {
 	}
 	_, ok = properties["surface_contract"]
 	return ok
-}
-
-func removeRequiredSchemaField(root map[string]any, field string) {
-	required, ok := root["required"].([]any)
-	if !ok {
-		return
-	}
-	filtered := make([]any, 0, len(required))
-	for _, value := range required {
-		if value != field {
-			filtered = append(filtered, value)
-		}
-	}
-	root["required"] = filtered
 }
 
 // PublishedRouteToolInputSchema resolves one exact published route/tool pair

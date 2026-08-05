@@ -98,18 +98,12 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 		return ToolCallResult{}, errors.New("surface handler is not configured")
 	}
 	if dispatch.staticRoute {
-		boundArgs, err := withDefaultSurfaceContract(args, dispatch.surface)
-		if dispatch.routeBound {
-			boundArgs, err = withBoundSurfaceContract(args, dispatch.surface)
-		}
+		boundArgs, err := withBoundSurfaceContract(args, dispatch.surface)
 		if err != nil {
 			return ToolCallResult{}, err
 		}
 		if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, boundArgs); err != nil {
 			return ToolCallResult{}, err
-		}
-		if !dispatch.routeBound {
-			return dispatch.handle(args), nil
 		}
 		return dispatch.handle(boundArgs), nil
 	}
@@ -131,24 +125,11 @@ func withBoundSurfaceContract(raw json.RawMessage, surface registry.SurfaceContr
 	if err != nil {
 		return nil, err
 	}
-	object["surface_contract"] = encodedSurface
-	return json.Marshal(object)
-}
-
-func withDefaultSurfaceContract(raw json.RawMessage, surface registry.SurfaceContractID) (json.RawMessage, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return json.Marshal(map[string]any{"surface_contract": surface})
-	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+	if supplied, exists := object["surface_contract"]; exists {
+		if !bytes.Equal(supplied, encodedSurface) {
+			return nil, errors.New("surface_contract conflicts with mounted route")
+		}
 		return raw, nil
-	}
-	if _, exists := object["surface_contract"]; exists {
-		return raw, nil
-	}
-	encodedSurface, err := json.Marshal(surface)
-	if err != nil {
-		return nil, err
 	}
 	object["surface_contract"] = encodedSurface
 	return json.Marshal(object)
