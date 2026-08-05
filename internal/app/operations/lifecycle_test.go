@@ -358,27 +358,83 @@ func TestLifecycleRepositoryAuthorityRequiresEveryAttachedTarget(t *testing.T) {
 	}
 }
 
-func TestLifecycleRepositoryAuthorityNamesUnconfiguredAttachedTarget(t *testing.T) {
+func TestLifecycleWayfinderRoutesBootstrapRepositoryAuthorityWithoutConfiguredBranch(t *testing.T) {
+	for _, route := range []struct {
+		surface   registry.SurfaceContractID
+		operation registry.OperationID
+	}{
+		{surface: "wayfinder-workspace.v1", operation: "wayfinder.workspace"},
+		{surface: "wayfinder-discovery.v1", operation: "wayfinder.discovery"},
+		{surface: "wayfinder-investigation.v1", operation: "wayfinder.investigation"},
+	} {
+		t.Run(string(route.operation), func(t *testing.T) {
+			fixture := openLifecycleFixture(t)
+			if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = NULL WHERE repo_target = 'project'`); err != nil {
+				t.Fatal(err)
+			}
+			created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{
+				MutationID: "bootstrap-" + string(route.operation),
+				Identity:   semanticidentity.CreateOperationPacket{SurfaceContract: route.surface, OperationID: route.operation, ProjectID: fixture.projectID},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document struct {
+				Repositories []struct {
+					RepositoryKey              string `json:"repository_key"`
+					RepositoryTarget           string `json:"repository_target"`
+					RevisionSource             string `json:"revision_source"`
+					ConfiguredWorkingBranchRef string `json:"configured_working_branch_ref"`
+					CommitOID                  string `json:"commit_oid"`
+					TreeOID                    string `json:"tree_oid"`
+				} `json:"repositories"`
+			}
+			if err := json.Unmarshal(created.Packet.DocumentBytes, &document); err != nil {
+				t.Fatal(err)
+			}
+			if len(document.Repositories) != 1 {
+				t.Fatalf("repositories = %#v", document.Repositories)
+			}
+			repository := document.Repositories[0]
+			if repository.RepositoryKey != "project" || repository.RepositoryTarget != "project" || repository.RevisionSource != "configured_working_branch" || repository.ConfiguredWorkingBranchRef != "refs/heads/main" || repository.CommitOID == "" || repository.TreeOID == "" {
+				t.Fatalf("repository authority = %#v", repository)
+			}
+		})
+	}
+}
+
+func TestLifecycleConfiguredBranchThatDoesNotResolveIsNotMissingConfiguration(t *testing.T) {
 	fixture := openLifecycleFixture(t)
-	project, err := fixture.store.GetProjectByProjectID(fixture.ctx, fixture.projectID)
-	if err != nil {
+	if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = 'refs/heads/missing' WHERE repo_target = 'project'`); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
-		_, err := tx.AttachProjectRepository(fixture.ctx, project.ID, "relay-specs")
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = NULL WHERE repo_target = 'relay-specs'`); err != nil {
-		t.Fatal(err)
-	}
-	_, err = fixture.service.Create(fixture.ctx, CreateLifecycleInput{
-		MutationID: "create-wayfinder-unconfigured-second",
+	_, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{
+		MutationID: "create-wayfinder-missing-configured-branch",
 		Identity:   semanticidentity.CreateOperationPacket{SurfaceContract: "wayfinder-workspace.v1", OperationID: "wayfinder.workspace", ProjectID: fixture.projectID},
 	})
-	if err == nil || !strings.Contains(err.Error(), `repository authority unavailable for "relay-specs": configured branch ref is missing`) {
-		t.Fatalf("unconfigured target error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), `repository authority unavailable for "project": configured branch does not resolve`) || strings.Contains(err.Error(), "configured branch ref is missing") {
+		t.Fatalf("missing configured branch error = %v", err)
+	}
+}
+
+func TestRepositoryAuthorityErrorDistinguishesBootstrapFailures(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "configured branch", err: workflowrepos.ErrConfiguredBranchUnavailable, want: "configured branch does not resolve"},
+		{name: "repository access", err: workflowrepos.ErrRepositoryAccess, want: "registered repository cannot be accessed"},
+		{name: "detached HEAD", err: workflowrepos.ErrDetachedRepositoryHead, want: "repository HEAD is detached"},
+		{name: "empty repository", err: workflowrepos.ErrRepositoryNoCommit, want: "repository has no commit to resolve"},
+		{name: "incomplete registration", err: workflowrepos.ErrRepositoryUnconfigured, want: "repository registration is incomplete"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := repositoryAuthorityError("relay", test.err)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("authority error = %v", err)
+			}
+		})
 	}
 }
 

@@ -488,7 +488,7 @@ func assertReadOnlyGitCommands(t *testing.T, commands [][]string) {
 			t.Fatal("empty Git command")
 		}
 		switch command[0] {
-		case "rev-parse", "remote", "check-ref-format", "cat-file", "status", "ls-tree":
+		case "rev-parse", "symbolic-ref", "remote", "check-ref-format", "cat-file", "status", "ls-tree":
 		default:
 			t.Fatalf("prohibited Git command issued: git %s", strings.Join(command, " "))
 		}

@@ -69,7 +69,7 @@ func TestRepositoryApplicationTransfersCompleteConfiguredAndExplicitResults(t *t
 	}
 }
 
-func TestRepositoryApplicationDelegatesFailurePoliciesWithoutFallback(t *testing.T) {
+func TestRepositoryApplicationDelegatesResolutionPolicies(t *testing.T) {
 	ctx := context.Background()
 	store, registry, repo := newApplicationRepositoryFixture(t)
 	service := &Service{store: store, registry: registry}
@@ -87,16 +87,21 @@ func TestRepositoryApplicationDelegatesFailurePoliciesWithoutFallback(t *testing
 		t.Fatalf("dirty policy error = %v", err)
 	}
 
+	unconfiguredRepo := appNewGitRepository(t)
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		_, err := tx.CreateRepositoryTarget(ctx, "unconfigured", appNewGitRepository(t))
+		_, err := tx.CreateRepositoryTarget(ctx, "unconfigured", unconfiguredRepo)
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.ResolveRepositoryRevision(ctx, RepositoryRevisionInput{
+	derived, err := service.ResolveRepositoryRevision(ctx, RepositoryRevisionInput{
 		RepoTarget: "unconfigured",
-	}); !errors.Is(err, workflowrepos.ErrRepositoryUnconfigured) {
-		t.Fatalf("unconfigured error = %v", err)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if derived.ConfiguredWorkingBranchRef != "refs/heads/main" || derived.CommitOID != appGitOutput(t, unconfiguredRepo, "rev-parse", "HEAD^{commit}") {
+		t.Fatalf("repository-derived result = %#v", derived)
 	}
 
 	if _, err := service.ResolveRepositoryRevision(ctx, RepositoryRevisionInput{

@@ -496,11 +496,17 @@ func repositoryAuthorityError(repoTarget string, err error) error {
 	reason := "authority resolution failed"
 	switch {
 	case errors.Is(err, workflowrepos.ErrRepositoryUnconfigured):
-		reason = "configured branch ref is missing"
+		reason = "repository registration is incomplete"
 	case errors.Is(err, workflowrepos.ErrConfiguredBranchUnavailable):
-		reason = "configured branch ref cannot be resolved"
+		reason = "configured branch does not resolve"
 	case errors.Is(err, workflowrepos.ErrInvalidConfiguredBranch):
 		reason = "configured branch ref is invalid"
+	case errors.Is(err, workflowrepos.ErrRepositoryAccess):
+		reason = "registered repository cannot be accessed"
+	case errors.Is(err, workflowrepos.ErrDetachedRepositoryHead):
+		reason = "repository HEAD is detached"
+	case errors.Is(err, workflowrepos.ErrRepositoryNoCommit):
+		reason = "repository has no commit to resolve"
 	case errors.Is(err, workflowrepos.ErrRepositoryObject):
 		reason = "configured branch commit or tree cannot be resolved"
 	case errors.Is(err, workflowrepos.ErrDirtyProjectWorktree):

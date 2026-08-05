@@ -33,6 +33,107 @@ func TestWayfinderDiscoveryColdStartPacketDispatcherFlowAfterUpgrade(t *testing.
 	runWayfinderDiscoveryColdStartPacketDispatcherFlow(t, true)
 }
 
+func TestWayfinderAppRoutesBootstrapUnconfiguredRepositoryAuthority(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store := coldStartStore(t, root, false)
+	defer store.Close()
+	repositoryPath := coldStartGitRepository(t, filepath.Join(root, "relay"))
+	repositories, err := workflowrepos.NewRegistry(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repositories.Register(ctx, "relay", repositoryPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		project, err := tx.CreateProject(ctx, workflowstore.CreateProjectParams{ProjectID: "project-wayfinder-bootstrap", Name: "Wayfinder Bootstrap", Description: "repository-derived authority"})
+		if err != nil {
+			return err
+		}
+		_, err = tx.AttachProjectRepository(ctx, project.ID, "relay")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := mcpcomposition.Open(ctx, filepath.Join(root, "source-vault"), store, []byte("wayfinder-bootstrap-cursor-key-000"), fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
+		return fileacquisition.FetchedFile{}, errors.New("bootstrap test has no file inputs")
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleHandler, err := NewOperationPacketLifecycleHandler(policy.Lifecycle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{Packets: policy.Packets, Lifecycle: lifecycleHandler})
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wayfinder routecontracts.AppSurfaceManifest
+	for _, surface := range surfaces.Surfaces {
+		if surface.Surface == routecontracts.AppSurfaceWayfinder {
+			wayfinder = surface
+			break
+		}
+	}
+	registrations, err := BuildAppSurfaceHandlers(wayfinder, dispatchers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServerForAppSurface(nil, wayfinder, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantCommit := coldStartGitOutput(t, repositoryPath, "rev-parse", "HEAD^{commit}")
+	wantTree := coldStartGitOutput(t, repositoryPath, "rev-parse", "HEAD^{tree}")
+	for _, route := range []struct {
+		prefix    string
+		operation string
+	}{
+		{prefix: "wayfinder-workspace-v1", operation: "wayfinder.workspace"},
+		{prefix: "wayfinder-discovery-v1", operation: "wayfinder.discovery"},
+		{prefix: "wayfinder-investigation-v1", operation: "wayfinder.investigation"},
+	} {
+		t.Run(route.operation, func(t *testing.T) {
+			create := coldStartCall(t, server, route.prefix+"__create_operation_packet", map[string]any{
+				"mutation_id": "bootstrap-" + route.operation, "operation_id": route.operation, "project_id": "project-wayfinder-bootstrap",
+				"inputs": []any{}, "workflow_references": []any{}, "attestations": []any{},
+			})
+			var created CreateOperationPacketResult
+			coldStartDecode(t, create, &created)
+			listed := coldStartCall(t, server, route.prefix+"__list_operation_repositories", map[string]any{"packet_id": created.Packet.Summary.PacketID})
+			var result struct {
+				Packet       OperationPacketSummary `json:"packet"`
+				Repositories []struct {
+					RepositoryKey                        string            `json:"repository_key"`
+					RepositoryTarget                     string            `json:"repository_target"`
+					BindingOrder                         int64             `json:"binding_order"`
+					RevisionSource                       string            `json:"revision_source"`
+					ConfiguredWorkingBranchRef           string            `json:"configured_working_branch_ref"`
+					RepositoryTargetConfigurationVersion int64             `json:"repository_target_configuration_version"`
+					CommitOID                            string            `json:"commit_oid"`
+					TreeOID                              string            `json:"tree_oid"`
+					Anchors                              []json.RawMessage `json:"anchors"`
+				} `json:"repositories"`
+			}
+			coldStartDecode(t, listed, &result)
+			if len(result.Repositories) != 1 || result.Repositories[0].RepositoryKey != "relay" || result.Repositories[0].ConfiguredWorkingBranchRef != "refs/heads/main" || result.Repositories[0].CommitOID != wantCommit || result.Repositories[0].TreeOID != wantTree {
+				t.Fatalf("packet repositories = %#v", result.Repositories)
+			}
+		})
+	}
+}
+
 func runWayfinderDiscoveryColdStartPacketDispatcherFlow(t *testing.T, upgraded bool) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -237,6 +338,17 @@ func coldStartGit(t *testing.T, dir string, args ...string) {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
+}
+
+func coldStartGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return strings.TrimSpace(string(output))
 }
 
 func coldStartRoute(t *testing.T, routes routecontracts.RouteSet, surface string) routecontracts.RouteManifest {

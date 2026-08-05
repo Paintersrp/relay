@@ -24,6 +24,9 @@ var (
 	ErrRepositoryUnconfigured = errors.New("repository target is unconfigured")
 	ErrInvalidExplicitCommit  = errors.New("invalid explicit commit")
 	ErrRepositoryObject       = errors.New("repository object is unavailable or has the wrong type")
+	ErrRepositoryAccess       = errors.New("registered repository cannot be accessed")
+	ErrDetachedRepositoryHead = errors.New("registered repository HEAD is detached")
+	ErrRepositoryNoCommit     = errors.New("registered repository has no commit")
 	ErrDirtyProjectWorktree   = errors.New("targeted Project worktree is dirty")
 	ErrGovernanceUnavailable  = errors.New("governance authority is unavailable")
 )
@@ -94,14 +97,26 @@ func (r *Registry) ResolveRevision(
 		}
 		revisionSource = RevisionSourceExplicitCommit
 		commitOID, treeOID, err = r.resolveCommitAndTree(ctx, target.LocalPath, request.ExplicitCommitOID)
-	case !target.ConfiguredBranchRef.Valid:
-		return ResolvedRevision{}, ErrRepositoryUnconfigured
-	default:
+	case target.ConfiguredBranchRef.Valid:
 		observation, resolveErr := r.resolveConfiguredBranch(
 			ctx,
 			target.LocalPath,
 			target.ConfiguredBranchRef.String,
 		)
+		if resolveErr != nil {
+			if errors.Is(resolveErr, ErrConfiguredBranchUnavailable) {
+				if accessErr := r.requireAccessibleRepository(ctx, target.LocalPath); accessErr != nil {
+					return ResolvedRevision{}, accessErr
+				}
+			}
+			return ResolvedRevision{}, resolveErr
+		}
+		revisionSource = RevisionSourceConfiguredWorkingBranch
+		configuredRef = observation.Ref
+		commitOID = observation.CommitOID
+		treeOID = observation.TreeOID
+	default:
+		observation, resolveErr := r.resolveRepositoryHead(ctx, target.LocalPath)
 		if resolveErr != nil {
 			return ResolvedRevision{}, resolveErr
 		}
@@ -147,6 +162,48 @@ func (r *Registry) ResolveRevision(
 		TreeOID:                              treeOID,
 		GovernanceAvailability:               governance,
 	}, nil
+}
+
+func (r *Registry) resolveRepositoryHead(ctx context.Context, localPath string) (branchObservation, error) {
+	if err := r.requireAccessibleRepository(ctx, localPath); err != nil {
+		return branchObservation{}, err
+	}
+	result, err := r.runner.Run(ctx, localPath, "symbolic-ref", "--quiet", "HEAD")
+	if err == nil {
+		ref := strings.TrimSpace(result.Stdout)
+		observation, resolveErr := r.resolveConfiguredBranch(ctx, localPath, ref)
+		if errors.Is(resolveErr, ErrConfiguredBranchUnavailable) {
+			return branchObservation{}, ErrRepositoryNoCommit
+		}
+		return observation, resolveErr
+	}
+	if errors.Is(err, ErrGitUnavailable) || errors.Is(err, ErrGitTimeout) || errors.Is(err, ErrGitOutputLimit) {
+		return branchObservation{}, fmt.Errorf("%w: %v", ErrRepositoryAccess, err)
+	}
+
+	result, err = r.runner.Run(ctx, localPath, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		if accessErr := r.requireAccessibleRepository(ctx, localPath); accessErr != nil {
+			return branchObservation{}, accessErr
+		}
+		return branchObservation{}, ErrRepositoryNoCommit
+	}
+	branch := strings.TrimSpace(result.Stdout)
+	if branch == "HEAD" || branch == "" {
+		return branchObservation{}, ErrDetachedRepositoryHead
+	}
+	return r.resolveConfiguredBranch(ctx, localPath, "refs/heads/"+branch)
+}
+
+func (r *Registry) requireAccessibleRepository(ctx context.Context, localPath string) error {
+	result, err := r.runner.Run(ctx, localPath, "rev-parse", "--is-inside-work-tree")
+	if err != nil || strings.TrimSpace(result.Stdout) != "true" {
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrRepositoryAccess, err)
+		}
+		return ErrRepositoryAccess
+	}
+	return nil
 }
 
 func (r *Registry) resolveCommitAndTree(

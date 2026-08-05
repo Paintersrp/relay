@@ -84,9 +84,9 @@ func validateRepositoryAuthority(
 	}
 	switch revision.RevisionSource {
 	case workflowrepos.RevisionSourceConfiguredWorkingBranch:
-		if !current.ConfiguredBranchRef.Valid ||
-			current.ConfiguredBranchRef.String != revision.ConfiguredWorkingBranchRef ||
-			current.ConfigurationVersion != revision.RepositoryTargetConfigurationVersion {
+		if current.ConfigurationVersion != revision.RepositoryTargetConfigurationVersion ||
+			current.ConfiguredBranchRef.Valid != revision.RepositoryTarget.ConfiguredBranchRef.Valid ||
+			(current.ConfiguredBranchRef.Valid && current.ConfiguredBranchRef.String != revision.ConfiguredWorkingBranchRef) {
 			return &Error{Code: CodeStaleConfiguredAuthority}
 		}
 	case workflowrepos.RevisionSourceExplicitCommit:

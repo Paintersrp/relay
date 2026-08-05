@@ -70,7 +70,7 @@ func TestConfiguredAndExplicitRevisionIgnoreCheckoutState(t *testing.T) {
 func TestOmittedRevisionFailureMatrix(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("unconfigured under every checkout state", func(t *testing.T) {
+	t.Run("unconfigured uses symbolic HEAD", func(t *testing.T) {
 		registry, store, repo := newBranchTestRegistry(t)
 		if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 			_, err := tx.CreateRepositoryTarget(ctx, "relay", repo)
@@ -78,16 +78,29 @@ func TestOmittedRevisionFailureMatrix(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		for _, checkout := range []string{"main", "alternate", "detached"} {
-			switch checkout {
-			case "main", "alternate":
-				gitRun(t, repo, "checkout", checkout)
-			case "detached":
-				gitRun(t, repo, "checkout", "--detach", "refs/heads/alternate")
-			}
-			if _, err := registry.ResolveRevision(ctx, RevisionRequest{RepoTarget: "relay"}); !errors.Is(err, ErrRepositoryUnconfigured) {
-				t.Fatalf("checkout %s error = %v", checkout, err)
-			}
+		resolved, err := registry.ResolveRevision(ctx, RevisionRequest{RepoTarget: "relay"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.RevisionSource != RevisionSourceConfiguredWorkingBranch ||
+			resolved.ConfiguredWorkingBranchRef != "refs/heads/main" ||
+			resolved.CommitOID != gitOutput(t, repo, "rev-parse", "refs/heads/main^{commit}") ||
+			resolved.TreeOID != gitOutput(t, repo, "rev-parse", "refs/heads/main^{tree}") {
+			t.Fatalf("repository-derived revision = %#v", resolved)
+		}
+	})
+
+	t.Run("unconfigured detached HEAD", func(t *testing.T) {
+		registry, store, repo := newBranchTestRegistry(t)
+		if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			_, err := tx.CreateRepositoryTarget(ctx, "relay", repo)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		gitRun(t, repo, "checkout", "--detach", "refs/heads/alternate")
+		if _, err := registry.ResolveRevision(ctx, RevisionRequest{RepoTarget: "relay"}); !errors.Is(err, ErrDetachedRepositoryHead) {
+			t.Fatalf("detached HEAD error = %v", err)
 		}
 	})
 
@@ -140,6 +153,43 @@ func TestOmittedRevisionFailureMatrix(t *testing.T) {
 			t.Fatalf("unborn ref error = %v", err)
 		}
 	})
+
+	t.Run("empty unconfigured repository", func(t *testing.T) {
+		store, _ := openRepositoryWorkflowStore(t)
+		repo := t.TempDir()
+		gitRun(t, repo, "init", "-b", "main")
+		registry, err := NewRegistry(store)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			_, err := tx.CreateRepositoryTarget(ctx, "relay", repo)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := registry.ResolveRevision(ctx, RevisionRequest{RepoTarget: "relay"}); !errors.Is(err, ErrRepositoryNoCommit) {
+			t.Fatalf("empty repository error = %v", err)
+		}
+	})
+
+	t.Run("invalid repository", func(t *testing.T) {
+		store, _ := openRepositoryWorkflowStore(t)
+		repo := t.TempDir()
+		registry, err := NewRegistry(store)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			_, err := tx.CreateRepositoryTarget(ctx, "relay", repo)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := registry.ResolveRevision(ctx, RevisionRequest{RepoTarget: "relay"}); !errors.Is(err, ErrRepositoryAccess) {
+			t.Fatalf("invalid repository error = %v", err)
+		}
+	})
 }
 
 func TestExplicitRevisionClosedInputAndObjectMatrix(t *testing.T) {
@@ -156,7 +206,6 @@ func TestExplicitRevisionClosedInputAndObjectMatrix(t *testing.T) {
 	blob := gitOutput(t, repo, "rev-parse", "HEAD:README.md")
 
 	invalid := []string{
-		"",
 		commit[:12],
 		strings.ToUpper(commit),
 		"refs/heads/main",
@@ -168,13 +217,6 @@ func TestExplicitRevisionClosedInputAndObjectMatrix(t *testing.T) {
 	for _, value := range invalid {
 		t.Run("invalid-"+strings.ReplaceAll(value, "/", "_"), func(t *testing.T) {
 			request := RevisionRequest{RepoTarget: "relay", ExplicitCommitOID: value}
-			if value == "" {
-				_, err := registry.ResolveRevision(ctx, request)
-				if !errors.Is(err, ErrRepositoryUnconfigured) {
-					t.Fatalf("empty explicit value error = %v", err)
-				}
-				return
-			}
 			if _, err := registry.ResolveRevision(ctx, request); !errors.Is(err, ErrInvalidExplicitCommit) {
 				t.Fatalf("value %q error = %v", value, err)
 			}
