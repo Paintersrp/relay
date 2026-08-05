@@ -462,7 +462,7 @@ func normalizeLifecycleError(err error) error {
 	if errors.As(err, &operationErr) || errors.As(err, &mutationErr) || errors.As(err, &fileErr) || errors.As(err, &vaultErr) {
 		return err
 	}
-	if errors.Is(err, workflowrepos.ErrRepositoryUnconfigured) || errors.Is(err, workflowrepos.ErrInvalidExplicitCommit) || errors.Is(err, workflowrepos.ErrRepositoryObject) || errors.Is(err, workflowrepos.ErrDirtyProjectWorktree) || errors.Is(err, workflowrepos.ErrGovernanceUnavailable) {
+	if errors.Is(err, workflowrepos.ErrRepositoryUnconfigured) || errors.Is(err, workflowrepos.ErrConfiguredBranchUnavailable) || errors.Is(err, workflowrepos.ErrInvalidConfiguredBranch) || errors.Is(err, workflowrepos.ErrInvalidExplicitCommit) || errors.Is(err, workflowrepos.ErrRepositoryObject) || errors.Is(err, workflowrepos.ErrDirtyProjectWorktree) || errors.Is(err, workflowrepos.ErrGovernanceUnavailable) {
 		return &Error{Code: CodeRepositoryAuthorityUnavailable}
 	}
 	return internalFailure()

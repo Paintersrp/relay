@@ -97,7 +97,7 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 	if !ok {
 		return ToolCallResult{}, errors.New("surface handler is not configured")
 	}
-	if dispatch.staticRoute {
+	if dispatch.routeBound {
 		boundArgs, err := withBoundSurfaceContract(args, dispatch.surface)
 		if err != nil {
 			return ToolCallResult{}, err
@@ -107,10 +107,21 @@ func (s *Server) dispatchSurfaceTool(name string, args json.RawMessage) (ToolCal
 		}
 		return dispatch.handle(boundArgs), nil
 	}
-	if err := registry.ValidateOperationRequest(dispatch.surface, dispatch.toolName, args); err != nil {
+	if _, err := registry.ValidateRequest(dispatch.surface, dispatch.toolName, args); err != nil {
 		return ToolCallResult{}, err
 	}
 	return dispatch.handle(args), nil
+}
+
+func routeBoundInputSchema(raw json.RawMessage) bool {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if json.Unmarshal(raw, &schema) != nil {
+		return false
+	}
+	_, ok := schema.Properties["surface_contract"]
+	return ok
 }
 
 func withBoundSurfaceContract(raw json.RawMessage, surface registry.SurfaceContractID) (json.RawMessage, error) {

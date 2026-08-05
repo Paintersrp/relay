@@ -1,6 +1,9 @@
 package operations
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrTicketAdmission            = errors.New("ticket workflow admission is invalid")
@@ -47,6 +50,9 @@ func (e *Error) Error() string {
 	case CodeCompleteLifecycleRequired:
 		return "complete operation packet lifecycle is required"
 	case CodeRepositoryAuthorityUnavailable:
+		if e.Reason != "" {
+			return fmt.Sprintf("repository authority unavailable for %s: %s", e.MissingDependencyClass, e.Reason)
+		}
 		return "operation packet repository authority is unavailable"
 	default:
 		return "operation packet persistence failed"

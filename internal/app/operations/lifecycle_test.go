@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -320,6 +321,64 @@ func TestLifecycleRelaySpecsAsProjectRequiresCleanWorktree(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected dirty relay-specs Project repository failure")
+	}
+}
+
+func TestLifecycleRepositoryAuthorityRequiresEveryAttachedTarget(t *testing.T) {
+	fixture := openLifecycleFixture(t)
+	project, err := fixture.store.GetProjectByProjectID(fixture.ctx, fixture.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.AttachProjectRepository(fixture.ctx, project.ID, "relay-specs")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{
+		MutationID: "create-wayfinder-two-repositories",
+		Identity:   semanticidentity.CreateOperationPacket{SurfaceContract: "wayfinder-workspace.v1", OperationID: "wayfinder.workspace", ProjectID: fixture.projectID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Repositories []struct {
+			RepositoryKey string `json:"repository_key"`
+			CommitOID     string `json:"commit_oid"`
+			TreeOID       string `json:"tree_oid"`
+		} `json:"repositories"`
+	}
+	if err := json.Unmarshal(created.Packet.DocumentBytes, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Repositories) != 2 || document.Repositories[0].RepositoryKey != "project" || document.Repositories[1].RepositoryKey != "relay-specs" || document.Repositories[0].CommitOID == "" || document.Repositories[0].TreeOID == "" || document.Repositories[1].CommitOID == "" || document.Repositories[1].TreeOID == "" {
+		t.Fatalf("packet repository authority = %#v", document.Repositories)
+	}
+}
+
+func TestLifecycleRepositoryAuthorityNamesUnconfiguredAttachedTarget(t *testing.T) {
+	fixture := openLifecycleFixture(t)
+	project, err := fixture.store.GetProjectByProjectID(fixture.ctx, fixture.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.AttachProjectRepository(fixture.ctx, project.ID, "relay-specs")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = NULL WHERE repo_target = 'relay-specs'`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.service.Create(fixture.ctx, CreateLifecycleInput{
+		MutationID: "create-wayfinder-unconfigured-second",
+		Identity:   semanticidentity.CreateOperationPacket{SurfaceContract: "wayfinder-workspace.v1", OperationID: "wayfinder.workspace", ProjectID: fixture.projectID},
+	})
+	if err == nil || !strings.Contains(err.Error(), `repository authority unavailable for "relay-specs": configured branch ref is missing`) {
+		t.Fatalf("unconfigured target error = %v", err)
 	}
 }
 

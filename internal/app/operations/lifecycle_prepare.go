@@ -445,11 +445,11 @@ func (s *LifecycleService) prepareRepositories(ctx context.Context, project work
 			Policy:            workflowrepos.RepositoryUsePolicy{RequireCleanWorktree: requiresCleanProject(operation.SourcePolicy)},
 		})
 		if err != nil {
-			return repositoryPreparation{}, err
+			return repositoryPreparation{}, repositoryAuthorityError(key, err)
 		}
 		imported, err := s.vaults.ImportClosure(ctx, sourcevault.ImportRequest{Revision: revision})
 		if err != nil {
-			return repositoryPreparation{}, err
+			return repositoryPreparation{}, repositoryAuthorityError(key, fmt.Errorf("source-vault capture failed: %w", err))
 		}
 		result.primary[key] = imported
 		result.primaryRevision[key] = revision
@@ -487,6 +487,30 @@ func (s *LifecycleService) prepareRepositories(ctx context.Context, project work
 		}
 	}
 	return result, nil
+}
+
+func repositoryAuthorityError(repoTarget string, err error) error {
+	if err == nil {
+		return nil
+	}
+	reason := "authority resolution failed"
+	switch {
+	case errors.Is(err, workflowrepos.ErrRepositoryUnconfigured):
+		reason = "configured branch ref is missing"
+	case errors.Is(err, workflowrepos.ErrConfiguredBranchUnavailable):
+		reason = "configured branch ref cannot be resolved"
+	case errors.Is(err, workflowrepos.ErrInvalidConfiguredBranch):
+		reason = "configured branch ref is invalid"
+	case errors.Is(err, workflowrepos.ErrRepositoryObject):
+		reason = "configured branch commit or tree cannot be resolved"
+	case errors.Is(err, workflowrepos.ErrDirtyProjectWorktree):
+		reason = "configured repository worktree is dirty"
+	case errors.Is(err, workflowrepos.ErrGovernanceUnavailable):
+		reason = "configured governance authority is unavailable"
+	case errors.As(err, new(*sourcevault.Error)):
+		reason = "source-vault capture failed"
+	}
+	return &Error{Code: CodeRepositoryAuthorityUnavailable, MissingDependencyClass: fmt.Sprintf("%q", repoTarget), Reason: reason}
 }
 
 func (s *LifecycleService) prepareGovernance(ctx context.Context, packetID string, operation registry.OperationDefinition, request lifecycleRequest, repositories repositoryPreparation) (packet.GovernanceBinding, packet.ManifestDomainBinding, []PublicationVaultInput, workflowrepos.ResolvedRevision, error) {

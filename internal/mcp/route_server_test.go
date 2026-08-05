@@ -216,6 +216,63 @@ func TestAppSurfaceRouteBoundDispatchPassesRegisteredSurfaceContractToHandler(t 
 	}
 }
 
+func TestAppSurfaceActionDispatchPreservesClientArguments(t *testing.T) {
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := fakeAppSurfaceDispatchers(routes)
+	var surface routecontracts.AppSurfaceManifest
+	for _, candidate := range surfaces.Surfaces {
+		if candidate.Surface == routecontracts.AppSurfaceWayfinder {
+			surface = candidate
+			break
+		}
+	}
+	registrations, err := BuildAppSurfaceHandlers(surface, owners)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received json.RawMessage
+	var selected AppToolRegistration
+	for index := range registrations {
+		if registrations[index].InternalToolName != "create_workspace" || registrations[index].SurfaceContract != "wayfinder-workspace.v1" {
+			continue
+		}
+		selected = registrations[index]
+		registrations[index].Handler.Handle = func(raw json.RawMessage) ToolCallResult {
+			received = append(json.RawMessage(nil), raw...)
+			return workflowOK(map[string]any{"workspace": map[string]string{"workspace_id": "workspace-test"}})
+		}
+		break
+	}
+	if selected.AdvertisedName == "" {
+		t.Fatal("Wayfinder create_workspace registration is missing")
+	}
+	server, err := NewServerForAppSurface(nil, surface, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := json.RawMessage(`{"project_id":"project-test","feature_slug":"feature-test"}`)
+	result, err := server.dispatchSurfaceTool(selected.AdvertisedName, arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "workspace-test") {
+		t.Fatalf("successful workspace result = %#v", result)
+	}
+	if string(received) != string(arguments) {
+		t.Fatalf("handler arguments = %s, want %s", received, arguments)
+	}
+	if _, err := server.dispatchSurfaceTool(selected.AdvertisedName, json.RawMessage(`{"project_id":"project-test","feature_slug":"feature-test","surface_contract":"wayfinder-workspace.v1"}`)); err == nil {
+		t.Fatal("action schema accepted surface_contract")
+	}
+}
+
 func appRouteCount(registrations []AppToolRegistration) int {
 	routes := make(map[string]struct{})
 	for _, registration := range registrations {
