@@ -395,7 +395,7 @@ func writeRepository(out *bytes.Buffer, value RepositoryBinding) {
 	writeInt(out, value.BindingOrder)
 	writeFieldName(out, "revision_source", true)
 	writeString(out, value.RevisionSource)
-	if value.RevisionSource == RevisionSourceConfiguredWorkingBranch {
+	if value.RevisionSource == RevisionSourceConfiguredWorkingBranch || value.RevisionSource == RevisionSourceRepositorySymbolicHead {
 		writeFieldName(out, "configured_working_branch_ref", true)
 		writeString(out, value.ConfiguredWorkingBranchRef)
 	}
@@ -427,7 +427,7 @@ func writeGovernance(out *bytes.Buffer, value GovernanceBinding) {
 	writeBool(out, value.Reserved)
 	writeFieldName(out, "revision_source", true)
 	writeString(out, value.RevisionSource)
-	if value.RevisionSource == RevisionSourceConfiguredWorkingBranch {
+	if value.RevisionSource == RevisionSourceConfiguredWorkingBranch || value.RevisionSource == RevisionSourceRepositorySymbolicHead {
 		writeFieldName(out, "configured_working_branch_ref", true)
 		writeString(out, value.ConfiguredWorkingBranchRef)
 	}

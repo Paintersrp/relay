@@ -32,6 +32,10 @@ func (r *Registry) ResolvePathBlob(ctx context.Context, revision ResolvedRevisio
 			(current.ConfiguredBranchRef.Valid && current.ConfiguredBranchRef.String != revision.ConfiguredWorkingBranchRef) {
 			return ResolvedPathBlob{}, ErrRepositoryUnconfigured
 		}
+	} else if revision.RevisionSource == RevisionSourceRepositorySymbolicHead {
+		if current.ConfiguredBranchRef.Valid || revision.RepositoryTarget.ConfiguredBranchRef.Valid {
+			return ResolvedPathBlob{}, ErrRepositoryUnconfigured
+		}
 	} else if revision.RevisionSource != RevisionSourceExplicitCommit {
 		return ResolvedPathBlob{}, ErrInvalidExplicitCommit
 	}

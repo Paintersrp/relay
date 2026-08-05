@@ -817,7 +817,7 @@ func validateRevision(source, ref string) error {
 		if ref != "" {
 			return invalid("configured_working_branch_ref")
 		}
-	case RevisionSourceConfiguredWorkingBranch:
+	case RevisionSourceConfiguredWorkingBranch, RevisionSourceRepositorySymbolicHead:
 		if !strings.HasPrefix(ref, "refs/heads/") || len(ref) < 12 || len(ref) > 4096 {
 			return invalid("configured_working_branch_ref")
 		}

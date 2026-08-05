@@ -9,6 +9,7 @@ const (
 
 	RevisionSourceExplicitCommit          = "explicit_commit"
 	RevisionSourceConfiguredWorkingBranch = "configured_working_branch"
+	RevisionSourceRepositorySymbolicHead  = "repository_symbolic_head"
 
 	InputSourceUploadedFile    = registry.InputSourceKind("uploaded_file")
 	InputSourceRelayArtifact   = registry.InputSourceKind("relay_artifact")
@@ -146,10 +147,11 @@ type InputSource struct {
 }
 
 type RepositoryBinding struct {
-	RepositoryKey                        string
-	RepositoryTarget                     string
-	BindingOrder                         int64
-	RevisionSource                       string
+	RepositoryKey    string
+	RepositoryTarget string
+	BindingOrder     int64
+	RevisionSource   string
+	// ConfiguredWorkingBranchRef is the effective full branch ref for branch-based revisions.
 	ConfiguredWorkingBranchRef           string
 	RepositoryTargetConfigurationVersion int64
 	CommitOID                            string
@@ -158,10 +160,11 @@ type RepositoryBinding struct {
 }
 
 type GovernanceBinding struct {
-	RepositoryKey                        string
-	RepositoryTarget                     string
-	Reserved                             bool
-	RevisionSource                       string
+	RepositoryKey    string
+	RepositoryTarget string
+	Reserved         bool
+	RevisionSource   string
+	// ConfiguredWorkingBranchRef is the effective full branch ref for branch-based revisions.
 	ConfiguredWorkingBranchRef           string
 	RepositoryTargetConfigurationVersion int64
 	CommitOID                            string

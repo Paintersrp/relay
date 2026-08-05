@@ -89,6 +89,11 @@ func validateRepositoryAuthority(
 			(current.ConfiguredBranchRef.Valid && current.ConfiguredBranchRef.String != revision.ConfiguredWorkingBranchRef) {
 			return &Error{Code: CodeStaleConfiguredAuthority}
 		}
+	case workflowrepos.RevisionSourceRepositorySymbolicHead:
+		if current.ConfigurationVersion != revision.RepositoryTargetConfigurationVersion ||
+			current.ConfiguredBranchRef.Valid || revision.RepositoryTarget.ConfiguredBranchRef.Valid {
+			return &Error{Code: CodeStaleConfiguredAuthority}
+		}
 	case workflowrepos.RevisionSourceExplicitCommit:
 		// Explicit commit authority is intentionally independent of mutable branch configuration.
 	default:
@@ -639,7 +644,7 @@ func validateResolvedRevision(revision workflowrepos.ResolvedRevision) error {
 		return &Error{Code: CodeInvalidRequest}
 	}
 	switch revision.RevisionSource {
-	case workflowrepos.RevisionSourceConfiguredWorkingBranch:
+	case workflowrepos.RevisionSourceConfiguredWorkingBranch, workflowrepos.RevisionSourceRepositorySymbolicHead:
 		if revision.ConfiguredWorkingBranchRef == "" || strings.TrimSpace(revision.ConfiguredWorkingBranchRef) != revision.ConfiguredWorkingBranchRef || !strings.HasPrefix(revision.ConfiguredWorkingBranchRef, "refs/heads/") {
 			return &Error{Code: CodeInvalidRequest}
 		}

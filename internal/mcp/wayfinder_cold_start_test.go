@@ -127,7 +127,7 @@ func TestWayfinderAppRoutesBootstrapUnconfiguredRepositoryAuthority(t *testing.T
 				} `json:"repositories"`
 			}
 			coldStartDecode(t, listed, &result)
-			if len(result.Repositories) != 1 || result.Repositories[0].RepositoryKey != "relay" || result.Repositories[0].ConfiguredWorkingBranchRef != "refs/heads/main" || result.Repositories[0].CommitOID != wantCommit || result.Repositories[0].TreeOID != wantTree {
+			if len(result.Repositories) != 1 || result.Repositories[0].RepositoryKey != "relay" || result.Repositories[0].RevisionSource != workflowrepos.RevisionSourceRepositorySymbolicHead || result.Repositories[0].ConfiguredWorkingBranchRef != "refs/heads/main" || result.Repositories[0].CommitOID != wantCommit || result.Repositories[0].TreeOID != wantTree {
 				t.Fatalf("packet repositories = %#v", result.Repositories)
 			}
 		})

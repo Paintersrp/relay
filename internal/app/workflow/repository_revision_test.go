@@ -14,7 +14,7 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-func TestRepositoryApplicationTransfersCompleteConfiguredAndExplicitResults(t *testing.T) {
+func TestRepositoryRevisionApplicationTransfersCompleteConfiguredAndExplicitResults(t *testing.T) {
 	ctx := context.Background()
 	store, registry, repo := newApplicationRepositoryFixture(t)
 	service := &Service{store: store, registry: registry}
@@ -69,7 +69,7 @@ func TestRepositoryApplicationTransfersCompleteConfiguredAndExplicitResults(t *t
 	}
 }
 
-func TestRepositoryApplicationDelegatesResolutionPolicies(t *testing.T) {
+func TestRepositoryRevisionApplicationDelegatesResolutionPolicies(t *testing.T) {
 	ctx := context.Background()
 	store, registry, repo := newApplicationRepositoryFixture(t)
 	service := &Service{store: store, registry: registry}
@@ -100,7 +100,7 @@ func TestRepositoryApplicationDelegatesResolutionPolicies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if derived.ConfiguredWorkingBranchRef != "refs/heads/main" || derived.CommitOID != appGitOutput(t, unconfiguredRepo, "rev-parse", "HEAD^{commit}") {
+	if derived.RevisionSource != workflowrepos.RevisionSourceRepositorySymbolicHead || derived.ConfiguredWorkingBranchRef != "refs/heads/main" || derived.CommitOID != appGitOutput(t, unconfiguredRepo, "rev-parse", "HEAD^{commit}") || derived.TreeOID != appGitOutput(t, unconfiguredRepo, "rev-parse", "HEAD^{tree}") {
 		t.Fatalf("repository-derived result = %#v", derived)
 	}
 

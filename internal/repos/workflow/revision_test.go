@@ -82,11 +82,23 @@ func TestOmittedRevisionFailureMatrix(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resolved.RevisionSource != RevisionSourceConfiguredWorkingBranch ||
+		if resolved.RevisionSource != RevisionSourceRepositorySymbolicHead ||
 			resolved.ConfiguredWorkingBranchRef != "refs/heads/main" ||
 			resolved.CommitOID != gitOutput(t, repo, "rev-parse", "refs/heads/main^{commit}") ||
 			resolved.TreeOID != gitOutput(t, repo, "rev-parse", "refs/heads/main^{tree}") {
 			t.Fatalf("repository-derived revision = %#v", resolved)
+		}
+	})
+
+	t.Run("configured ref equal to symbolic HEAD remains configured", func(t *testing.T) {
+		registry, _, repo := newBranchTestRegistry(t)
+		inspectAndConfirm(t, registry, repo, "relay", "refs/heads/main")
+		resolved, err := registry.ResolveRevision(ctx, RevisionRequest{RepoTarget: "relay"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.RevisionSource != RevisionSourceConfiguredWorkingBranch || resolved.ConfiguredWorkingBranchRef != "refs/heads/main" {
+			t.Fatalf("configured revision = %#v", resolved)
 		}
 	})
 

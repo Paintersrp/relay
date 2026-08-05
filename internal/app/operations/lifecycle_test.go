@@ -358,7 +358,7 @@ func TestLifecycleRepositoryAuthorityRequiresEveryAttachedTarget(t *testing.T) {
 	}
 }
 
-func TestLifecycleWayfinderRoutesBootstrapRepositoryAuthorityWithoutConfiguredBranch(t *testing.T) {
+func TestLifecycleWayfinderRoutesPreserveRepositoryRevisionSource(t *testing.T) {
 	for _, route := range []struct {
 		surface   registry.SurfaceContractID
 		operation registry.OperationID
@@ -367,39 +367,63 @@ func TestLifecycleWayfinderRoutesBootstrapRepositoryAuthorityWithoutConfiguredBr
 		{surface: "wayfinder-discovery.v1", operation: "wayfinder.discovery"},
 		{surface: "wayfinder-investigation.v1", operation: "wayfinder.investigation"},
 	} {
-		t.Run(string(route.operation), func(t *testing.T) {
-			fixture := openLifecycleFixture(t)
-			if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = NULL WHERE repo_target = 'project'`); err != nil {
-				t.Fatal(err)
-			}
-			created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{
-				MutationID: "bootstrap-" + string(route.operation),
-				Identity:   semanticidentity.CreateOperationPacket{SurfaceContract: route.surface, OperationID: route.operation, ProjectID: fixture.projectID},
+		for _, selection := range []struct {
+			name   string
+			source string
+			ref    string
+		}{
+			{name: "repository symbolic HEAD", source: workflowrepos.RevisionSourceRepositorySymbolicHead, ref: "refs/heads/main"},
+			{name: "configured override", source: workflowrepos.RevisionSourceConfiguredWorkingBranch, ref: "refs/heads/configured"},
+		} {
+			t.Run(string(route.operation)+"/"+selection.name, func(t *testing.T) {
+				fixture := openLifecycleFixture(t)
+				if selection.source == workflowrepos.RevisionSourceRepositorySymbolicHead {
+					if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = NULL WHERE repo_target = 'project'`); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					runLifecycleGit(t, fixture.projectRepo, "checkout", "-b", "configured")
+					if err := os.WriteFile(filepath.Join(fixture.projectRepo, "configured.txt"), []byte("configured authority\n"), 0o644); err != nil {
+						t.Fatal(err)
+					}
+					runLifecycleGit(t, fixture.projectRepo, "add", "configured.txt")
+					runLifecycleGit(t, fixture.projectRepo, "commit", "-m", "configured authority")
+					runLifecycleGit(t, fixture.projectRepo, "checkout", "main")
+					if _, err := fixture.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = 'refs/heads/configured' WHERE repo_target = 'project'`); err != nil {
+						t.Fatal(err)
+					}
+				}
+				wantCommit := strings.TrimSpace(runLifecycleGit(t, fixture.projectRepo, "rev-parse", selection.ref+"^{commit}"))
+				wantTree := strings.TrimSpace(runLifecycleGit(t, fixture.projectRepo, "rev-parse", selection.ref+"^{tree}"))
+				created, err := fixture.service.Create(fixture.ctx, CreateLifecycleInput{
+					MutationID: "bootstrap-" + string(route.operation),
+					Identity:   semanticidentity.CreateOperationPacket{SurfaceContract: route.surface, OperationID: route.operation, ProjectID: fixture.projectID},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var document struct {
+					Repositories []struct {
+						RepositoryKey              string `json:"repository_key"`
+						RepositoryTarget           string `json:"repository_target"`
+						RevisionSource             string `json:"revision_source"`
+						ConfiguredWorkingBranchRef string `json:"configured_working_branch_ref"`
+						CommitOID                  string `json:"commit_oid"`
+						TreeOID                    string `json:"tree_oid"`
+					} `json:"repositories"`
+				}
+				if err := json.Unmarshal(created.Packet.DocumentBytes, &document); err != nil {
+					t.Fatal(err)
+				}
+				if len(document.Repositories) != 1 {
+					t.Fatalf("repositories = %#v", document.Repositories)
+				}
+				repository := document.Repositories[0]
+				if repository.RepositoryKey != "project" || repository.RepositoryTarget != "project" || repository.RevisionSource != selection.source || repository.ConfiguredWorkingBranchRef != selection.ref || repository.CommitOID != wantCommit || repository.TreeOID != wantTree {
+					t.Fatalf("repository authority = %#v", repository)
+				}
 			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var document struct {
-				Repositories []struct {
-					RepositoryKey              string `json:"repository_key"`
-					RepositoryTarget           string `json:"repository_target"`
-					RevisionSource             string `json:"revision_source"`
-					ConfiguredWorkingBranchRef string `json:"configured_working_branch_ref"`
-					CommitOID                  string `json:"commit_oid"`
-					TreeOID                    string `json:"tree_oid"`
-				} `json:"repositories"`
-			}
-			if err := json.Unmarshal(created.Packet.DocumentBytes, &document); err != nil {
-				t.Fatal(err)
-			}
-			if len(document.Repositories) != 1 {
-				t.Fatalf("repositories = %#v", document.Repositories)
-			}
-			repository := document.Repositories[0]
-			if repository.RepositoryKey != "project" || repository.RepositoryTarget != "project" || repository.RevisionSource != "configured_working_branch" || repository.ConfiguredWorkingBranchRef != "refs/heads/main" || repository.CommitOID == "" || repository.TreeOID == "" {
-				t.Fatalf("repository authority = %#v", repository)
-			}
-		})
+		}
 	}
 }
 

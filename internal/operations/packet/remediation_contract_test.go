@@ -110,6 +110,37 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 	}
 }
 
+func TestPacketRevisionSourceCompatibility(t *testing.T) {
+	operations, err := registry.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var operation registry.OperationDefinition
+	for _, candidate := range operations {
+		if candidate.OperationID == "wayfinder.workspace" {
+			operation = candidate
+			break
+		}
+	}
+	if operation.OperationID == "" {
+		t.Fatal("wayfinder.workspace operation is unavailable")
+	}
+	for _, source := range []string{RevisionSourceConfiguredWorkingBranch, RevisionSourceRepositorySymbolicHead} {
+		t.Run(source, func(t *testing.T) {
+			document := goldenDocument(t, operation)
+			document.Repositories[0].RevisionSource = source
+			document.Repositories[0].ConfiguredWorkingBranchRef = "refs/heads/main"
+			snapshot, err := NewSnapshot(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(snapshot.Bytes(), []byte(`"revision_source":"`+source+`","configured_working_branch_ref":"refs/heads/main"`)) {
+				t.Fatalf("canonical packet omitted branch provenance: %s", snapshot.Bytes())
+			}
+		})
+	}
+}
+
 func TestDerivedInputSourceIntegrity(t *testing.T) {
 	for _, operationID := range []registry.OperationID{"auditor.audit", "planner.delivery_ticket_remediation", "planner.ticket_design_brief_remediation"} {
 		t.Run(string(operationID), func(t *testing.T) {

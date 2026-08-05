@@ -18,6 +18,7 @@ import (
 const (
 	RevisionSourceExplicitCommit          = "explicit_commit"
 	RevisionSourceConfiguredWorkingBranch = "configured_working_branch"
+	RevisionSourceRepositorySymbolicHead  = "repository_symbolic_head"
 )
 
 var (
@@ -61,8 +62,9 @@ type GovernanceAvailability struct {
 }
 
 type ResolvedRevision struct {
-	RepositoryTarget                     workflowstore.RepositoryTarget
-	RevisionSource                       string
+	RepositoryTarget workflowstore.RepositoryTarget
+	RevisionSource   string
+	// ConfiguredWorkingBranchRef is the effective full branch ref for branch-based revisions.
 	ConfiguredWorkingBranchRef           string
 	RepositoryTargetConfigurationVersion int64
 	CommitOID                            string
@@ -120,7 +122,7 @@ func (r *Registry) ResolveRevision(
 		if resolveErr != nil {
 			return ResolvedRevision{}, resolveErr
 		}
-		revisionSource = RevisionSourceConfiguredWorkingBranch
+		revisionSource = RevisionSourceRepositorySymbolicHead
 		configuredRef = observation.Ref
 		commitOID = observation.CommitOID
 		treeOID = observation.TreeOID

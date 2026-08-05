@@ -112,6 +112,39 @@ func TestManagerPreservesExactClosureAcrossSourceChangesAndRetentionGenerations(
 	}
 }
 
+func TestManagerImportsRepositorySymbolicHEADAuthority(t *testing.T) {
+	ctx := context.Background()
+	repo := newGitRepository(t)
+	commit := commitFile(t, repo, "symbolic.txt", []byte("symbolic head\n"), "symbolic head")
+	store := openSourceVaultTestStore(t)
+	registerSourceVaultRepository(t, ctx, store, "relay", repo, "")
+	manager := openSourceVaultManager(t, ctx, store)
+	target := storeTarget(t, ctx, store, "relay")
+	revision := workflowrepos.ResolvedRevision{
+		RepositoryTarget:                     target,
+		RevisionSource:                       workflowrepos.RevisionSourceRepositorySymbolicHead,
+		ConfiguredWorkingBranchRef:           "refs/heads/main",
+		RepositoryTargetConfigurationVersion: target.ConfigurationVersion,
+		CommitOID:                            commit.commit,
+		TreeOID:                              commit.tree,
+	}
+
+	result, err := manager.ImportClosure(ctx, ImportRequest{Revision: revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Ready || result.CommitOID != commit.commit || result.TreeOID != commit.tree {
+		t.Fatalf("symbolic HEAD import = %#v", result)
+	}
+	stored, err := store.GetRepositoryTarget(ctx, "relay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ConfiguredBranchRef.Valid {
+		t.Fatalf("symbolic HEAD import persisted configured ref = %#v", stored.ConfiguredBranchRef)
+	}
+}
+
 func TestManagerConfiguredFreshnessAndExplicitCommitIndependence(t *testing.T) {
 	ctx := context.Background()
 	repo := newGitRepository(t)
