@@ -534,43 +534,117 @@ func assertWorkflowCount(t *testing.T, db *sql.DB, table string, want int64) {
 	}
 }
 
-func TestPrototypeRuntimeMigrationAndOwnership(t *testing.T) {
+func prototypeRuntimeFixture(t *testing.T) (*Store, PrototypeRun, PrototypeRuntime, PrototypeTarget, PrototypeLease) {
+	t.Helper()
+	ctx := context.Background()
 	store, _ := openWorkflowTestStore(t)
+	db := store.DB()
+	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatal(err)
+	}
+	triggerRows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'prototype_%'`)
+	if err != nil { t.Fatal(err) }
+	var triggers []string
+	for triggerRows.Next() { var name string; if err := triggerRows.Scan(&name); err != nil { t.Fatal(err) }; triggers = append(triggers, name) }
+	if err := triggerRows.Close(); err != nil { t.Fatal(err) }
+	for _, name := range triggers { if _, err := db.Exec(`DROP TRIGGER ` + name); err != nil { t.Fatal(err) } }
+	const commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const tree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, err := db.Exec(`INSERT INTO feature_workspaces(id,workspace_id,project_row_id,feature_slug) VALUES(1,'workspace-runtime',1,'runtime'); INSERT INTO feature_workspace_discovery_tickets(id,discovery_ticket_id,workspace_row_id,ticket_key,subject) VALUES(1,'discovery-runtime',1,'runtime','runtime'); INSERT INTO feature_workspace_prototype_authorizations(id,authorization_id,proposal_row_id,proposed_run_id,workspace_row_id,workspace_version,work_item_row_id,work_item_version,discovery_revision_row_id,proposal_sha256,source_closure_row_id,source_commit,source_tree,repo_target,base_commit,adapter,model,variants_json,evidence_obligations_json,limits_json,invocation_artifact_row_id,invocation_sha256,invocation_size_bytes,invocation_media_type) VALUES(1,'prototype-authorization-runtime',1,'prototype-run-runtime',1,1,1,1,1,?,1,?,?, 'runtime-repo',?,'adapter','model','[]','[]','{}',1,?,1,'application/json'); INSERT INTO feature_workspace_prototype_runs(id,prototype_run_id,authorization_row_id,workspace_row_id,work_item_row_id,lifecycle_state,version) VALUES(1,'prototype-run-runtime',1,1,1,'approved',1)`, strings.Repeat("a", 64), commit, tree, commit, strings.Repeat("b", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+		t.Fatal(err)
+	}
+	runtime := PrototypeRuntime{RuntimeID: "prototype-runtime-runtime", AuthorizedCommit: commit, AuthorizedTree: tree, RuntimeRootPath: "C:/runtime", WorktreePath: "C:/runtime/worktree", EphemeralTargetKey: "prototype:runtime", LeaseToken: "prototype-lease-runtime", BackgroundContextID: "context-runtime", DeadlineAt: "2026-01-01T00:00:00Z"}
+	target := PrototypeTarget{TargetID: "prototype-target-runtime", TargetKey: runtime.EphemeralTargetKey, WorktreePath: runtime.WorktreePath, AuthorizedCommit: commit, AuthorizedTree: tree}
+	lease := PrototypeLease{LeaseToken: runtime.LeaseToken, EphemeralTargetKey: runtime.EphemeralTargetKey, OwnerInstanceID: "test-owner"}
+	var run PrototypeRun
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		run, runtime, target, lease, err = tx.ReservePrototypeRuntime(ctx, "prototype-run-runtime", 1, runtime, target, lease)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return store, run, runtime, target, lease
+}
+
+func TestPrototypeRuntimeMigrationAndOwnership(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	db := store.DB()
 	for _, table := range []string{"feature_workspace_prototype_runtimes", "feature_workspace_prototype_targets", "feature_workspace_prototype_leases", "feature_workspace_prototype_evidence_import_batches", "feature_workspace_prototype_results", "feature_workspace_prototype_evidence_members"} {
 		var count int
-		if err := store.DB().QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		if count != 1 {
-			t.Fatalf("table %s is missing", table)
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("table %s count=%d err=%v", table, count, err)
 		}
 	}
-	var fkTarget, fkLease int
-	if err := store.DB().QueryRow(`SELECT count(*) FROM pragma_foreign_key_list('feature_workspace_prototype_targets') WHERE lower("table") LIKE 'repository%'`).Scan(&fkTarget); err != nil {
+	for _, trigger := range []string{"prototype_runtime_authorization_guard", "prototype_target_binding_guard", "prototype_lease_binding_guard", "prototype_result_binding_guard", "prototype_evidence_binding_guard", "prototype_result_member_binding_guard", "prototype_result_member_immutable"} {
+		var sqlText string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?`, trigger).Scan(&sqlText); err != nil || strings.TrimSpace(sqlText) == "" {
+			t.Fatalf("trigger %s missing: %v", trigger, err)
+		}
+	}
+	store, run, runtime, target, lease := prototypeRuntimeFixture(t)
+	if run.LifecycleState != "approved" || runtime.RunRowID != run.ID || target.RuntimeRowID != runtime.ID || lease.RuntimeRowID != runtime.ID {
+		t.Fatalf("reserved ownership invalid: run=%#v runtime=%#v target=%#v lease=%#v", run, runtime, target, lease)
+	}
+	if _, err := store.DB().ExecContext(ctx, `UPDATE feature_workspace_prototype_targets SET run_row_id=run_row_id+100 WHERE id=?`, target.ID); err == nil {
+		t.Fatal("cross-run target ownership mutation succeeded")
+	}
+	if lease.LeaseToken != runtime.LeaseToken || target.TargetKey != runtime.EphemeralTargetKey {
+		t.Fatalf("runtime binding values diverged: %#v %#v %#v", runtime, target, lease)
+	}
+	if _, err := store.DB().ExecContext(ctx, `UPDATE feature_workspace_prototype_result_members SET member_kind='changed' WHERE id=-1`); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DB().QueryRow(`SELECT count(*) FROM pragma_foreign_key_list('feature_workspace_prototype_leases') WHERE lower("table") LIKE 'repository%'`).Scan(&fkLease); err != nil {
-		t.Fatal(err)
-	}
-	if fkTarget != 0 || fkLease != 0 {
-		t.Fatalf("prototype tables reference production targets: %d/%d", fkTarget, fkLease)
-	}
-	if _, err := store.DB().Exec(`INSERT INTO feature_workspace_prototype_cleanup_obligations(cleanup_obligation_id,run_row_id,obligation_kind) VALUES ('prototype-cleanup-test',1,'worktree'),('prototype-cleanup-test-2',1,'worktree')`); err == nil {
-		t.Fatal("cleanup uniqueness constraint was not enforced")
+	var productionTargets int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM repository_targets`).Scan(&productionTargets); err != nil || productionTargets != 0 {
+		t.Fatalf("runtime migration mutated production targets: %d %v", productionTargets, err)
 	}
 }
 
 func TestPrototypeRuntimeStateMutations(t *testing.T) {
-	store, _ := openWorkflowTestStore(t)
-	var phase string
-	if err := store.DB().QueryRow(`SELECT preparation_phase FROM feature_workspace_prototype_runtimes WHERE 1=0`).Scan(&phase); err == nil {
-		t.Fatal("unexpected runtime row")
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatal(err)
-	}
-	for _, id := range []string{NewPrototypeRuntimeID(), NewPrototypeTargetID(), NewPrototypeLeaseToken(), NewPrototypeEvidenceBatchID(), NewPrototypeResultID(), NewPrototypeEvidenceMemberID()} {
-		if strings.TrimSpace(id) == "" {
-			t.Fatal("empty generated prototype identity")
-		}
-	}
+	ctx := context.Background()
+	store, run, runtime, target, lease := prototypeRuntimeFixture(t)
+	claimID := "prototype-launch-claim-test"
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, _, err := tx.MarkPrototypePreparationReady(ctx, run.PrototypeRunID, run.Version)
+		return err
+	}); err != nil { t.Fatal(err) }
+	run, err := store.GetPrototypeRun(ctx, run.PrototypeRunID)
+	if err != nil { t.Fatal(err) }
+	var claim PrototypeLaunchClaim
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		run, claim, err = tx.ClaimPrototypeLaunch(ctx, run.PrototypeRunID, run.Version, claimID, "test")
+		return err
+	}); err != nil { t.Fatal(err) }
+	if run.LifecycleState != "preparing" || claim.LaunchClaimID != claimID { t.Fatalf("claim=%#v run=%#v", claim, run) }
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		got, _, err := tx.ClaimPrototypeLaunch(ctx, run.PrototypeRunID, run.Version, claimID, "test")
+		if err != nil || got.Version != run.Version { return errors.New("launch claim replay was not idempotent") }
+		_, _, err = tx.ClaimPrototypeLaunch(ctx, run.PrototypeRunID, run.Version, "other", "test")
+		if !errors.Is(err, ErrPrototypeLaunchAlreadyClaimed) { return errors.New("conflicting claim was accepted") }
+		return nil
+	}); err != nil { t.Fatal(err) }
+	identity := `{"pid":42,"started_at":"2026-01-01T00:00:00Z","platform":"linux"}`
+	if err := store.WithTx(ctx, func(tx *Tx) error { var err error; run, runtime, err = tx.PersistPrototypeProcessIdentity(ctx, run.PrototypeRunID, run.Version, identity, "2026-01-01T00:00:00Z"); return err }); err != nil { t.Fatal(err) }
+	if run.LifecycleState != "running" || runtime.LaunchPhase != "identity_persisted" || !runtime.ProcessIdentity.Valid || runtime.ProcessIdentity.String != identity { t.Fatalf("identity persistence=%#v %#v", run, runtime) }
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-one"); err != nil { return err }
+		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-one"); err != nil { return err }
+		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-two"); !errors.Is(err, ErrPrototypeMutationConflict) { return errors.New("cancel conflict not rejected") }
+		if _, _, err := tx.ClaimPrototypeTimeout(ctx, run.PrototypeRunID, run.Version, "timeout-one"); err != nil { return err }
+		if _, _, err := tx.ClaimPrototypeTimeout(ctx, run.PrototypeRunID, run.Version, "timeout-two"); !errors.Is(err, ErrPrototypeMutationConflict) { return errors.New("timeout conflict not rejected") }
+		return nil
+	}); err != nil { t.Fatal(err) }
+	if err := store.WithTx(ctx, func(tx *Tx) error { var err error; run, runtime, err = tx.SettlePrototypeProcess(ctx, run.PrototypeRunID, run.Version, "cleanup_required", "unknown", "settle-test"); return err }); err != nil { t.Fatal(err) }
+	if run.LifecycleState != "cleanup_required" || runtime.LaunchPhase != "ownership_unresolved" { t.Fatalf("unresolved settlement=%#v %#v", run, runtime) }
+	if err := store.WithTx(ctx, func(tx *Tx) error { _, err := tx.ReleasePrototypeTarget(ctx, run.PrototypeRunID, target.TargetKey, "2026-01-01T00:00:00Z"); if err != nil { return err }; _, err = tx.ReleasePrototypeLease(ctx, run.PrototypeRunID, lease.LeaseToken, "2026-01-01T00:00:00Z"); return err }); err != nil { t.Fatal(err) }
+	var targetStatus, leaseStatus string
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_targets WHERE id=?`, target.ID).Scan(&targetStatus); err != nil { t.Fatal(err) }
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_leases WHERE id=?`, lease.ID).Scan(&leaseStatus); err != nil { t.Fatal(err) }
+	if targetStatus != "released" || leaseStatus != "released" { t.Fatalf("resource release not durable: target=%s lease=%s", targetStatus, leaseStatus) }
 }

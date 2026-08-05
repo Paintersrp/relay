@@ -398,49 +398,63 @@ func (f *runtimeTestExecutor) SettleTimeout(context.Context, prototypeexecution.
 }
 
 func TestPrototypeRuntimeServiceValidation(t *testing.T) {
-	ctx, _, service, workspace, _, _, _, run := preparedPrototype(t)
+	ctx, store, service, workspace, _, _, _, run := preparedPrototype(t)
 	fake := &runtimeTestExecutor{result: prototypeexecution.Result{Run: run}}
 	service.SetPrototypeExecutorForTest(fake)
-	cases := []struct {
-		name string
-		call func() error
-		want error
-	}{
-		{"missing launch identity", func() error {
-			_, e := service.LaunchApprovedPrototype(ctx, prototypeexecution.LaunchRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID})
-			return e
-		}, ErrPrototypeApprovalMissing},
-		{"reconcile delegates", func() error {
-			_, e := service.ReconcilePrototypeLaunch(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID})
-			return e
-		}, nil},
-		{"cancel identity", func() error {
-			_, e := service.CancelPrototypeExecution(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID})
-			return e
-		}, ErrPrototypeApprovalMissing},
+	if _, err := service.LaunchApprovedPrototype(ctx, prototypeexecution.LaunchRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID}); !errors.Is(err, ErrPrototypeApprovalMissing) {
+		t.Fatalf("missing launch identity=%v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if e := tc.call(); !errors.Is(e, tc.want) {
-				t.Fatalf("error=%v want=%v", e, tc.want)
-			}
-		})
+	if _, err := service.CancelPrototypeExecution(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID}); !errors.Is(err, ErrPrototypeApprovalMissing) {
+		t.Fatalf("missing cancel identity=%v", err)
 	}
-	if len(fake.calls) != 1 || fake.calls[0] != "reconcile" {
-		t.Fatalf("delegate calls=%v", fake.calls)
+	if _, err := service.SettlePrototypeTimeout(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID}); !errors.Is(err, ErrPrototypeApprovalMissing) {
+		t.Fatalf("missing timeout identity=%v", err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO feature_workspaces(workspace_id,project_row_id,feature_slug) VALUES('workspace-other',?,'other')`, workspace.ProjectRowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ReconcilePrototypeLaunch(ctx, prototypeexecution.OperationRequest{WorkspaceID: "workspace-other", RunID: run.PrototypeRunID}); !errors.Is(err, ErrPrototypeOwnership) {
+		t.Fatalf("ownership=%v", err)
+	}
+	if _, err := service.ReconcilePrototypeLaunch(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID, ExpectedRunVersion: run.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fake.calls, []string{"reconcile"}) {
+		t.Fatalf("delegates=%v", fake.calls)
 	}
 }
 
 func TestPrototypeRuntimeReadModel(t *testing.T) {
-	ctx, _, service, workspace, _, _, _, run := preparedPrototype(t)
+	ctx, store, service, workspace, _, _, authorization, run := preparedPrototype(t)
+	if _, err := store.DB().ExecContext(ctx, `UPDATE feature_workspace_prototype_runs SET lifecycle_state='approved' WHERE id=?`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO feature_workspace_prototype_runtimes(runtime_id,run_row_id,authorized_commit,authorized_tree,runtime_root_path,worktree_path,ephemeral_target_key,lease_token,background_context_id,deadline_at) VALUES('prototype-runtime-read',?,?,?,'C:/read','C:/read/worktree','prototype:read','prototype-lease-read','read-context','2026-01-01T00:00:00Z')`, run.ID, authorization.SourceCommit, authorization.SourceTree); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO feature_workspace_prototype_targets(target_id,run_row_id,runtime_row_id,target_key,worktree_path,authorized_commit,authorized_tree) SELECT 'prototype-target-read',r.id,x.id,x.ephemeral_target_key,x.worktree_path,x.authorized_commit,x.authorized_tree FROM feature_workspace_prototype_runs r JOIN feature_workspace_prototype_runtimes x ON x.run_row_id=r.id WHERE r.id=?`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO feature_workspace_prototype_leases(lease_token,run_row_id,runtime_row_id,ephemeral_target_key,owner_instance_id) SELECT x.lease_token,r.id,x.id,x.ephemeral_target_key,'read-owner' FROM feature_workspace_prototype_runs r JOIN feature_workspace_prototype_runtimes x ON x.run_row_id=r.id WHERE r.id=?`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreatePrototypeResultMember(ctx, workflowstore.PrototypeResultMember{RunRowID: run.ID, ResultMemberID: "private-member", Sequence: 1, MemberKind: "internal", ArtifactRowID: authorization.InvocationArtifactRowID, SHA256: authorization.InvocationSHA256})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	detail, err := service.ReadPrototypeExecution(ctx, workspace.WorkspaceID, run.PrototypeRunID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if detail.Run.PrototypeRunID != run.PrototypeRunID {
-		t.Fatalf("run=%#v", detail.Run)
+		t.Fatalf("public read=%#v", detail)
 	}
-	if detail.Runtime != nil || detail.Target != nil || detail.Lease != nil {
-		t.Fatal("unreserved runtime resources appeared in read model")
+	if members, err := store.ListPrototypeResultMembers(ctx, run.PrototypeRunID); err != nil || len(members) != 1 {
+		t.Fatalf("durable private members=%#v err=%v", members, err)
+	}
+	if _, exposed := reflect.TypeOf(detail).FieldByName("ResultMembers"); exposed {
+		t.Fatal("public read model exposes resultMembers")
 	}
 }

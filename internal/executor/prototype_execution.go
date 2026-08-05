@@ -116,7 +116,6 @@ func (p *PrototypeExecution) load(ctx context.Context, runID string) (prototypee
 		out.FinalResult = &v
 	}
 	out.Evidence, _ = p.store.ListPrototypeEvidenceMembers(ctx, runID)
-	out.ResultMembers, _ = p.store.ListPrototypeResultMembers(ctx, runID)
 	return out, nil
 }
 

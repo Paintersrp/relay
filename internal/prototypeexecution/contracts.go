@@ -26,7 +26,6 @@ type Result struct {
 	EvidenceBatches []workflowstore.PrototypeEvidenceImportBatch
 	FinalResult     *workflowstore.PrototypeResult
 	Evidence        []workflowstore.PrototypeEvidenceMember
-	ResultMembers   []workflowstore.PrototypeResultMember
 }
 type Executor interface {
 	Launch(context.Context, LaunchRequest) (Result, error)

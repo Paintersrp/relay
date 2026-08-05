@@ -2,6 +2,7 @@ package features
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -187,38 +188,54 @@ func (f *fakeAuthority) SettlePrototypeTimeout(context.Context, prototypeexecuti
 }
 
 func TestPrototypeRuntimeRoutes(t *testing.T) {
-	base := prototypeexecution.Result{Run: workflowstore.PrototypeRun{PrototypeRunID: "prototype-run-api", LifecycleState: "running", Version: 3}}
+	base := prototypeexecution.Result{Run: workflowstore.PrototypeRun{PrototypeRunID: "prototype-run-api", LifecycleState: "running", Version: 3}, Runtime: &workflowstore.PrototypeRuntime{RuntimeID: "prototype-runtime-api"}, Target: &workflowstore.PrototypeTarget{TargetID: "prototype-target-api"}, Lease: &workflowstore.PrototypeLease{LeaseToken: "prototype-lease-api"}}
 	cases := []struct {
-		name, path string
-		err        error
-		want       int
+		name, path, body string
+		err              error
+		want             int
 	}{
-		{"launch success", "/feature-workspaces/w/prototype-runs/r/launch", nil, http.StatusAccepted},
-		{"launch uncertainty", "/feature-workspaces/w/prototype-runs/r/launch", prototypeexecution.ErrLaunchUncertain, http.StatusConflict},
-		{"reconcile", "/feature-workspaces/w/prototype-runs/r/reconcile", nil, http.StatusOK},
-		{"cancel", "/feature-workspaces/w/prototype-runs/r/cancel", nil, http.StatusOK},
-		{"timeout", "/feature-workspaces/w/prototype-runs/r/timeout", nil, http.StatusOK},
+		{"launch success", "/feature-workspaces/w/prototype-runs/r/launch", `{"expectedRunVersion":2,"mutationIdentity":"launch"}`, nil, http.StatusAccepted},
+		{"launch uncertainty", "/feature-workspaces/w/prototype-runs/r/launch", `{"expectedRunVersion":2,"mutationIdentity":"launch"}`, prototypeexecution.ErrLaunchUncertain, http.StatusConflict},
+		{"reconcile", "/feature-workspaces/w/prototype-runs/r/reconcile", `{"expectedRunVersion":2,"mutationIdentity":"reconcile"}`, nil, http.StatusOK},
+		{"cancel", "/feature-workspaces/w/prototype-runs/r/cancel", `{"expectedRunVersion":2,"mutationIdentity":"cancel"}`, nil, http.StatusOK},
+		{"timeout", "/feature-workspaces/w/prototype-runs/r/timeout", `{"expectedRunVersion":2,"mutationIdentity":"timeout"}`, nil, http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			a := &fakeAuthority{prototype: base, err: tc.err}
-			body := `{"expectedRunVersion":2,"mutationIdentity":"m"}`
-			if tc.name == "reconcile" {
-				body = `{"expectedRunVersion":2}`
-			}
 			response := httptest.NewRecorder()
-			workspaceRouter(&fakeWayfinder{}, a, &fakeCompletion{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(body)))
+			workspaceRouter(&fakeWayfinder{}, &fakeAuthority{prototype: base, err: tc.err}, &fakeCompletion{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body)))
 			if response.Code != tc.want {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
-			if tc.err == nil && !strings.Contains(response.Body.String(), `"target"`) {
-				t.Fatalf("missing target DTO: %s", response.Body.String())
+			if tc.err != nil {
+				return
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body) != 1 || body["prototypeExecution"] == nil {
+				t.Fatalf("response keys=%v", body)
+			}
+			var execution map[string]json.RawMessage
+			if err := json.Unmarshal(body["prototypeExecution"], &execution); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"run", "runtime", "target", "lease", "evidenceBatches", "finalResult", "evidence"} {
+				if execution[key] == nil {
+					t.Fatalf("missing response key %q: %s", key, response.Body.String())
+				}
+			}
+			if execution["resultMembers"] != nil {
+				t.Fatalf("private resultMembers exposed: %s", response.Body.String())
 			}
 		})
 	}
-	bad := httptest.NewRecorder()
-	workspaceRouter(&fakeWayfinder{}, &fakeAuthority{prototype: base}, &fakeCompletion{}).ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/feature-workspaces/w/prototype-runs/r/launch", strings.NewReader(`{"expectedRunVersion":2,"mutationIdentity":"m","extra":true}`)))
-	if bad.Code != http.StatusBadRequest {
-		t.Fatalf("strict decoding status=%d", bad.Code)
+	for _, body := range []string{`{"expectedRunVersion":2,"mutationIdentity":"m","extra":true}`} {
+		response := httptest.NewRecorder()
+		workspaceRouter(&fakeWayfinder{}, &fakeAuthority{prototype: base}, &fakeCompletion{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/w/prototype-runs/r/launch", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid launch status=%d body=%s", response.Code, response.Body.String())
+		}
 	}
 }
