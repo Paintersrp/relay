@@ -14,11 +14,12 @@ import (
 )
 
 type fakeProjectService struct {
-	project workflowstore.Project
-	detail  workflowprojects.ProjectDetail
-	note    workflowstore.ProjectNote
-	repo    workflowstore.ProjectRepositoryTarget
-	err     error
+	project    workflowstore.Project
+	detail     workflowprojects.ProjectDetail
+	note       workflowstore.ProjectNote
+	repo       workflowstore.ProjectRepositoryTarget
+	workspaces []workflowstore.FeatureWorkspace
+	err        error
 }
 
 func (f *fakeProjectService) ListProjects(context.Context, workflowprojects.ListProjectsInput) ([]workflowstore.Project, error) {
@@ -65,6 +66,10 @@ func (f *fakeProjectService) UpdateNote(context.Context, workflowprojects.Update
 
 func (f *fakeProjectService) DeleteNote(context.Context, string, string) error {
 	return f.err
+}
+
+func (f *fakeProjectService) ListFeatureWorkspaces(context.Context, workflowprojects.ListFeatureWorkspacesInput) ([]workflowstore.FeatureWorkspace, error) {
+	return f.workspaces, f.err
 }
 
 func projectRouter(service WorkflowProjectService) http.Handler {
@@ -139,6 +144,47 @@ func TestProjectRoutesExposeSimplifiedModel(t *testing.T) {
 		nil,
 	))
 	if response.Code != http.StatusNoContent {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestProjectFeatureWorkspacesRouteReturnsPublicDTOWithoutInternalRowIDs(t *testing.T) {
+	service := &fakeProjectService{
+		workspaces: []workflowstore.FeatureWorkspace{
+			{WorkspaceID: "workspace-b", FeatureSlug: "wayfinder-bootstrap", State: "open", Version: 2, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-02T00:00:00Z"},
+			{WorkspaceID: "workspace-a", FeatureSlug: "earlier-feature", State: "closed", Version: 5, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"},
+		},
+	}
+	handler := projectRouter(service)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/projects/project-test/feature-workspaces", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, expected := range []string{
+		`"workspaceId":"workspace-b"`,
+		`"projectId":"project-test"`,
+		`"featureSlug":"wayfinder-bootstrap"`,
+		`"state":"open"`,
+		`"version":2`,
+		`"count":2`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("response missing %s: %s", expected, body)
+		}
+	}
+	if strings.Contains(strings.ToLower(body), "row_id") || strings.Contains(body, `"Valid"`) || strings.Contains(body, `"Int64"`) {
+		t.Fatalf("response leaked internal row identifiers: %s", body)
+	}
+}
+
+func TestProjectFeatureWorkspacesRouteRejectsInvalidLimit(t *testing.T) {
+	handler := projectRouter(&fakeProjectService{})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/projects/project-test/feature-workspaces?limit=not-a-number", nil))
+	if response.Code != http.StatusBadRequest {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }

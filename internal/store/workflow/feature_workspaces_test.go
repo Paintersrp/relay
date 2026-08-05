@@ -165,6 +165,75 @@ func TestFeatureWorkspaceMigrationUpgradesAndRollsBack(t *testing.T) {
 	}
 }
 
+func TestListFeatureWorkspacesByProjectFiltersOwnershipAndOrdersByRecency(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+
+	var projectA, projectB Project
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		projectA, err = tx.CreateProject(ctx, CreateProjectParams{ProjectID: "project-workspace-list-a", Name: "A"})
+		if err != nil {
+			return err
+		}
+		projectB, err = tx.CreateProject(ctx, CreateProjectParams{ProjectID: "project-workspace-list-b", Name: "B"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var older, newer FeatureWorkspace
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		older, err = tx.CreateFeatureWorkspace(ctx, CreateFeatureWorkspaceParams{WorkspaceID: "workspace-list-older", ProjectRowID: projectA.ID, FeatureSlug: "older-feature"})
+		if err != nil {
+			return err
+		}
+		newer, err = tx.CreateFeatureWorkspace(ctx, CreateFeatureWorkspaceParams{WorkspaceID: "workspace-list-newer", ProjectRowID: projectA.ID, FeatureSlug: "newer-feature"})
+		if err != nil {
+			return err
+		}
+		// Foreign-project workspace must never leak into projectA's list.
+		_, err = tx.CreateFeatureWorkspace(ctx, CreateFeatureWorkspaceParams{WorkspaceID: "workspace-list-foreign", ProjectRowID: projectB.ID, FeatureSlug: "foreign-feature"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Force distinguishable updated_at ordering: route `older` to a new state
+	// (a normal versioned mutation, so it respects the workspace's
+	// optimistic-concurrency trigger) after `newer` was created, so recency
+	// ordering is exercised independent of row-insertion order.
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		route, err := tx.CreateFeatureWorkspaceRouteState(ctx, CreateFeatureWorkspaceRouteStateParams{
+			RouteStateID: "route-workspace-list-older", WorkspaceRowID: older.ID, Sequence: 1, WorkspaceVersion: older.Version + 1, State: "discovery",
+		})
+		if err != nil {
+			return err
+		}
+		older, err = tx.AdvanceFeatureWorkspaceRouteState(ctx, route.ID, "open", older.WorkspaceID, older.Version)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	values, err := store.ListFeatureWorkspacesByProject(ctx, projectA.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 2 {
+		t.Fatalf("workspace count = %d, want 2", len(values))
+	}
+	if values[0].WorkspaceID != older.WorkspaceID || values[1].WorkspaceID != newer.WorkspaceID {
+		t.Fatalf("workspace order = [%s, %s], want most-recently-updated first", values[0].WorkspaceID, values[1].WorkspaceID)
+	}
+	for _, value := range values {
+		if value.WorkspaceID == "workspace-list-foreign" {
+			t.Fatalf("foreign project workspace leaked into project-scoped list")
+		}
+	}
+}
+
 func seedFeatureWorkspaceAuthorityArtifact(t *testing.T, ctx context.Context, store *Store) (int64, int64) {
 	t.Helper()
 	var projectID, planID, artifactID int64

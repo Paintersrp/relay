@@ -66,8 +66,14 @@ export interface GoverningArtifactApproval {
   createdAt: string;
 }
 
+export interface FeatureWorkspaceProject {
+  projectId: string;
+  name: string;
+}
+
 export interface FeatureWorkspaceDetail {
   workspace: FeatureWorkspace;
+  project: FeatureWorkspaceProject;
   inputs: unknown[];
   destinations: unknown[];
   tickets: DiscoveryTicket[];
@@ -90,4 +96,19 @@ export interface FeatureCompletionStatus {
 export interface CompleteFeatureWorkspaceRequest {
   expectedVersion: number;
   operatorConfirmed: boolean;
+}
+
+export interface ProjectFeatureWorkspaceSummary {
+  workspaceId: string;
+  projectId: string;
+  featureSlug: string;
+  state: FeatureWorkspaceState;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectFeatureWorkspaceListResponse {
+  count: number;
+  items: ProjectFeatureWorkspaceSummary[];
 }

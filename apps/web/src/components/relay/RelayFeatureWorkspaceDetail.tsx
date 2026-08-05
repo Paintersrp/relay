@@ -1,5 +1,7 @@
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,9 +40,23 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: FeatureWorkspa
   const completionReady = Boolean(completionQuery.data && completionQuery.data.gates.every((gate) => gate.ready));
 
   return <div className="space-y-6">
+    <div className="flex items-center gap-2">
+      <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0">
+        <Link to="/projects/$projectId" params={{ projectId: detail.project.projectId }}>
+          <ArrowLeft className="size-4" />
+          <span className="sr-only">Back to {detail.project.name || "Project"}</span>
+        </Link>
+      </Button>
+      <Link to="/projects/$projectId" params={{ projectId: detail.project.projectId }} className="text-sm font-medium text-muted-foreground hover:text-foreground">
+        Back to {detail.project.name || "Project"}
+      </Link>
+    </div>
     <section className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feature workspace</p>
       <div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-xl font-semibold">{detail.workspace.featureSlug}</h1><span className="rounded bg-muted px-2 py-1 text-xs">{detail.workspace.state}</span><span className="text-sm text-muted-foreground">Version {detail.workspace.version}</span></div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Project: <Link to="/projects/$projectId" params={{ projectId: detail.project.projectId }} className="font-medium text-foreground underline-offset-2 hover:underline">{detail.project.name || detail.project.projectId}</Link>
+      </p>
       <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{detail.workspace.workspaceId}</p>
       <div className="mt-4 rounded border p-3 text-sm"><span className="font-medium">Source basis: </span>{detail.sourceBasis.status === "retained" ? "retained source evidence" : "no retained source evidence recorded"} <span className="text-muted-foreground">({detail.sourceBasis.investigationCount} investigations)</span></div>
       {message ? <div role="alert" className="mt-4 rounded border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{message}<Button className="ml-3" size="sm" variant="outline" onClick={invalidate}>Reload</Button></div> : null}

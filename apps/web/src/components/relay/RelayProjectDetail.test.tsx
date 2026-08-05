@@ -29,6 +29,9 @@ vi.mock("@/features/relay-projects", () => ({
 vi.mock("./RelayProjectPlansPanel", () => ({
   RelayProjectPlansPanel: () => <div>Plans Panel</div>,
 }));
+vi.mock("./RelayProjectFeatureWorkspacesPanel", () => ({
+  RelayProjectFeatureWorkspacesPanel: () => <div>Feature Workspaces Panel</div>,
+}));
 vi.mock("./RelayProjectRepositoriesPanel", () => ({
   RelayProjectRepositoriesPanel: () => <div>Repository References Panel</div>,
 }));
@@ -77,6 +80,7 @@ describe("RelayProjectDetail", () => {
     expect(screen.getByRole("heading", { name: "Relay" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit Project" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Archive Project" })).toBeInTheDocument();
+    expect(screen.getByText("Feature Workspaces Panel")).toBeInTheDocument();
     expect(screen.getByText("Plans Panel")).toBeInTheDocument();
     expect(screen.getByText("Repository References Panel")).toBeInTheDocument();
     expect(screen.getByText("Project Notes Panel")).toBeInTheDocument();

@@ -39,6 +39,39 @@ func (s *Store) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspaceI
 	return workflowgenerated.New(s.db).GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
 }
 
+// ListFeatureWorkspacesByProject returns the feature workspaces owned by the
+// given project row, most recently updated first with the row ID as a stable
+// secondary key. The result is bounded by limit (normalized to the shared
+// workflow list defaults) to avoid an unbounded full-table scan.
+func (s *Store) ListFeatureWorkspacesByProject(ctx context.Context, projectRowID int64, limit int) ([]FeatureWorkspace, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, workspace_id, project_row_id, feature_slug, state, version,
+       current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
+       current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at
+FROM feature_workspaces
+WHERE project_row_id = ?
+ORDER BY updated_at DESC, id DESC
+LIMIT ?`, projectRowID, normalizeWorkflowListLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	values := make([]FeatureWorkspace, 0)
+	for rows.Next() {
+		var value FeatureWorkspace
+		if err := rows.Scan(
+			&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
+			&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
+			&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 func (s *Store) GetFeatureWorkspaceByRowID(ctx context.Context, rowID int64) (FeatureWorkspace, error) {
 	return getFeatureWorkspaceByRowID(ctx, s.db, rowID)
 }

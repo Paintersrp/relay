@@ -48,6 +48,11 @@ type Workspace struct {
 	UpdatedAt   string
 }
 
+type WorkspaceProject struct {
+	ProjectID string
+	Name      string
+}
+
 type AdmittedInput struct {
 	AdmittedInputID       string
 	Sequence              int64
@@ -545,7 +550,7 @@ func workspaceDetailDTO(detail wayfinder.WorkspaceDetail, authority []featureapp
 	for _, item := range detail.Investigations {
 		recorded = recorded || item.SourceClosureRowID.Valid
 	}
-	return map[string]any{"workspace": workspaceDTO(Workspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, State: detail.Workspace.State, Version: detail.Workspace.Version, CreatedAt: detail.Workspace.CreatedAt, UpdatedAt: detail.Workspace.UpdatedAt}), "inputs": inputs, "destinations": destinations, "tickets": tickets, "routes": routes, "authorityRevisions": revisions, "sourceBasis": map[string]any{"status": sourceBasisStatus(recorded), "investigationCount": len(detail.Investigations)}}
+	return map[string]any{"workspace": workspaceDTO(Workspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, State: detail.Workspace.State, Version: detail.Workspace.Version, CreatedAt: detail.Workspace.CreatedAt, UpdatedAt: detail.Workspace.UpdatedAt}), "project": map[string]any{"projectId": detail.Project.ProjectID, "name": detail.Project.Name}, "inputs": inputs, "destinations": destinations, "tickets": tickets, "routes": routes, "authorityRevisions": revisions, "sourceBasis": map[string]any{"status": sourceBasisStatus(recorded), "investigationCount": len(detail.Investigations)}}
 }
 
 func ticketDetailProjection(value wayfinder.TicketDetail) TicketDetail {

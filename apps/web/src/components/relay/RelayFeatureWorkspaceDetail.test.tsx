@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { RelayFeatureWorkspaceDetail } from "./RelayFeatureWorkspaceDetail";
 import type { FeatureWorkspaceDetail } from "@/features/relay-feature-workspaces";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params }: any) => (
+    <a href={to} data-project-id={params?.projectId ?? ""}>
+      {children}
+    </a>
+  ),
+}));
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>;
@@ -11,6 +19,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 const base: FeatureWorkspaceDetail = {
   workspace: { workspaceId: "workspace-1", featureSlug: "payments", state: "open", version: 2, createdAt: "", updatedAt: "" },
+  project: { projectId: "project-1", name: "Relay" },
   inputs: [],
   destinations: [],
   tickets: [],
@@ -42,6 +51,15 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(screen.getByText(/no retained source evidence recorded/)).toBeTruthy();
     expect(screen.getByText("Discovery")).toBeTruthy();
     expect(screen.getByText("Route workspace")).toBeTruthy();
+  });
+
+  it("links back to the owning project by identity and shows its name", () => {
+    render(<RelayFeatureWorkspaceDetail detail={base} />, { wrapper });
+    const projectLinks = screen.getAllByRole("link", { name: /Relay/ });
+    expect(projectLinks.length).toBeGreaterThan(0);
+    for (const link of projectLinks) {
+      expect(link).toHaveAttribute("data-project-id", "project-1");
+    }
   });
 
   it("does not render packet-admission controls for completion", () => {

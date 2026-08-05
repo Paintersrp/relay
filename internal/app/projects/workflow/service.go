@@ -18,6 +18,7 @@ type (
 	ProjectRepositoryTarget = workflowstore.ProjectRepositoryTarget
 	ProjectNote             = workflowstore.ProjectNote
 	Plan                    = workflowstore.Plan
+	FeatureWorkspace        = workflowstore.FeatureWorkspace
 )
 
 type IDGenerator interface {
@@ -45,6 +46,11 @@ type GetProjectInput struct {
 	RepositoryLimit int
 	NoteLimit       int
 	PlanLimit       int
+}
+
+type ListFeatureWorkspacesInput struct {
+	ProjectID string
+	Limit     int
 }
 
 type CreateProjectInput struct {
@@ -135,6 +141,22 @@ func (s *Service) GetProject(ctx context.Context, input GetProjectInput) (Projec
 		Notes:        notes,
 		Plans:        plans,
 	}, nil
+}
+
+// ListFeatureWorkspaces returns the feature workspaces owned by the given
+// project, most recently updated first. It resolves the durable project row
+// relationship (rather than trusting a caller-supplied row ID) so a workspace
+// belonging to a different project can never leak into the result.
+func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWorkspacesInput) ([]workflowstore.FeatureWorkspace, error) {
+	projectID := strings.TrimSpace(input.ProjectID)
+	if projectID == "" {
+		return nil, fmt.Errorf("%w: Project ID is required", ErrInvalidProjectRequest)
+	}
+	project, err := s.store.GetProjectByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListFeatureWorkspacesByProject(ctx, project.ID, input.Limit)
 }
 
 func (s *Service) CreateProject(ctx context.Context, input CreateProjectInput) (workflowstore.Project, error) {

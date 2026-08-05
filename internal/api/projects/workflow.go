@@ -28,6 +28,7 @@ type WorkflowProjectService interface {
 	CreateNote(context.Context, workflowprojects.CreateNoteInput) (workflowprojects.ProjectNote, error)
 	UpdateNote(context.Context, workflowprojects.UpdateNoteInput) (workflowprojects.ProjectNote, error)
 	DeleteNote(context.Context, string, string) error
+	ListFeatureWorkspaces(context.Context, workflowprojects.ListFeatureWorkspacesInput) ([]workflowprojects.FeatureWorkspace, error)
 }
 
 type WorkflowHandler struct {
@@ -61,6 +62,16 @@ type projectPlanResponse struct {
 	PlanID      string `json:"planId"`
 	FeatureSlug string `json:"featureSlug"`
 	Status      string `json:"status"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
+type projectFeatureWorkspaceResponse struct {
+	WorkspaceID string `json:"workspaceId"`
+	ProjectID   string `json:"projectId"`
+	FeatureSlug string `json:"featureSlug"`
+	State       string `json:"state"`
+	Version     int64  `json:"version"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
 }
@@ -164,6 +175,36 @@ func (h *WorkflowHandler) Get(w http.ResponseWriter, r *http.Request) {
 		"notes":        notes,
 		"plans":        plans,
 	})
+}
+
+func (h *WorkflowHandler) ListFeatureWorkspaces(w http.ResponseWriter, r *http.Request) {
+	limit, ok := queryLimit(r, "limit")
+	if !ok {
+		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid limit")
+		return
+	}
+	ownerProjectID := projectID(r)
+	values, err := h.service.ListFeatureWorkspaces(r.Context(), workflowprojects.ListFeatureWorkspacesInput{
+		ProjectID: ownerProjectID,
+		Limit:     limit,
+	})
+	if err != nil {
+		writeProjectError(w, err)
+		return
+	}
+	items := make([]projectFeatureWorkspaceResponse, 0, len(values))
+	for _, value := range values {
+		items = append(items, projectFeatureWorkspaceResponse{
+			WorkspaceID: value.WorkspaceID,
+			ProjectID:   ownerProjectID,
+			FeatureSlug: value.FeatureSlug,
+			State:       value.State,
+			Version:     value.Version,
+			CreatedAt:   value.CreatedAt,
+			UpdatedAt:   value.UpdatedAt,
+		})
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
 }
 
 func (h *WorkflowHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -373,4 +414,5 @@ func MountWorkflowRoutes(r chi.Router, handler *WorkflowHandler) {
 	r.Post("/projects/{projectID}/notes", handler.CreateNote)
 	r.Patch("/projects/{projectID}/notes/{noteID}", handler.UpdateNote)
 	r.Delete("/projects/{projectID}/notes/{noteID}", handler.DeleteNote)
+	r.Get("/projects/{projectID}/feature-workspaces", handler.ListFeatureWorkspaces)
 }

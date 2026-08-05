@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArrowLeft, Edit2, Loader2, RotateCcw } from "lucide-react";
 
+import { RelayProjectFeatureWorkspacesPanel } from "@/components/relay/RelayProjectFeatureWorkspacesPanel";
 import { RelayProjectNotesPanel } from "@/components/relay/RelayProjectNotesPanel";
 import { RelayProjectPlansPanel } from "@/components/relay/RelayProjectPlansPanel";
 import { RelayProjectRepositoriesPanel } from "@/components/relay/RelayProjectRepositoriesPanel";
@@ -192,6 +193,7 @@ export function RelayProjectDetail({ detail }: RelayProjectDetailProps) {
         </dl>
       </section>
 
+      <RelayProjectFeatureWorkspacesPanel projectId={project.projectId} />
       <RelayProjectPlansPanel plans={detail.plans} />
       <RelayProjectRepositoriesPanel
         projectId={project.projectId}

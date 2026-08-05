@@ -81,6 +81,7 @@ type CreateWorkspaceInput struct {
 
 type WorkspaceDetail struct {
 	Workspace      workflowstore.FeatureWorkspace
+	Project        workflowstore.Project
 	Inputs         []workflowstore.FeatureWorkspaceAdmittedInput
 	Destinations   []workflowstore.FeatureWorkspaceDestination
 	Tickets        []TicketDetail
@@ -120,6 +121,9 @@ func (s *Service) ReadWorkspace(ctx context.Context, workspaceID string) (Worksp
 		return WorkspaceDetail{}, err
 	}
 	detail := WorkspaceDetail{Workspace: workspace}
+	if detail.Project, err = s.store.GetProjectByRowID(ctx, workspace.ProjectRowID); err != nil {
+		return WorkspaceDetail{}, err
+	}
 	if detail.Inputs, err = s.store.ListFeatureWorkspaceAdmittedInputs(ctx, workspace.ID); err != nil {
 		return WorkspaceDetail{}, err
 	}
