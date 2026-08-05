@@ -3745,7 +3745,7 @@ func (q *Queries) ListFeatureWorkspaceDiscoveryTickets(ctx context.Context, work
 }
 
 const listFeatureWorkspaceIntegratedDiscoveryRevisions = `-- name: ListFeatureWorkspaceIntegratedDiscoveryRevisions :many
-SELECT id, discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, created_at FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ? ORDER BY revision_number, id
+SELECT id, discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, created_at, settled_destination, continuation_json FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ? ORDER BY revision_number, id
 `
 
 func (q *Queries) ListFeatureWorkspaceIntegratedDiscoveryRevisions(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceIntegratedDiscoveryRevision, error) {
@@ -3766,6 +3766,8 @@ func (q *Queries) ListFeatureWorkspaceIntegratedDiscoveryRevisions(ctx context.C
 			&i.PredecessorRevisionRowID,
 			&i.CreatedIdentity,
 			&i.CreatedAt,
+			&i.SettledDestination,
+			&i.ContinuationJson,
 		); err != nil {
 			return nil, err
 		}

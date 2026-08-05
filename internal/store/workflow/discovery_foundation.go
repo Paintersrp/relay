@@ -14,6 +14,8 @@ type IntegratedDiscoveryRevision struct {
 	ID, WorkspaceRowID, RevisionNumber, ArtifactRowID int64
 	DiscoveryRevisionID                               string
 	PredecessorRevisionRowID                          sql.NullInt64
+	SettledDestination                                sql.NullString
+	ContinuationJSON                                  string
 	CreatedIdentity, CreatedAt                        string
 }
 
@@ -69,7 +71,7 @@ func (tx *Tx) CreateDiscoveryArtifact(ctx context.Context, value DiscoveryArtifa
 	return scanDiscoveryArtifact(tx.tx.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes, created_at`, value.DiscoveryArtifactID, value.WorkspaceRowID, value.RelativePath, value.SHA256, value.MediaType, value.SizeBytes))
 }
 func (tx *Tx) CreateIntegratedDiscoveryRevision(ctx context.Context, value IntegratedDiscoveryRevision) (IntegratedDiscoveryRevision, error) {
-	return scanIntegratedDiscoveryRevision(tx.tx.QueryRowContext(ctx, `INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, created_at`, value.DiscoveryRevisionID, value.WorkspaceRowID, value.RevisionNumber, value.ArtifactRowID, value.PredecessorRevisionRowID, value.CreatedIdentity))
+	return scanIntegratedDiscoveryRevision(tx.tx.QueryRowContext(ctx, `INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, settled_destination, continuation_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, created_at, settled_destination, continuation_json`, value.DiscoveryRevisionID, value.WorkspaceRowID, value.RevisionNumber, value.ArtifactRowID, value.PredecessorRevisionRowID, value.CreatedIdentity, value.SettledDestination, value.ContinuationJSON))
 }
 func (tx *Tx) UpsertDiscoveryWorkItemMetadata(ctx context.Context, ticketRowID int64, kind string, routeMaterial bool) (DiscoveryWorkItemMetadata, error) {
 	return scanDiscoveryWorkItemMetadata(tx.tx.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_work_item_metadata (ticket_row_id, work_item_kind, route_material) VALUES (?, ?, ?) ON CONFLICT(ticket_row_id) DO UPDATE SET work_item_kind = excluded.work_item_kind, route_material = excluded.route_material, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') RETURNING ticket_row_id, work_item_kind, route_material, legacy_adopted, updated_at`, ticketRowID, kind, routeMaterial))
@@ -97,7 +99,7 @@ func getDiscoveryArtifactByRowID(ctx context.Context, q rowQueryer, id int64) (D
 	return scanDiscoveryArtifact(q.QueryRowContext(ctx, `SELECT id, discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes, created_at FROM feature_workspace_discovery_artifacts WHERE id = ?`, id))
 }
 func getCurrentIntegratedDiscoveryRevision(ctx context.Context, q rowQueryer, workspaceID string) (IntegratedDiscoveryRevision, error) {
-	return scanIntegratedDiscoveryRevision(q.QueryRowContext(ctx, `SELECT r.id, r.discovery_revision_id, r.workspace_row_id, r.revision_number, r.artifact_row_id, r.predecessor_revision_row_id, r.created_identity, r.created_at FROM feature_workspaces AS w JOIN feature_workspace_integrated_discovery_revisions AS r ON r.id = w.current_discovery_revision_row_id WHERE w.workspace_id = ?`, workspaceID))
+	return scanIntegratedDiscoveryRevision(q.QueryRowContext(ctx, `SELECT r.id, r.discovery_revision_id, r.workspace_row_id, r.revision_number, r.artifact_row_id, r.predecessor_revision_row_id, r.created_identity, r.created_at, r.settled_destination, r.continuation_json FROM feature_workspaces AS w JOIN feature_workspace_integrated_discovery_revisions AS r ON r.id = w.current_discovery_revision_row_id WHERE w.workspace_id = ?`, workspaceID))
 }
 func listDiscoveryWorkItemMetadata(ctx context.Context, q rowsQueryer, workspaceRowID int64) ([]DiscoveryWorkItemMetadata, error) {
 	rows, err := q.QueryContext(ctx, `SELECT m.ticket_row_id, m.work_item_kind, m.route_material, m.legacy_adopted, m.updated_at FROM feature_workspace_discovery_work_item_metadata AS m JOIN feature_workspace_discovery_tickets AS t ON t.id = m.ticket_row_id WHERE t.workspace_row_id = ? ORDER BY t.id`, workspaceRowID)
@@ -138,7 +140,7 @@ func scanDiscoveryArtifact(row rowScanner) (DiscoveryArtifact, error) {
 }
 func scanIntegratedDiscoveryRevision(row rowScanner) (IntegratedDiscoveryRevision, error) {
 	var v IntegratedDiscoveryRevision
-	err := row.Scan(&v.ID, &v.DiscoveryRevisionID, &v.WorkspaceRowID, &v.RevisionNumber, &v.ArtifactRowID, &v.PredecessorRevisionRowID, &v.CreatedIdentity, &v.CreatedAt)
+	err := row.Scan(&v.ID, &v.DiscoveryRevisionID, &v.WorkspaceRowID, &v.RevisionNumber, &v.ArtifactRowID, &v.PredecessorRevisionRowID, &v.CreatedIdentity, &v.CreatedAt, &v.SettledDestination, &v.ContinuationJSON)
 	return v, err
 }
 func scanDiscoveryWorkItemMetadata(row rowScanner) (DiscoveryWorkItemMetadata, error) {

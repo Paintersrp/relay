@@ -401,6 +401,7 @@ type FeatureWorkspaceDiscoveryDestinationAssessment struct {
 	ContinuationJson       string         `json:"continuation_json"`
 	CreatedIdentity        string         `json:"created_identity"`
 	CreatedAt              string         `json:"created_at"`
+	Currentness            string         `json:"currentness"`
 }
 
 type FeatureWorkspaceDiscoveryIntegrationConsequence struct {
@@ -417,14 +418,15 @@ type FeatureWorkspaceDiscoveryIntegrationConsequence struct {
 }
 
 type FeatureWorkspaceDiscoveryReopenEvent struct {
-	ID                        int64  `json:"id"`
-	ReopenEventID             string `json:"reopen_event_id"`
-	WorkspaceRowID            int64  `json:"workspace_row_id"`
-	ClosurePacketRowID        int64  `json:"closure_packet_row_id"`
-	ReplacementRevisionRowID  int64  `json:"replacement_revision_row_id"`
-	CauseText                 string `json:"cause_text"`
-	ConfirmedOperatorIdentity string `json:"confirmed_operator_identity"`
-	CreatedAt                 string `json:"created_at"`
+	ID                        int64         `json:"id"`
+	ReopenEventID             string        `json:"reopen_event_id"`
+	WorkspaceRowID            int64         `json:"workspace_row_id"`
+	ClosurePacketRowID        int64         `json:"closure_packet_row_id"`
+	ReplacementRevisionRowID  int64         `json:"replacement_revision_row_id"`
+	CauseText                 string        `json:"cause_text"`
+	ConfirmedOperatorIdentity string        `json:"confirmed_operator_identity"`
+	CreatedAt                 string        `json:"created_at"`
+	CauseArtifactRowID        sql.NullInt64 `json:"cause_artifact_row_id"`
 }
 
 type FeatureWorkspaceDiscoveryTicket struct {
@@ -448,14 +450,16 @@ type FeatureWorkspaceDiscoveryWorkItemMetadatum struct {
 }
 
 type FeatureWorkspaceIntegratedDiscoveryRevision struct {
-	ID                       int64         `json:"id"`
-	DiscoveryRevisionID      string        `json:"discovery_revision_id"`
-	WorkspaceRowID           int64         `json:"workspace_row_id"`
-	RevisionNumber           int64         `json:"revision_number"`
-	ArtifactRowID            int64         `json:"artifact_row_id"`
-	PredecessorRevisionRowID sql.NullInt64 `json:"predecessor_revision_row_id"`
-	CreatedIdentity          string        `json:"created_identity"`
-	CreatedAt                string        `json:"created_at"`
+	ID                       int64          `json:"id"`
+	DiscoveryRevisionID      string         `json:"discovery_revision_id"`
+	WorkspaceRowID           int64          `json:"workspace_row_id"`
+	RevisionNumber           int64          `json:"revision_number"`
+	ArtifactRowID            int64          `json:"artifact_row_id"`
+	PredecessorRevisionRowID sql.NullInt64  `json:"predecessor_revision_row_id"`
+	CreatedIdentity          string         `json:"created_identity"`
+	CreatedAt                string         `json:"created_at"`
+	SettledDestination       sql.NullString `json:"settled_destination"`
+	ContinuationJson         string         `json:"continuation_json"`
 }
 
 type FeatureWorkspaceInvestigation struct {

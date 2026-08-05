@@ -115,6 +115,23 @@ func (tx *Tx) GetFeatureWorkspaceDiscoveryTicketByID(ctx context.Context, ticket
 func (tx *Tx) ListFeatureWorkspaceDiscoveryTickets(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceDiscoveryTicket, error) {
 	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceDiscoveryTickets(ctx, workspaceRowID)
 }
+func (tx *Tx) ListFeatureWorkspaceAdmittedInputs(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceAdmittedInput, error) {
+	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceAdmittedInputs(ctx, workspaceRowID)
+}
+func (tx *Tx) ListFeatureWorkspaceRouteStates(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceRouteState, error) {
+	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceRouteStates(ctx, workspaceRowID)
+}
+func (tx *Tx) ListFeatureWorkspaceInvestigations(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceInvestigation, error) {
+	values, err := workflowgenerated.New(tx.tx).ListFeatureWorkspaceInvestigations(ctx, workspaceRowID)
+	result := make([]FeatureWorkspaceInvestigation, len(values))
+	for index, value := range values {
+		result[index] = featureWorkspaceInvestigationFromGenerated(value)
+	}
+	return result, err
+}
+func (tx *Tx) ListFeatureWorkspaceTicketDependencies(ctx context.Context, ticketRowID int64) ([]FeatureWorkspaceTicketDependency, error) {
+	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceTicketDependencies(ctx, ticketRowID)
+}
 
 func (tx *Tx) ListFeatureWorkspaceAuthorityRevisions(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceAuthorityRevision, error) {
 	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceAuthorityRevisions(ctx, workspaceRowID)
@@ -229,6 +246,27 @@ WHERE workspace_id = ? AND version = ?
 RETURNING id, workspace_id, project_row_id, feature_slug, state, version,
            current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
             current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at`, workspaceID, expectedVersion).Scan(
+		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
+		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
+		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,
+	)
+	return value, err
+}
+
+// ApplyDiscoveryCurrentness advances packet/revision and route currentness in
+// one optimistic aggregate update without changing Feature-wide state.
+func (tx *Tx) ApplyDiscoveryCurrentness(ctx context.Context, workspaceID string, revisionRowID int64, packetRowID sql.NullInt64, routeRowID, expectedVersion int64) (FeatureWorkspace, error) {
+	var value FeatureWorkspace
+	err := tx.tx.QueryRowContext(ctx, `
+UPDATE feature_workspaces
+SET current_discovery_revision_row_id = ?, current_discovery_closure_packet_row_id = ?,
+    current_route_state_row_id = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version,
+          current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
+          current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at`,
+		revisionRowID, packetRowID, routeRowID, workspaceID, expectedVersion).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
 		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
 		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,

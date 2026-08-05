@@ -361,6 +361,30 @@ func (s *Service) Complete(ctx context.Context, input CompletionInput) (Completi
 			if _, _, err = s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{RelativePath: artifact.RelativePath, SHA256: packet.ManifestSha256, SizeBytes: packet.ManifestSizeBytes, MediaType: packet.ManifestMediaType}, 16<<20); err != nil {
 				return ErrFeatureCompletionNotReady
 			}
+			_, manifest, err := s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{RelativePath: artifact.RelativePath, SHA256: artifact.SHA256, SizeBytes: artifact.SizeBytes, MediaType: artifact.MediaType}, 16<<20)
+			if err != nil || artifact.WorkspaceRowID != workspace.ID || artifact.SHA256 != packet.ManifestSha256 || artifact.SizeBytes != packet.ManifestSizeBytes || artifact.MediaType != packet.ManifestMediaType {
+				return ErrFeatureCompletionNotReady
+			}
+			members, err := tx.ListDiscoveryClosurePacketMembers(ctx, packet.ID)
+			if err != nil || len(members) == 0 {
+				return ErrFeatureCompletionNotReady
+			}
+			for _, member := range members {
+				memberArtifact, memberErr := tx.GetDiscoveryArtifactByRowID(ctx, member.ArtifactRowID)
+				if memberErr != nil || memberArtifact.WorkspaceRowID != workspace.ID || memberArtifact.SHA256 != member.Sha256 || memberArtifact.SizeBytes != member.SizeBytes || memberArtifact.MediaType != member.MediaType {
+					return ErrFeatureCompletionNotReady
+				}
+				if _, _, memberErr = s.store.ArtifactStore().ReadVerifiedFile(workflowartifacts.File{RelativePath: memberArtifact.RelativePath, SHA256: member.Sha256, SizeBytes: member.SizeBytes, MediaType: member.MediaType}, 16<<20); memberErr != nil {
+					return ErrFeatureCompletionNotReady
+				}
+			}
+			if err = validateDiscoveryManifest(manifest, packet, members); err != nil {
+				return ErrFeatureCompletionNotReady
+			}
+			assessment, err := s.assessDiscovery(ctx, tx, workspace)
+			if err != nil || assessment.State != DiscoveryStateClosed || len(assessment.Blockers) > 0 || len(assessment.PendingIntegrations) > 0 || len(assessment.ActiveOperations) > 0 {
+				return ErrFeatureCompletionNotReady
+			}
 			packetAssociation = sql.NullInt64{Int64: packet.ID, Valid: true}
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err

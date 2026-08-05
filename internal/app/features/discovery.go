@@ -29,6 +29,8 @@ type StartIntegratedDiscoveryInput struct {
 	ExpectedVersion         int64
 	Markdown                []byte
 	SHA256, CreatedIdentity string
+	Destination             DiscoveryDestination
+	Continuation            string
 }
 type DiscoveryWorkItemInput struct {
 	WorkspaceID, TicketID, Kind string
@@ -43,6 +45,8 @@ type IntegrateDiscoveryResultInput struct {
 	ReplacementTicketID                                                             string
 	Markdown                                                                        []byte
 	CreatedIdentity                                                                 string
+	Destination                                                                     DiscoveryDestination
+	Continuation                                                                    string
 }
 type DiscoveryRevisionContent struct {
 	Revision workflowstore.IntegratedDiscoveryRevision
@@ -69,7 +73,7 @@ func (s *Service) SetIntegratedDiscoveryCapability(ctx context.Context, workspac
 }
 
 func (s *Service) StartIntegratedDiscovery(ctx context.Context, input StartIntegratedDiscoveryInput) (DiscoveryRevisionContent, workflowstore.FeatureWorkspace, error) {
-	if strings.TrimSpace(input.WorkspaceID) == "" || input.ExpectedVersion < 1 || len(input.Markdown) == 0 || !validSHA256(input.SHA256) || strings.TrimSpace(input.CreatedIdentity) == "" || digest(input.Markdown) != input.SHA256 {
+	if strings.TrimSpace(input.WorkspaceID) == "" || input.ExpectedVersion < 1 || len(input.Markdown) == 0 || !validSHA256(input.SHA256) || strings.TrimSpace(input.CreatedIdentity) == "" || digest(input.Markdown) != input.SHA256 || (input.Destination != "" && !validDiscoveryDestination(input.Destination)) {
 		return DiscoveryRevisionContent{}, workflowstore.FeatureWorkspace{}, ErrInvalidDiscoveryConsequence
 	}
 	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, input.WorkspaceID)
@@ -112,7 +116,7 @@ func (s *Service) StartIntegratedDiscovery(ctx context.Context, input StartInteg
 		if err != nil {
 			return err
 		}
-		revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: s.discoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: 1, ArtifactRowID: artifact.ID, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
+		revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: s.discoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: 1, ArtifactRowID: artifact.ID, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity), SettledDestination: nullableDestination(input.Destination), ContinuationJSON: continuationJSON(input.Continuation)})
 		if err != nil {
 			return err
 		}
@@ -138,6 +142,9 @@ func (s *Service) UpdateDiscoveryWorkItem(ctx context.Context, input DiscoveryWo
 		}
 		if workspace.DiscoveryCapabilityEnabled != 1 {
 			return ErrDiscoveryCapabilityDisabled
+		}
+		if workspace.CurrentDiscoveryClosurePacketRowID.Valid {
+			return ErrDiscoveryAlreadyClosed
 		}
 		ticket, err = tx.GetFeatureWorkspaceDiscoveryTicketByID(ctx, input.TicketID)
 		if err != nil {
@@ -262,7 +269,7 @@ func (s *Service) ReadIntegratedDiscoveryFrontier(ctx context.Context, workspace
 }
 
 func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateDiscoveryResultInput) (workflowstore.DiscoveryIntegrationConsequence, workflowstore.FeatureWorkspace, error) {
-	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.TicketID) == "" || strings.TrimSpace(input.ResolutionID) == "" || input.ExpectedWorkspaceVersion < 1 || input.ExpectedWorkItemVersion < 1 || !oneOf(input.Consequence, "integrated", "no_material_change", "superseded") || strings.TrimSpace(input.EvidenceBasis) == "" {
+	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.TicketID) == "" || strings.TrimSpace(input.ResolutionID) == "" || input.ExpectedWorkspaceVersion < 1 || input.ExpectedWorkItemVersion < 1 || !oneOf(input.Consequence, "integrated", "no_material_change", "superseded") || strings.TrimSpace(input.EvidenceBasis) == "" || (input.Destination != "" && !validDiscoveryDestination(input.Destination)) {
 		return workflowstore.DiscoveryIntegrationConsequence{}, workflowstore.FeatureWorkspace{}, ErrInvalidDiscoveryConsequence
 	}
 	material := input.Consequence == "integrated"
@@ -300,6 +307,9 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 		}
 		if current.DiscoveryCapabilityEnabled != 1 {
 			return ErrDiscoveryCapabilityDisabled
+		}
+		if current.CurrentDiscoveryClosurePacketRowID.Valid {
+			return ErrDiscoveryAlreadyClosed
 		}
 		if current.Version != input.ExpectedWorkspaceVersion {
 			return ErrDiscoveryStaleState
@@ -367,7 +377,13 @@ func (s *Service) IntegrateDiscoveryResult(ctx context.Context, input IntegrateD
 			if err != nil {
 				return err
 			}
-			revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: s.discoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: prior.RevisionNumber + 1, ArtifactRowID: artifact.ID, PredecessorRevisionRowID: sql.NullInt64{Int64: prior.ID, Valid: true}, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
+			destination := prior.SettledDestination
+			continuation := prior.ContinuationJSON
+			if input.Destination != "" {
+				destination = nullableDestination(input.Destination)
+				continuation = continuationJSON(input.Continuation)
+			}
+			revision, err := tx.CreateIntegratedDiscoveryRevision(ctx, workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: s.discoveryRevisionID(), WorkspaceRowID: current.ID, RevisionNumber: prior.RevisionNumber + 1, ArtifactRowID: artifact.ID, PredecessorRevisionRowID: sql.NullInt64{Int64: prior.ID, Valid: true}, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity), SettledDestination: destination, ContinuationJSON: continuation})
 			if err != nil {
 				return err
 			}
