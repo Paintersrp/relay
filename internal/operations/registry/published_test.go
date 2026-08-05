@@ -27,7 +27,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 			}
 		}
 	}
-	if len(seen) != 38 {
+	if len(seen) != 39 {
 		t.Fatalf("tools=%d", len(seen))
 	}
 	if _, ok := seen["create_run"]; ok {

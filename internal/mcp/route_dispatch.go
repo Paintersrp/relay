@@ -43,7 +43,7 @@ type AuditReadbackService interface {
 
 func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServices) (RouteDispatchers, error) {
 	handlers := make(map[string]map[string]SurfaceHandler, len(set.Manifests))
-	toolNames := make(map[string]struct{}, 38)
+	toolNames := make(map[string]struct{}, 39)
 	for _, manifest := range set.Manifests {
 		if _, exists := handlers[manifest.RoutePath]; exists {
 			return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate route %s", manifest.RoutePath)
@@ -62,7 +62,7 @@ func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServ
 		}
 		handlers[manifest.RoutePath] = routeHandlers
 	}
-	if len(toolNames) != 38 {
+	if len(toolNames) != 39 {
 		return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: got %d handlers", len(toolNames))
 	}
 	return RouteDispatchers{Handlers: handlers}, nil
@@ -77,7 +77,7 @@ func newRouteToolDispatcher(manifest routecontracts.RouteManifest, tool routecon
 	case "source":
 		return newSourceGatewayHandler(manifest, tool.Name, services.Source), nil
 	case "wayfinder_action":
-		return newWayfinderHandler(tool.Name, services.Wayfinder), nil
+		return newWayfinderHandler(tool.Name, services), nil
 	case "frontier":
 		return newTicketFrontierHandler(manifest, tool, services.TicketFrontierAdmitter, services.Tickets), nil
 	case "audit":
@@ -540,9 +540,20 @@ func newSourceGatewayHandler(manifest routecontracts.RouteManifest, name string,
 	}
 }
 
-func newWayfinderHandler(name string, service *appwayfinder.Service) SurfaceHandler {
+func newWayfinderHandler(name string, services RouteDispatchServices) SurfaceHandler {
+	service := services.Wayfinder
 	return func(raw json.RawMessage) ToolCallResult {
 		switch name {
+		case "read_workspace":
+			var in readWorkspaceWireInput
+			if err := brokerDecodeStrict(raw, &in); err != nil {
+				return toolErr(err.Error())
+			}
+			detail, err := service.ReadWorkspace(context.Background(), in.WorkspaceID)
+			if err != nil {
+				return toolErr(err.Error())
+			}
+			return workflowOK(buildWayfinderWorkspaceReadback(detail))
 		case "create_workspace":
 			var in createWorkspaceWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
@@ -598,7 +609,23 @@ func newWayfinderHandler(name string, service *appwayfinder.Service) SurfaceHand
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			resolution, ticket, workspace, err := service.ResolveDiscoveryTicket(context.Background(), in.application())
+			if services.Packets == nil {
+				return toolErr("packet input authority is unavailable")
+			}
+			authority, err := services.Packets.ResolvePacketInputAuthority(context.Background(), appoperations.PacketInputAuthorityRequest{
+				PacketID: in.PacketID, WorkspaceID: in.WorkspaceID, InputName: in.InputName,
+				SurfaceContract: registry.SurfaceContractID("wayfinder-discovery.v1"),
+				OperationID:     registry.OperationID("wayfinder.discovery"),
+				Action:          registry.AllowedAction("resolve_discovery_ticket"),
+			})
+			if err != nil {
+				return toolErr(err.Error())
+			}
+			application := in.application()
+			application.ArtifactRowID = authority.ArtifactRowID
+			application.RetainedArtifact = authority.RetainedArtifact
+			application.ArtifactSHA256 = authority.ArtifactSHA256
+			resolution, ticket, workspace, err := service.ResolveDiscoveryTicket(context.Background(), application)
 			if err != nil {
 				return toolErr(err.Error())
 			}

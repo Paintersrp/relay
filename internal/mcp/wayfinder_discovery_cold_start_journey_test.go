@@ -2,13 +2,18 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/app/mcpcomposition"
 	workflowprojects "relay/internal/app/projects/workflow"
+	appwayfinder "relay/internal/app/wayfinder"
 	"relay/internal/mcp/fileacquisition"
 	"relay/internal/mcp/routecontracts"
 	workflowrepos "relay/internal/repos/workflow"
@@ -58,6 +63,10 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wayfinder, err := appwayfinder.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
 	projects, err := workflowprojects.NewService(store)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +81,8 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 		Packets:   policy.Packets,
 		Lifecycle: lifecycleHandler,
 		Source:    policy.Source,
+		Wayfinder: wayfinder,
+		Tickets:   nil,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -97,14 +108,38 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 		t.Fatalf("project identity = %#v", project)
 	}
 
+	resolutionInput := "packet-backed resolution evidence"
+	resolutionDigest := coldStartDigest([]byte(resolutionInput))
 	create := coldStartCall(t, server, "create_operation_packet", map[string]any{
-		"surface_contract":    sourceSnapshotSurface,
-		"mutation_id":         "wayfinder-discovery-cold-start",
-		"operation_id":        sourceSnapshotOperation,
-		"project_id":          project.ProjectID,
-		"inputs":              []any{},
+		"surface_contract": sourceSnapshotSurface,
+		"mutation_id":      "wayfinder-discovery-cold-start",
+		"operation_id":     sourceSnapshotOperation,
+		"project_id":       project.ProjectID,
+		"inputs": []any{map[string]any{
+			"input_name": "resolution_input", "source_kind": "inline_text", "display_name": "resolution.txt",
+			"media_type": "text/plain", "expected_sha256": resolutionDigest,
+			"source": map[string]any{"text": resolutionInput},
+		}},
 		"workflow_references": []any{},
-		"attestations":        []any{},
+		"attestations": []any{
+			map[string]any{
+				"kind": "exact_evidence", "input_name": "resolution_input", "subject_sha256": resolutionDigest, "complete": true,
+			},
+			map[string]any{
+				"kind": "sensitive_data_clearance", "input_name": "resolution_input",
+				"clearance": map[string]any{
+					"policy_version": "relay.canonical-artifact-sensitive-data.v1", "confirmed": true,
+					"subject_sha256": resolutionDigest,
+					"declaration": map[string]any{
+						"password": false, "api_key_or_access_token": false,
+						"refresh_token_or_session_material": false, "cookie_or_authorization_header": false,
+						"private_or_ssh_key": false, "credential": false,
+						"complete_secret_bearing_environment_file": false,
+						"avoidable_signed_secret_bearing_url":      false,
+					},
+				},
+			},
+		},
 	})
 	var created CreateOperationPacketResult
 	coldStartDecode(t, create, &created)
@@ -115,6 +150,74 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	if created.Packet.Summary.SurfaceContract != sourceSnapshotSurface || created.Packet.Summary.OperationID != sourceSnapshotOperation || created.Packet.Summary.ProjectID != project.ProjectID {
 		t.Fatalf("created packet summary = %#v", created.Packet.Summary)
 	}
+
+	workspaceManifest := coldStartRoute(t, routes, "wayfinder-workspace.v1")
+	workspaceHandlers, err := BuildRouteHandlers(workspaceManifest, dispatchers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceServer, err := NewServerForRoute(nil, workspaceManifest, workspaceHandlers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspacePacketResponse := coldStartCall(t, workspaceServer, "create_operation_packet", map[string]any{
+		"surface_contract": "wayfinder-workspace.v1",
+		"mutation_id":      "wayfinder-discovery-workspace-route-packet",
+		"operation_id":     "wayfinder.workspace",
+		"project_id":       project.ProjectID,
+		"inputs":           []any{}, "workflow_references": []any{}, "attestations": []any{},
+	})
+	var workspacePacket CreateOperationPacketResult
+	coldStartDecode(t, workspacePacketResponse, &workspacePacket)
+	workspacePacketID := workspacePacket.Packet.Summary.PacketID
+	if workspacePacketID == "" || workspacePacket.Packet.Summary.SurfaceContract != "wayfinder-workspace.v1" {
+		t.Fatalf("workspace-route packet = %#v", workspacePacket.Packet.Summary)
+	}
+
+	workspace, err := wayfinder.CreateWorkspace(ctx, appwayfinder.CreateWorkspaceInput{ProjectID: project.ProjectID, FeatureSlug: "discovery-feature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignProjectID := project.ProjectID + "-foreign"
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateProject(ctx, workflowstore.CreateProjectParams{ProjectID: foreignProjectID, Name: "Foreign project", Description: "cross-project rejection"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	foreignWorkspace, err := wayfinder.CreateWorkspace(ctx, appwayfinder.CreateWorkspaceInput{ProjectID: foreignProjectID, FeatureSlug: "foreign-feature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, workspaceAfterTicket, err := wayfinder.CreateDiscoveryTicket(ctx, appwayfinder.CreateDiscoveryTicketInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, TicketKey: "discover-resolution", Subject: "Resolve packet evidence", DependsOnTicketIDs: []string{}, DependencyKind: "informs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resolveRequest := map[string]any{
+		"packet_id": workspacePacketID, "workspace_id": workspaceAfterTicket.WorkspaceID,
+		"expected_version": workspaceAfterTicket.Version, "ticket_id": ticket.DiscoveryTicketID,
+		"expected_ticket_ver": ticket.Version, "resolution_sequence": 1, "resolution_kind": "resolved",
+		"input_name": "resolution_input",
+	}
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", cloneWayfinderRequest(resolveRequest)))
+
+	foreignWorkspaceRequest := cloneWayfinderRequest(resolveRequest)
+	foreignWorkspaceRequest["workspace_id"] = foreignWorkspace.WorkspaceID
+	foreignWorkspaceRequest["expected_version"] = foreignWorkspace.Version
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", foreignWorkspaceRequest))
+
+	missingInputRequest := cloneWayfinderRequest(resolveRequest)
+	missingInputRequest["packet_id"] = packetID
+	missingInputRequest["input_name"] = "missing_input"
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", missingInputRequest))
+
+	staleWorkspaceRequest := cloneWayfinderRequest(resolveRequest)
+	staleWorkspaceRequest["packet_id"] = packetID
+	staleWorkspaceRequest["expected_version"] = workspaceAfterTicket.Version - 1
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", staleWorkspaceRequest))
 
 	active := coldStartCall(t, server, "get_active_operation_packet", map[string]any{
 		"surface_contract": sourceSnapshotSurface,
@@ -224,6 +327,52 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	if !rejected || reason == "" {
 		t.Fatalf("commit B-only read rejected=%v reason=%q", rejected, reason)
 	}
+
+	resolveRequest["packet_id"] = packetID
+	var resolved map[string]json.RawMessage
+	coldStartDecode(t, coldStartCall(t, server, "resolve_discovery_ticket", resolveRequest), &resolved)
+	var readback wayfinderWorkspaceReadback
+	coldStartDecode(t, coldStartCall(t, workspaceServer, "read_workspace", map[string]any{"workspace_id": workspaceAfterTicket.WorkspaceID}), &readback)
+	if readback.Workspace.WorkspaceID != workspaceAfterTicket.WorkspaceID || readback.Workspace.ProjectID != project.ProjectID || readback.Workspace.Version != workspaceAfterTicket.Version+1 || len(readback.Tickets) != 1 || readback.Tickets[0].TicketID != ticket.DiscoveryTicketID || len(readback.Tickets[0].Resolutions) != 1 || readback.Tickets[0].Resolutions[0].Digest != resolutionDigest {
+		t.Fatalf("resolved workspace readback = %#v", readback)
+	}
+	encodedReadback, err := json.Marshal(readback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encodedReadback) == "" || containsInternalWayfinderFields(string(encodedReadback)) {
+		t.Fatalf("workspace readback leaked internal fields: %s", encodedReadback)
+	}
+
+	staleTicketRequest := cloneWayfinderRequest(resolveRequest)
+	staleTicketRequest["expected_version"] = readback.Workspace.Version
+	staleTicketRequest["expected_ticket_ver"] = ticket.Version
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", staleTicketRequest))
+
+	secondTicket, workspaceAfterSecondTicket, err := wayfinder.CreateDiscoveryTicket(ctx, appwayfinder.CreateDiscoveryTicketInput{
+		WorkspaceID: readback.Workspace.WorkspaceID, ExpectedVersion: readback.Workspace.Version, TicketKey: "missing-resolution-artifact", Subject: "Reject broken retained evidence", DependsOnTicketIDs: []string{}, DependencyKind: "informs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainedPath string
+	if err := store.DB().QueryRowContext(ctx, `SELECT retained.relative_path FROM operation_packet_artifact_bindings AS binding JOIN operation_packet_retained_artifacts AS retained ON retained.id = binding.retained_artifact_row_id JOIN operation_packets AS packet ON packet.id = binding.packet_row_id WHERE packet.packet_id = ? AND binding.dependency_class = 'input_artifact' AND binding.dependency_key = 'resolution_input'`, packetID).Scan(&retainedPath); err != nil {
+		t.Fatal(err)
+	}
+	retainedFile := filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(retainedPath))
+	if err := os.WriteFile(retainedFile, []byte("tampered retained evidence"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	brokenArtifactRequest := cloneWayfinderRequest(resolveRequest)
+	brokenArtifactRequest["workspace_id"] = workspaceAfterSecondTicket.WorkspaceID
+	brokenArtifactRequest["expected_version"] = workspaceAfterSecondTicket.Version
+	brokenArtifactRequest["ticket_id"] = secondTicket.DiscoveryTicketID
+	brokenArtifactRequest["expected_ticket_ver"] = secondTicket.Version
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", brokenArtifactRequest))
+	if err := os.Remove(retainedFile); err != nil {
+		t.Fatal(err)
+	}
+	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", brokenArtifactRequest))
 }
 
 func containsString(values []string, wanted string) bool {
@@ -233,4 +382,36 @@ func containsString(values []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func containsInternalWayfinderFields(value string) bool {
+	for _, field := range []string{"row_id", "retained_artifact", "valid"} {
+		if strings.Contains(value, field) {
+			return true
+		}
+	}
+	return false
+}
+
+func coldStartDigest(value []byte) string {
+	sum := sha256.Sum256(value)
+	return hex.EncodeToString(sum[:])
+}
+
+func requireColdStartToolError(t *testing.T, response Response) {
+	t.Helper()
+	if response.Error != nil {
+		t.Fatalf("unexpected transport error: %v", response.Error)
+	}
+	var result ToolCallResult
+	raw, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected tool error, got %#v", result)
+	}
 }

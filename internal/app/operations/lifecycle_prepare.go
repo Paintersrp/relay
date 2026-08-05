@@ -1767,6 +1767,9 @@ func operationSlots(operation registry.OperationDefinition, refreshing bool) map
 	for _, value := range operation.RequiredInputs {
 		out[value.InputName] = value
 	}
+	for _, value := range operation.OptionalInputs {
+		out[value.InputName] = value
+	}
 	if refreshing {
 		for _, value := range operation.ConditionalRefreshInputs {
 			out[value.InputName] = value

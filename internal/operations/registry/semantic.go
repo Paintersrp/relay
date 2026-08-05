@@ -259,8 +259,8 @@ func normalizePacketRequest(tool string, operation OperationDefinition, request 
 		slotOrder[slot.InputName] = index
 		slotByName[slot.InputName] = slot
 	}
-	if len(inputs) != len(slots) {
-		return fmt.Errorf("operation %q requires %d inputs, got %d", operation.OperationID, len(slots), len(inputs))
+	if len(inputs) < len(operation.RequiredInputs) || len(inputs) > len(slots) {
+		return fmt.Errorf("operation %q requires between %d and %d inputs, got %d", operation.OperationID, len(operation.RequiredInputs), len(slots), len(inputs))
 	}
 
 	seenInputs := make(map[string]struct{}, len(inputs))
@@ -316,6 +316,11 @@ func normalizePacketRequest(tool string, operation OperationDefinition, request 
 	}
 	if len(usedFileIndexes) != len(inputFiles) {
 		return errors.New("every input_files member must be referenced exactly once")
+	}
+	for _, slot := range operation.RequiredInputs {
+		if _, present := seenInputs[slot.InputName]; !present {
+			return fmt.Errorf("input_name %q is required", slot.InputName)
+		}
 	}
 	sort.Slice(inputs, func(left, right int) bool {
 		return slotOrder[inputs[left]["input_name"].(string)] < slotOrder[inputs[right]["input_name"].(string)]
@@ -567,7 +572,7 @@ func validateAndSortAttestations(attestations []map[string]any, slots []InputSlo
 	}
 
 	for _, slot := range slots {
-		if !ordinarySeen[slot.InputName] {
+		if _, present := allInputSHA[slot.InputName]; present && !ordinarySeen[slot.InputName] {
 			return fmt.Errorf("input %q is missing attestation %q", slot.InputName, slot.AttestationKind)
 		}
 	}

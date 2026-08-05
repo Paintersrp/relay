@@ -21,6 +21,10 @@ func (in createWorkspaceWireInput) application() appwayfinder.CreateWorkspaceInp
 	return appwayfinder.CreateWorkspaceInput{ProjectID: in.ProjectID, FeatureSlug: in.FeatureSlug}
 }
 
+type readWorkspaceWireInput struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
 type admitWorkspaceInputWireInput struct {
 	WorkspaceID     string        `json:"workspace_id"`
 	ExpectedVersion int64         `json:"expected_version"`
@@ -90,14 +94,14 @@ func (in createDiscoveryTicketWireInput) application() appwayfinder.CreateDiscov
 }
 
 type resolveDiscoveryTicketWireInput struct {
+	PacketID           string        `json:"packet_id"`
 	WorkspaceID        string        `json:"workspace_id"`
 	ExpectedVersion    int64         `json:"expected_version"`
 	TicketID           string        `json:"ticket_id"`
 	ExpectedTicketVer  int64         `json:"expected_ticket_ver"`
 	ResolutionSequence int64         `json:"resolution_sequence"`
 	ResolutionKind     string        `json:"resolution_kind"`
-	ArtifactRowID      optionalInt64 `json:"artifact_row_id"`
-	ArtifactSHA256     string        `json:"artifact_sha256"`
+	InputName          string        `json:"input_name"`
 	SourceClosureID    optionalInt64 `json:"source_closure_id,omitempty"`
 }
 
@@ -105,8 +109,7 @@ func (in resolveDiscoveryTicketWireInput) application() appwayfinder.ResolveDisc
 	return appwayfinder.ResolveDiscoveryTicketInput{
 		WorkspaceID: in.WorkspaceID, ExpectedVersion: in.ExpectedVersion, TicketID: in.TicketID,
 		ExpectedTicketVer: in.ExpectedTicketVer, ResolutionSequence: in.ResolutionSequence,
-		ResolutionKind: in.ResolutionKind, ArtifactRowID: nullableInt64(in.ArtifactRowID),
-		ArtifactSHA256: in.ArtifactSHA256, SourceClosureID: nullableInt64(in.SourceClosureID),
+		ResolutionKind: in.ResolutionKind, SourceClosureID: nullableInt64(in.SourceClosureID),
 	}
 }
 

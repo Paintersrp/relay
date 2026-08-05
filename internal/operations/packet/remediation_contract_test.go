@@ -40,7 +40,7 @@ func TestCanonicalWorkflowReferenceShapes(t *testing.T) {
 
 func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 	golden := map[registry.OperationID]string{
-		"wayfinder.workspace":                     "822db2c1bc5d93adf971a2ab617f0de6ad616a13051b3d3c47d0052c919aefdf",
+		"wayfinder.workspace":                     "12f2376c3216084c19ca4d10cbcffc80612faecfd492fc89379241708abb7d6e",
 		"wayfinder.discovery":                     "f641316670fa8fd20c097b10cda24789917964370cc135c749df4b0df90bfd0d",
 		"wayfinder.investigation":                 "3bf06b1487f8293745b66d3c392dd2394f4c8f4eea0b2a57aa92e6bfb1a75892",
 		"planner.requirements":                    "1a93a39c76b23b6e97f5bed93ab6f417cfe74d7904341e2475a07a547f6ff56a",

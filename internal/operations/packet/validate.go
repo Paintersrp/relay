@@ -319,6 +319,10 @@ func canonicalInputs(values []InputBinding, operation registry.OperationDefiniti
 		slots[slot.InputName] = slotInfo{definition: slot, order: order, required: true}
 		order++
 	}
+	for _, slot := range operation.OptionalInputs {
+		slots[slot.InputName] = slotInfo{definition: slot, order: order}
+		order++
+	}
 	if refreshing {
 		if operation.Role != "planner" && len(operation.ConditionalRefreshInputs) != 0 {
 			return nil, invalid("refresh_operation")
@@ -393,6 +397,11 @@ func canonicalAttestations(values []Attestation, inputs []InputBinding, operatio
 	derived := make(map[string]bool)
 	order := 0
 	for _, slot := range operation.RequiredInputs {
+		slotOrder[slot.InputName] = order
+		slotKind[slot.InputName] = slot.AttestationKind
+		order++
+	}
+	for _, slot := range operation.OptionalInputs {
 		slotOrder[slot.InputName] = order
 		slotKind[slot.InputName] = slot.AttestationKind
 		order++

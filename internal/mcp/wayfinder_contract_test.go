@@ -22,7 +22,6 @@ func TestWayfinderAppSurfacePublishedActionsReachRealService(t *testing.T) {
 	workspaceID := ""
 	workspaceVersion := int64(0)
 	ticketID := ""
-	ticketVersion := int64(0)
 	actions := []struct {
 		name      string
 		tool      string
@@ -81,23 +80,46 @@ func TestWayfinderAppSurfacePublishedActionsReachRealService(t *testing.T) {
 				if ticket.DiscoveryTicketID == "" || ticket.Version != 1 {
 					t.Fatalf("created ticket = %#v", ticket)
 				}
-				ticketID, ticketVersion, workspaceVersion = ticket.DiscoveryTicketID, ticket.Version, workspace.Version
+				ticketID, workspaceVersion = ticket.DiscoveryTicketID, workspace.Version
 			},
 		},
 		{
-			name: "resolve ticket", tool: "wayfinder-discovery-v1__resolve_discovery_ticket",
+			name: "read workspace", tool: "wayfinder-workspace-v1__read_workspace",
 			request: func() map[string]any {
-				return map[string]any{"workspace_id": workspaceID, "expected_version": workspaceVersion, "ticket_id": ticketID, "expected_ticket_ver": ticketVersion, "resolution_sequence": 1, "resolution_kind": "resolved", "artifact_row_id": artifactID, "artifact_sha256": artifactSHA}
+				return map[string]any{"workspace_id": workspaceID}
 			},
 			assertion: func(t *testing.T, result map[string]json.RawMessage) {
-				var ticket workflowstore.FeatureWorkspaceDiscoveryTicket
-				decodeWayfinderResult(t, result, "ticket", &ticket)
-				var workspace workflowstore.FeatureWorkspace
-				decodeWayfinderResult(t, result, "workspace", &workspace)
-				if ticket.State != "resolved" || ticket.Version != ticketVersion+1 {
-					t.Fatalf("resolved ticket = %#v", ticket)
+				var readback struct {
+					Workspace struct {
+						WorkspaceID string `json:"workspace_id"`
+						ProjectID   string `json:"project_id"`
+						Version     int64  `json:"version"`
+					} `json:"workspace"`
+					Tickets []struct {
+						TicketID string `json:"ticket_id"`
+						Version  int64  `json:"version"`
+					} `json:"tickets"`
+					Routes []struct {
+						RouteStateID string `json:"route_state_id"`
+					} `json:"routes"`
 				}
-				workspaceVersion = workspace.Version
+				raw, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(raw, &readback); err != nil {
+					t.Fatal(err)
+				}
+				if readback.Workspace.WorkspaceID != workspaceID || readback.Workspace.ProjectID != "project-test" || readback.Workspace.Version != workspaceVersion || len(readback.Tickets) != 1 || readback.Tickets[0].TicketID != ticketID || len(readback.Routes) != 0 {
+					t.Fatalf("workspace readback = %#v", readback)
+				}
+				encoded, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(encoded), "row_id") || strings.Contains(string(encoded), "retained_artifact") || strings.Contains(string(encoded), "valid") {
+					t.Fatalf("internal persistence identity leaked: %s", encoded)
+				}
 			},
 		},
 		{
@@ -147,7 +169,7 @@ func TestWayfinderAppSurfacePublishedActionsReachRealService(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, err := detail.ReadWorkspace(ctx, workspaceID)
-	if err != nil || len(persisted.Inputs) != 1 || len(persisted.Destinations) != 1 || len(persisted.Tickets) != 1 || len(persisted.Tickets[0].Resolutions) != 1 || len(persisted.Investigations) != 1 || len(persisted.Routes) != 1 {
+	if err != nil || len(persisted.Inputs) != 1 || len(persisted.Destinations) != 1 || len(persisted.Tickets) != 1 || len(persisted.Tickets[0].Resolutions) != 0 || len(persisted.Investigations) != 1 || len(persisted.Routes) != 1 {
 		t.Fatalf("persisted action sequence = %#v, %v", persisted, err)
 	}
 }
@@ -166,6 +188,7 @@ func TestWayfinderContractDriftGuardPublishedSchemasMatchExplicitRuntimeWireType
 		tool string
 		wire any
 	}{
+		{"read_workspace", readWorkspaceWireInput{}},
 		{"create_workspace", createWorkspaceWireInput{}},
 		{"admit_workspace_input", admitWorkspaceInputWireInput{}},
 		{"add_workspace_destination", addWorkspaceDestinationWireInput{}},
