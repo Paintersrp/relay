@@ -146,13 +146,14 @@ func NewGoverningArtifactApprovalID() string {
 	return "ga-approval-" + uuid.NewString()
 }
 
-func NewPrototypeProposalID() string       { return "prototype-proposal-" + uuid.NewString() }
-func NewPrototypeAuthorizationID() string  { return "prototype-authorization-" + uuid.NewString() }
-func NewPrototypeRunID() string            { return "prototype-run-" + uuid.NewString() }
-func NewPrototypeApprovalID() string       { return "prototype-approval-" + uuid.NewString() }
-func NewPrototypeRuntimeID() string        { return "prototype-runtime-" + uuid.NewString() }
-func NewPrototypeTargetID() string         { return "prototype-target-" + uuid.NewString() }
-func NewPrototypeLeaseToken() string       { return "prototype-lease-" + uuid.NewString() }
-func NewPrototypeEvidenceBatchID() string  { return "prototype-evidence-batch-" + uuid.NewString() }
-func NewPrototypeResultID() string         { return "prototype-result-" + uuid.NewString() }
-func NewPrototypeEvidenceMemberID() string { return "prototype-evidence-" + uuid.NewString() }
+func NewPrototypeProposalID() string          { return "prototype-proposal-" + uuid.NewString() }
+func NewPrototypeAuthorizationID() string     { return "prototype-authorization-" + uuid.NewString() }
+func NewPrototypeRunID() string               { return "prototype-run-" + uuid.NewString() }
+func NewPrototypeApprovalID() string          { return "prototype-approval-" + uuid.NewString() }
+func NewPrototypeRuntimeID() string           { return "prototype-runtime-" + uuid.NewString() }
+func NewPrototypeTargetID() string            { return "prototype-target-" + uuid.NewString() }
+func NewPrototypeLeaseToken() string          { return "prototype-lease-" + uuid.NewString() }
+func NewPrototypeEvidenceBatchID() string     { return "prototype-evidence-batch-" + uuid.NewString() }
+func NewPrototypeResultID() string            { return "prototype-result-" + uuid.NewString() }
+func NewPrototypeEvidenceMemberID() string    { return "prototype-evidence-" + uuid.NewString() }
+func NewPrototypeCleanupObligationID() string { return "prototype-cleanup-" + uuid.NewString() }

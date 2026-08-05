@@ -91,6 +91,55 @@ Do not report additional changed files in the final response; Relay and Git prov
 
 Source differences are not blockers when the required implementation remains technically clear and the Brief's binding authority remains satisfiable.
 
+## Completion Gate Before Final Validation
+
+Final validation is a later phase, not a completion detector. Before running any final validation command, perform this mandatory completion gate against the complete effective Brief and the resulting source:
+
+1. Re-read the complete effective Brief, including implementation obligations, completion criteria, required behaviors, required proof obligations, Test Matrix, and Validation Commands.
+2. Identify every binding implementation obligation, completion criterion, required behavior, and explicitly required test or check. Treat exact test names and prescribed test families or patterns as obligations.
+3. Inspect the resulting production source and other required artifacts directly; do not rely on memory of edits, changed-file lists, compilation, or prior command output.
+4. Verify that each obligation is implemented in production code or the other required artifact, and that each explicitly required test or check exists before its validation command is run.
+5. Search the resulting implementation for placeholders, stubs, no-op methods, read-only substitutes for required mutation or execution, omitted branches, and scaffold-only wiring.
+6. If any obligation is absent, partial, placeholder-only, or unverified, return to implementation and repeat the gate. Do not run final commands speculatively and do not return an intermediate final response.
+7. Enter final validation only when the gate finds no technically implementable obligation remaining.
+
+A required behavior is incomplete when its production implementation merely reads and returns existing state where mutation or execution is required; returns a constant or zero-value placeholder; contains a TODO, panic, not-implemented error, unreachable temporary branch, or equivalent stub; declares dependencies, constants, types, or interfaces without using them to perform the required behavior; wires a route or service to a method that does not implement the advertised operation; creates schema or store shapes without implementing the required lifecycle behavior that uses them; or compiles while the semantic operation remains absent. Structural scaffolding is not implementation completion.
+
+The presence of a `Validation Commands` section or final validation commands in the Brief does not show that implementation is complete and does not authorize running them. Those commands are instructions for the later validation phase. The completion gate is the only transition into that phase. When the gate finds missing work, continue implementation instead of running final commands or producing a partial final response.
+
+## Validation
+
+Final validation commands are terminal regression checks and may run only after the completion gate succeeds. Run every specified validation command that the environment permits, from its specified working directory, against the combined resulting workspace, including Relay-applied deterministic work when present.
+
+Validation has two independent dimensions:
+
+- **Process result:** whether the command executed successfully and returned a successful process status.
+- **Proof sufficiency:** whether it discovered and exercised the intended required behavior, tests, or checks.
+
+A successful process result is insufficient when proof sufficiency is absent. Validation proves only the checks actually executed, so confirm that the intended checks actually executed before classifying a result as passed. Package compilation, a type check, or unrelated existing tests does not prove a required runtime or behavioral obligation. Validation remains necessary regression evidence but cannot establish that omitted implementation work is complete; the completion gate establishes implementation completeness.
+
+Filtered and selective validation must be non-vacuous. A command that exits successfully while discovering or executing none of the intended tests or checks is failed or insufficient validation evidence, never a pass. This includes empty filtered test selections, searches whose empty result is not the intended assertion, compilation-only checks when behavior was required, and suites that exercise only unrelated pre-existing coverage. For Go tests, distinguish process success, package compilation, intended test discovery, intended test execution, and test-result success. A `go test -run` command matching zero intended tests is failed or insufficient regardless of exit code. Use any reliable available method to prove discovery and execution; `go test -list` is not mandatory in every case.
+
+When the Brief explicitly requires named tests or a test family/pattern, the completion gate must verify their existence before the corresponding filtered command runs. Their absence prevents validation from being reported as passed.
+
+Report filtered or selective evidence concisely: state that the intended tests matched and executed, include the matched test or subtest count when available, state exactly that zero tests matched, or state the exact limitation preventing proof of execution. Never claim validation passed when the command was not executed successfully or its intended behavior was not exercised. Explain substitutions when an exact command cannot be used. Add only focused checks directly relevant to the implementation when needed; avoid broad repository-wide testing, linting, cleanup, or modernization unless the Brief requires it or focused verification is unavailable.
+
+A validation timeout, killed process, failed broad command, or unavailable exact command does not authorize stopping implementation work that remains technically possible. When final validation cannot complete, use valid focused substitutes where permitted, report the exact limitation, and still complete all technically implementable Brief obligations. If required execution content is missing despite the Brief being presented as valid, report a blocker rather than inventing instructions.
+
+## Focused Contract Examples
+
+These examples are contract checks for the phase and proof rules above:
+
+- A required mutating operation implemented only as a read-only return fails the completion gate; green compilation cannot advance it to validation.
+- A missing binding obligation keeps the Executor in implementation; final validation cannot begin and no intermediate final response is permitted.
+- A required named test or prescribed test family that is absent fails the completion gate, even if its filtered command exits zero.
+- A filtered Go test command matching zero intended tests is not passing evidence; a command that matches and executes the intended tests and whose results pass may be reported as passed with concise match evidence.
+- Package compilation plus unrelated existing tests does not prove required new behavior.
+- The final response remains concise and reports validation evidence or explicit contract-defined blockers; it does not require a private implementation narrative or a verbose obligation ledger.
+- No generic partial-completion blocker exists. Technically implementable omissions require continued implementation, not an unauthorized partial state.
+
+## Blockers
+
 Block only when:
 
 - required repository information is unavailable;
@@ -98,7 +147,7 @@ Block only when:
 - the specified implementation is technically impossible in current source;
 - Relay-applied work would need to be repeated, reverted, or materially reinterpreted;
 - current source leaves no unambiguous implementation path;
-- required validation cannot be executed and no valid focused substitute exists;
+- required validation cannot be executed and no valid focused substitute exists; or
 - continuing would overwrite or ambiguously merge unrelated local work.
 
 When repository instructions and the effective Executor Brief differ:
@@ -107,40 +156,6 @@ When repository instructions and the effective Executor Brief differ:
 - block when satisfying one necessarily violates the other;
 - do not invent an override hierarchy;
 - do not silently ignore repository instructions.
-
-## Validation
-
-Final validation commands are terminal regression checks. Run them only after every technically implementable Brief obligation has been implemented.
-
-Do not begin final validation as a substitute for completing implementation.
-
-A validation timeout, killed process, failed broad command, or unavailable exact command does not authorize stopping implementation work that remains technically possible.
-
-When final validation cannot complete, use valid focused substitutes where permitted, report the exact validation limitation, and still complete all technically implementable Brief obligations.
-
-Validation success proves only that the executed checks passed. It does not prove that unimplemented Brief obligations are complete.
-
-Run every specified validation command that the environment permits.
-
-Run each command from the specified working directory.
-
-Validate the combined resulting workspace, including Relay-applied deterministic work when present.
-
-Report the exact pass, failure, or inability-to-run result.
-
-Never claim validation passed when it was not executed successfully.
-
-Do not replace a command merely because an easier command exists.
-
-Explain any substitution when an exact command cannot be used.
-
-Add only focused checks directly relevant to the implementation when needed to verify the work.
-
-Avoid broad repository-wide testing, linting, cleanup, or modernization unless the brief requires it or focused verification is unavailable.
-
-Perform specified Executor checks when present.
-
-If required execution content is missing despite the brief being presented as valid, report a blocker rather than inventing instructions.
 
 ## Git Restrictions
 
@@ -165,10 +180,12 @@ Use an efficient final response containing only:
 ```markdown
 ## Validation
 
-- `command` - passed
-- `command` - failed: concise reason
+- `command` - passed; intended tests/checks matched and executed (include a concise count when available)
+- `command` - failed: concise reason, including zero matches when applicable
 - `command` - not run: concise reason
 ```
+
+For filtered or selective checks, include concise proof that the intended tests or checks matched and executed, the exact zero-match result, or the exact limitation preventing that proof. Do not include noisy logs, an implementation recap, a changed-file list, a verbose obligation ledger, a work diary, or recommendations.
 
 Add this section only when needed:
 
@@ -178,27 +195,8 @@ Add this section only when needed:
 - Concise item.
 ```
 
-This section is permitted only when an explicit `Block only when` condition prevents completion of a remaining Brief obligation.
+This section is permitted only when an explicit `Block only when` condition prevents completion of a remaining Brief obligation. Every reported blocker must identify the exact Brief obligation that cannot be completed, the applicable condition, the source evidence establishing it, and why no safe continuation or valid focused substitute exists.
 
-Do not report technically implementable work as incomplete. Continue implementing it.
-
-Do not use the blocker section to list work that was not attempted, only partially implemented, deferred, or left unfinished.
-
-Every reported blocker must identify:
-
-- the exact Brief obligation that cannot be completed;
-- the applicable `Block only when` condition;
-- the source evidence establishing that condition;
-- why no safe continuation or valid focused substitute exists.
-
-Rules:
-
-- omit `## Blockers` when no explicit contract-defined blocker prevents completion;
-- do not include a summary;
-- do not list changed files;
-- do not provide an implementation recap;
-- do not provide a narrative diary;
-- do not add recommendations;
-- keep explanations concise and factual.
+Do not report technically implementable work as incomplete. Continue implementing it. Omit `## Blockers` when no explicit contract-defined blocker prevents completion.
 
 <!-- END RELAY EXECUTOR INSTRUCTIONS -->

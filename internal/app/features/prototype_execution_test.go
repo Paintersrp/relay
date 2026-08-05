@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -370,5 +371,76 @@ func TestPrototypeExecutionArtifactCompensationAfterPromotion(t *testing.T) {
 	var artifacts int
 	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_discovery_artifacts`).Scan(&artifacts); err != nil || artifacts != 1 {
 		t.Fatalf("discovery artifacts = %d, %v", artifacts, err)
+	}
+}
+
+type runtimeTestExecutor struct {
+	calls  []string
+	result prototypeexecution.Result
+	err    error
+}
+
+func (f *runtimeTestExecutor) Launch(context.Context, prototypeexecution.LaunchRequest) (prototypeexecution.Result, error) {
+	f.calls = append(f.calls, "launch")
+	return f.result, f.err
+}
+func (f *runtimeTestExecutor) Reconcile(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	f.calls = append(f.calls, "reconcile")
+	return f.result, f.err
+}
+func (f *runtimeTestExecutor) Cancel(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	f.calls = append(f.calls, "cancel")
+	return f.result, f.err
+}
+func (f *runtimeTestExecutor) SettleTimeout(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	f.calls = append(f.calls, "timeout")
+	return f.result, f.err
+}
+
+func TestPrototypeRuntimeServiceValidation(t *testing.T) {
+	ctx, _, service, workspace, _, _, _, run := preparedPrototype(t)
+	fake := &runtimeTestExecutor{result: prototypeexecution.Result{Run: run}}
+	service.SetPrototypeExecutorForTest(fake)
+	cases := []struct {
+		name string
+		call func() error
+		want error
+	}{
+		{"missing launch identity", func() error {
+			_, e := service.LaunchApprovedPrototype(ctx, prototypeexecution.LaunchRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID})
+			return e
+		}, ErrPrototypeApprovalMissing},
+		{"reconcile delegates", func() error {
+			_, e := service.ReconcilePrototypeLaunch(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID})
+			return e
+		}, nil},
+		{"cancel identity", func() error {
+			_, e := service.CancelPrototypeExecution(ctx, prototypeexecution.OperationRequest{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID})
+			return e
+		}, ErrPrototypeApprovalMissing},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if e := tc.call(); !errors.Is(e, tc.want) {
+				t.Fatalf("error=%v want=%v", e, tc.want)
+			}
+		})
+	}
+	if len(fake.calls) != 1 || fake.calls[0] != "reconcile" {
+		t.Fatalf("delegate calls=%v", fake.calls)
+	}
+}
+
+func TestPrototypeRuntimeReadModel(t *testing.T) {
+	ctx, _, service, workspace, _, _, _, run := preparedPrototype(t)
+	detail, err := service.ReadPrototypeExecution(ctx, workspace.WorkspaceID, run.PrototypeRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Run.PrototypeRunID != run.PrototypeRunID {
+		t.Fatalf("run=%#v", detail.Run)
+	}
+	if detail.Runtime != nil || detail.Target != nil || detail.Lease != nil {
+		t.Fatal("unreserved runtime resources appeared in read model")
 	}
 }

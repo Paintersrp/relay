@@ -2,15 +2,18 @@ package workflowstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
-	"fmt"
+	"strconv"
 )
 
 var (
 	ErrPrototypePreparationClaimed   = errors.New("prototype preparation already claimed")
 	ErrPrototypeLaunchAlreadyClaimed = errors.New("prototype launch already claimed")
 	ErrPrototypeEvidenceUnsafe       = errors.New("prototype evidence is unsafe")
+	ErrPrototypeCleanupConflict      = errors.New("prototype cleanup obligation transition conflicts")
 )
 
 type PrototypeRuntime struct {
@@ -161,10 +164,24 @@ func (tx *Tx) ReservePrototypeRuntime(c context.Context, runID string, expected 
 	if run.LifecycleState != "approved" || run.Version != expected {
 		return run, r, t, l, ErrPrototypePreparationClaimed
 	}
-	if _, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_runtimes(runtime_id,run_row_id,authorized_commit,authorized_tree,runtime_root_path,worktree_path,ephemeral_target_key,lease_token,background_context_id,deadline_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, r.RuntimeID, run.ID, r.AuthorizedCommit, r.AuthorizedTree, r.RuntimeRootPath, r.WorktreePath, r.EphemeralTargetKey, r.LeaseToken, r.BackgroundContextID, r.DeadlineAt); e != nil {
-		return run, r, t, l, e
+	if existing, existingErr := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID)); existingErr == nil {
+		if existing.RuntimeID != r.RuntimeID || existing.AuthorizedCommit != r.AuthorizedCommit || existing.AuthorizedTree != r.AuthorizedTree || existing.RuntimeRootPath != r.RuntimeRootPath || existing.WorktreePath != r.WorktreePath || existing.EphemeralTargetKey != r.EphemeralTargetKey || existing.LeaseToken != r.LeaseToken || existing.DeadlineAt != r.DeadlineAt {
+			return run, existing, t, l, ErrPrototypePreparationClaimed
+		}
+		r = existing
+		var targetErr error
+		t, targetErr = scanPrototypeTarget(tx.tx.QueryRowContext(c, `SELECT `+targetCols+` FROM feature_workspace_prototype_targets WHERE run_row_id=?`, run.ID))
+		if targetErr != nil {
+			return run, r, t, l, targetErr
+		}
+		var leaseErr error
+		l, leaseErr = scanPrototypeLease(tx.tx.QueryRowContext(c, `SELECT `+leaseCols+` FROM feature_workspace_prototype_leases WHERE run_row_id=?`, run.ID))
+		return run, r, t, l, leaseErr
+	} else if !errors.Is(existingErr, sql.ErrNoRows) {
+		return run, r, t, l, existingErr
 	}
-	r, e = scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
+	runtimeRow := `INSERT INTO feature_workspace_prototype_runtimes(runtime_id,run_row_id,authorized_commit,authorized_tree,runtime_root_path,worktree_path,ephemeral_target_key,lease_token,background_context_id,invocation_relative_path,result_relative_path,export_relative_path,deadline_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING ` + runtimeCols
+	r, e = scanPrototypeRuntime(tx.tx.QueryRowContext(c, runtimeRow, r.RuntimeID, run.ID, r.AuthorizedCommit, r.AuthorizedTree, r.RuntimeRootPath, r.WorktreePath, r.EphemeralTargetKey, r.LeaseToken, r.BackgroundContextID, r.InvocationRelativePath, r.ResultRelativePath, r.ExportRelativePath, r.DeadlineAt))
 	if e != nil {
 		return run, r, t, l, e
 	}
@@ -181,7 +198,15 @@ func (tx *Tx) ReservePrototypeRuntime(c context.Context, runID string, expected 
 		return run, r, t, l, e
 	}
 	l, e = scanPrototypeLease(tx.tx.QueryRowContext(c, `SELECT `+leaseCols+` FROM feature_workspace_prototype_leases WHERE run_row_id=?`, run.ID))
-	return run, r, t, l, e
+	if e != nil {
+		return run, r, t, l, e
+	}
+	for _, kind := range []string{"process_ownership", "evidence_settlement", "prototype_lease", "ephemeral_target", "worktree"} {
+		if _, e = tx.GetOrCreatePrototypeCleanupObligation(c, run.ID, kind, ""); e != nil {
+			return run, r, t, l, e
+		}
+	}
+	return run, r, t, l, nil
 }
 func (tx *Tx) MarkPrototypeWorktreeReady(c context.Context, runID string) (PrototypeRuntime, error) {
 	_, e := tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET preparation_phase='worktree_ready',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=(SELECT id FROM feature_workspace_prototype_runs WHERE prototype_run_id=?) AND preparation_phase='reserved'`, runID)
@@ -191,28 +216,40 @@ func (tx *Tx) MarkPrototypeWorktreeReady(c context.Context, runID string) (Proto
 	return scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=(SELECT id FROM feature_workspace_prototype_runs WHERE prototype_run_id=?)`, runID))
 }
 func (tx *Tx) MarkPrototypePreparationReady(c context.Context, runID string, expected int64) (PrototypeRun, PrototypeRuntime, error) {
-	_ = expected
-	_, e := tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET preparation_phase='preflight_ready' WHERE run_row_id=(SELECT id FROM feature_workspace_prototype_runs WHERE prototype_run_id=?) AND preparation_phase IN ('reserved','worktree_ready')`, runID)
-	r, e2 := getPrototypeRun(c, tx.tx, runID)
-	if e == nil {
-		e = e2
+	run, e := getPrototypeRun(c, tx.tx, runID)
+	if e != nil {
+		return run, PrototypeRuntime{}, e
 	}
-	rt, e2 := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=(SELECT id FROM feature_workspace_prototype_runs WHERE prototype_run_id=?)`, runID))
-	if e == nil {
-		e = e2
+	if run.LifecycleState != "approved" || run.Version != expected {
+		return run, PrototypeRuntime{}, sql.ErrNoRows
 	}
-	return r, rt, e
+	if _, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET preparation_phase='preflight_ready',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=? AND preparation_phase IN ('reserved','worktree_ready')`, run.ID); e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	rt, e := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
+	return run, rt, e
 }
 func (tx *Tx) MarkPrototypePreparationFailed(c context.Context, runID string, expected int64, detail string) (PrototypeRun, PrototypeRuntime, error) {
-	_, e := tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET preparation_phase='failed',preparation_error=? WHERE run_row_id=(SELECT id FROM feature_workspace_prototype_runs WHERE prototype_run_id=?)`, detail, runID)
+	run, e := getPrototypeRun(c, tx.tx, runID)
 	if e != nil {
-		return PrototypeRun{}, PrototypeRuntime{}, e
+		return run, PrototypeRuntime{}, e
 	}
-	run, e := scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state='failed',version=version+1 WHERE prototype_run_id=? AND lifecycle_state='approved' AND version=? RETURNING `+prototypeRunColumns, runID, expected))
-	rt, e2 := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
-	if e == nil {
-		e = e2
+	if run.Version != expected || (run.LifecycleState != "approved" && run.LifecycleState != "preparing") {
+		return run, PrototypeRuntime{}, sql.ErrNoRows
 	}
+	from := run.LifecycleState
+	if _, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET preparation_phase='failed',preparation_error=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=? AND preparation_phase<>'failed'`, detail, run.ID); e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	run, e = scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state='failed',version=version+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=? RETURNING `+prototypeRunColumns, run.ID, expected))
+	if e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	identity := "preparation-failed:" + runID + ":" + strconv.FormatInt(run.Version, 10)
+	if _, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_lifecycle_transitions(run_row_id,transition_identity,from_state,to_state,run_version) VALUES(?,?,?,?,?)`, run.ID, identity, from, "failed", run.Version); e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	rt, e := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
 	return run, rt, e
 }
 func (tx *Tx) MarkPrototypeTargetReady(c context.Context, runID, key string) (PrototypeTarget, error) {
@@ -232,7 +269,22 @@ func (tx *Tx) CreatePrototypeEvidenceMember(c context.Context, v PrototypeEviden
 	return scanPrototypeMember(tx.tx.QueryRowContext(c, `INSERT INTO feature_workspace_prototype_evidence_members(evidence_member_id,run_row_id,evidence_batch_row_id,sequence,semantic_role,relative_path,artifact_row_id,sha256,size_bytes,media_type,completeness) VALUES(?,?,?,?,?,?,?,?,?,?,?) RETURNING id,evidence_member_id,run_row_id,evidence_batch_row_id,sequence,semantic_role,relative_path,artifact_row_id,sha256,size_bytes,media_type,completeness,created_at`, v.EvidenceMemberID, v.RunRowID, v.EvidenceBatchRowID, v.Sequence, v.SemanticRole, v.RelativePath, v.ArtifactRowID, v.SHA256, v.SizeBytes, v.MediaType, v.Completeness))
 }
 func (tx *Tx) CreatePrototypeResultMember(c context.Context, v PrototypeResultMember) (PrototypeResultMember, error) {
-	return v, fmt.Errorf("prototype result-member compatibility row requires Part 1 schema mapping")
+	var out PrototypeResultMember
+	err := tx.tx.QueryRowContext(c, `INSERT INTO feature_workspace_prototype_result_members(run_row_id,sequence,member_kind,artifact_row_id,sha256) VALUES(?,?,?,?,?) RETURNING id,run_row_id,sequence,artifact_row_id,member_kind,COALESCE(sha256,''),created_at`, v.RunRowID, v.Sequence, v.MemberKind, v.ArtifactRowID, v.SHA256).Scan(&out.ID, &out.RunRowID, &out.Sequence, &out.ArtifactRowID, &out.MemberKind, &out.SHA256, &out.CreatedAt)
+	if err == nil {
+		out.ResultMemberID = v.ResultMemberID
+		return out, nil
+	}
+	var existing PrototypeResultMember
+	lookupErr := tx.tx.QueryRowContext(c, `SELECT id,run_row_id,sequence,artifact_row_id,member_kind,COALESCE(sha256,''),created_at FROM feature_workspace_prototype_result_members WHERE run_row_id=? AND sequence=?`, v.RunRowID, v.Sequence).Scan(&existing.ID, &existing.RunRowID, &existing.Sequence, &existing.ArtifactRowID, &existing.MemberKind, &existing.SHA256, &existing.CreatedAt)
+	if lookupErr == nil {
+		if existing.ArtifactRowID == v.ArtifactRowID && existing.MemberKind == v.MemberKind && existing.SHA256 == v.SHA256 {
+			existing.ResultMemberID = v.ResultMemberID
+			return existing, nil
+		}
+		return PrototypeResultMember{}, ErrPrototypeEvidenceUnsafe
+	}
+	return PrototypeResultMember{}, err
 }
 
 func (tx *Tx) ClaimPrototypeLaunch(c context.Context, runID string, expected int64, claimID, protocol string) (PrototypeRun, PrototypeLaunchClaim, error) {
@@ -244,8 +296,29 @@ func (tx *Tx) ClaimPrototypeLaunch(c context.Context, runID string, expected int
 	if run.Version != expected {
 		return run, claim, ErrPrototypeLaunchAlreadyClaimed
 	}
+	existing, existingErr := scanPrototypeLaunchClaim(tx.tx.QueryRowContext(c, `SELECT id,launch_claim_id,run_row_id,launch_protocol,claimed_at FROM feature_workspace_prototype_launch_claims WHERE run_row_id=?`, run.ID))
+	if existingErr == nil {
+		if existing.LaunchClaimID == claimID && existing.LaunchProtocol == protocol && run.LifecycleState == "preparing" {
+			return run, existing, nil
+		}
+		return run, claim, ErrPrototypeLaunchAlreadyClaimed
+	}
+	if !errors.Is(existingErr, sql.ErrNoRows) {
+		return run, claim, existingErr
+	}
 	_, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_launch_claims(launch_claim_id,run_row_id,launch_protocol) VALUES(?,?,?)`, claimID, run.ID, protocol)
 	if e != nil {
+		return run, claim, e
+	}
+	run, e = scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state='preparing',cleanup_status='pending',version=version+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND lifecycle_state='approved' AND version=? RETURNING `+prototypeRunColumns, run.ID, expected))
+	if e != nil {
+		return run, claim, e
+	}
+	_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET launch_phase='claimed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=?`, run.ID)
+	if e != nil {
+		return run, claim, e
+	}
+	if _, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_lifecycle_transitions(run_row_id,transition_identity,from_state,to_state,run_version) VALUES(?,?,?,?,?)`, run.ID, claimID, "approved", "preparing", run.Version); e != nil {
 		return run, claim, e
 	}
 	claim, e = scanPrototypeLaunchClaim(tx.tx.QueryRowContext(c, `SELECT id,launch_claim_id,run_row_id,launch_protocol,claimed_at FROM feature_workspace_prototype_launch_claims WHERE run_row_id=?`, run.ID))
@@ -257,14 +330,28 @@ func (tx *Tx) PersistPrototypeProcessIdentity(c context.Context, runID string, e
 		return run, PrototypeRuntime{}, e
 	}
 	_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET launch_phase='identity_persisted',process_identity=?,process_started_at=? WHERE run_row_id=?`, identity, started, run.ID)
-	rt, e2 := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
-	if e == nil {
-		e = e2
+	if e != nil {
+		return run, PrototypeRuntime{}, e
 	}
+	rt, e := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
+	if e != nil {
+		return run, rt, e
+	}
+	sum := sha256.Sum256([]byte(identity))
+	_, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_lifecycle_transitions(run_row_id,transition_identity,from_state,to_state,run_version) VALUES(?,?,?,?,?)`, run.ID, "process-start:"+hex.EncodeToString(sum[:]), "preparing", "running", run.Version)
 	return run, rt, e
 }
 func (tx *Tx) MarkPrototypeLaunchUncertain(c context.Context, runID string, expected int64, reason string) (PrototypeRun, error) {
-	return scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state='launch_uncertain',version=version+1,launch_uncertainty_reason=? WHERE prototype_run_id=? AND lifecycle_state='preparing' AND version=? RETURNING `+prototypeRunColumns, reason, runID, expected))
+	run, e := scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state='launch_uncertain',version=version+1,launch_uncertainty_reason=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE prototype_run_id=? AND lifecycle_state='preparing' AND version=? RETURNING `+prototypeRunColumns, reason, runID, expected))
+	if e != nil {
+		return run, e
+	}
+	var claimID string
+	if e = tx.tx.QueryRowContext(c, `SELECT launch_claim_id FROM feature_workspace_prototype_launch_claims WHERE run_row_id=?`, run.ID).Scan(&claimID); e != nil {
+		return run, e
+	}
+	_, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_lifecycle_transitions(run_row_id,transition_identity,from_state,to_state,run_version) VALUES(?,?,?,?,?)`, run.ID, "launch-uncertain:"+claimID, "preparing", "launch_uncertain", run.Version)
+	return run, e
 }
 func (tx *Tx) RequestPrototypeCancellation(c context.Context, runID string, expected int64, id string) (PrototypeRun, PrototypeRuntime, error) {
 	return tx.setMutation(c, runID, expected, "cancel_identity", "cancel_requested_at", id)
@@ -277,7 +364,10 @@ func (tx *Tx) setMutation(c context.Context, runID string, expected int64, col, 
 	if e != nil {
 		return run, PrototypeRuntime{}, e
 	}
-	_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET `+col+`=?,`+at+`=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=? AND (`+col+` IS NULL OR `+col+`=?)`, id, run.ID, id)
+	if run.Version != expected {
+		return run, PrototypeRuntime{}, sql.ErrNoRows
+	}
+	_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET `+col+`=CASE WHEN `+col+` IS NULL THEN ? ELSE `+col+` END,`+at+`=CASE WHEN `+col+` IS NULL THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE `+at+` END WHERE run_row_id=? AND (`+col+` IS NULL OR `+col+`=?)`, id, id, run.ID, id)
 	rt, e2 := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
 	if e == nil {
 		e = e2
@@ -285,28 +375,63 @@ func (tx *Tx) setMutation(c context.Context, runID string, expected int64, col, 
 	return run, rt, e
 }
 func (tx *Tx) SettlePrototypeProcess(c context.Context, runID string, expected int64, state, outcome, identity string) (PrototypeRun, PrototypeRuntime, error) {
-	run, e := scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state=?,process_outcome=?,version=version+1 WHERE prototype_run_id=? AND version=? RETURNING `+prototypeRunColumns, state, outcome, runID, expected))
+	run, e := getPrototypeRun(c, tx.tx, runID)
 	if e != nil {
 		return run, PrototypeRuntime{}, e
 	}
-	_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET launch_phase=? WHERE run_row_id=?`, map[bool]string{true: "ownership_unresolved", false: "settled"}[state == "cleanup_required"], run.ID)
-	rt, e2 := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
-	if e == nil {
-		e = e2
+	if run.Version != expected || (run.LifecycleState != "running" && run.LifecycleState != "launch_uncertain") {
+		return run, PrototypeRuntime{}, sql.ErrNoRows
 	}
+	from := run.LifecycleState
+	run, e = scanPrototypeRun(tx.tx.QueryRowContext(c, `UPDATE feature_workspace_prototype_runs SET lifecycle_state=?,process_outcome=?,version=version+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=? RETURNING `+prototypeRunColumns, state, outcome, run.ID, expected))
+	if e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	if _, e = tx.tx.ExecContext(c, `INSERT INTO feature_workspace_prototype_lifecycle_transitions(run_row_id,transition_identity,from_state,to_state,run_version) VALUES(?,?,?,?,?)`, run.ID, identity, from, state, run.Version); e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	phase := "settled"
+	if state == "cleanup_required" {
+		phase = "ownership_unresolved"
+	}
+	if _, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_runtimes SET launch_phase=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=?`, phase, run.ID); e != nil {
+		return run, PrototypeRuntime{}, e
+	}
+	rt, e := scanPrototypeRuntime(tx.tx.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes WHERE run_row_id=?`, run.ID))
 	return run, rt, e
 }
 func (tx *Tx) GetOrCreatePrototypeCleanupObligation(c context.Context, runID int64, kind, detail string) (PrototypeCleanupObligation, error) {
 	var v PrototypeCleanupObligation
-	e := tx.tx.QueryRowContext(c, `INSERT INTO feature_workspace_prototype_cleanup_obligations(cleanup_obligation_id,run_row_id,obligation_kind,detail) VALUES(?,?,?,?) ON CONFLICT(run_row_id,obligation_kind) DO UPDATE SET updated_at=updated_at RETURNING id,run_row_id,cleanup_obligation_id,obligation_kind,status,detail,created_at,updated_at`, NewPrototypeRunID(), runID, kind, detail).Scan(&v.ID, &v.RunRowID, &v.CleanupObligationID, &v.ObligationKind, &v.Status, &v.Detail, &v.CreatedAt, &v.UpdatedAt)
+	e := tx.tx.QueryRowContext(c, `INSERT INTO feature_workspace_prototype_cleanup_obligations(cleanup_obligation_id,run_row_id,obligation_kind,detail) VALUES(?,?,?,?) ON CONFLICT(run_row_id,obligation_kind) DO UPDATE SET updated_at=updated_at RETURNING id,run_row_id,cleanup_obligation_id,obligation_kind,status,detail,created_at,updated_at`, NewPrototypeCleanupObligationID(), runID, kind, detail).Scan(&v.ID, &v.RunRowID, &v.CleanupObligationID, &v.ObligationKind, &v.Status, &v.Detail, &v.CreatedAt, &v.UpdatedAt)
 	return v, e
 }
 func (tx *Tx) CompletePrototypeCleanupObligation(c context.Context, runID int64, kind string) (PrototypeCleanupObligation, error) {
-	_, e := tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_cleanup_obligations SET status='complete',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=? AND obligation_kind=?`, runID, kind)
+	v, e := tx.cleanup(c, runID, kind, nil)
+	if e != nil {
+		return v, e
+	}
+	if v.Status == "complete" {
+		return v, nil
+	}
+	if v.Status == "failed" {
+		_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_cleanup_obligations SET status='complete',detail='verified absent after compensation',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`, v.ID)
+	} else {
+		_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_cleanup_obligations SET status='complete',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`, v.ID)
+	}
 	return tx.cleanup(c, runID, kind, e)
 }
 func (tx *Tx) FailPrototypeCleanupObligation(c context.Context, runID int64, kind, detail string) (PrototypeCleanupObligation, error) {
-	_, e := tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_cleanup_obligations SET status='failed',detail=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_row_id=? AND obligation_kind=?`, detail, runID, kind)
+	v, e := tx.cleanup(c, runID, kind, nil)
+	if e != nil {
+		return v, e
+	}
+	if v.Status == "complete" {
+		return v, ErrPrototypeCleanupConflict
+	}
+	if v.Status == "failed" && v.Detail == detail {
+		return v, nil
+	}
+	_, e = tx.tx.ExecContext(c, `UPDATE feature_workspace_prototype_cleanup_obligations SET status='failed',detail=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`, detail, v.ID)
 	return tx.cleanup(c, runID, kind, e)
 }
 func (tx *Tx) cleanup(c context.Context, runID int64, kind string, e error) (PrototypeCleanupObligation, error) {

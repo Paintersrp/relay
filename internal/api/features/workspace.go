@@ -593,9 +593,11 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, featureapp.ErrPrototypeCapabilityDisabled):
 		shared.Error(w, http.StatusForbidden, "CAPABILITY_DISABLED", err.Error())
+	case errors.Is(err, featureapp.ErrPrototypeInvalidTransition), errors.Is(err, featureapp.ErrPrototypeRunStale), errors.Is(err, featureapp.ErrPrototypeSourceDivergence), errors.Is(err, prototypeexecution.ErrLimitsInvalid), errors.Is(err, prototypeexecution.ErrResultInvalid), errors.Is(err, prototypeexecution.ErrEvidenceUnsafe), errors.Is(err, prototypeexecution.ErrTimeout):
+		shared.Error(w, http.StatusConflict, "PROTOTYPE_CONFLICT", err.Error())
 	case errors.Is(err, prototypeexecution.ErrLaunchUncertain), errors.Is(err, prototypeexecution.ErrCleanupRequired), errors.Is(err, prototypeexecution.ErrLaunchAlreadyClaimed), errors.Is(err, prototypeexecution.ErrPreparationClaimed):
 		shared.Error(w, http.StatusConflict, "PROTOTYPE_CONFLICT", err.Error())
-	case errors.Is(err, wayfinder.ErrWorkspaceNotFound), errors.Is(err, wayfinder.ErrDiscoveryTicketNotFound), errors.Is(err, featureapp.ErrWorkspaceNotFound), errors.Is(err, featureapp.ErrApprovalNotFound):
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, wayfinder.ErrWorkspaceNotFound), errors.Is(err, wayfinder.ErrDiscoveryTicketNotFound), errors.Is(err, featureapp.ErrWorkspaceNotFound), errors.Is(err, featureapp.ErrApprovalNotFound):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Feature workspace or discovery ticket was not found")
 	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict):
 		shared.Error(w, http.StatusConflict, "VERSION_CONFLICT", "Feature workspace was changed by another operator. Reload before retrying.")

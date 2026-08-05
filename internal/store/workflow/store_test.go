@@ -533,3 +533,44 @@ func assertWorkflowCount(t *testing.T, db *sql.DB, table string, want int64) {
 		t.Fatalf("table %s count = %d, want %d", table, got, want)
 	}
 }
+
+func TestPrototypeRuntimeMigrationAndOwnership(t *testing.T) {
+	store, _ := openWorkflowTestStore(t)
+	for _, table := range []string{"feature_workspace_prototype_runtimes", "feature_workspace_prototype_targets", "feature_workspace_prototype_leases", "feature_workspace_prototype_evidence_import_batches", "feature_workspace_prototype_results", "feature_workspace_prototype_evidence_members"} {
+		var count int
+		if err := store.DB().QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("table %s is missing", table)
+		}
+	}
+	var fkTarget, fkLease int
+	if err := store.DB().QueryRow(`SELECT count(*) FROM pragma_foreign_key_list('feature_workspace_prototype_targets') WHERE lower("table") LIKE 'repository%'`).Scan(&fkTarget); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT count(*) FROM pragma_foreign_key_list('feature_workspace_prototype_leases') WHERE lower("table") LIKE 'repository%'`).Scan(&fkLease); err != nil {
+		t.Fatal(err)
+	}
+	if fkTarget != 0 || fkLease != 0 {
+		t.Fatalf("prototype tables reference production targets: %d/%d", fkTarget, fkLease)
+	}
+	if _, err := store.DB().Exec(`INSERT INTO feature_workspace_prototype_cleanup_obligations(cleanup_obligation_id,run_row_id,obligation_kind) VALUES ('prototype-cleanup-test',1,'worktree'),('prototype-cleanup-test-2',1,'worktree')`); err == nil {
+		t.Fatal("cleanup uniqueness constraint was not enforced")
+	}
+}
+
+func TestPrototypeRuntimeStateMutations(t *testing.T) {
+	store, _ := openWorkflowTestStore(t)
+	var phase string
+	if err := store.DB().QueryRow(`SELECT preparation_phase FROM feature_workspace_prototype_runtimes WHERE 1=0`).Scan(&phase); err == nil {
+		t.Fatal("unexpected runtime row")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal(err)
+	}
+	for _, id := range []string{NewPrototypeRuntimeID(), NewPrototypeTargetID(), NewPrototypeLeaseToken(), NewPrototypeEvidenceBatchID(), NewPrototypeResultID(), NewPrototypeEvidenceMemberID()} {
+		if strings.TrimSpace(id) == "" {
+			t.Fatal("empty generated prototype identity")
+		}
+	}
+}
