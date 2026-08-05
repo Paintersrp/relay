@@ -164,7 +164,7 @@ type AdmitInputInput struct {
 }
 
 func (s *Service) AdmitInput(ctx context.Context, input AdmitInputInput) (workflowstore.FeatureWorkspaceAdmittedInput, workflowstore.FeatureWorkspace, error) {
-	if !validWorkspaceMutation(input.WorkspaceID, input.ExpectedVersion) || input.Sequence < 1 || strings.TrimSpace(input.Name) == "" || !oneOf(input.Role, "candidate", "governing", "authority", "evidence") || !oneOf(input.SourceKind, "uploaded_file", "relay_artifact", "inline_text", "workflow_record", "committed_source") || strings.TrimSpace(input.SourceReference) != input.SourceReference || len(input.SourceReference) > 512 {
+	if !validWorkspaceMutation(input.WorkspaceID, input.ExpectedVersion) || input.Sequence < 1 || strings.TrimSpace(input.Name) == "" || !oneOf(input.Role, "candidate", "governing", "authority", "evidence") || !oneOf(input.SourceKind, "uploaded_file", "relay_artifact", "inline_text", "workflow_record", "committed_source") || strings.TrimSpace(input.SourceReference) == "" || strings.TrimSpace(input.SourceReference) != input.SourceReference || len(input.SourceReference) > 512 || !validAdmittedSource(input) {
 		return workflowstore.FeatureWorkspaceAdmittedInput{}, workflowstore.FeatureWorkspace{}, ErrInvalidWorkspaceRequest
 	}
 	var admitted workflowstore.FeatureWorkspaceAdmittedInput
@@ -209,7 +209,7 @@ type CreateDiscoveryTicketInput struct {
 }
 
 func (s *Service) CreateDiscoveryTicket(ctx context.Context, input CreateDiscoveryTicketInput) (workflowstore.FeatureWorkspaceDiscoveryTicket, workflowstore.FeatureWorkspace, error) {
-	if !validWorkspaceMutation(input.WorkspaceID, input.ExpectedVersion) || strings.TrimSpace(input.TicketKey) == "" || len(input.TicketKey) > 128 || strings.TrimSpace(input.Subject) == "" || len(input.Subject) > 1024 || (len(input.DependsOnTicketIDs) > 0 && !oneOf(input.DependencyKind, "blocks", "informs")) {
+	if !validWorkspaceMutation(input.WorkspaceID, input.ExpectedVersion) || strings.TrimSpace(input.TicketKey) == "" || len(input.TicketKey) > 128 || strings.TrimSpace(input.Subject) == "" || len(input.Subject) > 1024 || !oneOf(input.DependencyKind, "blocks", "informs") {
 		return workflowstore.FeatureWorkspaceDiscoveryTicket{}, workflowstore.FeatureWorkspace{}, ErrInvalidWorkspaceRequest
 	}
 	var ticket workflowstore.FeatureWorkspaceDiscoveryTicket
@@ -421,6 +421,13 @@ func (s *Service) mutateWorkspace(ctx context.Context, workspaceID string, expec
 func validWorkspaceMutation(workspaceID string, expectedVersion int64) bool {
 	return strings.TrimSpace(workspaceID) != "" && expectedVersion > 0
 }
+func validAdmittedSource(input AdmitInputInput) bool {
+	if input.SourceKind == "committed_source" {
+		return input.SourceClosureID.Valid && !input.ArtifactRowID.Valid && !input.RetainedArtifact.Valid && !input.ArtifactSHA256.Valid
+	}
+	return input.ArtifactRowID.Valid && !input.RetainedArtifact.Valid && input.ArtifactSHA256.Valid && validSHA256(input.ArtifactSHA256.String) && !input.SourceClosureID.Valid
+}
+
 func oneOf(value string, accepted ...string) bool {
 	for _, candidate := range accepted {
 		if value == candidate {

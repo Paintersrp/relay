@@ -108,14 +108,15 @@ func TestAppSurfaceManifestsRetainExactToolInventoryAndCollisionIdentities(t *te
 				t.Fatalf("duplicate route registration %q", key)
 			}
 			seenRegistrations[key] = struct{}{}
-			if internalCounts[registration.InternalToolName] == 1 {
+			mustAlias := internalCounts[registration.InternalToolName] > 1 || (route.Role == "wayfinder" && registration.Tool.Category == "wayfinder_action")
+			if !mustAlias {
 				if registration.Aliased || registration.AdvertisedName != registration.InternalToolName {
 					t.Fatalf("unique tool registration changed name: %#v", registration)
 				}
 			} else {
 				want := strings.ReplaceAll(registration.SurfaceContract, ".", "-") + "__" + registration.InternalToolName
 				if !registration.Aliased || registration.AdvertisedName != want {
-					t.Fatalf("collision registration=%#v, want alias %q", registration, want)
+					t.Fatalf("aliased registration=%#v, want alias %q", registration, want)
 				}
 			}
 		}

@@ -337,6 +337,16 @@ func validateInstance(value any, schema *orderedValue, definitions map[string]*o
 		return requestError("request_schema_invalid", path)
 	}
 	if branches, ok := objectValue(resolved, "oneOf"); ok {
+		base := *resolved
+		base.object = make([]orderedMember, 0, len(resolved.object)-1)
+		for _, member := range resolved.object {
+			if member.Name != "oneOf" {
+				base.object = append(base.object, member)
+			}
+		}
+		if err := validateInstance(value, &base, definitions, path); err != nil {
+			return err
+		}
 		matches := 0
 		for _, branch := range branches.array {
 			if validateInstance(value, branch, definitions, path) == nil {

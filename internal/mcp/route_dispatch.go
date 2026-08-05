@@ -544,71 +544,71 @@ func newWayfinderHandler(name string, service *appwayfinder.Service) SurfaceHand
 	return func(raw json.RawMessage) ToolCallResult {
 		switch name {
 		case "create_workspace":
-			var in appwayfinder.CreateWorkspaceInput
+			var in createWorkspaceWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, err := service.CreateWorkspace(context.Background(), in)
+			value, err := service.CreateWorkspace(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"workspace": value})
 		case "admit_workspace_input":
-			var in appwayfinder.AdmitInputInput
+			var in admitWorkspaceInputWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, workspace, err := service.AdmitInput(context.Background(), in)
+			value, workspace, err := service.AdmitInput(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"input": value, "workspace": workspace})
 		case "add_workspace_destination":
-			var in appwayfinder.AddDestinationInput
+			var in addWorkspaceDestinationWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, workspace, err := service.AddDestination(context.Background(), in)
+			value, workspace, err := service.AddDestination(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"destination": value, "workspace": workspace})
 		case "route_workspace":
-			var in appwayfinder.RouteWorkspaceInput
+			var in routeWorkspaceWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, workspace, err := service.RouteWorkspace(context.Background(), in)
+			value, workspace, err := service.RouteWorkspace(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"route": value, "workspace": workspace})
 		case "create_discovery_ticket":
-			var in appwayfinder.CreateDiscoveryTicketInput
+			var in createDiscoveryTicketWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, workspace, err := service.CreateDiscoveryTicket(context.Background(), in)
+			value, workspace, err := service.CreateDiscoveryTicket(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"ticket": value, "workspace": workspace})
 		case "resolve_discovery_ticket":
-			var in appwayfinder.ResolveDiscoveryTicketInput
+			var in resolveDiscoveryTicketWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			resolution, ticket, workspace, err := service.ResolveDiscoveryTicket(context.Background(), in)
+			resolution, ticket, workspace, err := service.ResolveDiscoveryTicket(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}
 			return workflowOK(map[string]any{"resolution": resolution, "ticket": ticket, "workspace": workspace})
 		case "attach_investigation":
-			var in appwayfinder.AttachInvestigationInput
+			var in attachInvestigationWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
-			value, workspace, err := service.AttachInvestigation(context.Background(), in)
+			value, workspace, err := service.AttachInvestigation(context.Background(), in.application())
 			if err != nil {
 				return toolErr(err.Error())
 			}

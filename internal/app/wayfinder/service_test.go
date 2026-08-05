@@ -25,13 +25,13 @@ func TestWorkspaceResumesAndProtectsVersionedDiscoveryMutations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, workspace, err = service.AdmitInput(ctx, AdmitInputInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Sequence: 1, Name: "requirements", Role: "governing", SourceKind: "relay_artifact", ArtifactRowID: sql.NullInt64{Int64: artifactID, Valid: true}, ArtifactSHA256: sql.NullString{String: strings.Repeat("b", 64), Valid: true}}); err != nil {
+	if _, workspace, err = service.AdmitInput(ctx, AdmitInputInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Sequence: 1, Name: "requirements", Role: "governing", SourceKind: "relay_artifact", ArtifactRowID: sql.NullInt64{Int64: artifactID, Valid: true}, ArtifactSHA256: sql.NullString{String: strings.Repeat("b", 64), Valid: true}, SourceReference: "plans/wayfinder/requirements.json"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, workspace, err = service.AddDestination(ctx, AddDestinationInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Sequence: 1, Kind: "destination", Key: "internal/app/payments"}); err != nil {
 		t.Fatal(err)
 	}
-	first, workspace, err := service.CreateDiscoveryTicket(ctx, CreateDiscoveryTicketInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, TicketKey: "source-map", Subject: "Map source authority"})
+	first, workspace, err := service.CreateDiscoveryTicket(ctx, CreateDiscoveryTicketInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, TicketKey: "source-map", Subject: "Map source authority", DependencyKind: "informs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestWorkspaceResumesAndProtectsVersionedDiscoveryMutations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.AdmitInput(ctx, AdmitInputInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: 1, Sequence: 2, Name: "stale", Role: "evidence", SourceKind: "relay_artifact", ArtifactRowID: sql.NullInt64{Int64: artifactID, Valid: true}, ArtifactSHA256: sql.NullString{String: strings.Repeat("b", 64), Valid: true}}); !errors.Is(err, ErrVersionConflict) {
+	if _, _, err := service.AdmitInput(ctx, AdmitInputInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: 1, Sequence: 2, Name: "stale", Role: "evidence", SourceKind: "relay_artifact", ArtifactRowID: sql.NullInt64{Int64: artifactID, Valid: true}, ArtifactSHA256: sql.NullString{String: strings.Repeat("b", 64), Valid: true}, SourceReference: "stale evidence"}); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale mutation error = %v", err)
 	}
 

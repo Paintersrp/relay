@@ -130,7 +130,7 @@ func compileAppTools(members []RouteManifest) ([]AppToolManifest, error) {
 	for _, member := range members {
 		for _, tool := range member.Tools {
 			advertised := tool.Name
-			aliased := byName[tool.Name] > 1
+			aliased := byName[tool.Name] > 1 || (member.Role == "wayfinder" && tool.Category == "wayfinder_action")
 			if aliased {
 				key, err := appRouteKey(member)
 				if err != nil {
