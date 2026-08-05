@@ -45,6 +45,90 @@ func TestDiscoveryLifecycleAdoptionIsExplicitAndOneWay(t *testing.T) {
 	}
 }
 
+func TestDiscoveryLifecycleAdoptionRejectsActiveProductionMutation(t *testing.T) {
+	ctx := context.Background()
+	store, requirementsArtifact, _ := openFeatureServiceStore(t, ctx)
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('relay', 'C:/relay', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	var vaultID, closureID int64
+	if err := store.DB().QueryRowContext(ctx, `INSERT INTO source_vaults (vault_id, repo_target, relative_path) VALUES ('vault-discovery-adoption', 'relay', 'vaults/discovery-adoption') RETURNING id`).Scan(&vaultID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `INSERT INTO source_vault_closures (closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name, state, import_started_at, verified_at) VALUES ('closure-discovery-adoption', ?, ?, ?, 1, 'refs/relay/closures/discovery-adoption', 'ready', '2026-08-05T00:00:00.000000000Z', '2026-08-05T00:00:01.000000000Z') RETURNING id`, vaultID, strings.Repeat("a", 40), strings.Repeat("b", 40)).Scan(&closureID); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewServiceWithIDs(store, &featureTestIDs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := createFeatureWorkspace(ctx, store, "workspace-discovery-adoption-production", "discovery-adoption-production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, err := service.RecordAuthorityApproval(ctx, RecordAuthorityApprovalInput{WorkspaceID: workspace.WorkspaceID, Family: "requirements", ArtifactRowID: sql.NullInt64{Int64: requirementsArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), OperatorConfirmationEvidence: "confirmed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publication, workspace, err := service.PublishAuthority(ctx, PublishAuthorityInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true}, Layers: []AuthorityLayerInput{{Kind: "requirements", ArtifactRowID: sql.NullInt64{Int64: requirementsArtifact, Valid: true}, ArtifactSHA256: strings.Repeat("b", 64), SourceClosureID: sql.NullInt64{Int64: closureID, Valid: true}, ApprovalRowID: sql.NullInt64{Int64: approval.Approval.ID, Valid: true}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		ticket, err := tx.CreateDeliveryTicket(ctx, workflowstore.CreateDeliveryTicketParams{TicketID: "TICKET-DISCOVERY-ADOPTION", WorkspaceRowID: workspace.ID, ExternalPriority: 1})
+		if err != nil {
+			return err
+		}
+		revision, err := tx.CreateDeliveryTicketRevision(ctx, workflowstore.CreateDeliveryTicketRevisionParams{DeliveryTicketRowID: ticket.ID, RevisionNumber: 1, RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: closureID, SourcePath: "tickets/discovery-adoption.delivery-ticket.json", Goal: "Exercise the discovery adoption production mutation guard.", Context: "An active execution must block lifecycle adoption.", TransitionApplicability: "not_required"})
+		if err != nil {
+			return err
+		}
+		if _, err = tx.SetDeliveryTicketCurrentRevision(ctx, ticket.TicketID, revision.ID); err != nil {
+			return err
+		}
+		approval, err := tx.CreateDeliveryTicketRevisionApproval(ctx, workflowstore.CreateDeliveryTicketRevisionApprovalParams{ApprovalID: "approval-discovery-adoption", RevisionRowID: revision.ID, ApprovalKind: "delivery", ApprovalState: "approved", Rationale: "Approve the production mutation guard fixture.", SourceClosureRowID: closureID, AuthorityRevisionRowID: sql.NullInt64{Int64: publication.Revision.ID, Valid: true}})
+		if err != nil {
+			return err
+		}
+		selection, err := tx.CreateDeliveryTicketSelection(ctx, workflowstore.CreateDeliveryTicketSelectionParams{SelectionID: "selection-discovery-adoption", WorkspaceRowID: workspace.ID, State: "active", Rationale: "production mutation guard", SourceClosureRowID: sql.NullInt64{Int64: closureID, Valid: true}})
+		if err != nil {
+			return err
+		}
+		if _, err = tx.CreateDeliveryTicketSelectionMember(ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{SelectionRowID: selection.ID, Sequence: 1, RevisionRowID: revision.ID, ApprovalRowID: approval.ID}); err != nil {
+			return err
+		}
+		packageRow, err := tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{PackageID: "package-discovery-adoption", SelectionRowID: selection.ID, WorkspaceRowID: workspace.ID, RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: closureID, AuthorityRevisionRowID: publication.Revision.ID, PackageSha256: strings.Repeat("c", 64), AuthoritySha256: strings.Repeat("d", 64), SourceSha256: strings.Repeat("e", 64), DesignBriefSha256: strings.Repeat("f", 64)})
+		if err != nil {
+			return err
+		}
+		run, err := tx.CreateRun(ctx, workflowstore.CreateRunParams{RunID: "run-discovery-adoption", FeatureSlug: workspace.FeatureSlug, RepoTarget: "relay", Status: workflowstore.RunStatusCreated, Branch: "main", BaseCommit: strings.Repeat("a", 40), CanonicalSHA256: strings.Repeat("1", 64)})
+		if err != nil {
+			return err
+		}
+		if _, err = tx.LinkRunToExecutionPackage(ctx, run.RunID, packageRow.ID); err != nil {
+			return err
+		}
+		_, err = tx.CreateRepositoryBranchMutationLease(ctx, workflowstore.CreateRepositoryBranchMutationLeaseParams{LeaseID: "lease-discovery-adoption", RepoTarget: "relay", Branch: "main", OwnerKind: "run_execution", OwnerIdentity: run.RunID, UncertaintyState: workflowstore.RepositoryBranchMutationLeaseCertaintyCertain, ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err = service.SetIntegratedDiscoveryCapability(ctx, workspace.WorkspaceID, workspace.Version, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorIdentity: "operator"}); !errors.Is(err, ErrDiscoveryAdoptionProduction) {
+		t.Fatalf("adoption error = %v", err)
+	}
+	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil || current.Version != workspace.Version {
+		t.Fatalf("workspace after rejected adoption = %#v, %v", current, err)
+	}
+	if _, err := store.GetDiscoveryLifecycleAdoption(ctx, workspace.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("rejected adoption was persisted: %v", err)
+	}
+}
+
 func TestDiscoveryLifecycleOptimisticConcurrencyHasOneWinner(t *testing.T) {
 	ctx := context.Background()
 	store, _, _ := openFeatureServiceStore(t, ctx)
@@ -258,80 +342,150 @@ func TestDiscoveryClosureRequiresRouteMaterialIntegrationAndRestoresWithoutPubli
 	var ticket workflowstore.FeatureWorkspaceDiscoveryTicket
 	var resolution workflowstore.FeatureWorkspaceTicketResolution
 	var artifactID int64
-	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM artifacts ORDER BY id LIMIT 1`).Scan(&artifactID); err != nil { t.Fatal(err) }
+	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM artifacts ORDER BY id LIMIT 1`).Scan(&artifactID); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		var err error
 		ticket, err = tx.CreateFeatureWorkspaceDiscoveryTicket(ctx, workflowstore.CreateFeatureWorkspaceDiscoveryTicketParams{DiscoveryTicketID: "discovery-route-pending", WorkspaceRowID: workspace.ID, TicketKey: "route-pending", Subject: "route-pending"})
-		if err != nil { return err }
-		if _, err = tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "route", true); err != nil { return err }
+		if err != nil {
+			return err
+		}
+		if _, err = tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "route", true); err != nil {
+			return err
+		}
 		resolution, err = tx.CreateFeatureWorkspaceTicketResolution(ctx, workflowstore.CreateFeatureWorkspaceTicketResolutionParams{ResolutionID: "resolution-route-pending", TicketRowID: ticket.ID, Sequence: 1, ResolutionKind: "resolved", ArtifactRowID: sql.NullInt64{Int64: artifactID, Valid: true}, ArtifactSha256: strings.Repeat("b", 64)})
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		_, err = tx.TransitionFeatureWorkspaceDiscoveryTicket(ctx, ticket.DiscoveryTicketID, "open", "resolved", ticket.Version)
 		return err
-	}); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
 	assessment, err := service.AssessDiscoveryDestination(ctx, workspace.WorkspaceID)
-	if err != nil || len(assessment.PendingIntegrations) != 1 || assessment.PendingIntegrations[0] != resolution.ResolutionID { t.Fatalf("pending assessment = %#v, %v", assessment, err) }
+	if err != nil || len(assessment.PendingIntegrations) != 1 || assessment.PendingIntegrations[0] != resolution.ResolutionID {
+		t.Fatalf("pending assessment = %#v, %v", assessment, err)
+	}
 	beforeRoutes := discoveryRouteCount(t, store, workspace.ID)
-	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryPendingIntegration) { t.Fatalf("pending close error = %v", err) }
+	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryPendingIntegration) {
+		t.Fatalf("pending close error = %v", err)
+	}
 	assertNoDiscoveryClosurePublication(t, ctx, store, workspace, beforeRoutes)
 	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	ticket, err = discoveryLifecycleTicket(ctx, store, ticket.DiscoveryTicketID)
-	if err != nil { t.Fatal(err) }
-	if _, workspace, err = service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: current.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: resolution.ResolutionID, Consequence: "no_material_change", ExpectedWorkspaceVersion: current.Version, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "route settled"}); err != nil { t.Fatal(err) }
-	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error { _, err := tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "investigation", false); return err }); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, workspace, err = service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: current.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: resolution.ResolutionID, Consequence: "no_material_change", ExpectedWorkspaceVersion: current.Version, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "route settled"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "investigation", false)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	assessment, err = service.AssessDiscoveryDestination(ctx, workspace.WorkspaceID)
-	if err != nil || len(assessment.PendingIntegrations) != 0 { t.Fatalf("restored assessment = %#v, %v", assessment, err) }
-	if workspace.CurrentDiscoveryClosurePacketRowID.Valid { t.Fatal("restoration published a packet") }
-	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil { t.Fatal(err) }
+	if err != nil || len(assessment.PendingIntegrations) != 0 {
+		t.Fatalf("restored assessment = %#v, %v", assessment, err)
+	}
+	if workspace.CurrentDiscoveryClosurePacketRowID.Valid {
+		t.Fatal("restoration published a packet")
+	}
+	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestDiscoveryClosureRequiresRouteMaterialEvidenceAndRestores(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	var ticket workflowstore.FeatureWorkspaceDiscoveryTicket
 	var artifactID int64
-	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM artifacts ORDER BY id LIMIT 1`).Scan(&artifactID); err != nil { t.Fatal(err) }
+	if err := store.DB().QueryRowContext(ctx, `SELECT id FROM artifacts ORDER BY id LIMIT 1`).Scan(&artifactID); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		var err error
 		ticket, err = tx.CreateFeatureWorkspaceDiscoveryTicket(ctx, workflowstore.CreateFeatureWorkspaceDiscoveryTicketParams{DiscoveryTicketID: "discovery-route-evidence", WorkspaceRowID: workspace.ID, TicketKey: "route-evidence", Subject: "route-evidence"})
-		if err != nil { return err }
-		if _, err = tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "route", true); err != nil { return err }
+		if err != nil {
+			return err
+		}
+		if _, err = tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "route", true); err != nil {
+			return err
+		}
 		_, err = tx.TransitionFeatureWorkspaceDiscoveryTicket(ctx, ticket.DiscoveryTicketID, "open", "resolved", ticket.Version)
 		return err
-	}); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
 	assessment, err := service.AssessDiscoveryDestination(ctx, workspace.WorkspaceID)
-	if err != nil || len(assessment.RequiredEvidence) != 1 || assessment.RestorationActions[0] != "record_resolution:discovery-route-evidence" { t.Fatalf("missing evidence assessment = %#v, %v", assessment, err) }
+	if err != nil || len(assessment.RequiredEvidence) != 1 || assessment.RestorationActions[0] != "record_resolution:discovery-route-evidence" {
+		t.Fatalf("missing evidence assessment = %#v, %v", assessment, err)
+	}
 	beforeRoutes := discoveryRouteCount(t, store, workspace.ID)
-	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryClosureIneligible) { t.Fatalf("missing evidence close = %v", err) }
+	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryClosureIneligible) {
+		t.Fatalf("missing evidence close = %v", err)
+	}
 	assertNoDiscoveryClosurePublication(t, ctx, store, workspace, beforeRoutes)
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		_, err := tx.CreateFeatureWorkspaceTicketResolution(ctx, workflowstore.CreateFeatureWorkspaceTicketResolutionParams{ResolutionID: "resolution-route-evidence", TicketRowID: ticket.ID, Sequence: 1, ResolutionKind: "resolved", ArtifactRowID: sql.NullInt64{Int64: artifactID, Valid: true}, ArtifactSha256: strings.Repeat("b", 64)})
 		return err
-	}); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
 	assessment, err = service.AssessDiscoveryDestination(ctx, workspace.WorkspaceID)
-	if err != nil || len(assessment.RequiredEvidence) != 0 || len(assessment.PendingIntegrations) != 1 { t.Fatalf("recorded evidence assessment = %#v, %v", assessment, err) }
+	if err != nil || len(assessment.RequiredEvidence) != 0 || len(assessment.PendingIntegrations) != 1 {
+		t.Fatalf("recorded evidence assessment = %#v, %v", assessment, err)
+	}
 	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	ticket, err = discoveryLifecycleTicket(ctx, store, ticket.DiscoveryTicketID)
-	if err != nil { t.Fatal(err) }
-	if _, workspace, err = service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: current.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: "resolution-route-evidence", Consequence: "no_material_change", ExpectedWorkspaceVersion: current.Version, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "recorded evidence"}); err != nil { t.Fatal(err) }
-	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error { _, err := tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "investigation", false); return err }); err != nil { t.Fatal(err) }
-	if workspace.CurrentDiscoveryClosurePacketRowID.Valid { t.Fatal("restoration published a packet") }
-	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, workspace, err = service.IntegrateDiscoveryResult(ctx, IntegrateDiscoveryResultInput{WorkspaceID: current.WorkspaceID, TicketID: ticket.DiscoveryTicketID, ResolutionID: "resolution-route-evidence", Consequence: "no_material_change", ExpectedWorkspaceVersion: current.Version, ExpectedWorkItemVersion: ticket.Version, EvidenceBasis: "recorded evidence"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "investigation", false)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.CurrentDiscoveryClosurePacketRowID.Valid {
+		t.Fatal("restoration published a packet")
+	}
+	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestDiscoveryClosureRejectsOpenRouteMaterialWork(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		ticket, err := tx.CreateFeatureWorkspaceDiscoveryTicket(ctx, workflowstore.CreateFeatureWorkspaceDiscoveryTicketParams{DiscoveryTicketID: "discovery-route-open", WorkspaceRowID: workspace.ID, TicketKey: "route-open", Subject: "route-open"})
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		_, err = tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "route", true)
 		return err
-	}); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
 	assessment, err := service.AssessDiscoveryDestination(ctx, workspace.WorkspaceID)
-	if err != nil || len(assessment.RouteMaterialOpen) != 1 || assessment.RouteMaterialOpen[0] != "discovery-route-open" { t.Fatalf("route-open assessment = %#v, %v", assessment, err) }
+	if err != nil || len(assessment.RouteMaterialOpen) != 1 || assessment.RouteMaterialOpen[0] != "discovery-route-open" {
+		t.Fatalf("route-open assessment = %#v, %v", assessment, err)
+	}
 	beforeRoutes := discoveryRouteCount(t, store, workspace.ID)
-	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryClosureIneligible) { t.Fatalf("route-open close = %v", err) }
+	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryClosureIneligible) {
+		t.Fatalf("route-open close = %v", err)
+	}
 	assertNoDiscoveryClosurePublication(t, ctx, store, workspace, beforeRoutes)
 }
 
@@ -339,20 +493,39 @@ func TestDiscoveryClosureRejectsLegacyUnboundRevision(t *testing.T) {
 	ctx := context.Background()
 	store, _, _ := openFeatureServiceStore(t, ctx)
 	service, err := NewServiceWithIDs(store, &featureTestIDs{})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	workspace, err := createFeatureWorkspace(ctx, store, "workspace-legacy-unbound", "legacy-unbound")
-	if err != nil { t.Fatal(err) }
-	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error { _, err := tx.CreateFeatureWorkspaceRouteState(ctx, workflowstore.CreateFeatureWorkspaceRouteStateParams{RouteStateID: "route-legacy", WorkspaceRowID: workspace.ID, Sequence: 1, WorkspaceVersion: workspace.Version + 1, State: "ready"}); return err }); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateFeatureWorkspaceRouteState(ctx, workflowstore.CreateFeatureWorkspaceRouteStateParams{RouteStateID: "route-legacy", WorkspaceRowID: workspace.ID, Sequence: 1, WorkspaceVersion: workspace.Version + 1, State: "ready"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	workspace, err = service.SetIntegratedDiscoveryCapability(ctx, workspace.WorkspaceID, workspace.Version, true)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, workspace, err = service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorIdentity: "operator"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	content := []byte("# Legacy\n")
 	started, workspace, err := service.StartIntegratedDiscovery(ctx, StartIntegratedDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Markdown: content, SHA256: discoveryTestDigest(content), CreatedIdentity: "operator"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	assessment, err := service.AssessDiscoveryDestination(ctx, workspace.WorkspaceID)
-	if err != nil || assessment.Currentness != DiscoveryLegacyUnbound || assessment.RestorationActions[len(assessment.RestorationActions)-1] != "replace_integrated_revision_with_settled_destination" { t.Fatalf("legacy assessment = %#v, %v", assessment, err) }
-	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: started.Revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryLegacyUnbound) { t.Fatalf("legacy close = %v", err) }
+	if err != nil || assessment.Currentness != DiscoveryLegacyUnbound || assessment.RestorationActions[len(assessment.RestorationActions)-1] != "replace_integrated_revision_with_settled_destination" {
+		t.Fatalf("legacy assessment = %#v, %v", assessment, err)
+	}
+	if _, _, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: started.Revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); !errors.Is(err, ErrDiscoveryLegacyUnbound) {
+		t.Fatalf("legacy close = %v", err)
+	}
 	assertNoDiscoveryClosurePublication(t, ctx, store, workspace, 1)
 }
 
@@ -390,19 +563,53 @@ func TestDiscoveryPacketRetrievalFailsClosedForPersistedMetadataAndMemberBytes(t
 		mutate func(*testing.T, *workflowstore.Store, workflowstore.DiscoveryClosurePacket, workflowstore.DiscoveryClosurePacketMember)
 		want   error
 	}{
-		{name: "manifest metadata", mutate: func(t *testing.T, store *workflowstore.Store, packet workflowstore.DiscoveryClosurePacket, _ workflowstore.DiscoveryClosurePacketMember) { if _, err := store.DB().Exec(`DROP TRIGGER discovery_packet_update_immutable`); err != nil { t.Fatal(err) }; if _, err := store.DB().Exec(`UPDATE feature_workspace_discovery_closure_packets SET manifest_sha256 = ? WHERE id = ?`, strings.Repeat("c", 64), packet.ID); err != nil { t.Fatal(err) } }, want: ErrDiscoveryManifestIntegrity},
-		{name: "member metadata", mutate: func(t *testing.T, store *workflowstore.Store, _ workflowstore.DiscoveryClosurePacket, member workflowstore.DiscoveryClosurePacketMember) { if _, err := store.DB().Exec(`DROP TRIGGER discovery_packet_member_update_immutable`); err != nil { t.Fatal(err) }; if _, err := store.DB().Exec(`UPDATE feature_workspace_discovery_closure_packet_members SET sha256 = ? WHERE id = ?`, strings.Repeat("c", 64), member.ID); err != nil { t.Fatal(err) } }, want: ErrDiscoveryMemberIntegrity},
-		{name: "member bytes", mutate: func(t *testing.T, store *workflowstore.Store, _ workflowstore.DiscoveryClosurePacket, member workflowstore.DiscoveryClosurePacketMember) { artifact, err := store.GetDiscoveryArtifactByRowID(context.Background(), member.ArtifactRowID); if err != nil { t.Fatal(err) }; if err = os.WriteFile(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath)), []byte("corrupt member\n"), 0o600); err != nil { t.Fatal(err) } }, want: ErrDiscoveryMemberUnavailable},
-		{name: "member unavailable", mutate: func(t *testing.T, store *workflowstore.Store, _ workflowstore.DiscoveryClosurePacket, member workflowstore.DiscoveryClosurePacketMember) { artifact, err := store.GetDiscoveryArtifactByRowID(context.Background(), member.ArtifactRowID); if err != nil { t.Fatal(err) }; if err = os.Remove(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath))); err != nil { t.Fatal(err) } }, want: ErrDiscoveryMemberUnavailable},
+		{name: "manifest metadata", mutate: func(t *testing.T, store *workflowstore.Store, packet workflowstore.DiscoveryClosurePacket, _ workflowstore.DiscoveryClosurePacketMember) {
+			if _, err := store.DB().Exec(`DROP TRIGGER discovery_packet_update_immutable`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DB().Exec(`UPDATE feature_workspace_discovery_closure_packets SET manifest_sha256 = ? WHERE id = ?`, strings.Repeat("c", 64), packet.ID); err != nil {
+				t.Fatal(err)
+			}
+		}, want: ErrDiscoveryManifestIntegrity},
+		{name: "member metadata", mutate: func(t *testing.T, store *workflowstore.Store, _ workflowstore.DiscoveryClosurePacket, member workflowstore.DiscoveryClosurePacketMember) {
+			if _, err := store.DB().Exec(`DROP TRIGGER discovery_packet_member_update_immutable`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DB().Exec(`UPDATE feature_workspace_discovery_closure_packet_members SET sha256 = ? WHERE id = ?`, strings.Repeat("c", 64), member.ID); err != nil {
+				t.Fatal(err)
+			}
+		}, want: ErrDiscoveryMemberIntegrity},
+		{name: "member bytes", mutate: func(t *testing.T, store *workflowstore.Store, _ workflowstore.DiscoveryClosurePacket, member workflowstore.DiscoveryClosurePacketMember) {
+			artifact, err := store.GetDiscoveryArtifactByRowID(context.Background(), member.ArtifactRowID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath)), []byte("corrupt member\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, want: ErrDiscoveryMemberUnavailable},
+		{name: "member unavailable", mutate: func(t *testing.T, store *workflowstore.Store, _ workflowstore.DiscoveryClosurePacket, member workflowstore.DiscoveryClosurePacketMember) {
+			artifact, err := store.GetDiscoveryArtifactByRowID(context.Background(), member.ArtifactRowID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.Remove(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath))); err != nil {
+				t.Fatal(err)
+			}
+		}, want: ErrDiscoveryMemberUnavailable},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 			closed, _, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			test.mutate(t, store, closed.Packet, closed.Members[0])
 			packet, err := service.ReadDiscoveryClosurePacket(ctx, workspace.WorkspaceID, closed.Packet.ClosurePacketID)
-			if !errors.Is(err, test.want) || packet.Packet.ID != 0 { t.Fatalf("retrieval = %#v, %v; want %v", packet, err, test.want) }
+			if !errors.Is(err, test.want) || packet.Packet.ID != 0 {
+				t.Fatalf("retrieval = %#v, %v; want %v", packet, err, test.want)
+			}
 		})
 	}
 }
@@ -410,21 +617,27 @@ func TestDiscoveryPacketRetrievalFailsClosedForPersistedMetadataAndMemberBytes(t
 func TestDiscoveryClosureManifestExactlyMatchesPersistedMembers(t *testing.T) {
 	ctx, _, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	closed, _, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var manifest struct {
 		PacketID string `json:"packet_id"`
-		Members []struct {
-			Sequence int64 `json:"sequence"`
-			OwnerFamily string `json:"owner_family"`
+		Members  []struct {
+			Sequence       int64  `json:"sequence"`
+			OwnerFamily    string `json:"owner_family"`
 			SourceIdentity string `json:"source_identity"`
-			SHA256 string `json:"sha256"`
-			SizeBytes int64 `json:"size_bytes"`
-			MediaType string `json:"media_type"`
-			SemanticRole string `json:"semantic_role"`
+			SHA256         string `json:"sha256"`
+			SizeBytes      int64  `json:"size_bytes"`
+			MediaType      string `json:"media_type"`
+			SemanticRole   string `json:"semantic_role"`
 		} `json:"members"`
 	}
-	if err := json.Unmarshal(closed.Manifest, &manifest); err != nil { t.Fatal(err) }
-	if manifest.PacketID != closed.Packet.ClosurePacketID || len(manifest.Members) != len(closed.Members) { t.Fatalf("manifest = %#v, members = %#v", manifest, closed.Members) }
+	if err := json.Unmarshal(closed.Manifest, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.PacketID != closed.Packet.ClosurePacketID || len(manifest.Members) != len(closed.Members) {
+		t.Fatalf("manifest = %#v, members = %#v", manifest, closed.Members)
+	}
 	for index, row := range closed.Members {
 		member := manifest.Members[index]
 		if member.Sequence != row.Sequence || member.OwnerFamily != row.OwnerFamily || member.SourceIdentity != row.SourceIdentity || member.SHA256 != row.Sha256 || member.SizeBytes != row.SizeBytes || member.MediaType != row.MediaType || member.SemanticRole != row.SemanticRole {
@@ -433,57 +646,218 @@ func TestDiscoveryClosureManifestExactlyMatchesPersistedMembers(t *testing.T) {
 	}
 }
 
+func TestDiscoveryClosurePacketIncludesEverySupportedSourceFamily(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	// Use a real retained artifact for each external source; closure members must
+	// bind their retained bytes rather than only the source table metadata.
+	makeArtifact := func(id, relative string, content []byte) int64 {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(relative))), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(relative)), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var planID, artifactID int64
+		if err := store.DB().QueryRowContext(ctx, `SELECT id FROM plans LIMIT 1`).Scan(&planID); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.DB().QueryRowContext(ctx, `INSERT INTO artifacts (artifact_id, owner_type, plan_row_id, kind, relative_path, media_type, sha256, size_bytes) VALUES (?, 'plan', ?, 'evidence', ?, 'text/plain', ?, ?) RETURNING id`, id, planID, relative, discoveryTestDigest(content), len(content)).Scan(&artifactID); err != nil {
+			t.Fatal(err)
+		}
+		return artifactID
+	}
+	inputBytes, routeBytes, evidenceBytes := []byte("input\n"), []byte("route\n"), []byte("evidence\n")
+	inputArtifact := makeArtifact("artifact-mixed-input", "mixed/input.txt", inputBytes)
+	routeArtifact := makeArtifact("artifact-mixed-route", "mixed/route.txt", routeBytes)
+	evidenceArtifact := makeArtifact("artifact-mixed-evidence", "mixed/evidence.txt", evidenceBytes)
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		if _, err := tx.CreateFeatureWorkspaceAdmittedInput(ctx, workflowstore.CreateFeatureWorkspaceAdmittedInputParams{AdmittedInputID: "input-mixed", WorkspaceRowID: workspace.ID, Sequence: 1, InputName: "mixed", InputRole: "evidence", SourceKind: "relay_artifact", ArtifactRowID: sql.NullInt64{Int64: inputArtifact, Valid: true}, ArtifactSha256: sql.NullString{String: discoveryTestDigest(inputBytes), Valid: true}}); err != nil {
+			return err
+		}
+		ticket, err := tx.CreateFeatureWorkspaceDiscoveryTicket(ctx, workflowstore.CreateFeatureWorkspaceDiscoveryTicketParams{DiscoveryTicketID: "discovery-mixed-route", WorkspaceRowID: workspace.ID, TicketKey: "mixed-route", Subject: "mixed route"})
+		if err != nil {
+			return err
+		}
+		if _, err = tx.UpsertDiscoveryWorkItemMetadata(ctx, ticket.ID, "route", true); err != nil {
+			return err
+		}
+		resolution, err := tx.CreateFeatureWorkspaceTicketResolution(ctx, workflowstore.CreateFeatureWorkspaceTicketResolutionParams{ResolutionID: "resolution-mixed-route", TicketRowID: ticket.ID, Sequence: 1, ResolutionKind: "resolved", ArtifactRowID: sql.NullInt64{Int64: routeArtifact, Valid: true}, ArtifactSha256: discoveryTestDigest(routeBytes)})
+		if err != nil {
+			return err
+		}
+		if _, err = tx.TransitionFeatureWorkspaceDiscoveryTicket(ctx, ticket.DiscoveryTicketID, "open", "resolved", ticket.Version); err != nil {
+			return err
+		}
+		if _, err = tx.CreateDiscoveryIntegrationConsequence(ctx, workflowstore.DiscoveryIntegrationConsequence{IntegrationConsequenceID: "integration-mixed-route", WorkspaceRowID: workspace.ID, TicketRowID: ticket.ID, ResolutionRowID: resolution.ID, ConsequenceKind: "no_material_change", EvidenceBasis: "mixed source"}); err != nil {
+			return err
+		}
+		_, err = tx.CreateFeatureWorkspaceInvestigation(ctx, workflowstore.CreateFeatureWorkspaceInvestigationParams{InvestigationID: "investigation-mixed", WorkspaceRowID: workspace.ID, Sequence: 1, InvestigationKind: "artifact", ArtifactRowID: sql.NullInt64{Int64: evidenceArtifact, Valid: true}, ArtifactSHA256: discoveryTestDigest(evidenceBytes)})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	closed, _, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		owner, source, role string
+		bytes               []byte
+	}{{"admitted_input", "input-mixed", "admitted_input:001", inputBytes}, {"integrated_discovery", revision.DiscoveryRevisionID, "closing_revision", []byte("# Settled discovery\n")}, {"discovery_resolution", "resolution-mixed-route", "route_result:discovery-mixed-route:001", routeBytes}, {"discovery_evidence", "investigation-mixed", "represented_evidence:001", evidenceBytes}}
+	if len(closed.Members) != len(want) {
+		t.Fatalf("members = %#v", closed.Members)
+	}
+	for i, member := range closed.Members {
+		if member.Sequence != int64(i+1) || member.OwnerFamily != want[i].owner || member.SourceIdentity != want[i].source || member.SemanticRole != want[i].role || member.Sha256 != discoveryTestDigest(want[i].bytes) || member.SizeBytes != int64(len(want[i].bytes)) || member.MediaType != "text/markdown" && member.MediaType != "text/plain" {
+			t.Fatalf("member %d = %#v", i, member)
+		}
+	}
+	verified, err := service.ReadDiscoveryClosurePacket(ctx, workspace.WorkspaceID, closed.Packet.ClosurePacketID)
+	if err != nil || fmt.Sprint(verified.Members) != fmt.Sprint(closed.Members) {
+		t.Fatalf("persisted member order = %#v, %v", verified.Members, err)
+	}
+	var manifest struct {
+		Members []struct {
+			Sequence int64  `json:"sequence"`
+			Owner    string `json:"owner_family"`
+			Source   string `json:"source_identity"`
+			SHA      string `json:"sha256"`
+			Size     int64  `json:"size_bytes"`
+			Media    string `json:"media_type"`
+			Role     string `json:"semantic_role"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(closed.Manifest, &manifest); err != nil || len(manifest.Members) != len(closed.Members) {
+		t.Fatalf("manifest = %s, %v", closed.Manifest, err)
+	}
+	for i, member := range manifest.Members {
+		row := closed.Members[i]
+		if member.Sequence != row.Sequence || member.Owner != row.OwnerFamily || member.Source != row.SourceIdentity || member.SHA != row.Sha256 || member.Size != row.SizeBytes || member.Media != row.MediaType || member.Role != row.SemanticRole {
+			t.Fatalf("manifest member %d = %#v, persisted = %#v", i, member, row)
+		}
+	}
+}
+
 func TestDiscoveryReopenRejectsStaleWrongDigestAndMalformedReplacement(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	closed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	other, err := createFeatureWorkspace(ctx, store, "workspace-reopen-other", "reopen-other")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	other, err = service.SetIntegratedDiscoveryCapability(ctx, other.WorkspaceID, other.Version, true)
-	if err != nil { t.Fatal(err) }
-	if _, other, err = service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, OperatorIdentity: "operator"}); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, other, err = service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, OperatorIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 	otherContent := []byte("# Other discovery\n")
 	otherStarted, other, err := service.StartIntegratedDiscovery(ctx, StartIntegratedDiscoveryInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, Markdown: otherContent, SHA256: discoveryTestDigest(otherContent), CreatedIdentity: "operator", Destination: DiscoveryDestinationRequirements})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	otherClosed, _, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, ExpectedRevisionID: otherStarted.Revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	replacement := []byte("# Replacement\n")
 	base := ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "new evidence", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}
-	for _, test := range []struct { name string; input ReopenFeatureDiscoveryInput; want error }{
-		{name: "other workspace packet", input: func() ReopenFeatureDiscoveryInput { value := base; value.ExpectedPacketID = otherClosed.Packet.ClosurePacketID; return value }(), want: ErrDiscoveryStalePacket},
-		{name: "digest mismatch", input: func() ReopenFeatureDiscoveryInput { value := base; value.SHA256 = strings.Repeat("0", 64); return value }(), want: ErrInvalidDiscoveryConsequence},
+	for _, test := range []struct {
+		name  string
+		input ReopenFeatureDiscoveryInput
+		want  error
+	}{
+		{name: "other workspace packet", input: func() ReopenFeatureDiscoveryInput {
+			value := base
+			value.ExpectedPacketID = otherClosed.Packet.ClosurePacketID
+			return value
+		}(), want: ErrDiscoveryStalePacket},
+		{name: "digest mismatch", input: func() ReopenFeatureDiscoveryInput {
+			value := base
+			value.SHA256 = strings.Repeat("0", 64)
+			return value
+		}(), want: ErrInvalidDiscoveryConsequence},
 		{name: "empty replacement", input: func() ReopenFeatureDiscoveryInput { value := base; value.Markdown = nil; return value }(), want: ErrInvalidDiscoveryConsequence},
 		{name: "missing cause", input: func() ReopenFeatureDiscoveryInput { value := base; value.Cause = ""; return value }(), want: ErrInvalidDiscoveryConsequence},
 		{name: "missing identity", input: func() ReopenFeatureDiscoveryInput { value := base; value.CreatedIdentity = ""; return value }(), want: ErrInvalidDiscoveryConsequence},
 	} {
-		t.Run(test.name, func(t *testing.T) { if _, _, err := service.ReopenFeatureDiscovery(ctx, test.input); !errors.Is(err, test.want) { t.Fatalf("reopen error = %v, want %v", err, test.want) } })
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := service.ReopenFeatureDiscovery(ctx, test.input); !errors.Is(err, test.want) {
+				t.Fatalf("reopen error = %v, want %v", err, test.want)
+			}
+		})
 	}
 	newRevision, workspace, err := service.ReopenFeatureDiscovery(ctx, base)
-	if err != nil { t.Fatal(err) }
-	if _, _, err = service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "again", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}); !errors.Is(err, ErrDiscoveryNotClosed) { t.Fatalf("historical packet reopen = %v", err) }
-	if newRevision.PredecessorRevisionRowID.Int64 != revision.ID { t.Fatalf("replacement revision = %#v", newRevision) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "again", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}); !errors.Is(err, ErrDiscoveryNotClosed) {
+		t.Fatalf("historical packet reopen = %v", err)
+	}
+	if newRevision.PredecessorRevisionRowID.Int64 != revision.ID {
+		t.Fatalf("replacement revision = %#v", newRevision)
+	}
 }
 
 func TestHistoricalDiscoveryMemberCorruptionPreventsRetrievalAndReopen(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	closed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	replacement := []byte("# Reopened\n")
-	_, workspace, err = service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "new evidence", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements})
-	if err != nil { t.Fatal(err) }
 	artifact, err := store.GetDiscoveryArtifactByRowID(ctx, closed.Members[0].ArtifactRowID)
-	if err != nil { t.Fatal(err) }
-	if err = os.WriteFile(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath)), []byte("corrupt historical member\n"), 0o600); err != nil { t.Fatal(err) }
-	if _, err = service.ReadDiscoveryClosurePacket(ctx, workspace.WorkspaceID, closed.Packet.ClosurePacketID); !errors.Is(err, ErrDiscoveryMemberUnavailable) { t.Fatalf("historical retrieval = %v", err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(artifact.RelativePath)), []byte("corrupt historical member\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.ReadDiscoveryClosurePacket(ctx, workspace.WorkspaceID, closed.Packet.ClosurePacketID); !errors.Is(err, ErrDiscoveryMemberUnavailable) {
+		t.Fatalf("historical retrieval = %v", err)
+	}
 	var revisionsBefore int
-	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsBefore); err != nil { t.Fatal(err) }
-	if _, _, err = service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "again", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}); !errors.Is(err, ErrDiscoveryNotClosed) { t.Fatalf("historical reopen = %v", err) }
+	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsBefore); err != nil {
+		t.Fatal(err)
+	}
+	beforeRoutes := discoveryRouteCount(t, store, workspace.ID)
+	var eventsBefore, completionsBefore int
+	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_discovery_reopen_events WHERE workspace_row_id = ?`, workspace.ID).Scan(&eventsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_completion_reopenings WHERE completion_decision_row_id IN (SELECT id FROM feature_workspace_completion_decisions WHERE workspace_row_id = ?)`, workspace.ID).Scan(&completionsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "again", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}); !errors.Is(err, ErrDiscoveryMemberUnavailable) {
+		t.Fatalf("corrupt current packet reopen = %v", err)
+	}
 	var revisionsAfter int
-	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsAfter); err != nil || revisionsAfter != revisionsBefore { t.Fatalf("replacement revisions = %d, %v; want %d", revisionsAfter, err, revisionsBefore) }
+	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsAfter); err != nil || revisionsAfter != revisionsBefore {
+		t.Fatalf("replacement revisions = %d, %v; want %d", revisionsAfter, err, revisionsBefore)
+	}
+	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil || current.Version != workspace.Version || !current.CurrentDiscoveryClosurePacketRowID.Valid || current.CurrentDiscoveryClosurePacketRowID.Int64 != closed.Packet.ID || current.CurrentDiscoveryRevisionRowID.Int64 != revision.ID {
+		t.Fatalf("workspace after corrupt reopen = %#v, %v", current, err)
+	}
+	if got := discoveryRouteCount(t, store, workspace.ID); got != beforeRoutes {
+		t.Fatalf("routes after corrupt reopen = %d, want %d", got, beforeRoutes)
+	}
+	var eventsAfter, completionsAfter int
+	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_discovery_reopen_events WHERE workspace_row_id = ?`, workspace.ID).Scan(&eventsAfter); err != nil || eventsAfter != eventsBefore {
+		t.Fatalf("reopen events = %d, %v; want %d", eventsAfter, err, eventsBefore)
+	}
+	if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_completion_reopenings WHERE completion_decision_row_id IN (SELECT id FROM feature_workspace_completion_decisions WHERE workspace_row_id = ?)`, workspace.ID).Scan(&completionsAfter); err != nil || completionsAfter != completionsBefore {
+		t.Fatalf("completion reopenings = %d, %v; want %d", completionsAfter, err, completionsBefore)
+	}
 }
 
 func TestDiscoveryReopenPreservesHistoricalPacketAndReclosureUsesNewPacket(t *testing.T) {
-	ctx, _, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	closed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
 	if err != nil {
 		t.Fatal(err)
@@ -500,9 +874,17 @@ func TestDiscoveryReopenPreservesHistoricalPacketAndReclosureUsesNewPacket(t *te
 	if err != nil || historical.Currentness != DiscoveryHistorical {
 		t.Fatalf("historical packet = %#v, %v", historical, err)
 	}
+	downstreamTables := []string{"source_vault_closures", "feature_workspace_completion_reopenings", "governing_artifact_approvals", "delivery_ticket_revision_approvals", "delivery_ticket_selections", "execution_packages", "execution_package_approvals", "runs", "execution_attempts", "audit_packets", "audit_decisions", "feature_workspace_completion_decisions"}
+	beforeDownstream := downstreamCounts(t, store, downstreamTables)
 	reclosed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: newRevision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
 	if err != nil || reclosed.Packet.ID == closed.Packet.ID || workspace.CurrentDiscoveryClosurePacketRowID.Int64 != reclosed.Packet.ID || len(reclosed.Members) != 2 {
 		t.Fatalf("reclosure = %#v, %#v, %v", reclosed, workspace, err)
+	}
+	afterDownstream := downstreamCounts(t, store, downstreamTables)
+	for _, table := range downstreamTables {
+		if after := afterDownstream[table]; after != beforeDownstream[table] {
+			t.Fatalf("reclosure changed %s count: before=%d after=%d", table, beforeDownstream[table], after)
+		}
 	}
 	for index, member := range reclosed.Members {
 		if member.Sequence != int64(index+1) || member.OwnerFamily == "" || member.SourceIdentity == "" || member.SemanticRole == "" || member.Sha256 == "" || member.SizeBytes < 0 || member.MediaType == "" {
