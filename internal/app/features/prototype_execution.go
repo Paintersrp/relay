@@ -55,6 +55,7 @@ type PrototypeExecutionDetail struct {
 	EvidenceBatches []workflowstore.PrototypeEvidenceImportBatch
 	FinalResult     *workflowstore.PrototypeResult
 	Evidence        []workflowstore.PrototypeEvidenceMember
+	ResultMembers   []workflowstore.PrototypeResultMember
 }
 
 var (
@@ -403,5 +404,6 @@ func (s *Service) ReadPrototypeExecution(ctx context.Context, workspaceID, runID
 		result.FinalResult = &v
 	}
 	result.Evidence, _ = s.store.ListPrototypeEvidenceMembers(ctx, runID)
+	result.ResultMembers, _ = s.store.ListPrototypeResultMembers(ctx, runID)
 	return result, nil
 }

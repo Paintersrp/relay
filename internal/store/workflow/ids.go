@@ -156,4 +156,5 @@ func NewPrototypeLeaseToken() string          { return "prototype-lease-" + uuid
 func NewPrototypeEvidenceBatchID() string     { return "prototype-evidence-batch-" + uuid.NewString() }
 func NewPrototypeResultID() string            { return "prototype-result-" + uuid.NewString() }
 func NewPrototypeEvidenceMemberID() string    { return "prototype-evidence-" + uuid.NewString() }
+func NewPrototypeResultMemberID() string      { return "prototype-result-member-" + uuid.NewString() }
 func NewPrototypeCleanupObligationID() string { return "prototype-cleanup-" + uuid.NewString() }

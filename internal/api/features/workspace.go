@@ -636,7 +636,7 @@ type prototypeOperationRequest struct {
 }
 
 func prototypeResultDTO(v prototypeexecution.Result) map[string]any {
-	return map[string]any{"run": v.Run, "runtime": v.Runtime, "target": v.Target, "lease": v.Lease, "evidenceBatches": v.EvidenceBatches, "finalResult": v.FinalResult, "evidence": v.Evidence}
+	return map[string]any{"run": v.Run, "runtime": v.Runtime, "target": v.Target, "lease": v.Lease, "evidenceBatches": v.EvidenceBatches, "finalResult": v.FinalResult, "evidence": v.Evidence, "resultMembers": v.ResultMembers}
 }
 func (h *WorkspaceHandler) prototypeOp(w http.ResponseWriter, r *http.Request, fn func(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error), status int) {
 	var q prototypeOperationRequest

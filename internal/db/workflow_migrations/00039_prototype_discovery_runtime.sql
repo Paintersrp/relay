@@ -74,6 +74,15 @@ CREATE TRIGGER prototype_result_shape_guard BEFORE INSERT ON feature_workspace_p
 CREATE TRIGGER prototype_evidence_shape_guard BEFORE INSERT ON feature_workspace_prototype_evidence_members FOR EACH ROW WHEN NEW.evidence_member_id NOT GLOB 'prototype-evidence-*' OR trim(NEW.evidence_member_id)<>NEW.evidence_member_id OR NEW.sequence<1 OR trim(NEW.semantic_role)='' OR trim(NEW.media_type)='' OR length(NEW.sha256)<>64 OR NEW.sha256 GLOB '*[^0-9a-f]*' OR NEW.size_bytes<0 OR NEW.completeness NOT IN ('complete','partial') OR trim(NEW.relative_path)<>NEW.relative_path OR NEW.relative_path NOT GLOB '.relay/prototype/export/*' OR NEW.relative_path LIKE '/%' OR NEW.relative_path LIKE '%/../%' OR NEW.relative_path LIKE '../%' OR NEW.relative_path LIKE '%/..' BEGIN SELECT RAISE(ABORT,'prototype evidence member shape invalid'); END;
 -- +goose StatementEnd
 -- +goose StatementBegin
+CREATE TRIGGER prototype_result_member_binding_guard BEFORE INSERT ON feature_workspace_prototype_result_members FOR EACH ROW WHEN NOT EXISTS (SELECT 1 FROM feature_workspace_prototype_runs r JOIN feature_workspace_discovery_artifacts a ON a.id=NEW.artifact_row_id WHERE r.id=NEW.run_row_id AND a.workspace_row_id=r.workspace_row_id) BEGIN SELECT RAISE(ABORT,'prototype result member binding mismatch'); END;
+-- +goose StatementEnd
+-- +goose StatementBegin
+CREATE TRIGGER prototype_result_member_immutable BEFORE UPDATE ON feature_workspace_prototype_result_members BEGIN SELECT RAISE(ABORT,'prototype result members are immutable'); END;
+-- +goose StatementEnd
+-- +goose StatementBegin
+CREATE TRIGGER prototype_result_member_shape_guard BEFORE INSERT ON feature_workspace_prototype_result_members FOR EACH ROW WHEN NEW.sequence<1 OR trim(NEW.member_kind)='' OR NEW.artifact_row_id IS NULL OR length(COALESCE(NEW.sha256,''))<>64 OR COALESCE(NEW.sha256,'') GLOB '*[^0-9a-f]*' BEGIN SELECT RAISE(ABORT,'prototype result member shape invalid'); END;
+-- +goose StatementEnd
+-- +goose StatementBegin
 CREATE TRIGGER prototype_runtime_state_guard BEFORE UPDATE ON feature_workspace_prototype_runtimes FOR EACH ROW WHEN ((NEW.launch_phase IN ('not_claimed','claimed') AND NEW.process_identity IS NOT NULL) OR (NEW.launch_phase IN ('identity_persisted','settled') AND NEW.process_identity IS NULL) OR ((NEW.cancel_identity IS NULL) <> (NEW.cancel_requested_at IS NULL)) OR ((NEW.timeout_identity IS NULL) <> (NEW.timeout_claimed_at IS NULL))) BEGIN SELECT RAISE(ABORT,'prototype runtime state invalid'); END;
 -- +goose StatementEnd
 -- +goose Down

@@ -116,6 +116,7 @@ func (p *PrototypeExecution) load(ctx context.Context, runID string) (prototypee
 		out.FinalResult = &v
 	}
 	out.Evidence, _ = p.store.ListPrototypeEvidenceMembers(ctx, runID)
+	out.ResultMembers, _ = p.store.ListPrototypeResultMembers(ctx, runID)
 	return out, nil
 }
 
@@ -424,7 +425,7 @@ func (p *PrototypeExecution) Reconcile(ctx context.Context, in prototypeexecutio
 }
 func terminalPrototypeState(state string) bool {
 	switch state {
-	case "succeeded", "failed", "cancelled", "timed_out", "cleanup_required", "closed":
+	case "succeeded", "failed", "cancelled", "timed_out", "cleanup_required":
 		return true
 	default:
 		return false
@@ -446,7 +447,18 @@ func (p *PrototypeExecution) reconcileUnknown(ctx context.Context, in prototypee
 	return p.settleUnknown(ctx, in, run.Version)
 }
 func (p *PrototypeExecution) settleUnknown(ctx context.Context, in prototypeexecution.OperationRequest, version int64) (prototypeexecution.Result, error) {
-	return p.settleObservedOutcome(ctx, in.RunID, version, "launch_uncertain", "unknown:"+in.MutationIdentity, "unknown", nil)
+	cause := "launch_uncertain"
+	if runtime, err := p.store.GetPrototypeRuntimeByRunID(ctx, in.RunID); err == nil {
+		if runtime.CancelIdentity.Valid && runtime.CancelIdentity.String == in.MutationIdentity {
+			cause = "cancel"
+		} else if runtime.TimeoutIdentity.Valid && runtime.TimeoutIdentity.String == in.MutationIdentity {
+			cause = "timeout"
+		}
+	}
+	return p.settleUnknownCause(ctx, in, version, cause)
+}
+func (p *PrototypeExecution) settleUnknownCause(ctx context.Context, in prototypeexecution.OperationRequest, version int64, cause string) (prototypeexecution.Result, error) {
+	return p.settleObservedOutcome(ctx, in.RunID, version, cause, cause+":"+in.MutationIdentity, "unknown", nil)
 }
 func (p *PrototypeExecution) settleObserved(ctx context.Context, in prototypeexecution.OperationRequest, version int64, outcome, observation string) (prototypeexecution.Result, error) {
 	cause := "runner_failure"
@@ -460,6 +472,9 @@ func (p *PrototypeExecution) settleObserved(ctx context.Context, in prototypeexe
 	return p.settleObservedOutcome(ctx, in.RunID, version, cause, observation, outcome, nil)
 }
 func (p *PrototypeExecution) Cancel(ctx context.Context, in prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	if strings.TrimSpace(in.RunID) == "" || strings.TrimSpace(in.MutationIdentity) == "" {
+		return prototypeexecution.Result{}, prototypeexecution.ErrCancellation
+	}
 	run, err := p.store.GetPrototypeRun(ctx, in.RunID)
 	if err != nil {
 		return prototypeexecution.Result{}, err
@@ -468,37 +483,57 @@ func (p *PrototypeExecution) Cancel(ctx context.Context, in prototypeexecution.O
 	if err != nil {
 		return prototypeexecution.Result{Run: run}, err
 	}
-	if terminalPrototypeState(run.LifecycleState) {
-		return p.load(ctx, in.RunID)
-	}
 	if err := p.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		_, _, e := tx.RequestPrototypeCancellation(ctx, in.RunID, run.Version, in.MutationIdentity)
 		return e
 	}); err != nil {
 		return prototypeexecution.Result{Run: run}, err
 	}
-	if !runtime.ProcessIdentity.Valid {
-		return p.reconcileUnknown(ctx, in, run, runtime)
+	current, currentErr := p.store.GetPrototypeRun(ctx, in.RunID)
+	if currentErr != nil {
+		return prototypeexecution.Result{Run: run}, currentErr
+	}
+	currentRuntime, currentErr := p.store.GetPrototypeRuntimeByRunID(ctx, in.RunID)
+	if currentErr != nil {
+		return prototypeexecution.Result{Run: current}, currentErr
+	}
+	if current.LifecycleState == "preparing" && currentRuntime.LaunchPhase == "claimed" && !currentRuntime.ProcessIdentity.Valid {
+		var uncertain workflowstore.PrototypeRun
+		if err := p.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			var e error
+			uncertain, e = tx.MarkPrototypeLaunchUncertain(ctx, in.RunID, current.Version, "launch claimed but durable process identity unavailable")
+			return e
+		}); err != nil {
+			return prototypeexecution.Result{Run: current}, err
+		}
+		return p.settleUnknown(ctx, in, uncertain.Version)
+	}
+	run, runtime = current, currentRuntime
+	if terminalPrototypeState(run.LifecycleState) {
+		return p.load(ctx, in.RunID)
 	}
 	identity, err := pipeline.DecodeProcessIdentity(runtime.ProcessIdentity.String)
 	if err != nil {
-		return p.settleUnknown(ctx, in, run.Version)
+		return p.settleUnknownCause(ctx, in, run.Version, "cancel")
 	}
 	owned, err := p.controller.OpenOwned(identity)
 	if errors.Is(err, pipeline.ErrProcessNotRunning) {
 		return p.settleObserved(ctx, in, run.Version, "cancelled", "cancel:"+in.MutationIdentity)
 	}
 	if err != nil {
-		return p.settleUnknown(ctx, in, run.Version)
+		return p.settleUnknownCause(ctx, in, run.Version, "cancel")
 	}
 	termination, termErr := owned.Terminate(prototypeCancelGrace)
 	_ = owned.Release()
 	if termErr != nil || !termination.VerifiedAbsent {
-		return p.settleUnknown(ctx, in, run.Version)
+		return p.settleUnknownCause(ctx, in, run.Version, "cancel")
 	}
 	return p.settleObserved(ctx, in, run.Version, "cancelled", "cancel:"+in.MutationIdentity)
 }
 func (p *PrototypeExecution) SettleTimeout(ctx context.Context, in prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	if strings.TrimSpace(in.RunID) == "" || strings.TrimSpace(in.MutationIdentity) == "" {
+		return prototypeexecution.Result{}, prototypeexecution.ErrTimeout
+	}
 	run, err := p.store.GetPrototypeRun(ctx, in.RunID)
 	if err != nil {
 		return prototypeexecution.Result{}, err
@@ -517,27 +552,47 @@ func (p *PrototypeExecution) SettleTimeout(ctx context.Context, in prototypeexec
 	}); err != nil {
 		return prototypeexecution.Result{Run: run}, err
 	}
+	current, currentErr := p.store.GetPrototypeRun(ctx, in.RunID)
+	if currentErr != nil {
+		return prototypeexecution.Result{Run: run}, currentErr
+	}
+	currentRuntime, currentErr := p.store.GetPrototypeRuntimeByRunID(ctx, in.RunID)
+	if currentErr != nil {
+		return prototypeexecution.Result{Run: current}, currentErr
+	}
+	if current.LifecycleState == "preparing" && currentRuntime.LaunchPhase == "claimed" && !currentRuntime.ProcessIdentity.Valid {
+		var uncertain workflowstore.PrototypeRun
+		if err := p.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+			var e error
+			uncertain, e = tx.MarkPrototypeLaunchUncertain(ctx, in.RunID, current.Version, "launch claimed but durable process identity unavailable")
+			return e
+		}); err != nil {
+			return prototypeexecution.Result{Run: current}, err
+		}
+		return p.settleUnknown(ctx, in, uncertain.Version)
+	}
+	run, runtime = current, currentRuntime
 	if terminalPrototypeState(run.LifecycleState) {
 		return p.load(ctx, in.RunID)
 	}
 	if !runtime.ProcessIdentity.Valid {
-		return p.reconcileUnknown(ctx, in, run, runtime)
+		return p.settleUnknownCause(ctx, in, run.Version, "timeout")
 	}
 	identity, err := pipeline.DecodeProcessIdentity(runtime.ProcessIdentity.String)
 	if err != nil {
-		return p.settleUnknown(ctx, in, run.Version)
+		return p.settleUnknownCause(ctx, in, run.Version, "timeout")
 	}
 	owned, err := p.controller.OpenOwned(identity)
 	if errors.Is(err, pipeline.ErrProcessNotRunning) {
 		return p.settleObserved(ctx, in, run.Version, "timed_out", "timeout:"+in.MutationIdentity)
 	}
 	if err != nil {
-		return p.settleUnknown(ctx, in, run.Version)
+		return p.settleUnknownCause(ctx, in, run.Version, "timeout")
 	}
 	termination, termErr := owned.Terminate(prototypeCancelGrace)
 	_ = owned.Release()
 	if termErr != nil || !termination.VerifiedAbsent {
-		return p.settleUnknown(ctx, in, run.Version)
+		return p.settleUnknownCause(ctx, in, run.Version, "timeout")
 	}
 	return p.settleObserved(ctx, in, run.Version, "timed_out", "timeout:"+in.MutationIdentity)
 }
@@ -731,9 +786,19 @@ func (p *PrototypeExecution) settleObservedOutcome(ctx context.Context, runID st
 	var candidateStages []candidateStage
 	var batch *workflowartifacts.Batch
 	if readErr == nil {
-		envelope, err = validatePrototypeResultEnvelope(data, run, authorization, proposal, exitCode)
+		validationExit := exitCode
+		// A non-zero or externally observed termination is allowed to retain a
+		// syntactically valid envelope as partial evidence; it cannot become a
+		// complete result unless the process was a verified zero-exit success.
+		if validationExit != nil && *validationExit != 0 {
+			validationExit = nil
+		}
+		envelope, err = validatePrototypeResultEnvelope(data, run, authorization, proposal, validationExit)
 		if err == nil {
 			envelopeStatus = "valid"
+			if exitCode != nil && ((*exitCode == 0 && envelope.Outcome != "succeeded") || (*exitCode != 0 && envelope.Outcome == "succeeded")) {
+				envelopeStatus = "invalid"
+			}
 		} else {
 			envelopeStatus = "invalid"
 		}
@@ -795,15 +860,18 @@ func (p *PrototypeExecution) settleObservedOutcome(ctx context.Context, runID st
 			seenRoles[candidate.SemanticRole] = true
 			candidateStages = append(candidateStages, candidateStage{candidate: candidate, file: stagedCandidate})
 		}
-		completeness = "complete"
-		for role := range obligationSet {
-			if !seenRoles[role] {
-				completeness = "partial"
-				break
+		completeness = "partial"
+		if envelopeStatus == "valid" && observedOutcome == "succeeded" && exitCode != nil && *exitCode == 0 {
+			completeness = "complete"
+			for role := range obligationSet {
+				if !seenRoles[role] {
+					completeness = "partial"
+					break
+				}
 			}
 		}
 	} else {
-		completeness = "complete"
+		completeness = "partial"
 	}
 	var final workflowstore.PrototypeResult
 	err = p.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
@@ -838,6 +906,18 @@ func (p *PrototypeExecution) settleObservedOutcome(ctx context.Context, runID st
 				return e
 			}
 		}
+		compatSequence := int64(1)
+		if artifact.ID != 0 {
+			if _, e = tx.CreatePrototypeResultMember(ctx, workflowstore.PrototypeResultMember{ResultMemberID: workflowstore.NewPrototypeResultMemberID(), RunRowID: run.ID, Sequence: compatSequence, MemberKind: "result_envelope", ArtifactRowID: artifact.ID, SHA256: staged.SHA256}); e != nil {
+				return e
+			}
+			compatSequence++
+		}
+		for index, candidate := range candidateStages {
+			if _, e = tx.CreatePrototypeResultMember(ctx, workflowstore.PrototypeResultMember{ResultMemberID: workflowstore.NewPrototypeResultMemberID(), RunRowID: run.ID, Sequence: compatSequence + int64(index), MemberKind: "evidence:" + candidate.candidate.SemanticRole, ArtifactRowID: memberArtifacts[index].ID, SHA256: candidate.file.SHA256}); e != nil {
+				return e
+			}
+		}
 		if completeness == "complete" {
 			exit := sql.NullInt64{}
 			if exitCode != nil {
@@ -857,8 +937,12 @@ func (p *PrototypeExecution) settleObservedOutcome(ctx context.Context, runID st
 			if e != nil {
 				return e
 			}
+			_, e = tx.CompletePrototypeCleanupObligation(ctx, run.ID, "evidence_settlement")
+			return e
 		}
-		_, e = tx.CompletePrototypeCleanupObligation(ctx, run.ID, "evidence_settlement")
+		// Partial evidence is durable proof, not a successful settlement. Keep
+		// evidence_settlement pending for later operator cleanup/recovery.
+		_, e = tx.GetOrCreatePrototypeCleanupObligation(ctx, run.ID, "evidence_settlement", "")
 		return e
 	})
 	if batch != nil && err != nil {
@@ -874,10 +958,12 @@ func (p *PrototypeExecution) settleObservedOutcome(ctx context.Context, runID st
 		return prototypeexecution.Result{Run: run}, err
 	}
 	terminal := observedOutcome
-	if observedOutcome == "succeeded" && (final.ID == 0 || final.ValidationStatus != "valid") {
+	if observedOutcome == "unknown" || settlementCause == "launch_uncertain" {
+		terminal = "cleanup_required"
+	} else if observedOutcome == "succeeded" && (final.ID == 0 || final.ValidationStatus != "valid") {
 		terminal = "failed"
 	}
-	if observedOutcome == "host_failed" || observedOutcome == "unknown" {
+	if observedOutcome == "host_failed" {
 		terminal = "failed"
 	}
 	transition := "prototype-settlement:" + prototypeHashIdentity(runID+"\n"+settlementCause+"\n"+observationIdentity+"\n"+terminal)
@@ -889,11 +975,17 @@ func (p *PrototypeExecution) settleObservedOutcome(ctx context.Context, runID st
 	})
 	result, _ := p.load(ctx, runID)
 	if err != nil {
+		if terminalPrototypeState(result.Run.LifecycleState) {
+			return result, nil
+		}
 		return result, err
 	}
 	result.Run = settled
 	if final.ID != 0 {
 		result.FinalResult = &final
+	}
+	if terminal == "cleanup_required" {
+		return result, prototypeexecution.ErrCleanupRequired
 	}
 	return result, nil
 }
