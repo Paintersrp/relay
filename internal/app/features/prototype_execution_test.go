@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -149,6 +152,29 @@ func approvalInput(workspace workflowstore.FeatureWorkspace, proposal workflowst
 	return ApprovePrototypeExecutionInput{WorkspaceID: workspace.WorkspaceID, RunID: run.PrototypeRunID, ProposalID: proposal.ProposalID, AuthorizationID: authorization.AuthorizationID, InvocationSHA256: authorization.InvocationSHA256, MutationIdentity: "approve-drift", OperatorConfirmationEvidence: "confirmed", ExpectedRunVersion: run.Version}
 }
 
+func regularArtifactFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var files []string
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		relativePath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(relativePath))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	return files
+}
+
 func TestPrototypeExecutionBindsInvocationAuthorizationAndRun(t *testing.T) {
 	ctx, store, _, workspace, _, _, authorization, run := preparedPrototype(t)
 	if authorization.ProposedRunID != run.PrototypeRunID {
@@ -198,6 +224,14 @@ func TestPrototypeExecutionApprovalDriftDoesNotMutate(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, ErrPrototypeSourceDivergence},
+		{"invocation envelope", func(t *testing.T, ctx context.Context, s *workflowstore.Store, _ workflowstore.FeatureWorkspace, _ workflowstore.FeatureWorkspaceDiscoveryTicket, a workflowstore.PrototypeAuthorization) {
+			if _, err := s.DB().ExecContext(ctx, `DROP TRIGGER prototype_authorization_immutable_history`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.DB().ExecContext(ctx, `UPDATE feature_workspace_prototype_authorizations SET adapter = 'adapter-drift' WHERE id = ?`, a.ID); err != nil {
+				t.Fatal(err)
+			}
+		}, ErrPrototypeAuthorizationMissing},
 		{"invocation digest", func(t *testing.T, _ context.Context, _ *workflowstore.Store, _ workflowstore.FeatureWorkspace, _ workflowstore.FeatureWorkspaceDiscoveryTicket, _ workflowstore.PrototypeAuthorization) {
 		}, ErrPrototypeAuthorizationMissing},
 	}
@@ -302,10 +336,16 @@ func TestPrototypeExecutionArtifactCompensationAfterPromotion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	artifactRoot := filepath.Join(store.ArtifactStore().Root(), "feature-discovery", workspace.WorkspaceID)
+	filesBefore := regularArtifactFiles(t, artifactRoot)
 	restore := store.SetArtifactBatchPrepareCommitHookForTest(func() error { return errors.New("injected after promotion") })
 	defer restore()
 	if _, err := service.PreparePrototypeProposal(ctx, PreparePrototypeProposalInput{WorkspaceID: workspace.WorkspaceID, WorkItemID: ticket.DiscoveryTicketID, ExpectedWorkspaceVersion: workspace.Version, ExpectedWorkItemVersion: ticket.Version, Proposal: []byte("compensate"), MediaType: "text/plain"}); !errors.Is(err, ErrPrototypeArtifactPersistence) {
 		t.Fatalf("prepare = %v", err)
+	}
+	filesAfter := regularArtifactFiles(t, artifactRoot)
+	if !reflect.DeepEqual(filesAfter, filesBefore) {
+		t.Fatalf("artifact files changed: before=%#v after=%#v", filesBefore, filesAfter)
 	}
 	for _, table := range []string{"feature_workspace_prototype_proposals", "feature_workspace_prototype_authorizations"} {
 		var count int

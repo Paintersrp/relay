@@ -62,8 +62,28 @@ type prototypeApprovalRequest struct {
 
 func prototypeDigest(v any) string {
 	b, _ := json.Marshal(v)
+	return prototypeSHA256(b)
+}
+func prototypeSHA256(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+func prototypeInvocationEnvelopeBytes(v prototypeInvocationEnvelope) ([]byte, error) {
+	return json.Marshal(v)
+}
+func prototypeInvocationEnvelopeFromAuthorization(authorization workflowstore.PrototypeAuthorization, proposalID, sourceClosureID string) (prototypeInvocationEnvelope, error) {
+	var variants, evidence []string
+	var limits map[string]any
+	if err := json.Unmarshal([]byte(authorization.VariantsJSON), &variants); err != nil {
+		return prototypeInvocationEnvelope{}, err
+	}
+	if err := json.Unmarshal([]byte(authorization.EvidenceObligationsJSON), &evidence); err != nil {
+		return prototypeInvocationEnvelope{}, err
+	}
+	if err := json.Unmarshal([]byte(authorization.LimitsJSON), &limits); err != nil {
+		return prototypeInvocationEnvelope{}, err
+	}
+	return prototypeInvocationEnvelope{ProposedRunID: authorization.ProposedRunID, ProposalID: proposalID, SourceClosureID: sourceClosureID, RepoTarget: authorization.RepoTarget, BaseCommit: authorization.BaseCommit, Adapter: authorization.Adapter, Model: authorization.Model, Variants: variants, Evidence: evidence, Limits: limits}, nil
 }
 func prototypeArtifactError(err error) error {
 	if err == nil {
@@ -152,13 +172,16 @@ func (s *Service) PreparePrototypeExecution(ctx context.Context, in PrepareProto
 		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, ErrPrototypeCapabilityDisabled
 	}
 	proposedRunID := workflowstore.NewPrototypeRunID()
-	envelope, _ := json.Marshal(prototypeInvocationEnvelope{ProposedRunID: proposedRunID, ProposalID: in.ProposalID, SourceClosureID: in.SourceClosureID, RepoTarget: in.RepoTarget, BaseCommit: in.BaseCommit, Adapter: in.Adapter, Model: in.Model, Variants: in.Variants, Evidence: in.EvidenceObligations, Limits: in.Limits})
+	envelope, err := prototypeInvocationEnvelopeBytes(prototypeInvocationEnvelope{ProposedRunID: proposedRunID, ProposalID: in.ProposalID, SourceClosureID: in.SourceClosureID, RepoTarget: in.RepoTarget, BaseCommit: in.BaseCommit, Adapter: in.Adapter, Model: in.Model, Variants: in.Variants, Evidence: in.EvidenceObligations, Limits: in.Limits})
+	if err != nil {
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, ErrPrototypeAuthorizationMissing
+	}
 	artifactID := workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
 	batch, err := s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
 	if err != nil {
 		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
 	}
-	file, err := batch.Stage("prototype_invocation", "invocation.json", "application/vnd.relay.prototype-invocation+json", append(envelope, '\n'))
+	file, err := batch.Stage("prototype_invocation", "invocation.json", "application/vnd.relay.prototype-invocation+json", envelope)
 	if err != nil {
 		_ = batch.Rollback()
 		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
@@ -296,11 +319,23 @@ func (s *Service) ApprovePrototypeExecution(ctx context.Context, in ApproveProto
 		if e != nil || artifact.WorkspaceRowID != workspace.ID || artifact.SHA256 != authorization.InvocationSHA256 || artifact.SizeBytes != authorization.InvocationSizeBytes || artifact.MediaType != authorization.InvocationMediaType {
 			return ErrPrototypeAuthorizationMissing
 		}
-		if authorization.InvocationSHA256 != in.InvocationSHA256 {
+		closure, e := tx.GetSourceVaultClosureByRowID(ctx, authorization.SourceClosureRowID)
+		if e != nil {
+			return ErrPrototypeSourceDivergence
+		}
+		envelope, e := prototypeInvocationEnvelopeFromAuthorization(authorization, proposal.ProposalID, closure.ClosureID)
+		if e != nil {
 			return ErrPrototypeAuthorizationMissing
 		}
-		closure, e := tx.GetSourceVaultClosureByRowID(ctx, authorization.SourceClosureRowID)
-		if e != nil || closure.State != "ready" || closure.CommitOID != authorization.SourceCommit || closure.TreeOID != authorization.SourceTree {
+		canonicalEnvelope, e := prototypeInvocationEnvelopeBytes(envelope)
+		if e != nil {
+			return ErrPrototypeAuthorizationMissing
+		}
+		canonicalInvocationSHA256 := prototypeSHA256(canonicalEnvelope)
+		if canonicalInvocationSHA256 != authorization.InvocationSHA256 || canonicalInvocationSHA256 != in.InvocationSHA256 || canonicalInvocationSHA256 != artifact.SHA256 {
+			return ErrPrototypeAuthorizationMissing
+		}
+		if closure.State != "ready" || closure.CommitOID != authorization.SourceCommit || closure.TreeOID != authorization.SourceTree {
 			return ErrPrototypeSourceDivergence
 		}
 		vault, e := tx.GetSourceVaultByRepositoryTarget(ctx, authorization.RepoTarget)
