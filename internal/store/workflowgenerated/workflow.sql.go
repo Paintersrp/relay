@@ -2521,6 +2521,92 @@ func (q *Queries) GetPlanPassByRowID(ctx context.Context, id int64) (PlanPass, e
 	return i, err
 }
 
+const getPrototypeAuthorizationByAuthorizationID = `-- name: GetPrototypeAuthorizationByAuthorizationID :one
+SELECT id, authorization_id, proposal_row_id, workspace_row_id, work_item_row_id, discovery_revision_row_id, source_closure_row_id, source_commit, source_tree, repo_target, base_commit, adapter, model, variants_json, evidence_obligations_json, limits_json, invocation_artifact_row_id, invocation_sha256, invocation_size_bytes, invocation_media_type, created_at
+FROM feature_workspace_prototype_authorizations
+WHERE authorization_id = ?
+`
+
+func (q *Queries) GetPrototypeAuthorizationByAuthorizationID(ctx context.Context, authorizationID string) (FeatureWorkspacePrototypeAuthorization, error) {
+	row := q.db.QueryRowContext(ctx, getPrototypeAuthorizationByAuthorizationID, authorizationID)
+	var i FeatureWorkspacePrototypeAuthorization
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorizationID,
+		&i.ProposalRowID,
+		&i.WorkspaceRowID,
+		&i.WorkItemRowID,
+		&i.DiscoveryRevisionRowID,
+		&i.SourceClosureRowID,
+		&i.SourceCommit,
+		&i.SourceTree,
+		&i.RepoTarget,
+		&i.BaseCommit,
+		&i.Adapter,
+		&i.Model,
+		&i.VariantsJson,
+		&i.EvidenceObligationsJson,
+		&i.LimitsJson,
+		&i.InvocationArtifactRowID,
+		&i.InvocationSha256,
+		&i.InvocationSizeBytes,
+		&i.InvocationMediaType,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPrototypeProposalByProposalID = `-- name: GetPrototypeProposalByProposalID :one
+SELECT id, proposal_id, workspace_row_id, work_item_row_id, discovery_revision_row_id, artifact_row_id, proposal_sha256, proposal_size_bytes, proposal_media_type, created_at
+FROM feature_workspace_prototype_proposals
+WHERE proposal_id = ?
+`
+
+func (q *Queries) GetPrototypeProposalByProposalID(ctx context.Context, proposalID string) (FeatureWorkspacePrototypeProposal, error) {
+	row := q.db.QueryRowContext(ctx, getPrototypeProposalByProposalID, proposalID)
+	var i FeatureWorkspacePrototypeProposal
+	err := row.Scan(
+		&i.ID,
+		&i.ProposalID,
+		&i.WorkspaceRowID,
+		&i.WorkItemRowID,
+		&i.DiscoveryRevisionRowID,
+		&i.ArtifactRowID,
+		&i.ProposalSha256,
+		&i.ProposalSizeBytes,
+		&i.ProposalMediaType,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPrototypeRunByRunID = `-- name: GetPrototypeRunByRunID :one
+SELECT id, prototype_run_id, authorization_row_id, workspace_row_id, work_item_row_id, lifecycle_state, version, process_outcome, cleanup_status, launch_uncertainty_reason, external_process_identity, created_at, updated_at
+FROM feature_workspace_prototype_runs
+WHERE prototype_run_id = ?
+`
+
+func (q *Queries) GetPrototypeRunByRunID(ctx context.Context, prototypeRunID string) (FeatureWorkspacePrototypeRun, error) {
+	row := q.db.QueryRowContext(ctx, getPrototypeRunByRunID, prototypeRunID)
+	var i FeatureWorkspacePrototypeRun
+	err := row.Scan(
+		&i.ID,
+		&i.PrototypeRunID,
+		&i.AuthorizationRowID,
+		&i.WorkspaceRowID,
+		&i.WorkItemRowID,
+		&i.LifecycleState,
+		&i.Version,
+		&i.ProcessOutcome,
+		&i.CleanupStatus,
+		&i.LaunchUncertaintyReason,
+		&i.ExternalProcessIdentity,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRepositoryBranchMutationLeaseByLeaseID = `-- name: GetRepositoryBranchMutationLeaseByLeaseID :one
 SELECT id, lease_id, repo_target, branch, owner_kind, owner_identity, state, uncertainty_state, uncertainty_reason, reconciliation_state, reconciliation_note, acquired_at, released_at, reconciliation_started_at, reconciled_at, created_at, updated_at
 FROM repository_branch_mutation_leases

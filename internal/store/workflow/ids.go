@@ -145,3 +145,8 @@ func NewExecutionPackageApprovalID() string {
 func NewGoverningArtifactApprovalID() string {
 	return "ga-approval-" + uuid.NewString()
 }
+
+func NewPrototypeProposalID() string      { return "prototype-proposal-" + uuid.NewString() }
+func NewPrototypeAuthorizationID() string { return "prototype-authorization-" + uuid.NewString() }
+func NewPrototypeRunID() string           { return "prototype-run-" + uuid.NewString() }
+func NewPrototypeApprovalID() string      { return "prototype-approval-" + uuid.NewString() }

@@ -951,3 +951,18 @@ JOIN execution_packages AS package ON package.id = approval.package_row_id
 WHERE run.id = ?
   AND run.execution_package_row_id = approval.package_row_id
   AND approval.package_sha256 = package.package_sha256;
+
+-- name: GetPrototypeRunByRunID :one
+SELECT *
+FROM feature_workspace_prototype_runs
+WHERE prototype_run_id = ?;
+
+-- name: GetPrototypeAuthorizationByAuthorizationID :one
+SELECT *
+FROM feature_workspace_prototype_authorizations
+WHERE authorization_id = ?;
+
+-- name: GetPrototypeProposalByProposalID :one
+SELECT *
+FROM feature_workspace_prototype_proposals
+WHERE proposal_id = ?;

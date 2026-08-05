@@ -1,0 +1,264 @@
+package features
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	workflowstore "relay/internal/store/workflow"
+)
+
+var (
+	ErrPrototypeCapabilityDisabled   = errors.New("prototype execution capability is disabled")
+	ErrPrototypeWorkspaceStale       = errors.New("prototype workspace is stale")
+	ErrPrototypeWorkItemStale        = errors.New("prototype work item is stale")
+	ErrPrototypeProposalMissing      = errors.New("prototype proposal is missing or drifted")
+	ErrPrototypeAuthorizationMissing = errors.New("prototype authorization is missing or drifted")
+	ErrPrototypeApprovalMissing      = errors.New("prototype approval is missing")
+	ErrPrototypeApprovalStale        = errors.New("prototype approval is stale")
+	ErrPrototypeApprovalConflicting  = errors.New("prototype approval conflicts")
+	ErrPrototypeApprovalConsumed     = errors.New("prototype approval already consumed")
+	ErrPrototypeRunStale             = errors.New("prototype run is stale")
+	ErrPrototypeInvalidTransition    = errors.New("invalid prototype lifecycle transition")
+	ErrPrototypeSourceDivergence     = errors.New("prototype source diverged")
+	ErrPrototypeArtifactPersistence  = errors.New("prototype artifact persistence failure")
+	ErrPrototypeOwnership            = errors.New("prototype workspace or work item ownership violation")
+)
+
+type PreparePrototypeProposalInput struct {
+	WorkspaceID, WorkItemID                           string
+	ExpectedWorkspaceVersion, ExpectedWorkItemVersion int64
+	Proposal                                          []byte
+	MediaType                                         string
+}
+type PreparePrototypeExecutionInput struct {
+	WorkspaceID, WorkItemID, ProposalID, SourceClosureID, RepoTarget, BaseCommit, Adapter, Model string
+	ExpectedWorkspaceVersion, ExpectedWorkItemVersion                                            int64
+	Variants, EvidenceObligations                                                                []string
+	Limits                                                                                       map[string]any
+}
+type ApprovePrototypeExecutionInput struct {
+	WorkspaceID, RunID, ProposalID, AuthorizationID, InvocationSHA256, MutationIdentity, OperatorConfirmationEvidence string
+	ExpectedRunVersion                                                                                                int64
+}
+type PrototypeExecutionDetail struct {
+	workflowstore.PrototypeExecutionAggregate
+}
+
+func (s *Service) PreparePrototypeProposal(ctx context.Context, in PreparePrototypeProposalInput) (workflowstore.PrototypeProposal, error) {
+	if strings.TrimSpace(in.WorkspaceID) == "" || strings.TrimSpace(in.WorkItemID) == "" || in.ExpectedWorkspaceVersion < 1 || in.ExpectedWorkItemVersion < 1 || len(in.Proposal) == 0 || strings.TrimSpace(in.MediaType) == "" {
+		return workflowstore.PrototypeProposal{}, ErrPrototypeProposalMissing
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, in.WorkspaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return workflowstore.PrototypeProposal{}, ErrWorkspaceNotFound
+	}
+	if err != nil {
+		return workflowstore.PrototypeProposal{}, err
+	}
+	if workspace.DiscoveryCapabilityEnabled != 1 {
+		return workflowstore.PrototypeProposal{}, ErrPrototypeCapabilityDisabled
+	}
+	artifactID := workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
+	batch, err := s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
+	if err != nil {
+		return workflowstore.PrototypeProposal{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
+	}
+	file, err := batch.Stage("prototype_proposal", "proposal.bin", strings.TrimSpace(in.MediaType), in.Proposal)
+	if err != nil {
+		_ = batch.Rollback()
+		return workflowstore.PrototypeProposal{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
+	}
+	var result workflowstore.PrototypeProposal
+	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		current, e := tx.GetFeatureWorkspaceByWorkspaceID(ctx, in.WorkspaceID)
+		if e != nil {
+			return e
+		}
+		if current.DiscoveryCapabilityEnabled != 1 {
+			return ErrPrototypeCapabilityDisabled
+		}
+		if current.Version != in.ExpectedWorkspaceVersion {
+			return ErrPrototypeWorkspaceStale
+		}
+		ticket, e := tx.GetFeatureWorkspaceDiscoveryTicketByID(ctx, in.WorkItemID)
+		if e != nil {
+			return ErrPrototypeProposalMissing
+		}
+		if ticket.WorkspaceRowID != current.ID {
+			return ErrPrototypeOwnership
+		}
+		if ticket.Version != in.ExpectedWorkItemVersion {
+			return ErrPrototypeWorkItemStale
+		}
+		rev, e := tx.GetCurrentIntegratedDiscoveryRevision(ctx, current.WorkspaceID)
+		if e != nil {
+			return ErrPrototypeSourceDivergence
+		}
+		artifact, e := tx.CreateDiscoveryArtifact(ctx, workflowstore.DiscoveryArtifact{DiscoveryArtifactID: artifactID, WorkspaceRowID: current.ID, RelativePath: file.RelativePath, SHA256: file.SHA256, MediaType: file.MediaType, SizeBytes: file.SizeBytes})
+		if e != nil {
+			return e
+		}
+		result, e = tx.CreatePrototypeProposal(ctx, workflowstore.PrototypeProposal{ProposalID: workflowstore.NewPrototypeProposalID(), WorkspaceRowID: current.ID, WorkItemRowID: ticket.ID, DiscoveryRevisionRowID: rev.ID, ArtifactRowID: artifact.ID, ProposalSHA256: file.SHA256, ProposalSizeBytes: file.SizeBytes, ProposalMediaType: file.MediaType})
+		return e
+	})
+	if err != nil {
+		return workflowstore.PrototypeProposal{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
+	}
+	return result, nil
+}
+func (s *Service) PreparePrototypeExecution(ctx context.Context, in PreparePrototypeExecutionInput) (workflowstore.PrototypeAuthorization, workflowstore.PrototypeRun, error) {
+	if strings.TrimSpace(in.WorkspaceID) == "" || strings.TrimSpace(in.WorkItemID) == "" || strings.TrimSpace(in.ProposalID) == "" || strings.TrimSpace(in.SourceClosureID) == "" || strings.TrimSpace(in.RepoTarget) == "" || strings.TrimSpace(in.BaseCommit) == "" || strings.TrimSpace(in.Adapter) == "" || strings.TrimSpace(in.Model) == "" || in.ExpectedWorkspaceVersion < 1 || in.ExpectedWorkItemVersion < 1 {
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, ErrPrototypeAuthorizationMissing
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, in.WorkspaceID)
+	if err != nil {
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, err
+	}
+	if workspace.DiscoveryCapabilityEnabled != 1 {
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, ErrPrototypeCapabilityDisabled
+	}
+	envelope, _ := json.Marshal(struct {
+		ProposalID, SourceClosureID, RepoTarget, BaseCommit, Adapter, Model string
+		Variants, Evidence                                                  []string
+		Limits                                                              map[string]any
+	}{in.ProposalID, in.SourceClosureID, in.RepoTarget, in.BaseCommit, in.Adapter, in.Model, in.Variants, in.EvidenceObligations, in.Limits})
+	artifactID := workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
+	batch, err := s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
+	if err != nil {
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
+	}
+	file, err := batch.Stage("prototype_invocation", "invocation.json", "application/vnd.relay.prototype-invocation+json", append(envelope, '\n'))
+	if err != nil {
+		_ = batch.Rollback()
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
+	}
+	var authorization workflowstore.PrototypeAuthorization
+	var run workflowstore.PrototypeRun
+	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		current, e := tx.GetFeatureWorkspaceByWorkspaceID(ctx, in.WorkspaceID)
+		if e != nil {
+			return e
+		}
+		if current.DiscoveryCapabilityEnabled != 1 {
+			return ErrPrototypeCapabilityDisabled
+		}
+		if current.Version != in.ExpectedWorkspaceVersion {
+			return ErrPrototypeWorkspaceStale
+		}
+		ticket, e := tx.GetFeatureWorkspaceDiscoveryTicketByID(ctx, in.WorkItemID)
+		if e != nil {
+			return ErrPrototypeProposalMissing
+		}
+		if ticket.WorkspaceRowID != current.ID {
+			return ErrPrototypeOwnership
+		}
+		if ticket.Version != in.ExpectedWorkItemVersion {
+			return ErrPrototypeWorkItemStale
+		}
+		proposal, e := tx.GetPrototypeProposal(ctx, in.ProposalID)
+		if e != nil {
+			return ErrPrototypeProposalMissing
+		}
+		if proposal.WorkspaceRowID != current.ID || proposal.WorkItemRowID != ticket.ID {
+			return ErrPrototypeOwnership
+		}
+		rev, e := tx.GetCurrentIntegratedDiscoveryRevision(ctx, current.WorkspaceID)
+		if e != nil || proposal.DiscoveryRevisionRowID != rev.ID {
+			return ErrPrototypeProposalMissing
+		}
+		closure, e := tx.GetSourceVaultClosureByClosureID(ctx, in.SourceClosureID)
+		if e != nil || closure.State != "ready" {
+			return ErrPrototypeSourceDivergence
+		}
+		artifact, e := tx.CreateDiscoveryArtifact(ctx, workflowstore.DiscoveryArtifact{DiscoveryArtifactID: artifactID, WorkspaceRowID: current.ID, RelativePath: file.RelativePath, SHA256: file.SHA256, MediaType: file.MediaType, SizeBytes: file.SizeBytes})
+		if e != nil {
+			return e
+		}
+		variants, _ := json.Marshal(in.Variants)
+		evidence, _ := json.Marshal(in.EvidenceObligations)
+		limits, _ := json.Marshal(in.Limits)
+		authorization, e = tx.CreatePrototypeAuthorization(ctx, workflowstore.PrototypeAuthorization{AuthorizationID: workflowstore.NewPrototypeAuthorizationID(), ProposalRowID: proposal.ID, WorkspaceRowID: current.ID, WorkItemRowID: ticket.ID, DiscoveryRevisionRowID: rev.ID, SourceClosureRowID: closure.ID, SourceCommit: closure.CommitOID, SourceTree: closure.TreeOID, RepoTarget: in.RepoTarget, BaseCommit: in.BaseCommit, Adapter: in.Adapter, Model: in.Model, VariantsJSON: string(variants), EvidenceObligationsJSON: string(evidence), LimitsJSON: string(limits), InvocationArtifactRowID: artifact.ID, InvocationSHA256: file.SHA256, InvocationSizeBytes: file.SizeBytes, InvocationMediaType: file.MediaType})
+		if e != nil {
+			return e
+		}
+		run, e = tx.CreatePrototypeRun(ctx, workflowstore.PrototypeRun{PrototypeRunID: workflowstore.NewPrototypeRunID(), AuthorizationRowID: authorization.ID, WorkspaceRowID: current.ID, WorkItemRowID: ticket.ID})
+		return e
+	})
+	if err != nil {
+		return workflowstore.PrototypeAuthorization{}, workflowstore.PrototypeRun{}, fmt.Errorf("%w: %v", ErrPrototypeArtifactPersistence, err)
+	}
+	return authorization, run, nil
+}
+func (s *Service) ApprovePrototypeExecution(ctx context.Context, in ApprovePrototypeExecutionInput) (workflowstore.PrototypeApproval, workflowstore.PrototypeRun, error) {
+	if strings.TrimSpace(in.WorkspaceID) == "" || strings.TrimSpace(in.RunID) == "" || strings.TrimSpace(in.ProposalID) == "" || strings.TrimSpace(in.AuthorizationID) == "" || !validSHA256(in.InvocationSHA256) || strings.TrimSpace(in.MutationIdentity) == "" || strings.TrimSpace(in.OperatorConfirmationEvidence) == "" || in.ExpectedRunVersion < 1 {
+		return workflowstore.PrototypeApproval{}, workflowstore.PrototypeRun{}, ErrPrototypeApprovalMissing
+	}
+	var approval workflowstore.PrototypeApproval
+	var run workflowstore.PrototypeRun
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		workspace, e := tx.GetFeatureWorkspaceByWorkspaceID(ctx, in.WorkspaceID)
+		if e != nil {
+			return e
+		}
+		if workspace.DiscoveryCapabilityEnabled != 1 {
+			return ErrPrototypeCapabilityDisabled
+		}
+		run, e = tx.GetPrototypeRun(ctx, in.RunID)
+		if e != nil {
+			return ErrPrototypeApprovalMissing
+		}
+		if run.WorkspaceRowID != workspace.ID {
+			return ErrPrototypeOwnership
+		}
+		if existing, e := tx.GetPrototypeApprovalByRun(ctx, run.ID); e == nil {
+			if existing.MutationIdentity == in.MutationIdentity {
+				approval = existing
+				return nil
+			}
+			return ErrPrototypeApprovalConflicting
+		} else if !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+		if run.LifecycleState != "proposed" {
+			return ErrPrototypeInvalidTransition
+		}
+		if run.Version != in.ExpectedRunVersion {
+			return ErrPrototypeRunStale
+		}
+		authorization, e := tx.GetPrototypeAuthorization(ctx, in.AuthorizationID)
+		if e != nil || authorization.ID != run.AuthorizationRowID {
+			return ErrPrototypeAuthorizationMissing
+		}
+		proposal, e := tx.GetPrototypeProposal(ctx, in.ProposalID)
+		if e != nil || proposal.ID != authorization.ProposalRowID {
+			return ErrPrototypeProposalMissing
+		}
+		if authorization.InvocationSHA256 != in.InvocationSHA256 {
+			return ErrPrototypeAuthorizationMissing
+		}
+		approval, e = tx.CreatePrototypeApproval(ctx, workflowstore.PrototypeApproval{ApprovalID: workflowstore.NewPrototypeApprovalID(), RunRowID: run.ID, AuthorizationRowID: authorization.ID, MutationIdentity: in.MutationIdentity, OperatorConfirmationEvidence: strings.TrimSpace(in.OperatorConfirmationEvidence), ConsumedIdentity: "consumed:" + in.MutationIdentity})
+		if e != nil {
+			return ErrPrototypeApprovalConsumed
+		}
+		run, e = tx.ApprovePrototypeRun(ctx, in.RunID, in.ExpectedRunVersion)
+		if errors.Is(e, sql.ErrNoRows) {
+			return ErrPrototypeRunStale
+		}
+		if e != nil {
+			return e
+		}
+		return tx.CreatePrototypeLifecycleTransition(ctx, run.ID, "transition:"+in.MutationIdentity, approval.ID, run.Version)
+	})
+	return approval, run, err
+}
+func (s *Service) ReadPrototypeExecution(ctx context.Context, workspaceID, runID string) (PrototypeExecutionDetail, error) {
+	d, e := s.store.ReadPrototypeExecution(ctx, strings.TrimSpace(workspaceID), strings.TrimSpace(runID))
+	if e != nil {
+		return PrototypeExecutionDetail{}, e
+	}
+	return PrototypeExecutionDetail{d}, nil
+}

@@ -476,6 +476,118 @@ type FeatureWorkspaceInvestigation struct {
 	CreatedAt             string        `json:"created_at"`
 }
 
+type FeatureWorkspacePrototypeApproval struct {
+	ID                           int64  `json:"id"`
+	ApprovalID                   string `json:"approval_id"`
+	RunRowID                     int64  `json:"run_row_id"`
+	AuthorizationRowID           int64  `json:"authorization_row_id"`
+	MutationIdentity             string `json:"mutation_identity"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+	ConsumedIdentity             string `json:"consumed_identity"`
+	ConsumedAt                   string `json:"consumed_at"`
+	CreatedAt                    string `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeAuthorization struct {
+	ID                      int64  `json:"id"`
+	AuthorizationID         string `json:"authorization_id"`
+	ProposalRowID           int64  `json:"proposal_row_id"`
+	WorkspaceRowID          int64  `json:"workspace_row_id"`
+	WorkItemRowID           int64  `json:"work_item_row_id"`
+	DiscoveryRevisionRowID  int64  `json:"discovery_revision_row_id"`
+	SourceClosureRowID      int64  `json:"source_closure_row_id"`
+	SourceCommit            string `json:"source_commit"`
+	SourceTree              string `json:"source_tree"`
+	RepoTarget              string `json:"repo_target"`
+	BaseCommit              string `json:"base_commit"`
+	Adapter                 string `json:"adapter"`
+	Model                   string `json:"model"`
+	VariantsJson            string `json:"variants_json"`
+	EvidenceObligationsJson string `json:"evidence_obligations_json"`
+	LimitsJson              string `json:"limits_json"`
+	InvocationArtifactRowID int64  `json:"invocation_artifact_row_id"`
+	InvocationSha256        string `json:"invocation_sha256"`
+	InvocationSizeBytes     int64  `json:"invocation_size_bytes"`
+	InvocationMediaType     string `json:"invocation_media_type"`
+	CreatedAt               string `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeCleanupObligation struct {
+	ID                  int64  `json:"id"`
+	CleanupObligationID string `json:"cleanup_obligation_id"`
+	RunRowID            int64  `json:"run_row_id"`
+	ObligationKind      string `json:"obligation_kind"`
+	Status              string `json:"status"`
+	Detail              string `json:"detail"`
+	CreatedAt           string `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeLaunchClaim struct {
+	ID             int64  `json:"id"`
+	LaunchClaimID  string `json:"launch_claim_id"`
+	RunRowID       int64  `json:"run_row_id"`
+	LaunchProtocol string `json:"launch_protocol"`
+	ClaimedAt      string `json:"claimed_at"`
+}
+
+type FeatureWorkspacePrototypeLifecycleTransition struct {
+	ID                 int64         `json:"id"`
+	RunRowID           int64         `json:"run_row_id"`
+	TransitionIdentity string        `json:"transition_identity"`
+	FromState          string        `json:"from_state"`
+	ToState            string        `json:"to_state"`
+	RunVersion         int64         `json:"run_version"`
+	ApprovalRowID      sql.NullInt64 `json:"approval_row_id"`
+	CreatedAt          string        `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeProposal struct {
+	ID                     int64  `json:"id"`
+	ProposalID             string `json:"proposal_id"`
+	WorkspaceRowID         int64  `json:"workspace_row_id"`
+	WorkItemRowID          int64  `json:"work_item_row_id"`
+	DiscoveryRevisionRowID int64  `json:"discovery_revision_row_id"`
+	ArtifactRowID          int64  `json:"artifact_row_id"`
+	ProposalSha256         string `json:"proposal_sha256"`
+	ProposalSizeBytes      int64  `json:"proposal_size_bytes"`
+	ProposalMediaType      string `json:"proposal_media_type"`
+	CreatedAt              string `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeQaAssociation struct {
+	ID              int64         `json:"id"`
+	RunRowID        int64         `json:"run_row_id"`
+	AssociationKind string        `json:"association_kind"`
+	ArtifactRowID   sql.NullInt64 `json:"artifact_row_id"`
+	CreatedAt       string        `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeResultMember struct {
+	ID            int64          `json:"id"`
+	RunRowID      int64          `json:"run_row_id"`
+	Sequence      int64          `json:"sequence"`
+	MemberKind    string         `json:"member_kind"`
+	ArtifactRowID sql.NullInt64  `json:"artifact_row_id"`
+	Sha256        sql.NullString `json:"sha256"`
+	CreatedAt     string         `json:"created_at"`
+}
+
+type FeatureWorkspacePrototypeRun struct {
+	ID                      int64          `json:"id"`
+	PrototypeRunID          string         `json:"prototype_run_id"`
+	AuthorizationRowID      int64          `json:"authorization_row_id"`
+	WorkspaceRowID          int64          `json:"workspace_row_id"`
+	WorkItemRowID           int64          `json:"work_item_row_id"`
+	LifecycleState          string         `json:"lifecycle_state"`
+	Version                 int64          `json:"version"`
+	ProcessOutcome          sql.NullString `json:"process_outcome"`
+	CleanupStatus           string         `json:"cleanup_status"`
+	LaunchUncertaintyReason sql.NullString `json:"launch_uncertainty_reason"`
+	ExternalProcessIdentity sql.NullString `json:"external_process_identity"`
+	CreatedAt               string         `json:"created_at"`
+	UpdatedAt               string         `json:"updated_at"`
+}
+
 type FeatureWorkspaceRouteState struct {
 	ID               int64         `json:"id"`
 	RouteStateID     string        `json:"route_state_id"`
