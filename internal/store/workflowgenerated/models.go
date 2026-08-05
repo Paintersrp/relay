@@ -482,6 +482,7 @@ type FeatureWorkspacePrototypeApproval struct {
 	RunRowID                     int64  `json:"run_row_id"`
 	AuthorizationRowID           int64  `json:"authorization_row_id"`
 	MutationIdentity             string `json:"mutation_identity"`
+	ApprovalRequestSha256        string `json:"approval_request_sha256"`
 	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
 	ConsumedIdentity             string `json:"consumed_identity"`
 	ConsumedAt                   string `json:"consumed_at"`
@@ -492,9 +493,13 @@ type FeatureWorkspacePrototypeAuthorization struct {
 	ID                      int64  `json:"id"`
 	AuthorizationID         string `json:"authorization_id"`
 	ProposalRowID           int64  `json:"proposal_row_id"`
+	ProposedRunID           string `json:"proposed_run_id"`
 	WorkspaceRowID          int64  `json:"workspace_row_id"`
+	WorkspaceVersion        int64  `json:"workspace_version"`
 	WorkItemRowID           int64  `json:"work_item_row_id"`
+	WorkItemVersion         int64  `json:"work_item_version"`
 	DiscoveryRevisionRowID  int64  `json:"discovery_revision_row_id"`
+	ProposalSha256          string `json:"proposal_sha256"`
 	SourceClosureRowID      int64  `json:"source_closure_row_id"`
 	SourceCommit            string `json:"source_commit"`
 	SourceTree              string `json:"source_tree"`

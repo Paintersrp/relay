@@ -2340,6 +2340,29 @@ func (q *Queries) GetFeatureWorkspaceDiscoveryTicketByID(ctx context.Context, di
 	return i, err
 }
 
+const getFeatureWorkspaceDiscoveryTicketByRowID = `-- name: GetFeatureWorkspaceDiscoveryTicketByRowID :one
+SELECT id, discovery_ticket_id, workspace_row_id, ticket_key, subject, state, version, created_at, updated_at
+FROM feature_workspace_discovery_tickets
+WHERE id = ?
+`
+
+func (q *Queries) GetFeatureWorkspaceDiscoveryTicketByRowID(ctx context.Context, id int64) (FeatureWorkspaceDiscoveryTicket, error) {
+	row := q.db.QueryRowContext(ctx, getFeatureWorkspaceDiscoveryTicketByRowID, id)
+	var i FeatureWorkspaceDiscoveryTicket
+	err := row.Scan(
+		&i.ID,
+		&i.DiscoveryTicketID,
+		&i.WorkspaceRowID,
+		&i.TicketKey,
+		&i.Subject,
+		&i.State,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getFeatureWorkspaceInvestigationByID = `-- name: GetFeatureWorkspaceInvestigationByID :one
 SELECT id, investigation_id, workspace_row_id, ticket_row_id, sequence, investigation_kind, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at
 FROM feature_workspace_investigations
@@ -2522,7 +2545,7 @@ func (q *Queries) GetPlanPassByRowID(ctx context.Context, id int64) (PlanPass, e
 }
 
 const getPrototypeAuthorizationByAuthorizationID = `-- name: GetPrototypeAuthorizationByAuthorizationID :one
-SELECT id, authorization_id, proposal_row_id, workspace_row_id, work_item_row_id, discovery_revision_row_id, source_closure_row_id, source_commit, source_tree, repo_target, base_commit, adapter, model, variants_json, evidence_obligations_json, limits_json, invocation_artifact_row_id, invocation_sha256, invocation_size_bytes, invocation_media_type, created_at
+SELECT id, authorization_id, proposal_row_id, proposed_run_id, workspace_row_id, workspace_version, work_item_row_id, work_item_version, discovery_revision_row_id, proposal_sha256, source_closure_row_id, source_commit, source_tree, repo_target, base_commit, adapter, model, variants_json, evidence_obligations_json, limits_json, invocation_artifact_row_id, invocation_sha256, invocation_size_bytes, invocation_media_type, created_at
 FROM feature_workspace_prototype_authorizations
 WHERE authorization_id = ?
 `
@@ -2534,9 +2557,13 @@ func (q *Queries) GetPrototypeAuthorizationByAuthorizationID(ctx context.Context
 		&i.ID,
 		&i.AuthorizationID,
 		&i.ProposalRowID,
+		&i.ProposedRunID,
 		&i.WorkspaceRowID,
+		&i.WorkspaceVersion,
 		&i.WorkItemRowID,
+		&i.WorkItemVersion,
 		&i.DiscoveryRevisionRowID,
+		&i.ProposalSha256,
 		&i.SourceClosureRowID,
 		&i.SourceCommit,
 		&i.SourceTree,

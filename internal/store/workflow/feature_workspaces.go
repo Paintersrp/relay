@@ -112,6 +112,10 @@ func (tx *Tx) GetFeatureWorkspaceDiscoveryTicketByID(ctx context.Context, ticket
 	return workflowgenerated.New(tx.tx).GetFeatureWorkspaceDiscoveryTicketByID(ctx, ticketID)
 }
 
+func (tx *Tx) GetFeatureWorkspaceDiscoveryTicketByRowID(ctx context.Context, rowID int64) (FeatureWorkspaceDiscoveryTicket, error) {
+	return workflowgenerated.New(tx.tx).GetFeatureWorkspaceDiscoveryTicketByRowID(ctx, rowID)
+}
+
 func (tx *Tx) ListFeatureWorkspaceDiscoveryTickets(ctx context.Context, workspaceRowID int64) ([]FeatureWorkspaceDiscoveryTicket, error) {
 	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceDiscoveryTickets(ctx, workspaceRowID)
 }

@@ -95,6 +95,14 @@ func (s *Store) ArtifactStore() *workflowartifacts.Store {
 	return s.artifacts
 }
 
+// SetArtifactBatchPrepareCommitHookForTest injects a deterministic failure after
+// artifact promotion and before the coordinated database transaction commits.
+func (s *Store) SetArtifactBatchPrepareCommitHookForTest(hook func() error) func() {
+	previous := s.artifactBatchHooks
+	s.artifactBatchHooks = &artifactBatchHooks{prepareCommit: func(*workflowartifacts.Batch) error { return hook() }}
+	return func() { s.artifactBatchHooks = previous }
+}
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }

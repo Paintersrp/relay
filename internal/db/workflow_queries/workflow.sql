@@ -966,3 +966,8 @@ WHERE authorization_id = ?;
 SELECT *
 FROM feature_workspace_prototype_proposals
 WHERE proposal_id = ?;
+
+-- name: GetFeatureWorkspaceDiscoveryTicketByRowID :one
+SELECT *
+FROM feature_workspace_discovery_tickets
+WHERE id = ?;
