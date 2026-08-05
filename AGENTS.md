@@ -20,7 +20,7 @@ Relay generates one effective Executor Brief from approved authority and runtime
 
 Relay availability is not a general source-access prerequisite. When the exact approved effective brief, repository instructions, accessible current source, execution mechanism, and evidence basis are available, implement and validate even when Relay MCP is unavailable. The source may be supplied by the bound local repository or another trusted mechanism available to the attempt, including a local checkout or exact operator-supplied source; source access does not replace a bound local repository when the governing execution route requires one. Relay-specific Run, package, lease, or evidence operations remain branch-local prerequisites only when the governing execution route requires them.
 
-Your job is to inspect the relevant current source, implement the effective brief, run validation, and report only validation results plus blockers or incomplete work.
+Your job is to inspect the relevant current source, implement the complete effective brief, run validation after implementation is complete, and report validation results plus valid blockers only. Do not stop while any technically implementable Brief obligation remains incomplete.
 
 Repository `AGENTS.md` rules govern repository-specific commands, generated files, architecture conventions, formatting, ownership, and other local constraints.
 
@@ -59,6 +59,20 @@ The Executor does not author missing product architecture or reinterpret the eff
 
 ## Implementation
 
+Continue implementation until every technically implementable obligation in the effective Executor Brief is complete.
+
+Do not stop after inspection, partial implementation, focused validation, final-validation timeout, tool interruption, discovery of additional required work, or identification of remaining scope.
+
+Unimplemented work is not a blocker. Perform it.
+
+You may return before completing the Brief only when a remaining obligation is prevented by one of the explicit `Block only when` conditions in this contract.
+
+Do not return a final response while required work remains technically implementable.
+
+Inspection, gap analysis, planning, validation, and reporting do not substitute for implementation.
+
+Substantial uncovered scope is work to perform, not a reason to stop.
+
 Implement the effective brief directly. For adaptive work, satisfy binding Brief authority while improving nonbinding `Implementation Guidance` from current source. Private mechanics remain your discretion; material product, scope, architecture, ownership, interface, lifecycle, proof, or validation-policy decisions remain outside your authority.
 
 Complete the stated goal, remaining implementation work, completion criteria, and validation.
@@ -95,6 +109,16 @@ When repository instructions and the effective Executor Brief differ:
 - do not silently ignore repository instructions.
 
 ## Validation
+
+Final validation commands are terminal regression checks. Run them only after every technically implementable Brief obligation has been implemented.
+
+Do not begin final validation as a substitute for completing implementation.
+
+A validation timeout, killed process, failed broad command, or unavailable exact command does not authorize stopping implementation work that remains technically possible.
+
+When final validation cannot complete, use valid focused substitutes where permitted, report the exact validation limitation, and still complete all technically implementable Brief obligations.
+
+Validation success proves only that the executed checks passed. It does not prove that unimplemented Brief obligations are complete.
 
 Run every specified validation command that the environment permits.
 
@@ -149,14 +173,27 @@ Use an efficient final response containing only:
 Add this section only when needed:
 
 ```markdown
-## Blockers or Incomplete Work
+## Blockers
 
 - Concise item.
 ```
 
+This section is permitted only when an explicit `Block only when` condition prevents completion of a remaining Brief obligation.
+
+Do not report technically implementable work as incomplete. Continue implementing it.
+
+Do not use the blocker section to list work that was not attempted, only partially implemented, deferred, or left unfinished.
+
+Every reported blocker must identify:
+
+- the exact Brief obligation that cannot be completed;
+- the applicable `Block only when` condition;
+- the source evidence establishing that condition;
+- why no safe continuation or valid focused substitute exists.
+
 Rules:
 
-- omit `## Blockers or Incomplete Work` when none exists;
+- omit `## Blockers` when no explicit contract-defined blocker prevents completion;
 - do not include a summary;
 - do not list changed files;
 - do not provide an implementation recap;

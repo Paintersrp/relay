@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -241,6 +242,63 @@ func TestConcurrentDiscoveryOperationsHaveOneDeterministicWinner(t *testing.T) {
 			t.Fatalf("concurrent replay state = %#v, before %#v", after, before)
 		}
 	})
+}
+
+func TestDiscoveryClosurePersistenceFailuresRollbackAuthoritativeState(t *testing.T) {
+	cases := []struct {
+		name string
+		table string
+	}{
+		{name: "packet member", table: "feature_workspace_discovery_closure_packet_members"},
+		{name: "route history", table: "feature_workspace_route_states"},
+		{name: "currentness", table: "feature_workspaces"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+			trigger := "fail_closure_" + strings.ReplaceAll(test.name, " ", "_")
+			if _, err := store.DB().Exec(`CREATE TRIGGER ` + trigger + ` BEFORE INSERT ON ` + test.table + ` BEGIN SELECT RAISE(ABORT, 'injected closure failure'); END`); err != nil {
+				t.Fatal(err)
+			}
+			if test.table == "feature_workspaces" {
+				if _, err := store.DB().Exec(`DROP TRIGGER ` + trigger); err != nil { t.Fatal(err) }
+				if _, err := store.DB().Exec(`CREATE TRIGGER ` + trigger + ` BEFORE UPDATE ON feature_workspaces BEGIN SELECT RAISE(ABORT, 'injected closure failure'); END`); err != nil { t.Fatal(err) }
+			}
+			t.Cleanup(func() { _, _ = store.DB().Exec(`DROP TRIGGER ` + trigger) })
+			beforeRoutes := discoveryRouteCount(t, store, workspace.ID)
+			if _, _, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err == nil {
+				t.Fatal("expected injected closure failure")
+			}
+			assertNoDiscoveryClosurePublication(t, ctx, store, workspace, beforeRoutes)
+		})
+	}
+}
+
+func TestDiscoveryReopenPersistenceFailuresPreserveCurrentPacketAndRevision(t *testing.T) {
+	cases := []struct { name, table, event string }{
+		{name: "replacement revision", table: "feature_workspace_integrated_discovery_revisions", event: "INSERT"},
+		{name: "reopen event", table: "feature_workspace_discovery_reopen_events", event: "INSERT"},
+		{name: "route history", table: "feature_workspace_route_states", event: "INSERT"},
+		{name: "currentness", table: "feature_workspaces", event: "UPDATE"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+			closed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
+			if err != nil { t.Fatal(err) }
+			var revisionsBefore int
+			if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsBefore); err != nil { t.Fatal(err) }
+			trigger := "fail_reopen_" + strings.ReplaceAll(test.name, " ", "_")
+			if _, err = store.DB().Exec(`CREATE TRIGGER ` + trigger + ` BEFORE ` + test.event + ` ON ` + test.table + ` BEGIN SELECT RAISE(ABORT, 'injected reopen failure'); END`); err != nil { t.Fatal(err) }
+			t.Cleanup(func() { _, _ = store.DB().Exec(`DROP TRIGGER ` + trigger) })
+			replacement := []byte("# Replacement\n")
+			if _, _, err = service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "new evidence", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}); err == nil { t.Fatal("expected injected reopen failure") }
+			current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+			if err != nil || !current.CurrentDiscoveryClosurePacketRowID.Valid || current.CurrentDiscoveryClosurePacketRowID.Int64 != closed.Packet.ID || current.CurrentDiscoveryRevisionRowID.Int64 != revision.ID || current.Version != workspace.Version { t.Fatalf("current state = %#v, %v", current, err) }
+			var revisionsAfter int
+			if err = store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsAfter); err != nil || revisionsAfter != revisionsBefore { t.Fatalf("revision count = %d, %v", revisionsAfter, err) }
+		})
+	}
 }
 
 func assertDiscoveryCounts(t *testing.T, store *workflowstore.Store, workspaceRowID int64, artifacts, revisions, consequences int) {

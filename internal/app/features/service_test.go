@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,7 +128,7 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 		t.Fatalf("unconfirmed completion error = %v", err)
 	}
 	completed, err := service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true})
-	if err != nil || completed.Decision.Decision != "completed" {
+	if err != nil || completed.Decision.Decision != "completed" || completed.Decision.DiscoveryClosurePacketRowID.Valid {
 		t.Fatalf("explicit completion = %#v, err=%v", completed, err)
 	}
 	status, err = service.EvaluateCompletion(ctx, workspace.WorkspaceID)
@@ -154,9 +157,46 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 	if err != nil || status.CurrentDecision != nil {
 		t.Fatalf("authority reopening completion state = %#v, err=%v", status, err)
 	}
-	completed, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: status.Workspace.Version, OperatorConfirmed: true})
-	if err != nil {
-		t.Fatal(err)
+	workspace, err = service.SetIntegratedDiscoveryCapability(ctx, workspace.WorkspaceID, workspace.Version, true)
+	if err != nil { t.Fatal(err) }
+	if _, workspace, err = service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorIdentity: "operator"}); err != nil { t.Fatal(err) }
+	if _, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) { t.Fatalf("adopted completion without packet = %v", err) }
+	discovery := []byte("# Completion discovery\n")
+	started, workspace, err := service.StartIntegratedDiscovery(ctx, StartIntegratedDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Markdown: discovery, SHA256: discoveryTestDigest(discovery), CreatedIdentity: "operator", Destination: DiscoveryDestinationRequirements})
+	if err != nil { t.Fatal(err) }
+	closed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: started.Revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
+	if err != nil { t.Fatal(err) }
+	manifestArtifact, err := store.GetDiscoveryArtifactByRowID(ctx, closed.Packet.ManifestArtifactRowID)
+	if err != nil { t.Fatal(err) }
+	manifestPath := filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(manifestArtifact.RelativePath))
+	if err = os.WriteFile(manifestPath, []byte("corrupt manifest\n"), 0o600); err != nil { t.Fatal(err) }
+	if _, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) { t.Fatalf("corrupt manifest completion = %v", err) }
+	if err = os.WriteFile(manifestPath, closed.Manifest, 0o600); err != nil { t.Fatal(err) }
+	memberArtifact, err := store.GetDiscoveryArtifactByRowID(ctx, closed.Members[0].ArtifactRowID)
+	if err != nil { t.Fatal(err) }
+	memberPath := filepath.Join(store.ArtifactStore().Root(), filepath.FromSlash(memberArtifact.RelativePath))
+	if err = os.WriteFile(memberPath, []byte("corrupt member\n"), 0o600); err != nil { t.Fatal(err) }
+	if _, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) { t.Fatalf("corrupt member completion = %v", err) }
+	if err = os.WriteFile(memberPath, discovery, 0o600); err != nil { t.Fatal(err) }
+	if _, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version - 1, OperatorConfirmed: true}); !errors.Is(err, ErrVersionConflict) { t.Fatalf("stale completion = %v", err) }
+	completed, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true})
+	if err != nil || !completed.Decision.DiscoveryClosurePacketRowID.Valid || completed.Decision.DiscoveryClosurePacketRowID.Int64 != closed.Packet.ID {
+		t.Fatalf("adopted completion = %#v, %v", completed, err)
+	}
+	priorCompleted := completed.Decision
+	replacement := []byte("# Completion reopened\n")
+	newRevision, workspace, err := service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: completed.Workspace.WorkspaceID, ExpectedVersion: completed.Workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "new completion evidence", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements})
+	if err != nil || workspace.CurrentDiscoveryClosurePacketRowID.Valid || newRevision.PredecessorRevisionRowID.Int64 != started.Revision.ID {
+		t.Fatalf("completion reopen = %#v, %#v, %v", newRevision, workspace, err)
+	}
+	status, err = service.EvaluateCompletion(ctx, workspace.WorkspaceID)
+	if err != nil || status.CurrentDecision != nil || priorCompleted.DiscoveryClosurePacketRowID.Int64 != closed.Packet.ID {
+		t.Fatalf("completion invalidation = %#v, %#v, %v", priorCompleted, status, err)
+	}
+	if _, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) { t.Fatalf("reopened completion = %v", err) }
+	var historicalPacket sql.NullInt64
+	if err = store.DB().QueryRowContext(ctx, `SELECT discovery_closure_packet_row_id FROM feature_workspace_completion_decisions WHERE id = ?`, priorCompleted.ID).Scan(&historicalPacket); err != nil || !historicalPacket.Valid || historicalPacket.Int64 != closed.Packet.ID {
+		t.Fatalf("historical completion packet = %#v, %v", historicalPacket, err)
 	}
 
 	ticketService, err := workflowtickets.NewService(store)
@@ -193,27 +233,27 @@ type featureTestIDs struct{ next int }
 
 func (ids *featureTestIDs) AuthorityRevisionID() string {
 	ids.next++
-	return "authority-feature-" + string(rune('0'+ids.next))
+	return fmt.Sprintf("authority-feature-%d", ids.next)
 }
 
 func (ids *featureTestIDs) CompletionDecisionID() string {
 	ids.next++
-	return "completion-feature-" + string(rune('0'+ids.next))
+	return fmt.Sprintf("completion-feature-%d", ids.next)
 }
 
 func (ids *featureTestIDs) GoverningArtifactApprovalID() string {
 	ids.next++
-	return "ga-approval-feature-" + string(rune('0'+ids.next))
+	return fmt.Sprintf("ga-approval-feature-%d", ids.next)
 }
 
 func (ids *featureTestIDs) DiscoveryArtifactID() string {
 	ids.next++
-	return "discovery-artifact-feature-" + string(rune('0'+ids.next))
+	return fmt.Sprintf("discovery-artifact-feature-%d", ids.next)
 }
 
 func (ids *featureTestIDs) DiscoveryRevisionID() string {
 	ids.next++
-	return "discovery-revision-feature-" + string(rune('0'+ids.next))
+	return fmt.Sprintf("discovery-revision-feature-%d", ids.next)
 }
 
 func openFeatureServiceStore(t *testing.T, ctx context.Context) (*workflowstore.Store, int64, int64) {
