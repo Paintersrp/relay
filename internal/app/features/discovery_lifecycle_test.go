@@ -117,11 +117,30 @@ func TestDiscoveryLifecycleAdoptionRejectsActiveProductionMutation(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	before := workspace
+	if _, err := store.GetDiscoveryLifecycleAdoption(ctx, before.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("adoption before rejection = %v", err)
+	}
 	if _, _, err := service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorIdentity: "operator"}); !errors.Is(err, ErrDiscoveryAdoptionProduction) {
 		t.Fatalf("adoption error = %v", err)
 	}
 	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
-	if err != nil || current.Version != workspace.Version {
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Version != before.Version {
+		t.Fatalf("workspace version after rejected adoption = %d, want %d", current.Version, before.Version)
+	}
+	if current.DiscoveryCapabilityEnabled != before.DiscoveryCapabilityEnabled {
+		t.Fatalf("discovery capability after rejected adoption = %d, want %d", current.DiscoveryCapabilityEnabled, before.DiscoveryCapabilityEnabled)
+	}
+	if current.CurrentDiscoveryRevisionRowID != before.CurrentDiscoveryRevisionRowID {
+		t.Fatalf("current discovery revision after rejected adoption = %#v, want %#v", current.CurrentDiscoveryRevisionRowID, before.CurrentDiscoveryRevisionRowID)
+	}
+	if current.CurrentDiscoveryClosurePacketRowID != before.CurrentDiscoveryClosurePacketRowID {
+		t.Fatalf("current discovery closure packet after rejected adoption = %#v, want %#v", current.CurrentDiscoveryClosurePacketRowID, before.CurrentDiscoveryClosurePacketRowID)
+	}
+	if current.Version != workspace.Version {
 		t.Fatalf("workspace after rejected adoption = %#v, %v", current, err)
 	}
 	if _, err := store.GetDiscoveryLifecycleAdoption(ctx, workspace.ID); !errors.Is(err, sql.ErrNoRows) {
@@ -857,9 +876,21 @@ func TestHistoricalDiscoveryMemberCorruptionPreventsRetrievalAndReopen(t *testin
 }
 
 func TestDiscoveryReopenPreservesHistoricalPacketAndReclosureUsesNewPacket(t *testing.T) {
-	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
-	closed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
+	ctx, store, service, workspace, revision, closed, completion := completedClosedDiscoveryLifecycle(t)
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateDeliveryTicketSelection(ctx, workflowstore.CreateDeliveryTicketSelectionParams{SelectionID: "selection-discovery-reclosure", WorkspaceRowID: workspace.ID, State: "superseded", Rationale: "historical selection must remain inactive"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	selection, err := store.GetDeliveryTicketSelectionBySelectionID(ctx, "selection-discovery-reclosure")
 	if err != nil {
+		t.Fatal(err)
+	}
+	beforeAuthority := workspace.CurrentAuthorityRevisionRowID
+	beforeRoute := workspace.CurrentRouteStateRowID
+	var decisionsBefore int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_completion_decisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&decisionsBefore); err != nil {
 		t.Fatal(err)
 	}
 	replacement := []byte("# Reopened discovery\n")
@@ -874,16 +905,52 @@ func TestDiscoveryReopenPreservesHistoricalPacketAndReclosureUsesNewPacket(t *te
 	if err != nil || historical.Currentness != DiscoveryHistorical {
 		t.Fatalf("historical packet = %#v, %v", historical, err)
 	}
-	downstreamTables := []string{"source_vault_closures", "feature_workspace_completion_reopenings", "governing_artifact_approvals", "delivery_ticket_revision_approvals", "delivery_ticket_selections", "execution_packages", "execution_package_approvals", "runs", "execution_attempts", "audit_packets", "audit_decisions", "feature_workspace_completion_decisions"}
-	beforeDownstream := downstreamCounts(t, store, downstreamTables)
+	if _, err := store.GetCurrentFeatureWorkspaceCompletionDecision(ctx, workspace.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("completion remains current after reopen: %v", err)
+	}
+	var persisted workflowstore.FeatureWorkspaceCompletionDecision
+	if err := store.DB().QueryRowContext(ctx, `SELECT id, completion_decision_id, workspace_row_id, authority_revision_row_id, discovery_closure_packet_row_id, decision, created_at FROM feature_workspace_completion_decisions WHERE id = ?`, completion.ID).Scan(&persisted.ID, &persisted.CompletionDecisionID, &persisted.WorkspaceRowID, &persisted.AuthorityRevisionRowID, &persisted.DiscoveryClosurePacketRowID, &persisted.Decision, &persisted.CreatedAt); err != nil || persisted.ID != completion.ID || !persisted.DiscoveryClosurePacketRowID.Valid || persisted.DiscoveryClosurePacketRowID.Int64 != closed.Packet.ID {
+		t.Fatalf("historical completion after reopen = %#v, %v", persisted, err)
+	}
 	reclosed, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: newRevision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
 	if err != nil || reclosed.Packet.ID == closed.Packet.ID || workspace.CurrentDiscoveryClosurePacketRowID.Int64 != reclosed.Packet.ID || len(reclosed.Members) != 2 {
 		t.Fatalf("reclosure = %#v, %#v, %v", reclosed, workspace, err)
 	}
-	afterDownstream := downstreamCounts(t, store, downstreamTables)
-	for _, table := range downstreamTables {
-		if after := afterDownstream[table]; after != beforeDownstream[table] {
-			t.Fatalf("reclosure changed %s count: before=%d after=%d", table, beforeDownstream[table], after)
+	if !workspace.CurrentDiscoveryClosurePacketRowID.Valid || workspace.CurrentDiscoveryClosurePacketRowID.Int64 != reclosed.Packet.ID {
+		t.Fatalf("replacement packet is not current: %#v", workspace)
+	}
+	if workspace.CurrentAuthorityRevisionRowID != beforeAuthority {
+		t.Fatalf("current authority after reclosure = %#v, want %#v", workspace.CurrentAuthorityRevisionRowID, beforeAuthority)
+	}
+	if !workspace.CurrentRouteStateRowID.Valid || workspace.CurrentRouteStateRowID == beforeRoute {
+		t.Fatalf("current route after reclosure = %#v, want discovery lifecycle transition from %#v", workspace.CurrentRouteStateRowID, beforeRoute)
+	}
+	route, err := store.GetFeatureWorkspaceRouteStateByRowID(ctx, workspace.CurrentRouteStateRowID.Int64)
+	if err != nil || route.State != "ready" {
+		t.Fatalf("current route after reclosure = %#v, %v", route, err)
+	}
+	currentAuthority, err := store.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, beforeAuthority.Int64)
+	if err != nil || currentAuthority.ID != beforeAuthority.Int64 {
+		t.Fatalf("current authority revision after reclosure = %#v, %v", currentAuthority, err)
+	}
+	if _, err := store.GetCurrentFeatureWorkspaceCompletionDecision(ctx, workspace.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("historical completion became current after reclosure: %v", err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT id, completion_decision_id, workspace_row_id, authority_revision_row_id, discovery_closure_packet_row_id, decision, created_at FROM feature_workspace_completion_decisions WHERE id = ?`, completion.ID).Scan(&persisted.ID, &persisted.CompletionDecisionID, &persisted.WorkspaceRowID, &persisted.AuthorityRevisionRowID, &persisted.DiscoveryClosurePacketRowID, &persisted.Decision, &persisted.CreatedAt); err != nil || persisted.ID != completion.ID || !persisted.DiscoveryClosurePacketRowID.Valid || persisted.DiscoveryClosurePacketRowID.Int64 != closed.Packet.ID {
+		t.Fatalf("historical completion after reclosure = %#v, %v", persisted, err)
+	}
+	var decisionsAfter int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_completion_decisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&decisionsAfter); err != nil || decisionsAfter != decisionsBefore {
+		t.Fatalf("completion decisions after reclosure = %d, %v; want %d", decisionsAfter, err, decisionsBefore)
+	}
+	currentSelection, err := store.GetDeliveryTicketSelectionByRowID(ctx, selection.ID)
+	if err != nil || currentSelection.State != selection.State || currentSelection.State != "superseded" {
+		t.Fatalf("historical selection after reclosure = %#v, %v", currentSelection, err)
+	}
+	for _, table := range []string{"execution_packages", "runs", "execution_attempts", "audit_packets", "audit_decisions"} {
+		var count int
+		if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("downstream %s after reclosure = %d, %v", table, count, err)
 		}
 	}
 	for index, member := range reclosed.Members {

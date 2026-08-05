@@ -395,6 +395,95 @@ func TestDiscoveryReopenPersistenceFailuresPreserveCurrentPacketAndRevision(t *t
 	}
 }
 
+func TestDiscoveryReopenPromotionFailurePreservesCurrentState(t *testing.T) {
+	ctx, store, service, workspace, revision, closed, completion := completedClosedDiscoveryLifecycle(t)
+	artifactRoot := filepath.Join(store.ArtifactStore().Root(), "feature-discovery", workspace.WorkspaceID)
+	// The fixture consumes IDs through feature-6 before reopening, so replacement
+	// content reaches the artifact store at the next deterministic ID, feature-7.
+	collision := filepath.Join(artifactRoot, "discovery-artifact-feature-7", "reopened-discovery.md")
+	collisionContents := []byte("retain this collision\n")
+	if err := os.MkdirAll(filepath.Dir(collision), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(collision, collisionContents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	collisionInfo, err := os.Stat(collision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var revisionsBefore, artifactsBefore, eventsBefore, reopeningsBefore int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&revisionsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_discovery_artifacts WHERE workspace_row_id = ?`, workspace.ID).Scan(&artifactsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_discovery_reopen_events WHERE workspace_row_id = ?`, workspace.ID).Scan(&eventsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_completion_reopenings WHERE completion_decision_row_id = ?`, completion.ID).Scan(&reopeningsBefore); err != nil {
+		t.Fatal(err)
+	}
+	routesBefore := discoveryRouteCount(t, store, workspace.ID)
+	filesBefore := discoveryArtifactFileCount(t, artifactRoot)
+	stagingRoot := filepath.Join(store.ArtifactStore().Root(), ".staging")
+	stagedBefore, err := os.ReadDir(stagingRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stagedBefore) != 0 {
+		t.Fatalf("staging before replacement = %v, want empty", stagedBefore)
+	}
+	replacement := []byte("# Replacement promotion collision\n")
+	if _, _, err := service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedPacketID: closed.Packet.ClosurePacketID, OperatorConfirmed: true, Cause: "new evidence", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements}); err == nil {
+		t.Fatal("expected replacement artifact promotion failure")
+	}
+	current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil || current.Version != workspace.Version || !current.CurrentDiscoveryClosurePacketRowID.Valid || current.CurrentDiscoveryClosurePacketRowID.Int64 != closed.Packet.ID || current.CurrentDiscoveryRevisionRowID != workspace.CurrentDiscoveryRevisionRowID || current.CurrentDiscoveryRevisionRowID.Int64 != revision.ID {
+		t.Fatalf("workspace after promotion failure = %#v, %v", current, err)
+	}
+	for table, want := range map[string]int{
+		"feature_workspace_integrated_discovery_revisions": revisionsBefore,
+		"feature_workspace_discovery_artifacts":            artifactsBefore,
+		"feature_workspace_discovery_reopen_events":        eventsBefore,
+	} {
+		var got int
+		if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM `+table+` WHERE workspace_row_id = ?`, workspace.ID).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s after promotion failure = %d, %v; want %d", table, got, err, want)
+		}
+	}
+	var reopeningsAfter int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_completion_reopenings WHERE completion_decision_row_id = ?`, completion.ID).Scan(&reopeningsAfter); err != nil || reopeningsAfter != reopeningsBefore {
+		t.Fatalf("completion reopenings after promotion failure = %d, %v; want %d", reopeningsAfter, err, reopeningsBefore)
+	}
+	currentCompletion, err := store.GetCurrentFeatureWorkspaceCompletionDecision(ctx, workspace.ID)
+	if err != nil || currentCompletion.ID != completion.ID || !currentCompletion.DiscoveryClosurePacketRowID.Valid || currentCompletion.DiscoveryClosurePacketRowID.Int64 != closed.Packet.ID {
+		t.Fatalf("current completion after promotion failure = %#v, %v", currentCompletion, err)
+	}
+	if routesAfter := discoveryRouteCount(t, store, workspace.ID); routesAfter != routesBefore {
+		t.Fatalf("route transitions after promotion failure = %d, want %d", routesAfter, routesBefore)
+	}
+	if filesAfter := discoveryArtifactFileCount(t, artifactRoot); filesAfter != filesBefore {
+		t.Fatalf("promoted replacement files after failure = %d, want %d", filesAfter, filesBefore)
+	}
+	stagedAfter, err := os.ReadDir(stagingRoot)
+	if err != nil || !reflect.DeepEqual(stagedAfter, stagedBefore) {
+		t.Fatalf("staged replacement artifacts = %v, %v; want %v", stagedAfter, err, stagedBefore)
+	}
+	afterCollision, err := os.ReadFile(collision)
+	if err != nil || !reflect.DeepEqual(afterCollision, collisionContents) {
+		t.Fatalf("collision fixture after failure = %q, %v; want %q", afterCollision, err, collisionContents)
+	}
+	afterCollisionInfo, err := os.Stat(collision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterCollisionInfo.Mode() != collisionInfo.Mode() {
+		t.Fatalf("collision fixture mode after failure = %v, want %v", afterCollisionInfo.Mode(), collisionInfo.Mode())
+	}
+}
+
 func completedClosedDiscoveryLifecycle(t *testing.T) (context.Context, *workflowstore.Store, *Service, workflowstore.FeatureWorkspace, workflowstore.IntegratedDiscoveryRevision, DiscoveryPacketContent, workflowstore.FeatureWorkspaceCompletionDecision) {
 	t.Helper()
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
