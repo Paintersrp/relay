@@ -11,6 +11,7 @@ import (
 	featureapp "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	wayfinder "relay/internal/app/wayfinder"
+	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
@@ -169,4 +170,17 @@ func TestRecordApprovalRejectsInvalidEvidenceInAPI(t *testing.T) {
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("whitespace evidence status = %d body = %s", response.Code, response.Body.String())
 	}
+}
+
+func (f *fakeAuthority) LaunchApprovedPrototype(context.Context, prototypeexecution.LaunchRequest) (prototypeexecution.Result, error) {
+	return prototypeexecution.Result{}, f.err
+}
+func (f *fakeAuthority) ReconcilePrototypeLaunch(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	return prototypeexecution.Result{}, f.err
+}
+func (f *fakeAuthority) CancelPrototypeExecution(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	return prototypeexecution.Result{}, f.err
+}
+func (f *fakeAuthority) SettlePrototypeTimeout(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	return prototypeexecution.Result{}, f.err
 }

@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
+	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -41,9 +43,19 @@ func (defaultIDGenerator) GoverningArtifactApprovalID() string {
 }
 
 type Service struct {
-	store *workflowstore.Store
-	ids   IDGenerator
+	store             *workflowstore.Store
+	ids               IDGenerator
+	prototypeExecutor prototypeexecution.Executor
 }
+
+func (s *Service) SetPrototypeExecutor(v prototypeexecution.Executor) error {
+	if v == nil {
+		return fmt.Errorf("prototype executor is required")
+	}
+	s.prototypeExecutor = v
+	return nil
+}
+func (s *Service) SetPrototypeExecutorForTest(v prototypeexecution.Executor) { s.prototypeExecutor = v }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})

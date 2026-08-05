@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	artifactsapi "relay/internal/api/artifacts"
@@ -83,6 +84,16 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	featureAuthorityService, err := appfeatures.NewService(workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct feature authority service: %w", err)
+	}
+	if strings.TrimSpace(sourceVaultRoot) == "" {
+		return nil, nil, fmt.Errorf("construct prototype execution: source-vault root is required")
+	}
+	prototypeExecution, err := executor.NewPrototypeExecution(workflowStore, ownerInstanceID, filepath.Join(sourceVaultRoot, "prototype-execution"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("construct prototype execution: %w", err)
+	}
+	if err := featureAuthorityService.SetPrototypeExecutor(prototypeExecution); err != nil {
+		return nil, nil, fmt.Errorf("bind prototype execution: %w", err)
 	}
 	executionService, err := executor.NewExecution(workflowStore, log, ownerInstanceID, sourceVaultReader)
 	if err != nil {

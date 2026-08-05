@@ -14,6 +14,7 @@ import (
 	featureapp "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	wayfinder "relay/internal/app/wayfinder"
+	"relay/internal/prototypeexecution"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -32,6 +33,10 @@ type AuthorityService interface {
 	ReadAuthority(context.Context, string) ([]featureapp.AuthorityRevisionDetail, error)
 	PublishAuthority(context.Context, featureapp.PublishAuthorityInput) (featureapp.AuthorityRevisionDetail, Workspace, error)
 	RecordAuthorityApproval(context.Context, featureapp.RecordAuthorityApprovalInput) (featureapp.RecordAuthorityApprovalResult, error)
+	LaunchApprovedPrototype(context.Context, prototypeexecution.LaunchRequest) (prototypeexecution.Result, error)
+	ReconcilePrototypeLaunch(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error)
+	CancelPrototypeExecution(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error)
+	SettlePrototypeTimeout(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error)
 }
 
 type CompletionService interface {
@@ -586,6 +591,10 @@ func badRequest(w http.ResponseWriter, message string) {
 }
 func writeWorkspaceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, featureapp.ErrPrototypeCapabilityDisabled):
+		shared.Error(w, http.StatusForbidden, "CAPABILITY_DISABLED", err.Error())
+	case errors.Is(err, prototypeexecution.ErrLaunchUncertain), errors.Is(err, prototypeexecution.ErrCleanupRequired), errors.Is(err, prototypeexecution.ErrLaunchAlreadyClaimed), errors.Is(err, prototypeexecution.ErrPreparationClaimed):
+		shared.Error(w, http.StatusConflict, "PROTOTYPE_CONFLICT", err.Error())
 	case errors.Is(err, wayfinder.ErrWorkspaceNotFound), errors.Is(err, wayfinder.ErrDiscoveryTicketNotFound), errors.Is(err, featureapp.ErrWorkspaceNotFound), errors.Is(err, featureapp.ErrApprovalNotFound):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Feature workspace or discovery ticket was not found")
 	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict):
@@ -613,4 +622,69 @@ func MountWorkspaceRoutes(r chi.Router, handler *WorkspaceHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/authority-approvals", handler.RecordApproval)
 	r.Get("/feature-workspaces/{workspaceID}/completion", handler.CompletionStatus)
 	r.Post("/feature-workspaces/{workspaceID}/completion", handler.Complete)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/launch", handler.LaunchPrototype)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/reconcile", handler.ReconcilePrototype)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/cancel", handler.CancelPrototype)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/timeout", handler.TimeoutPrototype)
+}
+
+type prototypeOperationRequest struct {
+	ExpectedRunVersion int64  `json:"expectedRunVersion"`
+	MutationIdentity   string `json:"mutationIdentity"`
+}
+
+func prototypeResultDTO(v prototypeexecution.Result) map[string]any {
+	return map[string]any{"run": v.Run, "runtime": v.Runtime, "target": v.Target, "lease": v.Lease, "evidenceBatches": v.EvidenceBatches, "finalResult": v.FinalResult, "evidence": v.Evidence}
+}
+func (h *WorkspaceHandler) prototypeOp(w http.ResponseWriter, r *http.Request, fn func(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error), status int) {
+	var q prototypeOperationRequest
+	if !decodeStrict(r, &q) {
+		badRequest(w, "Invalid prototype operation request")
+		return
+	}
+	v, e := fn(r.Context(), prototypeexecution.OperationRequest{WorkspaceID: workspaceID(r), RunID: strings.TrimSpace(chi.URLParam(r, "runID")), ExpectedRunVersion: q.ExpectedRunVersion, MutationIdentity: q.MutationIdentity})
+	if e != nil {
+		writeWorkspaceError(w, e)
+		return
+	}
+	shared.JSON(w, status, map[string]any{"prototypeExecution": prototypeResultDTO(v)})
+}
+func (h *WorkspaceHandler) LaunchPrototype(w http.ResponseWriter, r *http.Request) {
+	var q prototypeOperationRequest
+	if !decodeStrict(r, &q) {
+		badRequest(w, "Invalid prototype operation request")
+		return
+	}
+	v, e := h.authority.LaunchApprovedPrototype(r.Context(), prototypeexecution.LaunchRequest{WorkspaceID: workspaceID(r), RunID: strings.TrimSpace(chi.URLParam(r, "runID")), ExpectedRunVersion: q.ExpectedRunVersion, MutationIdentity: q.MutationIdentity})
+	if e != nil {
+		writeWorkspaceError(w, e)
+		return
+	}
+	status := http.StatusConflict
+	if v.Run.LifecycleState == "running" || v.Run.LifecycleState == "preparing" {
+		status = http.StatusAccepted
+	}
+	shared.JSON(w, status, map[string]any{"prototypeExecution": prototypeResultDTO(v)})
+}
+func (h *WorkspaceHandler) ReconcilePrototype(w http.ResponseWriter, r *http.Request) {
+	h.prototypeOp(w, r, h.authority.ReconcilePrototypeLaunch, http.StatusOK)
+}
+func (h *WorkspaceHandler) CancelPrototype(w http.ResponseWriter, r *http.Request) {
+	h.prototypeOp(w, r, h.authority.CancelPrototypeExecution, http.StatusOK)
+}
+func (h *WorkspaceHandler) TimeoutPrototype(w http.ResponseWriter, r *http.Request) {
+	h.prototypeOp(w, r, h.authority.SettlePrototypeTimeout, http.StatusOK)
+}
+
+func (a appAuthorityAdapter) LaunchApprovedPrototype(ctx context.Context, in prototypeexecution.LaunchRequest) (prototypeexecution.Result, error) {
+	return a.service.LaunchApprovedPrototype(ctx, in)
+}
+func (a appAuthorityAdapter) ReconcilePrototypeLaunch(ctx context.Context, in prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	return a.service.ReconcilePrototypeLaunch(ctx, in)
+}
+func (a appAuthorityAdapter) CancelPrototypeExecution(ctx context.Context, in prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	return a.service.CancelPrototypeExecution(ctx, in)
+}
+func (a appAuthorityAdapter) SettlePrototypeTimeout(ctx context.Context, in prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
+	return a.service.SettlePrototypeTimeout(ctx, in)
 }

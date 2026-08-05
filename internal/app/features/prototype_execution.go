@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -48,7 +49,32 @@ type ApprovePrototypeExecutionInput struct {
 }
 type PrototypeExecutionDetail struct {
 	workflowstore.PrototypeExecutionAggregate
+	Runtime         *workflowstore.PrototypeRuntime
+	Target          *workflowstore.PrototypeTarget
+	Lease           *workflowstore.PrototypeLease
+	EvidenceBatches []workflowstore.PrototypeEvidenceImportBatch
+	FinalResult     *workflowstore.PrototypeResult
+	Evidence        []workflowstore.PrototypeEvidenceMember
 }
+
+var (
+	ErrPrototypePreparationClaimed   = prototypeexecution.ErrPreparationClaimed
+	ErrPrototypeLaunchAlreadyClaimed = prototypeexecution.ErrLaunchAlreadyClaimed
+	ErrPrototypeLaunchUncertain      = prototypeexecution.ErrLaunchUncertain
+	ErrPrototypeProcessOwnership     = prototypeexecution.ErrProcessOwnership
+	ErrPrototypeWorktreePreparation  = prototypeexecution.ErrWorktreePreparation
+	ErrPrototypeEphemeralTarget      = prototypeexecution.ErrEphemeralTarget
+	ErrPrototypeLease                = prototypeexecution.ErrLease
+	ErrPrototypeWorkingDirectory     = prototypeexecution.ErrWorkingDirectory
+	ErrPrototypeInvocation           = prototypeexecution.ErrInvocation
+	ErrPrototypeCancellation         = prototypeexecution.ErrCancellation
+	ErrPrototypeTimeout              = prototypeexecution.ErrTimeout
+	ErrPrototypeResultInvalid        = prototypeexecution.ErrResultInvalid
+	ErrPrototypeEvidenceUnsafe       = prototypeexecution.ErrEvidenceUnsafe
+	ErrPrototypeEvidenceMissing      = prototypeexecution.ErrEvidenceMissing
+	ErrPrototypeCleanupRequired      = prototypeexecution.ErrCleanupRequired
+	ErrPrototypeLimitsInvalid        = prototypeexecution.ErrLimitsInvalid
+)
 
 type prototypeInvocationEnvelope struct {
 	ProposedRunID, ProposalID, SourceClosureID, RepoTarget, BaseCommit, Adapter, Model string
@@ -362,5 +388,20 @@ func (s *Service) ReadPrototypeExecution(ctx context.Context, workspaceID, runID
 	if e != nil {
 		return PrototypeExecutionDetail{}, e
 	}
-	return PrototypeExecutionDetail{d}, nil
+	result := PrototypeExecutionDetail{PrototypeExecutionAggregate: d}
+	if v, err := s.store.GetPrototypeRuntimeByRunID(ctx, runID); err == nil {
+		result.Runtime = &v
+	}
+	if v, err := s.store.GetPrototypeTargetByRunID(ctx, runID); err == nil {
+		result.Target = &v
+	}
+	if v, err := s.store.GetPrototypeLeaseByRunID(ctx, runID); err == nil {
+		result.Lease = &v
+	}
+	result.EvidenceBatches, _ = s.store.ListPrototypeEvidenceBatches(ctx, runID)
+	if v, err := s.store.GetPrototypeResultByRunID(ctx, runID); err == nil {
+		result.FinalResult = &v
+	}
+	result.Evidence, _ = s.store.ListPrototypeEvidenceMembers(ctx, runID)
+	return result, nil
 }
