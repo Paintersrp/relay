@@ -196,7 +196,7 @@ func run(ctx context.Context, log *slog.Logger, ready chan<- runtimeReady) (retu
 	if err != nil {
 		return err
 	}
-	port := environmentOrDefault("PORT", "8080")
+	port := environmentOrDefault("PORT", "18080")
 	listener, err := listen("tcp", ":"+port)
 	if err != nil {
 		return fmt.Errorf("bind Relay listener: %w", err)

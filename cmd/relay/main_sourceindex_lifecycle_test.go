@@ -140,18 +140,20 @@ func (*fakeSourceIndexRuntime) OpenSearchIndex(context.Context, operations.Sourc
 }
 
 type fakeRelayLifecycle struct {
-	counts          *lifecycleCounts
-	startErr        error
-	shutdownErr     error
-	waitForShutdown bool
-	shutdownEntered chan context.Context
-	contextsMu      sync.Mutex
-	contexts        []context.Context
+	counts           *lifecycleCounts
+	preparedUpstream string
+	startErr         error
+	shutdownErr      error
+	waitForShutdown  bool
+	shutdownEntered  chan context.Context
+	contextsMu       sync.Mutex
+	contexts         []context.Context
 }
 
 func (f *fakeRelayLifecycle) Handler() http.Handler { return http.NotFoundHandler() }
 
-func (*fakeRelayLifecycle) PrepareMCPIngress(string) (server.MCPIngressSummary, error) {
+func (f *fakeRelayLifecycle) PrepareMCPIngress(upstreamBase string) (server.MCPIngressSummary, error) {
+	f.preparedUpstream = upstreamBase
 	return server.MCPIngressSummary{}, nil
 }
 
@@ -215,7 +217,7 @@ type fakeTCPListener struct{}
 
 func (*fakeTCPListener) Accept() (net.Conn, error) { return nil, net.ErrClosed }
 func (*fakeTCPListener) Close() error              { return nil }
-func (*fakeTCPListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 18463} }
+func (*fakeTCPListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 18080} }
 
 type lifecycleHarness struct {
 	counts              lifecycleCounts
@@ -360,6 +362,9 @@ func TestSourceIndexCMD01DisabledConstructsNoRuntime(t *testing.T) {
 	cancel()
 	if err := awaitResult(t, result); err != nil {
 		t.Fatalf("run() error = %v", err)
+	}
+	if h.relay.preparedUpstream != "http://127.0.0.1:18080" {
+		t.Fatalf("MCP upstream base = %q, want http://127.0.0.1:18080", h.relay.preparedUpstream)
 	}
 	h.counts.assert(t, lifecycleWant{listener: 1, composition: 1, handlerComposition: 1, serverConstruction: 1, serverStart: 1, mcpStart: 1, httpShutdown: 1, mcpShutdown: 1, readiness: 1})
 }

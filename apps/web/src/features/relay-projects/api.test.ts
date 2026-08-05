@@ -142,7 +142,7 @@ describe("canonical relay-projects api", () => {
     const result = await listWorkflowProjects({ status: "active", limit: 25 });
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      "http://localhost:8080/api/projects?status=active&limit=25",
+      "http://localhost:18080/api/projects?status=active&limit=25",
       expect.objectContaining({ method: "GET" }),
     );
     expect(result.count).toBe(1);
@@ -251,7 +251,7 @@ describe("canonical relay-projects api", () => {
     expect(result.notes[0]?.status).toBe("done");
     expect(result.plans[0]?.featureSlug).toBe("feature");
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      `http://localhost:8080${projectDetailPath}`,
+      `http://localhost:18080${projectDetailPath}`,
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -442,7 +442,7 @@ describe("canonical relay-projects api", () => {
 
     expect(repositories.repositories[0]?.localPath).toBe("D:/Code/relay");
     expect(fetchSpy.mock.calls[1]?.[0]).toBe(
-      "http://localhost:8080/api/projects/project-1/repositories/relay",
+      "http://localhost:18080/api/projects/project-1/repositories/relay",
     );
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ method: "PUT" }));
     expect(fetchSpy.mock.calls[2]?.[1]).toEqual(expect.objectContaining({ method: "DELETE" }));

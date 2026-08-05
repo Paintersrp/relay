@@ -32,7 +32,7 @@ const ENV_PATH = join(REPO_ROOT, ".env");
 const ENV_LOCAL_PATH = join(REPO_ROOT, ".env.local");
 const ENV_FILE_PATHS = [ENV_PATH, ENV_LOCAL_PATH];
 const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
-const DEFAULT_RELAY_BASE_URL = "http://127.0.0.1:8080";
+const DEFAULT_RELAY_BASE_URL = "http://127.0.0.1:18080";
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const RELAY_LISTENER_PROBE_TIMEOUT_MS = 1_000;
@@ -257,7 +257,7 @@ function printHelp(config) {
   console.log("  npm run chatgpt-mcp:status:all");
   console.log("");
   console.log(`Relay command: ${redactSecrets(config.relayCommand, sensitiveValues(config.controlPlaneApiKey))}`);
-  console.log(`Protected Relay base URL: ${config.relayBaseUrl} (port 8080 by default)`);
+  console.log(`Protected Relay base URL: ${config.relayBaseUrl} (port 18080 by default)`);
   for (const role of config.roles) console.log(`${role.label} private ingress: ${role.ingressAddress}; tunnel target: ${role.tunnelEndpoint}`);
   console.log("Private ingress listeners inject the protected Relay bearer; tunnel-client never connects directly to protected /mcp/* endpoints.");
   console.log(`Role-app state file: ${config.stateFile}`);

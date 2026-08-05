@@ -9,7 +9,7 @@ go run ./cmd/relay
 npm run dev:web
 ```
 
-The web application defaults to `http://localhost:3000` and the API to `http://localhost:8080`.
+The web application defaults to `http://localhost:3000` and the API to `http://localhost:18080`.
 
 ## Work through a package
 

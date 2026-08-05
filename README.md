@@ -49,7 +49,7 @@ Each app compiles its fixed internal routes and generated tool catalog. The seve
 
 ## Web application
 
-The TanStack Start application is normally available at `http://localhost:3000`; the Go API normally listens at `http://localhost:8080`.
+The TanStack Start application is normally available at `http://localhost:3000`; the Go API normally listens at `http://localhost:18080`.
 
 | Route | Surface |
 | --- | --- |

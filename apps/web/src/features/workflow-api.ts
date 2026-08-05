@@ -28,7 +28,7 @@ export class RelayApiError extends Error {
 
 export const API_BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_RELAY_API_BASE_URL) ||
-  "http://localhost:8080";
+  "http://localhost:18080";
 
 export type WorkflowHttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 export type WorkflowJsonRecord = Record<string, unknown>;

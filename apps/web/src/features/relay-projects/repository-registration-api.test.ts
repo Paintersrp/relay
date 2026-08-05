@@ -174,7 +174,7 @@ describe("repository registration api", () => {
     });
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      "http://localhost:8080/api/repositories/inspect",
+      "http://localhost:18080/api/repositories/inspect",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
@@ -275,7 +275,7 @@ describe("repository registration api", () => {
       expect(result.outcome).toBe(outcome);
       expect(result.repository.repoTarget).toBe("relay");
       expect(fetchSpy).toHaveBeenCalledWith(
-        "http://localhost:8080/api/repositories",
+        "http://localhost:18080/api/repositories",
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({

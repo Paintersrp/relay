@@ -25,12 +25,52 @@ func startupSequence(
 	if err != nil {
 		return nil, nil, err
 	}
-	port := environmentOrDefault("PORT", "8080")
+	port := environmentOrDefault("PORT", "18080")
 	l, err := listen("tcp", ":"+port)
 	if err != nil {
 		return nil, nil, err
 	}
 	return s, l, nil
+}
+
+func TestStartupSequenceUsesDefaultAndExplicitPortOverrides(t *testing.T) {
+	originalServer := newWorkflowServer
+	originalListen := listen
+	t.Cleanup(func() {
+		newWorkflowServer = originalServer
+		listen = originalListen
+	})
+	newWorkflowServer = func(*workflowstore.Store, *slog.Logger, string, *sourcevault.Manager, []server.MCPHandler) (relayLifecycle, error) {
+		return &server.Server{}, nil
+	}
+	for _, testCase := range []struct {
+		name        string
+		environment string
+		wantAddress string
+	}{
+		{name: "default", environment: "", wantAddress: ":18080"},
+		{name: "explicit 8080", environment: "8080", wantAddress: ":8080"},
+		{name: "explicit alternate", environment: "19080", wantAddress: ":19080"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("PORT", testCase.environment)
+			var gotAddress string
+			listen = func(network, address string) (net.Listener, error) {
+				gotAddress = address
+				return &fakeTCPListener{}, nil
+			}
+			_, listener, err := startupSequence(nil, nil, "owner-test", nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if listener == nil {
+				t.Fatal("listener is nil")
+			}
+			if gotAddress != testCase.wantAddress {
+				t.Fatalf("listener address = %q, want %q", gotAddress, testCase.wantAddress)
+			}
+		})
+	}
 }
 
 func TestRunPropagatesWorkflowServerConstructionError(t *testing.T) {

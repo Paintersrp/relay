@@ -81,7 +81,7 @@ async function temporaryEnvironment(extra, run) {
           response.end(JSON.stringify({ error: "simulated ingress failure" }));
           return;
         }
-        const target = new URL(`${env.RELAY_MCP_BASE_URL || "http://127.0.0.1:8080"}${pathName}`);
+        const target = new URL(`${env.RELAY_MCP_BASE_URL || "http://127.0.0.1:18080"}${pathName}`);
         const upstream = httpRequest(target, { method: request.method, headers: { "content-type": request.headers["content-type"] || "application/json" } }, (upstreamResponse) => {
           const chunks = [];
           upstreamResponse.on("data", (chunk) => chunks.push(chunk));
@@ -141,19 +141,19 @@ test("aggregate role endpoints keep protected Relay URLs separate from exact pri
   const names = ["RELAY_MCP_BASE_URL", "RELAY_MCP_INGRESS_WAYFINDER_ADDR", "RELAY_MCP_INGRESS_PLANNER_ADDR", "RELAY_MCP_INGRESS_AUDITOR_ADDR"];
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   try {
-    process.env.RELAY_MCP_BASE_URL = "http://127.0.0.1:8080";
+    process.env.RELAY_MCP_BASE_URL = "http://127.0.0.1:18080";
     delete process.env.RELAY_MCP_INGRESS_WAYFINDER_ADDR;
     delete process.env.RELAY_MCP_INGRESS_PLANNER_ADDR;
     delete process.env.RELAY_MCP_INGRESS_AUDITOR_ADDR;
     const defaults = getConfig();
-    assert.deepEqual(defaults.roles.map((role) => role.protectedEndpoint), ["http://127.0.0.1:8080/mcp/wayfinder", "http://127.0.0.1:8080/mcp/planner", "http://127.0.0.1:8080/mcp/auditor"]);
+    assert.deepEqual(defaults.roles.map((role) => role.protectedEndpoint), ["http://127.0.0.1:18080/mcp/wayfinder", "http://127.0.0.1:18080/mcp/planner", "http://127.0.0.1:18080/mcp/auditor"]);
     assert.deepEqual(defaults.roles.map((role) => role.tunnelEndpoint), ["http://127.0.0.1:18101/mcp/wayfinder", "http://127.0.0.1:18102/mcp/planner", "http://127.0.0.1:18103/mcp/auditor"]);
     process.env.RELAY_MCP_INGRESS_WAYFINDER_ADDR = "127.0.0.1:19101";
     process.env.RELAY_MCP_INGRESS_PLANNER_ADDR = "[::1]:19102";
     process.env.RELAY_MCP_INGRESS_AUDITOR_ADDR = "192.168.1.4:19103";
     const overridden = getConfig();
     assert.deepEqual(overridden.roles.map((role) => role.tunnelEndpoint), ["http://127.0.0.1:19101/mcp/wayfinder", "http://[::1]:19102/mcp/planner", "http://192.168.1.4:19103/mcp/auditor"]);
-    assert.equal(overridden.relayBaseUrl, "http://127.0.0.1:8080");
+    assert.equal(overridden.relayBaseUrl, "http://127.0.0.1:18080");
   } finally {
     for (const name of names) {
       if (previous[name] === undefined) delete process.env[name];
@@ -394,7 +394,7 @@ test("an existing direct protected-port Wayfinder runtime is drifted and reconne
     await runScript("init:all", env);
     const nativePath = path.join(temp, "native.json");
     const native = JSON.parse(await readFile(nativePath, "utf8"));
-    native.runtimes["relay-wayfinder"].process.target_value = "http://127.0.0.1:8080/mcp/wayfinder";
+    native.runtimes["relay-wayfinder"].process.target_value = "http://127.0.0.1:18080/mcp/wayfinder";
     await writeFile(nativePath, `${JSON.stringify(native)}\n`, "utf8");
     const logPath = path.join(temp, "wayfinder-drift.log");
     await runScript("init:all", { ...env, FAKE_TUNNEL_LOG: logPath });

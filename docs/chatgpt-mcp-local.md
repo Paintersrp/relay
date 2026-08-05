@@ -14,9 +14,9 @@ npm run chatgpt-mcp:stop:all
 
 | Role | Relay route | Private ingress URL | Registration alias |
 | --- | --- | --- | --- |
-| Wayfinder | `http://127.0.0.1:8080/mcp/wayfinder` | `http://127.0.0.1:18101/mcp/wayfinder` | `relay-wayfinder` |
-| Planner | `http://127.0.0.1:8080/mcp/planner` | `http://127.0.0.1:18102/mcp/planner` | `relay-planner` |
-| Auditor | `http://127.0.0.1:8080/mcp/auditor` | `http://127.0.0.1:18103/mcp/auditor` | `relay-auditor` |
+| Wayfinder | `http://127.0.0.1:18080/mcp/wayfinder` | `http://127.0.0.1:18101/mcp/wayfinder` | `relay-wayfinder` |
+| Planner | `http://127.0.0.1:18080/mcp/planner` | `http://127.0.0.1:18102/mcp/planner` | `relay-planner` |
+| Auditor | `http://127.0.0.1:18080/mcp/auditor` | `http://127.0.0.1:18103/mcp/auditor` | `relay-auditor` |
 
 Each tunnel connects only to its role-specific private ingress listener. That listener forwards to one fixed role-app route and injects the bearer required by the protected Relay route. The tunnel client is not given the Relay bearer and cannot select another role or internal route.
 
