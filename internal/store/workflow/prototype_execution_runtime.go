@@ -72,8 +72,11 @@ type PrototypeCleanupObligation struct {
 }
 
 const runtimeCols = `id,run_row_id,runtime_id,authorized_commit,authorized_tree,runtime_root_path,worktree_path,ephemeral_target_key,lease_token,background_context_id,invocation_relative_path,result_relative_path,export_relative_path,preparation_phase,launch_phase,process_identity,process_started_at,deadline_at,cancel_identity,cancel_requested_at,timeout_identity,timeout_claimed_at,preparation_error,created_at,updated_at`
+const runtimeJoinedCols = `r.id,r.run_row_id,r.runtime_id,r.authorized_commit,r.authorized_tree,r.runtime_root_path,r.worktree_path,r.ephemeral_target_key,r.lease_token,r.background_context_id,r.invocation_relative_path,r.result_relative_path,r.export_relative_path,r.preparation_phase,r.launch_phase,r.process_identity,r.process_started_at,r.deadline_at,r.cancel_identity,r.cancel_requested_at,r.timeout_identity,r.timeout_claimed_at,r.preparation_error,r.created_at,r.updated_at`
 const targetCols = `id,run_row_id,runtime_row_id,target_id,target_key,worktree_path,authorized_commit,authorized_tree,status,created_at,updated_at,released_at`
+const targetJoinedCols = `t.id,t.run_row_id,t.runtime_row_id,t.target_id,t.target_key,t.worktree_path,t.authorized_commit,t.authorized_tree,t.status,t.created_at,t.updated_at,t.released_at`
 const leaseCols = `id,run_row_id,runtime_row_id,lease_token,ephemeral_target_key,owner_instance_id,status,acquired_at,released_at,created_at,updated_at`
+const leaseJoinedCols = `l.id,l.run_row_id,l.runtime_row_id,l.lease_token,l.ephemeral_target_key,l.owner_instance_id,l.status,l.acquired_at,l.released_at,l.created_at,l.updated_at`
 
 func scanPrototypeRuntime(r rowScanner) (v PrototypeRuntime, e error) {
 	e = r.Scan(&v.ID, &v.RunRowID, &v.RuntimeID, &v.AuthorizedCommit, &v.AuthorizedTree, &v.RuntimeRootPath, &v.WorktreePath, &v.EphemeralTargetKey, &v.LeaseToken, &v.BackgroundContextID, &v.InvocationRelativePath, &v.ResultRelativePath, &v.ExportRelativePath, &v.PreparationPhase, &v.LaunchPhase, &v.ProcessIdentity, &v.ProcessStartedAt, &v.DeadlineAt, &v.CancelIdentity, &v.CancelRequestedAt, &v.TimeoutIdentity, &v.TimeoutClaimedAt, &v.PreparationError, &v.CreatedAt, &v.UpdatedAt)
@@ -101,13 +104,13 @@ func scanPrototypeMember(r rowScanner) (v PrototypeEvidenceMember, e error) {
 }
 
 func (s *Store) GetPrototypeRuntimeByRunID(c context.Context, id string) (PrototypeRuntime, error) {
-	return scanPrototypeRuntime(s.db.QueryRowContext(c, `SELECT `+runtimeCols+` FROM feature_workspace_prototype_runtimes r JOIN feature_workspace_prototype_runs p ON p.id=r.run_row_id WHERE p.prototype_run_id=?`, id))
+	return scanPrototypeRuntime(s.db.QueryRowContext(c, `SELECT `+runtimeJoinedCols+` FROM feature_workspace_prototype_runtimes r JOIN feature_workspace_prototype_runs p ON p.id=r.run_row_id WHERE p.prototype_run_id=?`, id))
 }
 func (s *Store) GetPrototypeTargetByRunID(c context.Context, id string) (PrototypeTarget, error) {
-	return scanPrototypeTarget(s.db.QueryRowContext(c, `SELECT `+targetCols+` FROM feature_workspace_prototype_targets t JOIN feature_workspace_prototype_runs p ON p.id=t.run_row_id WHERE p.prototype_run_id=?`, id))
+	return scanPrototypeTarget(s.db.QueryRowContext(c, `SELECT `+targetJoinedCols+` FROM feature_workspace_prototype_targets t JOIN feature_workspace_prototype_runs p ON p.id=t.run_row_id WHERE p.prototype_run_id=?`, id))
 }
 func (s *Store) GetPrototypeLeaseByRunID(c context.Context, id string) (PrototypeLease, error) {
-	return scanPrototypeLease(s.db.QueryRowContext(c, `SELECT `+leaseCols+` FROM feature_workspace_prototype_leases l JOIN feature_workspace_prototype_runs p ON p.id=l.run_row_id WHERE p.prototype_run_id=?`, id))
+	return scanPrototypeLease(s.db.QueryRowContext(c, `SELECT `+leaseJoinedCols+` FROM feature_workspace_prototype_leases l JOIN feature_workspace_prototype_runs p ON p.id=l.run_row_id WHERE p.prototype_run_id=?`, id))
 }
 func (s *Store) ListPrototypeEvidenceBatches(c context.Context, id string) (out []PrototypeEvidenceImportBatch, e error) {
 	rows, e := s.db.QueryContext(c, `SELECT b.id,b.run_row_id,b.runtime_row_id,b.evidence_batch_id,b.batch_identity,b.settlement_cause,b.observation_identity,b.process_outcome,b.envelope_status,b.completeness,b.artifact_count,b.total_size_bytes,b.created_at FROM feature_workspace_prototype_evidence_import_batches b JOIN feature_workspace_prototype_runs r ON r.id=b.run_row_id WHERE r.prototype_run_id=? ORDER BY b.id`, id)
