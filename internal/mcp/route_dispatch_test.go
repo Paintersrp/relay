@@ -10,6 +10,7 @@ import (
 	workflowprojects "relay/internal/app/projects/workflow"
 	apptickets "relay/internal/app/tickets"
 	"relay/internal/mcp/routecontracts"
+	"relay/internal/mcp/semanticidentity"
 	"relay/internal/operations/registry"
 )
 
@@ -275,5 +276,33 @@ func TestTicketFrontierDispatchAdmitsPublishedPlannerIdentityBeforeRead(t *testi
 		packets.request.OperationID != registry.PlannerTicketFrontierOperationID ||
 		packets.request.Action != registry.TicketActionReadFrontier {
 		t.Fatalf("packet admission request = %#v", packets.request)
+	}
+}
+
+func TestPacketInputRequestValidationReportsMissingSemanticMetadata(t *testing.T) {
+	fileIndex := int64(0)
+	for _, test := range []struct {
+		name, displayName, mediaType, field string
+		input                               semanticidentity.InputBinding
+	}{
+		{name: "display name", mediaType: "text/plain", field: "$.inputs[0].display_name"},
+		{name: "media type", displayName: "resolution.txt", field: "$.inputs[0].media_type"},
+		{name: "inline source extra field", displayName: "resolution.txt", mediaType: "text/plain", field: "$.inputs[0].source", input: semanticidentity.InputBinding{SourceKind: "inline_text", Source: semanticidentity.InputBindingSource{Text: "resolution", FileIndex: &fileIndex}}},
+		{name: "uploaded source remains accepted", displayName: "candidate.md", mediaType: "text/markdown", input: semanticidentity.InputBinding{SourceKind: "uploaded_file", Source: semanticidentity.InputBindingSource{FileIndex: &fileIndex}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := test.input
+			input.DisplayName, input.MediaType = test.displayName, test.mediaType
+			result := validatePacketInputRequest([]semanticidentity.InputBinding{input})
+			if test.field == "" {
+				if result != nil {
+					t.Fatalf("unexpected validation result = %#v", result)
+				}
+				return
+			}
+			if result == nil || !result.IsError || result.StructuredContent == nil || !strings.Contains(toolResultText(*result), test.field) {
+				t.Fatalf("request validation result = %#v", result)
+			}
+		})
 	}
 }

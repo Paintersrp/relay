@@ -390,7 +390,10 @@ func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage,
 	}
 	input := objectSchema(required, inputProperties)
 	if tool == "create_operation_packet" || tool == "refresh_operation_packet" {
-		input["$defs"] = map[string]any{"WorkflowReferenceRequest": workflowReferenceRequestSchema()}
+		input["$defs"] = map[string]any{
+			"WorkflowReferenceRequest": workflowReferenceRequestSchema(),
+			"InputBinding":             inputBindingSchema(),
+		}
 	}
 	var output map[string]any
 	switch tool {
@@ -425,10 +428,34 @@ func workflowReferenceRequestSchema() map[string]any {
 	}}
 }
 
+func inputBindingSchema() map[string]any {
+	stringField := func(maximum int) map[string]any {
+		return map[string]any{"type": "string", "minLength": 1, "maxLength": maximum}
+	}
+	base := map[string]any{
+		"input_name":      stringField(255),
+		"display_name":    stringField(1024),
+		"media_type":      stringField(255),
+		"expected_sha256": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
+	}
+	branch := func(kind string, source map[string]any) map[string]any {
+		properties := make(map[string]any, len(base)+2)
+		for name, property := range base {
+			properties[name] = property
+		}
+		properties["source_kind"] = map[string]any{"type": "string", "const": kind}
+		properties["source"] = source
+		return objectSchema([]string{"input_name", "source_kind", "display_name", "media_type", "expected_sha256", "source"}, properties)
+	}
+	return map[string]any{"oneOf": []any{
+		branch("uploaded_file", objectSchema([]string{"file_index"}, map[string]any{"file_index": map[string]any{"type": "integer", "minimum": 0, "maximum": 63}})),
+		branch("relay_artifact", objectSchema([]string{"artifact_id"}, map[string]any{"artifact_id": stringField(255)})),
+		branch("inline_text", objectSchema([]string{"text"}, map[string]any{"text": map[string]any{"type": "string", "maxLength": 262144}})),
+	}}
+}
 func objectSchema(required []string, properties map[string]any) map[string]any {
 	return map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
 }
-
 func mutationSchema() map[string]any {
 	return objectSchema([]string{"result_kind", "result_sha256", "committed_at", "replay"}, map[string]any{"result_kind": map[string]any{"type": "string", "minLength": 1, "maxLength": 255}, "result_sha256": map[string]any{"$ref": "#/$defs/SHA256"}, "committed_at": map[string]any{"$ref": "#/$defs/RFC3339"}, "replay": map[string]any{"type": "boolean"}})
 }

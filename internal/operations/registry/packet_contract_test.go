@@ -75,3 +75,39 @@ func TestWayfinderDiscoveryRequestContractsResolveWithoutWarmup(t *testing.T) {
 	}
 
 }
+
+func TestWayfinderDiscoveryCreatePacketSchemaRequiresInputSemanticMetadata(t *testing.T) {
+	raw, err := PublishedRouteToolInputSchema("wayfinder-discovery.v1", "create_operation_packet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Defs map[string]struct {
+			OneOf []struct {
+				Required   []string       `json:"required"`
+				Properties map[string]any `json:"properties"`
+			} `json:"oneOf"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	binding, ok := schema.Defs["InputBinding"]
+	if !ok || len(binding.OneOf) == 0 {
+		t.Fatal("create operation packet schema is missing InputBinding")
+	}
+	for _, branch := range binding.OneOf {
+		for _, field := range []string{"display_name", "media_type"} {
+			if _, ok := branch.Properties[field]; !ok {
+				t.Fatalf("InputBinding does not expose %s", field)
+			}
+			found := false
+			for _, required := range branch.Required {
+				found = found || required == field
+			}
+			if !found {
+				t.Fatalf("InputBinding does not require %s", field)
+			}
+		}
+	}
+}

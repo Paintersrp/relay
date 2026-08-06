@@ -176,6 +176,9 @@ func newPacketLifecycleHandler(manifest routecontracts.RouteManifest, name strin
 			if err := brokerDecodeStrict(raw, &in); err != nil {
 				return toolErr(err.Error())
 			}
+			if result := validatePacketInputRequest(in.Inputs); result != nil {
+				return *result
+			}
 			if err := requirePacketRoute(manifest, in.SurfaceContract, in.OperationID); err != nil {
 				return toolErr(err.Error())
 			}
@@ -295,6 +298,61 @@ func requirePacketRoute(manifest routecontracts.RouteManifest, surface registry.
 		}
 	}
 	return fmt.Errorf("operation_id is not a route member")
+}
+
+func validatePacketInputRequest(inputs []semanticidentity.InputBinding) *ToolCallResult {
+	for index, input := range inputs {
+		path := fmt.Sprintf("$.inputs[%d]", index)
+		if input.DisplayName == "" {
+			result := packetInputValidationError(path+".display_name", "is required")
+			return &result
+		}
+		if input.MediaType == "" {
+			result := packetInputValidationError(path+".media_type", "is required")
+			return &result
+		}
+		if reason := packetInputSourceReason(input); reason != "" {
+			result := packetInputValidationError(path+".source", reason)
+			return &result
+		}
+	}
+	return nil
+}
+
+func packetInputSourceReason(input semanticidentity.InputBinding) string {
+	source := input.Source
+	switch input.SourceKind {
+	case "inline_text":
+		if source.Text == "" {
+			return "inline_text source requires text"
+		}
+		if source.FileIndex != nil || source.ArtifactID != "" || source.WorkflowRecord != nil || source.RepositoryKey != "" || source.Revision != "" || source.Path != nil || source.ExpectedBlobOID != "" {
+			return "inline_text source contains unsupported fields"
+		}
+	case "uploaded_file":
+		if source.FileIndex == nil {
+			return "uploaded_file source requires file_index"
+		}
+		if source.ArtifactID != "" || source.Text != "" || source.WorkflowRecord != nil || source.RepositoryKey != "" || source.Revision != "" || source.Path != nil || source.ExpectedBlobOID != "" {
+			return "uploaded_file source contains unsupported fields"
+		}
+	case "relay_artifact":
+		if source.ArtifactID == "" {
+			return "relay_artifact source requires artifact_id"
+		}
+		if source.FileIndex != nil || source.Text != "" || source.WorkflowRecord != nil || source.RepositoryKey != "" || source.Revision != "" || source.Path != nil || source.ExpectedBlobOID != "" {
+			return "relay_artifact source contains unsupported fields"
+		}
+	}
+	return ""
+}
+
+func packetInputValidationError(path, reason string) ToolCallResult {
+	return ToolCallResult{
+		Content:           []ContentBlock{{Type: "text", Text: "request_validation_failed: " + path + " " + reason}},
+		StructuredContent: map[string]string{"code": "request_validation_failed", "field": path, "reason": reason},
+		IsError:           true,
+	}
 }
 
 func declaredFilesFromInputs(inputs []semanticidentity.InputBinding) []semanticidentity.DeclaredFile {
