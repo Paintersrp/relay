@@ -687,7 +687,7 @@ func newWayfinderHandler(name string, services RouteDispatchServices) SurfaceHan
 			if err != nil {
 				return toolErr(err.Error())
 			}
-			return workflowOK(map[string]any{"resolution": resolution, "ticket": ticket, "workspace": workspace})
+			return workflowOK(buildWayfinderResolveDiscoveryTicketResponse(resolution, ticket, workspace, in.PacketID, in.InputName, authority.ArtifactSHA256))
 		case "attach_investigation":
 			var in attachInvestigationWireInput
 			if err := brokerDecodeStrict(raw, &in); err != nil {

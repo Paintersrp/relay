@@ -2,6 +2,7 @@ package mcp
 
 import (
 	appwayfinder "relay/internal/app/wayfinder"
+	workflowstore "relay/internal/store/workflow"
 )
 
 // These projections are the public MCP readback contract. They deliberately
@@ -62,6 +63,61 @@ type wayfinderResolutionView struct {
 	Sequence     int64  `json:"sequence"`
 	Kind         string `json:"kind"`
 	Digest       string `json:"digest"`
+}
+
+type wayfinderResolveDiscoveryTicketResponse struct {
+	Resolution wayfinderResolveResolutionView `json:"resolution"`
+	Ticket     wayfinderResolveTicketView     `json:"ticket"`
+	Workspace  wayfinderResolveWorkspaceView  `json:"workspace"`
+}
+
+type wayfinderResolveResolutionView struct {
+	ResolutionID   string `json:"resolution_id"`
+	Sequence       int64  `json:"sequence"`
+	ResolutionKind string `json:"resolution_kind"`
+	PacketID       string `json:"packet_id"`
+	InputName      string `json:"input_name"`
+	ArtifactSHA256 string `json:"artifact_sha256"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type wayfinderResolveTicketView struct {
+	DiscoveryTicketID string `json:"discovery_ticket_id"`
+	TicketKey         string `json:"ticket_key"`
+	Subject           string `json:"subject"`
+	State             string `json:"state"`
+	Version           int64  `json:"version"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+type wayfinderResolveWorkspaceView struct {
+	WorkspaceID string `json:"workspace_id"`
+	FeatureSlug string `json:"feature_slug"`
+	State       string `json:"state"`
+	Version     int64  `json:"version"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+func buildWayfinderResolveDiscoveryTicketResponse(resolution workflowstore.FeatureWorkspaceTicketResolution, ticket workflowstore.FeatureWorkspaceDiscoveryTicket, workspace workflowstore.FeatureWorkspace, packetID, inputName, artifactSHA256 string) wayfinderResolveDiscoveryTicketResponse {
+	return wayfinderResolveDiscoveryTicketResponse{
+		Resolution: wayfinderResolveResolutionView{
+			ResolutionID: resolution.ResolutionID, Sequence: resolution.Sequence,
+			ResolutionKind: resolution.ResolutionKind, PacketID: packetID, InputName: inputName,
+			ArtifactSHA256: artifactSHA256, CreatedAt: resolution.CreatedAt,
+		},
+		Ticket: wayfinderResolveTicketView{
+			DiscoveryTicketID: ticket.DiscoveryTicketID, TicketKey: ticket.TicketKey,
+			Subject: ticket.Subject, State: ticket.State, Version: ticket.Version,
+			CreatedAt: ticket.CreatedAt, UpdatedAt: ticket.UpdatedAt,
+		},
+		Workspace: wayfinderResolveWorkspaceView{
+			WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug,
+			State: workspace.State, Version: workspace.Version,
+			CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt,
+		},
+	}
 }
 
 type wayfinderRouteView struct {

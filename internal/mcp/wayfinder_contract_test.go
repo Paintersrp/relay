@@ -223,6 +223,55 @@ func TestWayfinderContractDriftGuardPublishedSchemasMatchExplicitRuntimeWireType
 	}
 }
 
+func TestWayfinderResolvePublishedOutputSchemaMatchesPublicDTO(t *testing.T) {
+	published, ok := registry.LookupPublishedToolContract("resolve_discovery_ticket")
+	if !ok {
+		t.Fatal("published resolve schema is missing")
+	}
+	var schema struct {
+		AdditionalProperties bool                       `json:"additionalProperties"`
+		Properties           map[string]json.RawMessage `json:"properties"`
+		Required             []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(published.OutputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	assertObject := func(raw json.RawMessage, name string, fields []string) {
+		t.Helper()
+		var object struct {
+			AdditionalProperties bool                       `json:"additionalProperties"`
+			Properties           map[string]json.RawMessage `json:"properties"`
+			Required             []string                   `json:"required"`
+		}
+		if err := json.Unmarshal(raw, &object); err != nil {
+			t.Fatalf("decode %s schema: %v", name, err)
+		}
+		if object.AdditionalProperties || !reflect.DeepEqual(sortedStringKeys(object.Properties), sortedWireKeys(func() map[string]struct{} {
+			result := make(map[string]struct{}, len(fields))
+			for _, field := range fields {
+				result[field] = struct{}{}
+			}
+			return result
+		}())) || !reflect.DeepEqual(sortedStringKeys(object.Properties), func() []string {
+			values := append([]string(nil), object.Required...)
+			sort.Strings(values)
+			return values
+		}()) {
+			t.Fatalf("%s schema fields are not closed and exact: properties=%v required=%v", name, sortedStringKeys(object.Properties), object.Required)
+		}
+	}
+	if schema.AdditionalProperties || !reflect.DeepEqual(sortedStringKeys(schema.Properties), []string{"resolution", "ticket", "workspace"}) || !reflect.DeepEqual(func() []string {
+		values := append([]string(nil), schema.Required...)
+		sort.Strings(values)
+		return values
+	}(), []string{"resolution", "ticket", "workspace"}) {
+		t.Fatalf("resolve output schema is not closed and exact: properties=%v", sortedStringKeys(schema.Properties))
+	}
+	assertObject(schema.Properties["resolution"], "resolution", []string{"resolution_id", "sequence", "resolution_kind", "packet_id", "input_name", "artifact_sha256", "created_at"})
+	assertObject(schema.Properties["ticket"], "ticket", []string{"discovery_ticket_id", "ticket_key", "subject", "state", "version", "created_at", "updated_at"})
+	assertObject(schema.Properties["workspace"], "workspace", []string{"workspace_id", "feature_slug", "state", "version", "created_at", "updated_at"})
+}
+
 func explicitWireFields(t *testing.T, wire reflect.Type) (map[string]struct{}, []string) {
 	t.Helper()
 	fields := make(map[string]struct{}, wire.NumField())

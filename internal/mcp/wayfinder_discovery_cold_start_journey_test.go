@@ -421,8 +421,14 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	}
 
 	resolveRequest["packet_id"] = packetID
-	var resolved map[string]json.RawMessage
-	coldStartDecode(t, coldStartCall(t, server, "resolve_discovery_ticket", resolveRequest), &resolved)
+	var resolved wayfinderResolveDiscoveryTicketResponse
+	resolvedResponse := coldStartCall(t, server, "resolve_discovery_ticket", resolveRequest)
+	coldStartDecode(t, resolvedResponse, &resolved)
+	encodedResolved, err := json.Marshal(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWayfinderResolvePublicResponse(t, resolved, string(encodedResolved), packetID, "resolution_input", resolutionDigest, ticket.DiscoveryTicketID, workspaceAfterTicket.WorkspaceID)
 	var readback wayfinderWorkspaceReadback
 	coldStartDecode(t, coldStartCall(t, workspaceServer, "read_workspace", map[string]any{"workspace_id": workspaceAfterTicket.WorkspaceID}), &readback)
 	if readback.Workspace.WorkspaceID != workspaceAfterTicket.WorkspaceID || readback.Workspace.ProjectID != project.ProjectID || readback.Workspace.Version != workspaceAfterTicket.Version+1 || len(readback.Tickets) != 1 || readback.Tickets[0].TicketID != ticket.DiscoveryTicketID || len(readback.Tickets[0].Resolutions) != 1 || readback.Tickets[0].Resolutions[0].Digest != resolutionDigest {
@@ -465,6 +471,50 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireColdStartToolError(t, coldStartCall(t, server, "resolve_discovery_ticket", brokenArtifactRequest))
+}
+
+func assertWayfinderResolvePublicResponse(t *testing.T, response wayfinderResolveDiscoveryTicketResponse, encoded, packetID, inputName, artifactSHA256, ticketID, workspaceID string) {
+	t.Helper()
+	if response.Resolution.ResolutionID == "" || response.Resolution.Sequence != 1 || response.Resolution.ResolutionKind != "resolved" || response.Resolution.PacketID != packetID || response.Resolution.InputName != inputName || response.Resolution.ArtifactSHA256 != artifactSHA256 || response.Resolution.CreatedAt == "" {
+		t.Fatalf("resolution public response = %#v", response.Resolution)
+	}
+	if response.Ticket.DiscoveryTicketID != ticketID || response.Ticket.TicketKey != "discover-resolution" || response.Ticket.Subject != "Resolve packet evidence" || response.Ticket.State != "resolved" || response.Ticket.Version != 2 || response.Ticket.CreatedAt == "" || response.Ticket.UpdatedAt == "" {
+		t.Fatalf("ticket public response = %#v", response.Ticket)
+	}
+	if response.Workspace.WorkspaceID != workspaceID || response.Workspace.FeatureSlug != "discovery-feature" || response.Workspace.State != "open" || response.Workspace.Version != 3 || response.Workspace.CreatedAt == "" || response.Workspace.UpdatedAt == "" {
+		t.Fatalf("workspace public response = %#v", response.Workspace)
+	}
+	if strings.Contains(encoded, "Int64") || strings.Contains(encoded, "Valid") || strings.Contains(encoded, "_row_id") {
+		t.Fatalf("public response leaked persistence fields: %s", encoded)
+	}
+	var value any
+	if err := json.Unmarshal([]byte(encoded), &value); err != nil {
+		t.Fatal(err)
+	}
+	if containsBareDatabaseID(value) {
+		t.Fatalf("public response leaked bare database id: %s", encoded)
+	}
+}
+
+func containsBareDatabaseID(value any) bool {
+	switch value := value.(type) {
+	case map[string]any:
+		if _, found := value["id"]; found {
+			return true
+		}
+		for _, child := range value {
+			if containsBareDatabaseID(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if containsBareDatabaseID(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func containsString(values []string, wanted string) bool {
