@@ -46,6 +46,7 @@ type Service struct {
 	store             *workflowstore.Store
 	ids               IDGenerator
 	prototypeExecutor prototypeexecution.Executor
+	prototypeCleaner  prototypeexecution.Cleaner
 }
 
 func (s *Service) SetPrototypeExecutor(v prototypeexecution.Executor) error {
@@ -56,6 +57,14 @@ func (s *Service) SetPrototypeExecutor(v prototypeexecution.Executor) error {
 	return nil
 }
 func (s *Service) SetPrototypeExecutorForTest(v prototypeexecution.Executor) { s.prototypeExecutor = v }
+
+func (s *Service) SetPrototypeCleaner(v prototypeexecution.Cleaner) error {
+	if v == nil {
+		return fmt.Errorf("prototype cleaner is required")
+	}
+	s.prototypeCleaner = v
+	return nil
+}
 
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})

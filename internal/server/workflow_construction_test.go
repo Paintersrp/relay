@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/sourcevault"
 	"relay/internal/transport/mcpingress"
 )
 
@@ -38,7 +37,7 @@ func TestBuildWorkflowRuntimeReturnsErrorForNilWorkflowStore(t *testing.T) {
 }
 
 func TestBuildWorkflowRuntimePropagatesAuditConstructionError(t *testing.T) {
-	store, _ := openWorkflowRouteTestStore(t)
+	store, _, _ := openWorkflowRouteTestStore(t)
 	handler, routes, err := buildWorkflowRuntime(store, nil, "owner-test", nil, nil)
 	if err == nil {
 		t.Fatal("expected audit construction error")
@@ -52,10 +51,10 @@ func TestBuildWorkflowRuntimePropagatesAuditConstructionError(t *testing.T) {
 }
 
 func TestBuildWorkflowRuntimeReturnsNoPartialResultsForRouteDescriptorError(t *testing.T) {
-	store, _ := openWorkflowRouteTestStore(t)
+	store, _, vaults := openWorkflowRouteTestStore(t)
 	handlers := workflowConstructionMCPHandlers()
 	handlers[0].ToolRegistrations = nil
-	handler, routes, err := buildWorkflowRuntime(store, nil, "owner-test", &sourcevault.Manager{}, handlers)
+	handler, routes, err := buildWorkflowRuntime(store, nil, "owner-test", vaults, handlers)
 	if err == nil {
 		t.Fatal("expected MCP route descriptor construction error")
 	}
@@ -68,8 +67,8 @@ func TestBuildWorkflowRuntimeReturnsNoPartialResultsForRouteDescriptorError(t *t
 }
 
 func TestNewWorkflowReturnsHandlerAndAllMCPRoutes(t *testing.T) {
-	store, _ := openWorkflowRouteTestStore(t)
-	workflowServer, err := NewWorkflow(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", &sourcevault.Manager{}, workflowConstructionMCPHandlers())
+	store, _, vaults := openWorkflowRouteTestStore(t)
+	workflowServer, err := NewWorkflow(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", vaults, workflowConstructionMCPHandlers())
 	if err != nil {
 		t.Fatal(err)
 	}

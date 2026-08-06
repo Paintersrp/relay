@@ -95,6 +95,13 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err := featureAuthorityService.SetPrototypeExecutor(prototypeExecution); err != nil {
 		return nil, nil, fmt.Errorf("bind prototype execution: %w", err)
 	}
+	prototypeCleanup, err := executor.NewPrototypeCleanup(workflowStore, filepath.Join(sourceVaultRoot, "prototype-execution"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("construct prototype cleanup: %w", err)
+	}
+	if err := featureAuthorityService.SetPrototypeCleaner(prototypeCleanup); err != nil {
+		return nil, nil, fmt.Errorf("bind prototype cleanup: %w", err)
+	}
 	executionService, err := executor.NewExecution(workflowStore, log, ownerInstanceID, sourceVaultReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct execution: %w", err)
@@ -188,6 +195,16 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 			http.StatusFound,
 		)
 	})
+
+	startupResults, startupErr := prototypeCleanup.ReconcileStartup(context.Background(), 20)
+	if startupErr != nil {
+		log.Error("prototype startup reconciliation failed", "error", startupErr)
+	}
+	for _, result := range startupResults {
+		if result.Reconciliation.ResultingRunState == "cleanup_required" {
+			log.Warn("prototype cleanup remains required", "run_id", result.Run.PrototypeRunID)
+		}
+	}
 
 	return router, mcpRoutes, nil
 }

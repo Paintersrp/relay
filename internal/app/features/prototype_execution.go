@@ -58,22 +58,27 @@ type PrototypeExecutionDetail struct {
 }
 
 var (
-	ErrPrototypePreparationClaimed   = prototypeexecution.ErrPreparationClaimed
-	ErrPrototypeLaunchAlreadyClaimed = prototypeexecution.ErrLaunchAlreadyClaimed
-	ErrPrototypeLaunchUncertain      = prototypeexecution.ErrLaunchUncertain
-	ErrPrototypeProcessOwnership     = prototypeexecution.ErrProcessOwnership
-	ErrPrototypeWorktreePreparation  = prototypeexecution.ErrWorktreePreparation
-	ErrPrototypeEphemeralTarget      = prototypeexecution.ErrEphemeralTarget
-	ErrPrototypeLease                = prototypeexecution.ErrLease
-	ErrPrototypeWorkingDirectory     = prototypeexecution.ErrWorkingDirectory
-	ErrPrototypeInvocation           = prototypeexecution.ErrInvocation
-	ErrPrototypeCancellation         = prototypeexecution.ErrCancellation
-	ErrPrototypeTimeout              = prototypeexecution.ErrTimeout
-	ErrPrototypeResultInvalid        = prototypeexecution.ErrResultInvalid
-	ErrPrototypeEvidenceUnsafe       = prototypeexecution.ErrEvidenceUnsafe
-	ErrPrototypeEvidenceMissing      = prototypeexecution.ErrEvidenceMissing
-	ErrPrototypeCleanupRequired      = prototypeexecution.ErrCleanupRequired
-	ErrPrototypeLimitsInvalid        = prototypeexecution.ErrLimitsInvalid
+	ErrPrototypePreparationClaimed         = prototypeexecution.ErrPreparationClaimed
+	ErrPrototypeLaunchAlreadyClaimed       = prototypeexecution.ErrLaunchAlreadyClaimed
+	ErrPrototypeLaunchUncertain            = prototypeexecution.ErrLaunchUncertain
+	ErrPrototypeProcessOwnership           = prototypeexecution.ErrProcessOwnership
+	ErrPrototypeWorktreePreparation        = prototypeexecution.ErrWorktreePreparation
+	ErrPrototypeEphemeralTarget            = prototypeexecution.ErrEphemeralTarget
+	ErrPrototypeLease                      = prototypeexecution.ErrLease
+	ErrPrototypeWorkingDirectory           = prototypeexecution.ErrWorkingDirectory
+	ErrPrototypeInvocation                 = prototypeexecution.ErrInvocation
+	ErrPrototypeCancellation               = prototypeexecution.ErrCancellation
+	ErrPrototypeTimeout                    = prototypeexecution.ErrTimeout
+	ErrPrototypeResultInvalid              = prototypeexecution.ErrResultInvalid
+	ErrPrototypeEvidenceUnsafe             = prototypeexecution.ErrEvidenceUnsafe
+	ErrPrototypeEvidenceMissing            = prototypeexecution.ErrEvidenceMissing
+	ErrPrototypeCleanupRequired            = prototypeexecution.ErrCleanupRequired
+	ErrPrototypeLimitsInvalid              = prototypeexecution.ErrLimitsInvalid
+	ErrPrototypeReconciliationIncomplete   = prototypeexecution.ErrReconciliationIncomplete
+	ErrPrototypeCleanupOwnershipMismatch   = prototypeexecution.ErrCleanupOwnershipMismatch
+	ErrPrototypeQAPacketInvalid            = prototypeexecution.ErrQAPacketInvalid
+	ErrPrototypeQAEvidenceInvalid          = prototypeexecution.ErrQAEvidenceInvalid
+	ErrPrototypeAnotherExecutionIneligible = prototypeexecution.ErrAnotherExecutionIneligible
 )
 
 type prototypeInvocationEnvelope struct {

@@ -37,6 +37,11 @@ type AuthorityService interface {
 	ReconcilePrototypeLaunch(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error)
 	CancelPrototypeExecution(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error)
 	SettlePrototypeTimeout(context.Context, prototypeexecution.OperationRequest) (prototypeexecution.Result, error)
+	ReconcilePrototypeCleanup(context.Context, prototypeexecution.CleanupRequest) (prototypeexecution.CleanupResult, error)
+	PrepareAnotherPrototypeExecution(context.Context, featureapp.PrepareAnotherPrototypeExecutionInput) (featureapp.PrototypeExecutionDetail, error)
+	PrepareQADiscoveryPacket(context.Context, featureapp.PrepareQADiscoveryPacketInput) (featureapp.PrototypeQAPacketDetail, error)
+	AdmitOperatorQAEvidence(context.Context, featureapp.AdmitOperatorQAEvidenceInput) (featureapp.PrototypeQAPacketDetail, error)
+	ReadPrototypeEvidenceForWayfinder(context.Context, string, string) (featureapp.PrototypeWayfinderEvidenceView, error)
 }
 
 type CompletionService interface {
@@ -262,6 +267,32 @@ type recordAuthorityApprovalRequest struct {
 type completeWorkspaceRequest struct {
 	ExpectedVersion   int64 `json:"expectedVersion"`
 	OperatorConfirmed bool  `json:"operatorConfirmed"`
+}
+type cleanupRequest struct {
+	ExpectedRunVersion int64  `json:"expectedRunVersion"`
+	MutationIdentity   string `json:"mutationIdentity"`
+}
+type anotherExecutionRequest struct {
+	ExpectedPriorRunVersion      int64  `json:"expectedPriorRunVersion"`
+	MutationIdentity             string `json:"mutationIdentity"`
+	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
+}
+type qaPacketRequest struct {
+	ExpectedRunVersion     int64    `json:"expectedRunVersion"`
+	MutationIdentity       string   `json:"mutationIdentity"`
+	OperatorPrompt         string   `json:"operatorPrompt"`
+	ValidationInstructions []string `json:"validationInstructions"`
+}
+type qaEvidenceRequest struct {
+	MutationIdentity             string           `json:"mutationIdentity"`
+	OperatorConfirmationEvidence string           `json:"operatorConfirmationEvidence"`
+	Evidence                     []qaEvidenceItem `json:"evidence"`
+}
+type qaEvidenceItem struct {
+	SemanticRole string `json:"semanticRole"`
+	MediaType    string `json:"mediaType"`
+	Content      []byte `json:"content"`
+	SHA256       string `json:"sha256"`
 }
 
 func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -593,7 +624,11 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, featureapp.ErrPrototypeCapabilityDisabled):
 		shared.Error(w, http.StatusForbidden, "CAPABILITY_DISABLED", err.Error())
-	case errors.Is(err, featureapp.ErrPrototypeInvalidTransition), errors.Is(err, featureapp.ErrPrototypeRunStale), errors.Is(err, featureapp.ErrPrototypeSourceDivergence), errors.Is(err, prototypeexecution.ErrLimitsInvalid), errors.Is(err, prototypeexecution.ErrResultInvalid), errors.Is(err, prototypeexecution.ErrEvidenceUnsafe), errors.Is(err, prototypeexecution.ErrTimeout):
+	case errors.Is(err, prototypeexecution.ErrCleanupOwnershipMismatch), errors.Is(err, featureapp.ErrPrototypeOwnership):
+		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Feature workspace or prototype run was not found")
+	case errors.Is(err, prototypeexecution.ErrQAPacketInvalid), errors.Is(err, prototypeexecution.ErrQAEvidenceInvalid):
+		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	case errors.Is(err, prototypeexecution.ErrReconciliationIncomplete), errors.Is(err, prototypeexecution.ErrAnotherExecutionIneligible), errors.Is(err, featureapp.ErrPrototypeAnotherExecutionIneligible), errors.Is(err, featureapp.ErrPrototypeQAPacketInvalid), errors.Is(err, featureapp.ErrPrototypeQAEvidenceInvalid):
 		shared.Error(w, http.StatusConflict, "PROTOTYPE_CONFLICT", err.Error())
 	case errors.Is(err, prototypeexecution.ErrLaunchUncertain), errors.Is(err, prototypeexecution.ErrCleanupRequired), errors.Is(err, prototypeexecution.ErrLaunchAlreadyClaimed), errors.Is(err, prototypeexecution.ErrPreparationClaimed):
 		shared.Error(w, http.StatusConflict, "PROTOTYPE_CONFLICT", err.Error())
@@ -628,6 +663,11 @@ func MountWorkspaceRoutes(r chi.Router, handler *WorkspaceHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/reconcile", handler.ReconcilePrototype)
 	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/cancel", handler.CancelPrototype)
 	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/timeout", handler.TimeoutPrototype)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/cleanup", handler.ReconcilePrototypeCleanup)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/another-execution", handler.PrepareAnotherPrototypeExecution)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/qa-packets", handler.PreparePrototypeQAPacket)
+	r.Post("/feature-workspaces/{workspaceID}/prototype-qa-packets/{packetID}/evidence", handler.AdmitPrototypeQAEvidence)
+	r.Get("/feature-workspaces/{workspaceID}/prototype-runs/{runID}/wayfinder-evidence", handler.GetPrototypeWayfinderEvidence)
 }
 
 type prototypeOperationRequest struct {
@@ -689,4 +729,90 @@ func (a appAuthorityAdapter) CancelPrototypeExecution(ctx context.Context, in pr
 }
 func (a appAuthorityAdapter) SettlePrototypeTimeout(ctx context.Context, in prototypeexecution.OperationRequest) (prototypeexecution.Result, error) {
 	return a.service.SettlePrototypeTimeout(ctx, in)
+}
+func (a appAuthorityAdapter) ReconcilePrototypeCleanup(ctx context.Context, in prototypeexecution.CleanupRequest) (prototypeexecution.CleanupResult, error) {
+	return a.service.ReconcilePrototypeCleanup(ctx, in)
+}
+func (a appAuthorityAdapter) PrepareAnotherPrototypeExecution(ctx context.Context, in featureapp.PrepareAnotherPrototypeExecutionInput) (featureapp.PrototypeExecutionDetail, error) {
+	return a.service.PrepareAnotherPrototypeExecution(ctx, in)
+}
+func (a appAuthorityAdapter) PrepareQADiscoveryPacket(ctx context.Context, in featureapp.PrepareQADiscoveryPacketInput) (featureapp.PrototypeQAPacketDetail, error) {
+	return a.service.PrepareQADiscoveryPacket(ctx, in)
+}
+func (a appAuthorityAdapter) AdmitOperatorQAEvidence(ctx context.Context, in featureapp.AdmitOperatorQAEvidenceInput) (featureapp.PrototypeQAPacketDetail, error) {
+	return a.service.AdmitOperatorQAEvidence(ctx, in)
+}
+func (a appAuthorityAdapter) ReadPrototypeEvidenceForWayfinder(ctx context.Context, workspaceID, runID string) (featureapp.PrototypeWayfinderEvidenceView, error) {
+	return a.service.ReadPrototypeEvidenceForWayfinder(ctx, workspaceID, runID)
+}
+
+func (h *WorkspaceHandler) ReconcilePrototypeCleanup(w http.ResponseWriter, r *http.Request) {
+	var q cleanupRequest
+	if !decodeStrict(r, &q) {
+		badRequest(w, "Invalid prototype cleanup request")
+		return
+	}
+	v, err := h.authority.ReconcilePrototypeCleanup(r.Context(), prototypeexecution.CleanupRequest{WorkspaceID: workspaceID(r), RunID: strings.TrimSpace(chi.URLParam(r, "runID")), ExpectedRunVersion: q.ExpectedRunVersion, MutationIdentity: q.MutationIdentity, TriggerKind: "explicit"})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{"prototypeCleanup": map[string]any{"prototypeExecution": prototypeResultDTO(v.Result), "reconciliation": v.Reconciliation}})
+}
+func (h *WorkspaceHandler) PrepareAnotherPrototypeExecution(w http.ResponseWriter, r *http.Request) {
+	var q anotherExecutionRequest
+	if !decodeStrict(r, &q) {
+		badRequest(w, "Invalid another prototype execution request")
+		return
+	}
+	v, err := h.authority.PrepareAnotherPrototypeExecution(r.Context(), featureapp.PrepareAnotherPrototypeExecutionInput{WorkspaceID: workspaceID(r), PriorRunID: strings.TrimSpace(chi.URLParam(r, "runID")), ExpectedPriorRunVersion: q.ExpectedPriorRunVersion, MutationIdentity: q.MutationIdentity, OperatorConfirmationEvidence: q.OperatorConfirmationEvidence})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"prototypeExecution": prototypeDetailDTO(v)})
+}
+func (h *WorkspaceHandler) PreparePrototypeQAPacket(w http.ResponseWriter, r *http.Request) {
+	var q qaPacketRequest
+	if !decodeStrict(r, &q) {
+		badRequest(w, "Invalid prototype QA packet request")
+		return
+	}
+	v, err := h.authority.PrepareQADiscoveryPacket(r.Context(), featureapp.PrepareQADiscoveryPacketInput{WorkspaceID: workspaceID(r), RunID: strings.TrimSpace(chi.URLParam(r, "runID")), ExpectedRunVersion: q.ExpectedRunVersion, MutationIdentity: q.MutationIdentity, OperatorPrompt: q.OperatorPrompt, ValidationInstructions: q.ValidationInstructions})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"qaPacket": qaPacketDetailDTO(v)})
+}
+func (h *WorkspaceHandler) AdmitPrototypeQAEvidence(w http.ResponseWriter, r *http.Request) {
+	var q qaEvidenceRequest
+	if !decodeStrict(r, &q) {
+		badRequest(w, "Invalid prototype QA evidence request")
+		return
+	}
+	evidence := make([]featureapp.OperatorQAEvidenceInput, len(q.Evidence))
+	for i, item := range q.Evidence {
+		evidence[i] = featureapp.OperatorQAEvidenceInput{SemanticRole: item.SemanticRole, MediaType: item.MediaType, Content: item.Content, SHA256: item.SHA256}
+	}
+	v, err := h.authority.AdmitOperatorQAEvidence(r.Context(), featureapp.AdmitOperatorQAEvidenceInput{WorkspaceID: workspaceID(r), QAPacketID: strings.TrimSpace(chi.URLParam(r, "packetID")), MutationIdentity: q.MutationIdentity, OperatorConfirmationEvidence: q.OperatorConfirmationEvidence, Evidence: evidence})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"qaPacket": qaPacketDetailDTO(v)})
+}
+func (h *WorkspaceHandler) GetPrototypeWayfinderEvidence(w http.ResponseWriter, r *http.Request) {
+	v, err := h.authority.ReadPrototypeEvidenceForWayfinder(r.Context(), workspaceID(r), strings.TrimSpace(chi.URLParam(r, "runID")))
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{"wayfinderEvidence": v})
+}
+func prototypeDetailDTO(v featureapp.PrototypeExecutionDetail) map[string]any {
+	return map[string]any{"run": v.Run, "runtime": v.Runtime, "target": v.Target, "lease": v.Lease, "evidenceBatches": v.EvidenceBatches, "finalResult": v.FinalResult, "evidence": v.Evidence}
+}
+func qaPacketDetailDTO(v featureapp.PrototypeQAPacketDetail) map[string]any {
+	return map[string]any{"packet": v.Packet, "members": v.Members, "admission": v.Admission, "evidence": v.Evidence}
 }

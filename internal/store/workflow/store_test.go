@@ -88,8 +88,9 @@ ORDER BY name`)
 		"feature_workspace_prototype_lifecycle_transitions",
 		"feature_workspace_prototype_proposals",
 		"feature_workspace_prototype_qa_admissions",
-		"feature_workspace_prototype_qa_associations",
+		"feature_workspace_prototype_qa_evidence",
 		"feature_workspace_prototype_qa_packet_members",
+		"feature_workspace_prototype_qa_packets",
 		"feature_workspace_prototype_result_members",
 		"feature_workspace_prototype_results",
 		"feature_workspace_prototype_runs",
@@ -720,5 +721,133 @@ func TestPrototypeRuntimeStateMutations(t *testing.T) {
 	}
 	if targetStatus != "released" || leaseStatus != "released" {
 		t.Fatalf("resource release not durable: target=%s lease=%s", targetStatus, leaseStatus)
+	}
+}
+
+func TestPrototypePart3MigrationAndConstraints(t *testing.T) {
+	store, _ := openWorkflowTestStore(t)
+	ctx := context.Background()
+	for _, table := range []string{
+		"feature_workspace_prototype_cleanup_reconciliations",
+		"feature_workspace_prototype_qa_packets",
+		"feature_workspace_prototype_qa_packet_members",
+		"feature_workspace_prototype_qa_evidence",
+		"feature_workspace_prototype_qa_admissions",
+	} {
+		var count int
+		if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("Part 3 table %s count=%d err=%v", table, count, err)
+		}
+	}
+	var legacy int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='feature_workspace_prototype_qa_associations'`).Scan(&legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy != 0 {
+		t.Fatal("legacy reconciliation-owned QA association table remains")
+	}
+	for _, trigger := range []string{"prototype_qa_packet_immutable", "prototype_qa_packet_member_ownership_guard", "prototype_qa_evidence_ownership_guard", "prototype_qa_admission_ownership_guard"} {
+		var definition string
+		if err := store.DB().QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?`, trigger).Scan(&definition); err != nil || strings.TrimSpace(definition) == "" {
+			t.Fatalf("Part 3 trigger %s missing: %v", trigger, err)
+		}
+	}
+	var guard string
+	if err := store.DB().QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='trigger' AND name='prototype_qa_packet_member_ownership_guard'`).Scan(&guard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(guard, "a.sha256=NEW.sha256") || !strings.Contains(guard, "a.size_bytes=NEW.size_bytes") {
+		t.Fatalf("packet member guard does not bind exact artifact facts: %s", guard)
+	}
+}
+
+func TestPrototypeCleanupStoreMutations(t *testing.T) {
+	ctx := context.Background()
+	store, run, _, _, _ := prototypeRuntimeFixture(t)
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.CreatePrototypeCleanupReconciliation(ctx, PrototypeCleanupReconciliation{
+			RunRowID: run.ID, ExpectedRunVersion: run.Version, MutationIdentity: "store-reconciliation", TriggerKind: "explicit",
+			ObservedRunState: "approved", ProcessOwnershipStatus: "pending", EvidenceSettlementStatus: "pending", WorktreeStatus: "pending",
+			EphemeralTargetStatus: "pending", PrototypeLeaseStatus: "pending", ResultingRunState: "cleanup_required",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reconciliations, err := store.ListPrototypeCleanupReconciliations(ctx, run.PrototypeRunID)
+	if err != nil || len(reconciliations) != 1 {
+		t.Fatalf("reconciliations=%#v err=%v", reconciliations, err)
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		if _, err := tx.FailPrototypeCleanupObligation(ctx, run.ID, "process_ownership", "ownership mismatch"); err != nil {
+			return err
+		}
+		_, err := tx.CompletePrototypeCleanupObligation(ctx, run.ID, "process_ownership")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	obligations, err := store.ListPrototypeCleanupObligationsByRunID(ctx, run.PrototypeRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, obligation := range obligations {
+		if obligation.ObligationKind == "process_ownership" && obligation.Status != "complete" {
+			t.Fatalf("process obligation=%#v", obligation)
+		}
+	}
+}
+
+func TestPrototypeQAPersistence(t *testing.T) {
+	ctx := context.Background()
+	store, run, _, _, _ := prototypeRuntimeFixture(t)
+	var artifact, evidenceArtifact DiscoveryArtifact
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		artifact, err = tx.CreateDiscoveryArtifact(ctx, DiscoveryArtifact{DiscoveryArtifactID: "discovery-artifact-qa-result", WorkspaceRowID: 1, RelativePath: "feature-discovery/workspace-runtime/qa/result.json", SHA256: strings.Repeat("a", 64), MediaType: "application/json", SizeBytes: 12})
+		if err != nil {
+			return err
+		}
+		evidenceArtifact, err = tx.CreateDiscoveryArtifact(ctx, DiscoveryArtifact{DiscoveryArtifactID: "discovery-artifact-qa-evidence", WorkspaceRowID: 1, RelativePath: "feature-discovery/workspace-runtime/qa/evidence.txt", SHA256: strings.Repeat("b", 64), MediaType: "text/plain", SizeBytes: 7})
+		if err != nil {
+			return err
+		}
+		packet, err := tx.CreatePrototypeQAPacket(ctx, PrototypeQAPacket{WorkspaceRowID: 1, RunRowID: run.ID, MutationIdentity: "store-qa-packet", ExpectedRunVersion: run.Version, MemberCount: 1, TotalBytes: 12})
+		if err != nil {
+			return err
+		}
+		if _, err = tx.CreatePrototypeQAPacketMember(ctx, PrototypeQAPacketMember{QAPacketRowID: packet.ID, Sequence: 1, MemberKind: "prototype_result", ArtifactRowID: artifact.ID, SHA256: artifact.SHA256, MediaType: artifact.MediaType, SizeBytes: artifact.SizeBytes}); err != nil {
+			return err
+		}
+		if _, err = tx.CreatePrototypeQAEvidence(ctx, PrototypeQAEvidence{QAPacketRowID: packet.ID, Sequence: 1, SemanticRole: "operator-note", ArtifactRowID: evidenceArtifact.ID, SHA256: evidenceArtifact.SHA256, MediaType: evidenceArtifact.MediaType, SizeBytes: evidenceArtifact.SizeBytes}); err != nil {
+			return err
+		}
+		admission, err := tx.CreatePrototypeQAAdmission(ctx, PrototypeQAAdmission{QAPacketRowID: packet.ID, MutationIdentity: "store-qa-admission", OperatorConfirmationEvidence: "confirmed", AdmittedMemberCount: 1, AdmittedTotalBytes: evidenceArtifact.SizeBytes})
+		if err != nil {
+			return err
+		}
+		if admission.QAAdmissionID == "" {
+			return errors.New("admission ID was not generated")
+		}
+		_, err = tx.MarkPrototypeQAPacketAdmitted(ctx, packet.QAPacketID, "store-qa-admission", "2026-08-05T00:00:00Z")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	packet, err := store.GetPrototypeQAPacketByMutationIdentity(ctx, "store-qa-packet")
+	if err != nil || packet.Status != "admitted" {
+		t.Fatalf("packet=%#v err=%v", packet, err)
+	}
+	members, err := store.ListPrototypeQAPacketMembers(ctx, packet.QAPacketID)
+	if err != nil || len(members) != 1 || members[0].SHA256 != strings.Repeat("a", 64) {
+		t.Fatalf("members=%#v err=%v", members, err)
+	}
+	evidence, err := store.ListPrototypeQAEvidenceByPacketID(ctx, packet.QAPacketID)
+	if err != nil || len(evidence) != 1 || evidence[0].SemanticRole != "operator-note" {
+		t.Fatalf("evidence=%#v err=%v", evidence, err)
+	}
+	admission, err := store.GetPrototypeQAAdmissionByPacketID(ctx, packet.QAPacketID)
+	if err != nil || admission.MutationIdentity != "store-qa-admission" {
+		t.Fatalf("admission=%#v err=%v", admission, err)
 	}
 }

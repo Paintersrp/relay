@@ -15,6 +15,7 @@ import (
 	"relay/internal/pipeline"
 	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testsupport/workflowfixture"
 )
 
 func prototypeEnvelopeFixture() (workflowstore.PrototypeRun, workflowstore.PrototypeAuthorization, workflowstore.PrototypeProposal, []byte) {
@@ -25,11 +26,7 @@ func prototypeEnvelopeFixture() (workflowstore.PrototypeRun, workflowstore.Proto
 }
 
 func TestPrototypeLaunchProtocol(t *testing.T) {
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.db"), filepath.Join(t.TempDir(), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	root := filepath.Join(t.TempDir(), "prototype")
 	p, err := NewPrototypeExecution(store, "owner-test", root)
 	if err != nil {
@@ -47,11 +44,7 @@ func TestPrototypeLaunchProtocol(t *testing.T) {
 }
 
 func TestPrototypeReconciliation(t *testing.T) {
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.db"), filepath.Join(t.TempDir(), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	p, err := NewPrototypeExecution(store, "owner", filepath.Join(t.TempDir(), "runtime"))
 	if err != nil {
 		t.Fatal(err)
@@ -71,11 +64,7 @@ func TestPrototypeReconciliation(t *testing.T) {
 }
 
 func TestPrototypeCancellationAndTimeout(t *testing.T) {
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.db"), filepath.Join(t.TempDir(), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	p, err := NewPrototypeExecution(store, "owner", filepath.Join(t.TempDir(), "runtime"))
 	if err != nil {
 		t.Fatal(err)
@@ -152,11 +141,7 @@ func TestPrototypeEvidenceSafety(t *testing.T) {
 }
 
 func TestPrototypePart2Boundary(t *testing.T) {
-	store, err := workflowstore.Open(filepath.Join(t.TempDir(), "workflow.db"), filepath.Join(t.TempDir(), "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+	store := workflowfixture.Open(t, workflowstore.Open)
 	p, err := NewPrototypeExecution(store, "owner", filepath.Join(t.TempDir(), "runtime"))
 	if err != nil {
 		t.Fatal(err)
@@ -231,11 +216,7 @@ func prototypeRegressionFixture(t *testing.T, running bool, obligations string) 
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
-	store, err := workflowstore.Open(filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := workflowfixture.OpenAt(t, filepath.Join(root, "workflow.db"), filepath.Join(root, "artifacts"), workflowstore.Open)
 
 	db := store.DB()
 	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {

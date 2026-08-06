@@ -42,8 +42,8 @@ func TestResolveWorkflowRunStage(t *testing.T) {
 }
 
 func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
-	store, service := openWorkflowRouteTestStore(t)
-	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", &sourcevault.Manager{})
+	store, service, vaults := openWorkflowRouteTestStore(t)
+	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", vaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +89,8 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 // retired: the workflow runtime mounts no cutover endpoint and no route capable
 // of creating or changing a Plan.
 func TestWorkflowRuntimeMountsNoCutoverOrPlanWriteRoutes(t *testing.T) {
-	store, _ := openWorkflowRouteTestStore(t)
-	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", &sourcevault.Manager{})
+	store, _, vaults := openWorkflowRouteTestStore(t)
+	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", vaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestWorkflowRuntimeMountsNoCutoverOrPlanWriteRoutes(t *testing.T) {
 }
 
 func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
-	store, service := openWorkflowRouteTestStore(t)
+	store, service, vaults := openWorkflowRouteTestStore(t)
 	var created workflowstore.Run
 	err := store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
 		var createErr error
@@ -138,7 +138,7 @@ func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 	}
 
 	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000/")
-	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", &sourcevault.Manager{})
+	handler, err := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test", vaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,19 @@ func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
 	_ = service
 }
 
-func openWorkflowRouteTestStore(t *testing.T) (*workflowstore.Store, *workflowapp.Service) {
+type routeTestSourceVaults struct {
+	root string
+}
+
+func (v routeTestSourceVaults) Root() string {
+	return v.root
+}
+
+func (routeTestSourceVaults) ReadPath(context.Context, sourcevault.ReadPathRequest) (sourcevault.ReadPathResult, error) {
+	return sourcevault.ReadPathResult{}, &sourcevault.Error{Code: sourcevault.CodeVaultUnavailable}
+}
+
+func openWorkflowRouteTestStore(t *testing.T) (*workflowstore.Store, *workflowapp.Service, routeTestSourceVaults) {
 	t.Helper()
 	store := workflowfixture.Open(t, workflowstore.Open)
 	root := filepath.Dir(store.ArtifactStore().Root())
@@ -169,5 +181,5 @@ func openWorkflowRouteTestStore(t *testing.T) (*workflowstore.Store, *workflowap
 	if _, err := service.RegisterRepository(context.Background(), "relay", repoPath); err != nil {
 		t.Fatal(err)
 	}
-	return store, service
+	return store, service, routeTestSourceVaults{root: filepath.Join(root, "source-vaults")}
 }

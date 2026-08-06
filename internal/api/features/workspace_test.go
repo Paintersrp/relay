@@ -46,9 +46,14 @@ func (f *fakeWayfinder) RouteWorkspace(context.Context, wayfinder.RouteWorkspace
 }
 
 type fakeAuthority struct {
-	revisions []featureapp.AuthorityRevisionDetail
-	err       error
-	prototype prototypeexecution.Result
+	revisions                            []featureapp.AuthorityRevisionDetail
+	err                                  error
+	prototype                            prototypeexecution.Result
+	cleanupInput                         prototypeexecution.CleanupRequest
+	anotherInput                         featureapp.PrepareAnotherPrototypeExecutionInput
+	packetInput                          featureapp.PrepareQADiscoveryPacketInput
+	evidenceInput                        featureapp.AdmitOperatorQAEvidenceInput
+	wayfinderWorkspaceID, wayfinderRunID string
 }
 
 func (f *fakeAuthority) ReadAuthority(context.Context, string) ([]featureapp.AuthorityRevisionDetail, error) {
@@ -237,5 +242,70 @@ func TestPrototypeRuntimeRoutes(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid launch status=%d body=%s", response.Code, response.Body.String())
 		}
+	}
+}
+
+func (f *fakeAuthority) ReconcilePrototypeCleanup(_ context.Context, input prototypeexecution.CleanupRequest) (prototypeexecution.CleanupResult, error) {
+	f.cleanupInput = input
+	return prototypeexecution.CleanupResult{Result: f.prototype}, f.err
+}
+func (f *fakeAuthority) PrepareAnotherPrototypeExecution(_ context.Context, input featureapp.PrepareAnotherPrototypeExecutionInput) (featureapp.PrototypeExecutionDetail, error) {
+	f.anotherInput = input
+	return featureapp.PrototypeExecutionDetail{}, f.err
+}
+func (f *fakeAuthority) PrepareQADiscoveryPacket(_ context.Context, input featureapp.PrepareQADiscoveryPacketInput) (featureapp.PrototypeQAPacketDetail, error) {
+	f.packetInput = input
+	return featureapp.PrototypeQAPacketDetail{}, f.err
+}
+func (f *fakeAuthority) AdmitOperatorQAEvidence(_ context.Context, input featureapp.AdmitOperatorQAEvidenceInput) (featureapp.PrototypeQAPacketDetail, error) {
+	f.evidenceInput = input
+	return featureapp.PrototypeQAPacketDetail{}, f.err
+}
+func (f *fakeAuthority) ReadPrototypeEvidenceForWayfinder(_ context.Context, workspaceID, runID string) (featureapp.PrototypeWayfinderEvidenceView, error) {
+	f.wayfinderWorkspaceID, f.wayfinderRunID = workspaceID, runID
+	return featureapp.PrototypeWayfinderEvidenceView{WorkspaceID: workspaceID, RunID: runID}, f.err
+}
+
+func TestPrototypePart3RoutesForwardBoundedInputsAndDTOs(t *testing.T) {
+	authority := &fakeAuthority{prototype: prototypeexecution.Result{Run: workflowstore.PrototypeRun{PrototypeRunID: "run-api", LifecycleState: "closed", Version: 4}}}
+	router := workspaceRouter(&fakeWayfinder{}, authority, &fakeCompletion{})
+	cases := []struct {
+		name, method, path, body string
+		want                     int
+	}{
+		{"cleanup", http.MethodPost, "/feature-workspaces/workspace-api/prototype-runs/run-api/cleanup", `{"expectedRunVersion":4,"mutationIdentity":"cleanup-api"}`, http.StatusOK},
+		{"another execution", http.MethodPost, "/feature-workspaces/workspace-api/prototype-runs/run-api/another-execution", `{"expectedPriorRunVersion":4,"mutationIdentity":"another-api","operatorConfirmationEvidence":"confirmed"}`, http.StatusCreated},
+		{"QA packet", http.MethodPost, "/feature-workspaces/workspace-api/prototype-runs/run-api/qa-packets", `{"expectedRunVersion":4,"mutationIdentity":"packet-api","operatorPrompt":"review","validationInstructions":["confirm"]}`, http.StatusCreated},
+		{"QA evidence", http.MethodPost, "/feature-workspaces/workspace-api/prototype-qa-packets/packet-api/evidence", `{"mutationIdentity":"evidence-api","operatorConfirmationEvidence":"confirmed","evidence":[{"semanticRole":"note","mediaType":"text/plain","content":"c2FmZQ==","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`, http.StatusCreated},
+		{"Wayfinder evidence", http.MethodGet, "/feature-workspaces/workspace-api/prototype-runs/run-api/wayfinder-evidence", "", http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
+			if response.Code != tc.want {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if authority.cleanupInput.TriggerKind != "explicit" || authority.cleanupInput.WorkspaceID != "workspace-api" || authority.cleanupInput.RunID != "run-api" {
+		t.Fatalf("cleanup input=%#v", authority.cleanupInput)
+	}
+	if authority.anotherInput.PriorRunID != "run-api" || authority.anotherInput.MutationIdentity != "another-api" {
+		t.Fatalf("another input=%#v", authority.anotherInput)
+	}
+	if authority.packetInput.RunID != "run-api" || authority.packetInput.OperatorPrompt != "review" || len(authority.packetInput.ValidationInstructions) != 1 {
+		t.Fatalf("packet input=%#v", authority.packetInput)
+	}
+	if authority.evidenceInput.QAPacketID != "packet-api" || len(authority.evidenceInput.Evidence) != 1 || string(authority.evidenceInput.Evidence[0].Content) != "safe" {
+		t.Fatalf("evidence input=%#v", authority.evidenceInput)
+	}
+	if authority.wayfinderWorkspaceID != "workspace-api" || authority.wayfinderRunID != "run-api" {
+		t.Fatalf("Wayfinder input=%q/%q", authority.wayfinderWorkspaceID, authority.wayfinderRunID)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/prototype-runs/run-api/qa-packets", strings.NewReader(`{"expectedRunVersion":4,"mutationIdentity":"packet-api","operatorPrompt":"review","validationInstructions":[],"extra":true}`)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown QA packet field status=%d body=%s", response.Code, response.Body.String())
 	}
 }

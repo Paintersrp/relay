@@ -189,7 +189,7 @@ func (p *PrototypeExecution) Launch(ctx context.Context, in prototypeexecution.L
 	runtimeRoot := filepath.Join(p.root, in.RunID)
 	worktree := filepath.Join(runtimeRoot, "worktree")
 	deadline := p.clock().Add(timeout)
-	runtime := workflowstore.PrototypeRuntime{RuntimeID: runtimeID, AuthorizedCommit: authorization.BaseCommit, AuthorizedTree: authorization.SourceTree, RuntimeRootPath: runtimeRoot, WorktreePath: worktree, EphemeralTargetKey: targetKey, LeaseToken: lease, BackgroundContextID: "prototype-context-" + runtimeID, DeadlineAt: deadline.UTC().Format(time.RFC3339Nano)}
+	runtime := workflowstore.PrototypeRuntime{RuntimeID: runtimeID, AuthorizedCommit: authorization.BaseCommit, AuthorizedTree: authorization.SourceTree, RuntimeRootPath: runtimeRoot, WorktreePath: worktree, EphemeralTargetKey: targetKey, LeaseToken: lease, BackgroundContextID: "prototype-context-" + runtimeID, InvocationRelativePath: ".relay/prototype/invocation.json", ResultRelativePath: ".relay/prototype/result.json", ExportRelativePath: ".relay/prototype/export", DeadlineAt: deadline.UTC().Format(time.RFC3339Nano)}
 	target := workflowstore.PrototypeTarget{TargetID: targetID, TargetKey: targetKey, WorktreePath: worktree, AuthorizedCommit: authorization.BaseCommit, AuthorizedTree: authorization.SourceTree}
 	leaseRow := workflowstore.PrototypeLease{LeaseToken: lease, EphemeralTargetKey: targetKey, OwnerInstanceID: p.ownerInstanceID}
 	_, runtime, target, leaseRow, err = p.reserve(ctx, in.RunID, in.ExpectedRunVersion, runtime, target, leaseRow)
