@@ -20,6 +20,98 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
+func TestWayfinderDiscoveryCreatePacketWithInlineText(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store := coldStartStore(t, root, false)
+	t.Cleanup(func() { _ = store.Close() })
+
+	repositoryPath := filepath.Join(root, sourceSnapshotRepository)
+	newSourceSnapshotRepository(t, repositoryPath, map[string]string{"README.md": sourceSnapshotReadmeA})
+	repositories, err := workflowrepos.NewRegistry(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerSourceSnapshotRepository(t, ctx, store, repositories, sourceSnapshotRepository, repositoryPath)
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		project, err := tx.CreateProject(ctx, workflowstore.CreateProjectParams{
+			ProjectID:   "project-discovery-inline-packet",
+			Name:        "Discovery inline packet",
+			Description: "route-level packet creation",
+		})
+		if err != nil {
+			return err
+		}
+		_, err = tx.AttachProjectRepository(ctx, project.ID, sourceSnapshotRepository)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := mcpcomposition.Open(ctx, filepath.Join(root, "source-vault"), store, []byte("wayfinder-discovery-inline-packet-cursor-key"), fileacquisition.FetchFunc(func(context.Context, fileacquisition.FileParameter) (fileacquisition.FetchedFile, error) {
+		return fileacquisition.FetchedFile{}, errors.New("inline text packet has no file inputs")
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleHandler, err := NewOperationPacketLifecycleHandler(policy.Lifecycle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wayfinder, err := appwayfinder.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects, err := workflowprojects.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := coldStartRoute(t, routes, "wayfinder-discovery.v1")
+	dispatchers, err := NewRouteDispatchers(routes, RouteDispatchServices{
+		Projects: projects, Packets: policy.Packets, Lifecycle: lifecycleHandler, Source: policy.Source, Wayfinder: wayfinder,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlers, err := BuildRouteHandlers(manifest, dispatchers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServerForRoute(nil, manifest, handlers)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	text := "discovery packet evidence"
+	digest := coldStartDigest([]byte(text))
+	response := coldStartCall(t, server, "create_operation_packet", map[string]any{
+		"surface_contract": "wayfinder-discovery.v1",
+		"mutation_id":      "project-discovery-inline-packet",
+		"operation_id":     "wayfinder.discovery",
+		"project_id":       "project-discovery-inline-packet",
+		"inputs": []any{map[string]any{
+			"input_name": "resolution_input", "source_kind": "inline_text", "display_name": "evidence.txt",
+			"media_type": "text/plain", "expected_sha256": digest, "source": map[string]any{"text": text},
+		}},
+		"workflow_references": []any{},
+		"attestations": []any{
+			map[string]any{"kind": "exact_evidence", "input_name": "resolution_input", "subject_sha256": digest, "complete": true},
+			map[string]any{"kind": "sensitive_data_clearance", "input_name": "resolution_input", "clearance": map[string]any{
+				"policy_version": "relay.canonical-artifact-sensitive-data.v1", "confirmed": true, "subject_sha256": digest,
+				"declaration": map[string]any{"password": false, "api_key_or_access_token": false, "refresh_token_or_session_material": false, "cookie_or_authorization_header": false, "private_or_ssh_key": false, "credential": false, "complete_secret_bearing_environment_file": false, "avoidable_signed_secret_bearing_url": false},
+			}},
+		},
+	})
+	var created CreateOperationPacketResult
+	coldStartDecode(t, response, &created)
+	if created.Packet.Summary.PacketID == "" || created.Packet.Summary.SurfaceContract != "wayfinder-discovery.v1" || created.Packet.Summary.OperationID != "wayfinder.discovery" || created.Packet.Summary.ProjectID != "project-discovery-inline-packet" || created.Packet.Summary.ReadinessState != "ready" || created.Packet.Summary.LifecycleState != "active" {
+		t.Fatalf("created packet summary = %#v", created.Packet.Summary)
+	}
+}
+
 func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -147,7 +239,7 @@ func TestWayfinderDiscoveryColdStartJourney(t *testing.T) {
 	if packetID == "" {
 		t.Fatal("create response did not contain a direct packet id")
 	}
-	if created.Packet.Summary.SurfaceContract != sourceSnapshotSurface || created.Packet.Summary.OperationID != sourceSnapshotOperation || created.Packet.Summary.ProjectID != project.ProjectID {
+	if created.Packet.Summary.SurfaceContract != sourceSnapshotSurface || created.Packet.Summary.OperationID != sourceSnapshotOperation || created.Packet.Summary.ProjectID != project.ProjectID || created.Packet.Summary.ReadinessState != "ready" || created.Packet.Summary.LifecycleState != "active" {
 		t.Fatalf("created packet summary = %#v", created.Packet.Summary)
 	}
 

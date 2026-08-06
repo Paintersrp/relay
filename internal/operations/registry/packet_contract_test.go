@@ -96,7 +96,18 @@ func TestWayfinderDiscoveryCreatePacketSchemaRequiresInputSemanticMetadata(t *te
 	if !ok || len(binding.OneOf) == 0 {
 		t.Fatal("create operation packet schema is missing InputBinding")
 	}
+	sourceKinds := make(map[string]bool, len(binding.OneOf))
 	for _, branch := range binding.OneOf {
+		sourceKind, ok := branch.Properties["source_kind"].(map[string]any)
+		if !ok {
+			t.Fatal("InputBinding source_kind is missing")
+		}
+		kind, ok := sourceKind["const"].(string)
+		if !ok {
+			t.Fatal("InputBinding source_kind does not have a const")
+		}
+		sourceKinds[kind] = true
+
 		for _, field := range []string{"display_name", "media_type"} {
 			if _, ok := branch.Properties[field]; !ok {
 				t.Fatalf("InputBinding does not expose %s", field)
@@ -109,5 +120,13 @@ func TestWayfinderDiscoveryCreatePacketSchemaRequiresInputSemanticMetadata(t *te
 				t.Fatalf("InputBinding does not require %s", field)
 			}
 		}
+	}
+	for _, kind := range []string{"uploaded_file", "relay_artifact", "inline_text", "workflow_record", "committed_source"} {
+		if !sourceKinds[kind] {
+			t.Fatalf("InputBinding is missing supported source_kind %q", kind)
+		}
+	}
+	if len(sourceKinds) != 5 {
+		t.Fatalf("InputBinding source kinds = %#v", sourceKinds)
 	}
 }

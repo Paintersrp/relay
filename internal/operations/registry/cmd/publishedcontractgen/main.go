@@ -447,10 +447,35 @@ func inputBindingSchema() map[string]any {
 		properties["source"] = source
 		return objectSchema([]string{"input_name", "source_kind", "display_name", "media_type", "expected_sha256", "source"}, properties)
 	}
+	recordBranch := func(kind string, required []string, properties map[string]any) map[string]any {
+		properties["kind"] = map[string]any{"type": "string", "const": kind}
+		return objectSchema(append([]string{"kind"}, required...), properties)
+	}
+	workflowRecord := func() map[string]any {
+		return map[string]any{"oneOf": []any{
+			recordBranch("plan_artifact", []string{"plan_id", "artifact_id", "expected_sha256"}, map[string]any{"plan_id": stringField(255), "artifact_id": stringField(255), "expected_sha256": base["expected_sha256"]}),
+			recordBranch("pass_record", []string{"plan_id", "pass_id"}, map[string]any{"plan_id": stringField(255), "pass_id": stringField(255)}),
+			recordBranch("run_execution_spec", []string{"run_id", "artifact_id", "expected_sha256"}, map[string]any{"run_id": stringField(255), "artifact_id": stringField(255), "expected_sha256": base["expected_sha256"]}),
+			recordBranch("audit_packet", []string{"run_id", "audit_packet_id", "expected_sha256"}, map[string]any{"run_id": stringField(255), "audit_packet_id": stringField(255), "expected_sha256": base["expected_sha256"]}),
+			recordBranch("audit_decision", []string{"run_id", "audit_decision_id"}, map[string]any{"run_id": stringField(255), "audit_decision_id": stringField(255)}),
+		}}
+	}
+	pathSelector := map[string]any{"oneOf": []any{
+		objectSchema([]string{"path_bytes_base64"}, map[string]any{"path_bytes_base64": map[string]any{"type": "string", "minLength": 1, "maxLength": 10924}}),
+		objectSchema([]string{"path_id"}, map[string]any{"path_id": base["expected_sha256"]}),
+	}}
+	committedSource := objectSchema([]string{"repository_key", "revision", "path", "expected_blob_oid"}, map[string]any{
+		"repository_key":    stringField(255),
+		"revision":          map[string]any{"type": "string", "minLength": 1, "maxLength": 128},
+		"path":              pathSelector,
+		"expected_blob_oid": map[string]any{"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+	})
 	return map[string]any{"oneOf": []any{
 		branch("uploaded_file", objectSchema([]string{"file_index"}, map[string]any{"file_index": map[string]any{"type": "integer", "minimum": 0, "maximum": 63}})),
 		branch("relay_artifact", objectSchema([]string{"artifact_id"}, map[string]any{"artifact_id": stringField(255)})),
-		branch("inline_text", objectSchema([]string{"text"}, map[string]any{"text": map[string]any{"type": "string", "maxLength": 262144}})),
+		branch("inline_text", objectSchema([]string{"text"}, map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 262144}})),
+		branch("workflow_record", objectSchema([]string{"workflow_record"}, map[string]any{"workflow_record": workflowRecord()})),
+		branch("committed_source", committedSource),
 	}}
 }
 func objectSchema(required []string, properties map[string]any) map[string]any {
