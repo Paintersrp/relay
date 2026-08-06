@@ -158,3 +158,6 @@ func NewPrototypeResultID() string            { return "prototype-result-" + uui
 func NewPrototypeEvidenceMemberID() string    { return "prototype-evidence-" + uuid.NewString() }
 func NewPrototypeResultMemberID() string      { return "prototype-result-member-" + uuid.NewString() }
 func NewPrototypeCleanupObligationID() string { return "prototype-cleanup-" + uuid.NewString() }
+func NewPrototypeReconciliationID() string    { return "prototype-reconciliation-" + uuid.NewString() }
+func NewPrototypeQAPacketMemberID() string    { return "prototype-qa-packet-member-" + uuid.NewString() }
+func NewPrototypeQAAdmissionID() string       { return "prototype-qa-admission-" + uuid.NewString() }

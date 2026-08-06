@@ -80,13 +80,16 @@ ORDER BY name`)
 		"feature_workspace_prototype_approvals",
 		"feature_workspace_prototype_authorizations",
 		"feature_workspace_prototype_cleanup_obligations",
+		"feature_workspace_prototype_cleanup_reconciliations",
 		"feature_workspace_prototype_evidence_import_batches",
 		"feature_workspace_prototype_evidence_members",
 		"feature_workspace_prototype_launch_claims",
 		"feature_workspace_prototype_leases",
 		"feature_workspace_prototype_lifecycle_transitions",
 		"feature_workspace_prototype_proposals",
+		"feature_workspace_prototype_qa_admissions",
 		"feature_workspace_prototype_qa_associations",
+		"feature_workspace_prototype_qa_packet_members",
 		"feature_workspace_prototype_result_members",
 		"feature_workspace_prototype_results",
 		"feature_workspace_prototype_runs",
@@ -543,11 +546,25 @@ func prototypeRuntimeFixture(t *testing.T) (*Store, PrototypeRun, PrototypeRunti
 		t.Fatal(err)
 	}
 	triggerRows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'prototype_%'`)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var triggers []string
-	for triggerRows.Next() { var name string; if err := triggerRows.Scan(&name); err != nil { t.Fatal(err) }; triggers = append(triggers, name) }
-	if err := triggerRows.Close(); err != nil { t.Fatal(err) }
-	for _, name := range triggers { if _, err := db.Exec(`DROP TRIGGER ` + name); err != nil { t.Fatal(err) } }
+	for triggerRows.Next() {
+		var name string
+		if err := triggerRows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		triggers = append(triggers, name)
+	}
+	if err := triggerRows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range triggers {
+		if _, err := db.Exec(`DROP TRIGGER ` + name); err != nil {
+			t.Fatal(err)
+		}
+	}
 	const commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const tree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	if _, err := db.Exec(`INSERT INTO feature_workspaces(id,workspace_id,project_row_id,feature_slug) VALUES(1,'workspace-runtime',1,'runtime'); INSERT INTO feature_workspace_discovery_tickets(id,discovery_ticket_id,workspace_row_id,ticket_key,subject) VALUES(1,'discovery-runtime',1,'runtime','runtime'); INSERT INTO feature_workspace_prototype_authorizations(id,authorization_id,proposal_row_id,proposed_run_id,workspace_row_id,workspace_version,work_item_row_id,work_item_version,discovery_revision_row_id,proposal_sha256,source_closure_row_id,source_commit,source_tree,repo_target,base_commit,adapter,model,variants_json,evidence_obligations_json,limits_json,invocation_artifact_row_id,invocation_sha256,invocation_size_bytes,invocation_media_type) VALUES(1,'prototype-authorization-runtime',1,'prototype-run-runtime',1,1,1,1,1,?,1,?,?, 'runtime-repo',?,'adapter','model','[]','[]','{}',1,?,1,'application/json'); INSERT INTO feature_workspace_prototype_runs(id,prototype_run_id,authorization_row_id,workspace_row_id,work_item_row_id,lifecycle_state,version) VALUES(1,'prototype-run-runtime',1,1,1,'approved',1)`, strings.Repeat("a", 64), commit, tree, commit, strings.Repeat("b", 64)); err != nil {
@@ -612,39 +629,96 @@ func TestPrototypeRuntimeStateMutations(t *testing.T) {
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		_, _, err := tx.MarkPrototypePreparationReady(ctx, run.PrototypeRunID, run.Version)
 		return err
-	}); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
 	run, err := store.GetPrototypeRun(ctx, run.PrototypeRunID)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var claim PrototypeLaunchClaim
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		var err error
 		run, claim, err = tx.ClaimPrototypeLaunch(ctx, run.PrototypeRunID, run.Version, claimID, "test")
 		return err
-	}); err != nil { t.Fatal(err) }
-	if run.LifecycleState != "preparing" || claim.LaunchClaimID != claimID { t.Fatalf("claim=%#v run=%#v", claim, run) }
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if run.LifecycleState != "preparing" || claim.LaunchClaimID != claimID {
+		t.Fatalf("claim=%#v run=%#v", claim, run)
+	}
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		got, _, err := tx.ClaimPrototypeLaunch(ctx, run.PrototypeRunID, run.Version, claimID, "test")
-		if err != nil || got.Version != run.Version { return errors.New("launch claim replay was not idempotent") }
+		if err != nil || got.Version != run.Version {
+			return errors.New("launch claim replay was not idempotent")
+		}
 		_, _, err = tx.ClaimPrototypeLaunch(ctx, run.PrototypeRunID, run.Version, "other", "test")
-		if !errors.Is(err, ErrPrototypeLaunchAlreadyClaimed) { return errors.New("conflicting claim was accepted") }
+		if !errors.Is(err, ErrPrototypeLaunchAlreadyClaimed) {
+			return errors.New("conflicting claim was accepted")
+		}
 		return nil
-	}); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
 	identity := `{"pid":42,"started_at":"2026-01-01T00:00:00Z","platform":"linux"}`
-	if err := store.WithTx(ctx, func(tx *Tx) error { var err error; run, runtime, err = tx.PersistPrototypeProcessIdentity(ctx, run.PrototypeRunID, run.Version, identity, "2026-01-01T00:00:00Z"); return err }); err != nil { t.Fatal(err) }
-	if run.LifecycleState != "running" || runtime.LaunchPhase != "identity_persisted" || !runtime.ProcessIdentity.Valid || runtime.ProcessIdentity.String != identity { t.Fatalf("identity persistence=%#v %#v", run, runtime) }
 	if err := store.WithTx(ctx, func(tx *Tx) error {
-		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-one"); err != nil { return err }
-		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-one"); err != nil { return err }
-		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-two"); !errors.Is(err, ErrPrototypeMutationConflict) { return errors.New("cancel conflict not rejected") }
-		if _, _, err := tx.ClaimPrototypeTimeout(ctx, run.PrototypeRunID, run.Version, "timeout-one"); err != nil { return err }
-		if _, _, err := tx.ClaimPrototypeTimeout(ctx, run.PrototypeRunID, run.Version, "timeout-two"); !errors.Is(err, ErrPrototypeMutationConflict) { return errors.New("timeout conflict not rejected") }
+		var err error
+		run, runtime, err = tx.PersistPrototypeProcessIdentity(ctx, run.PrototypeRunID, run.Version, identity, "2026-01-01T00:00:00Z")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if run.LifecycleState != "running" || runtime.LaunchPhase != "identity_persisted" || !runtime.ProcessIdentity.Valid || runtime.ProcessIdentity.String != identity {
+		t.Fatalf("identity persistence=%#v %#v", run, runtime)
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-one"); err != nil {
+			return err
+		}
+		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-one"); err != nil {
+			return err
+		}
+		if _, _, err := tx.RequestPrototypeCancellation(ctx, run.PrototypeRunID, run.Version, "cancel-two"); !errors.Is(err, ErrPrototypeMutationConflict) {
+			return errors.New("cancel conflict not rejected")
+		}
+		if _, _, err := tx.ClaimPrototypeTimeout(ctx, run.PrototypeRunID, run.Version, "timeout-one"); err != nil {
+			return err
+		}
+		if _, _, err := tx.ClaimPrototypeTimeout(ctx, run.PrototypeRunID, run.Version, "timeout-two"); !errors.Is(err, ErrPrototypeMutationConflict) {
+			return errors.New("timeout conflict not rejected")
+		}
 		return nil
-	}); err != nil { t.Fatal(err) }
-	if err := store.WithTx(ctx, func(tx *Tx) error { var err error; run, runtime, err = tx.SettlePrototypeProcess(ctx, run.PrototypeRunID, run.Version, "cleanup_required", "unknown", "settle-test"); return err }); err != nil { t.Fatal(err) }
-	if run.LifecycleState != "cleanup_required" || runtime.LaunchPhase != "ownership_unresolved" { t.Fatalf("unresolved settlement=%#v %#v", run, runtime) }
-	if err := store.WithTx(ctx, func(tx *Tx) error { _, err := tx.ReleasePrototypeTarget(ctx, run.PrototypeRunID, target.TargetKey, "2026-01-01T00:00:00Z"); if err != nil { return err }; _, err = tx.ReleasePrototypeLease(ctx, run.PrototypeRunID, lease.LeaseToken, "2026-01-01T00:00:00Z"); return err }); err != nil { t.Fatal(err) }
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		run, runtime, err = tx.SettlePrototypeProcess(ctx, run.PrototypeRunID, run.Version, "cleanup_required", "unknown", "settle-test")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if run.LifecycleState != "cleanup_required" || runtime.LaunchPhase != "ownership_unresolved" {
+		t.Fatalf("unresolved settlement=%#v %#v", run, runtime)
+	}
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.ReleasePrototypeTarget(ctx, run.PrototypeRunID, target.TargetKey, "2026-01-01T00:00:00Z")
+		if err != nil {
+			return err
+		}
+		_, err = tx.ReleasePrototypeLease(ctx, run.PrototypeRunID, lease.LeaseToken, "2026-01-01T00:00:00Z")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var targetStatus, leaseStatus string
-	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_targets WHERE id=?`, target.ID).Scan(&targetStatus); err != nil { t.Fatal(err) }
-	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_leases WHERE id=?`, lease.ID).Scan(&leaseStatus); err != nil { t.Fatal(err) }
-	if targetStatus != "released" || leaseStatus != "released" { t.Fatalf("resource release not durable: target=%s lease=%s", targetStatus, leaseStatus) }
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_targets WHERE id=?`, target.ID).Scan(&targetStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_leases WHERE id=?`, lease.ID).Scan(&leaseStatus); err != nil {
+		t.Fatal(err)
+	}
+	if targetStatus != "released" || leaseStatus != "released" {
+		t.Fatalf("resource release not durable: target=%s lease=%s", targetStatus, leaseStatus)
+	}
 }
