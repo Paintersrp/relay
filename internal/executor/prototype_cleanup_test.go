@@ -104,14 +104,76 @@ func TestPrototypeCleanupReconciliation(t *testing.T) {
 			t.Fatalf("%s status = %q, want complete", obligation, got)
 		}
 	}
-	if _, err := cleanup.ReconcileCleanup(ctx, prototypeexecution.CleanupRequest{
+	replayed, err := cleanup.ReconcileCleanup(ctx, prototypeexecution.CleanupRequest{
 		WorkspaceID: "workspace-prototype-regression", RunID: run.PrototypeRunID, ExpectedRunVersion: run.Version,
 		MutationIdentity: "cleanup-reconcile-test", TriggerKind: "explicit",
-	}); err != nil {
+	})
+	if err != nil {
+		if errors.Is(err, prototypeexecution.ErrCleanupOwnershipMismatch) {
+			t.Fatalf("idempotent replay reported ownership mismatch: %v", err)
+		}
 		t.Fatalf("idempotent replay = %v", err)
+	}
+	if replayed.Reconciliation.ID != result.Reconciliation.ID || replayed.Reconciliation.ReconciliationID != result.Reconciliation.ReconciliationID {
+		t.Fatalf("replayed reconciliation = %#v, want %#v", replayed.Reconciliation, result.Reconciliation)
+	}
+	reconciliations, err := store.ListPrototypeCleanupReconciliations(ctx, run.PrototypeRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reconciliations) != 1 {
+		t.Fatalf("reconciliation count = %d, want 1", len(reconciliations))
 	}
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
 		t.Fatalf("worktree exists after cleanup: %v", err)
+	}
+}
+
+func TestPrototypeCleanupAttemptsIndependentObligations(t *testing.T) {
+	ctx := context.Background()
+	cleanup, store, run, worktree := prepareCleanupReconciliationFixture(t, false)
+	cleanup.controller = cleanupProcessController{}
+	if err := os.RemoveAll(worktree); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := cleanup.ReconcileCleanup(ctx, prototypeexecution.CleanupRequest{
+		WorkspaceID: "workspace-prototype-regression", RunID: run.PrototypeRunID, ExpectedRunVersion: run.Version,
+		MutationIdentity: "cleanup-independent-obligations-test", TriggerKind: "explicit",
+	})
+	if !errors.Is(err, prototypeexecution.ErrReconciliationIncomplete) {
+		t.Fatalf("cleanup error = %v, want incomplete", err)
+	}
+	for obligation, want := range map[string]string{
+		"process_ownership":   "complete",
+		"evidence_settlement": "pending",
+		"worktree":            "complete",
+		"ephemeral_target":    "complete",
+		"prototype_lease":     "complete",
+	} {
+		if got := prototypeCleanupStatus(t, store, run.PrototypeRunID, obligation); got != want {
+			t.Fatalf("%s status = %q, want %q", obligation, got, want)
+		}
+	}
+	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
+		t.Fatalf("worktree exists after cleanup: %v", err)
+	}
+	var targetStatus, leaseStatus string
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_targets WHERE run_row_id=?`, run.ID).Scan(&targetStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx, `SELECT status FROM feature_workspace_prototype_leases WHERE run_row_id=?`, run.ID).Scan(&leaseStatus); err != nil {
+		t.Fatal(err)
+	}
+	if targetStatus != "released" || leaseStatus != "released" {
+		t.Fatalf("resource statuses = target %q, lease %q; want released", targetStatus, leaseStatus)
+	}
+	current, err := store.GetPrototypeRun(ctx, run.PrototypeRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.LifecycleState != "cleanup_required" {
+		t.Fatalf("run lifecycle = %q, want cleanup_required", current.LifecycleState)
 	}
 }
 

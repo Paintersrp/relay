@@ -57,7 +57,7 @@ func (c *PrototypeCleanup) ReconcileCleanup(ctx context.Context, in prototypeexe
 		if loadErr != nil {
 			return prototypeexecution.CleanupResult{}, loadErr
 		}
-		if result.Run.WorkspaceRowID != prior.RunRowID {
+		if result.Run.ID != prior.RunRowID {
 			return prototypeexecution.CleanupResult{Result: result, Reconciliation: prior}, prototypeexecution.ErrCleanupOwnershipMismatch
 		}
 		return prototypeexecution.CleanupResult{Result: result, Reconciliation: prior}, nil
@@ -89,12 +89,17 @@ func (c *PrototypeCleanup) ReconcileCleanup(ctx context.Context, in prototypeexe
 	}
 	statuses := obligationStatuses(obligations)
 	var operationErr error
+	recordErr := func(err error) {
+		if err != nil && operationErr == nil {
+			operationErr = err
+		}
+	}
 
 	if statuses["process_ownership"] != "complete" {
 		if result.Runtime == nil {
-			operationErr = prototypeexecution.ErrReconciliationIncomplete
+			recordErr(prototypeexecution.ErrReconciliationIncomplete)
 		} else if err = c.settleProcess(ctx, in.RunID, result.Runtime); err != nil {
-			operationErr = err
+			recordErr(err)
 			if !errors.Is(err, prototypeexecution.ErrReconciliationIncomplete) {
 				_ = c.failObligation(ctx, in.RunID, "process_ownership", err.Error())
 			}
@@ -105,9 +110,9 @@ func (c *PrototypeCleanup) ReconcileCleanup(ctx context.Context, in prototypeexe
 	result, _ = c.load(ctx, in.RunID)
 	obligations, _ = c.store.ListPrototypeCleanupObligationsByRunID(ctx, in.RunID)
 	statuses = obligationStatuses(obligations)
-	if operationErr == nil && statuses["evidence_settlement"] != "complete" {
+	if statuses["evidence_settlement"] != "complete" {
 		if err = c.settleEvidence(ctx, in.RunID, result); err != nil {
-			operationErr = err
+			recordErr(err)
 			if !errors.Is(err, prototypeexecution.ErrReconciliationIncomplete) {
 				_ = c.failObligation(ctx, in.RunID, "evidence_settlement", err.Error())
 			}
@@ -118,12 +123,13 @@ func (c *PrototypeCleanup) ReconcileCleanup(ctx context.Context, in prototypeexe
 	result, _ = c.load(ctx, in.RunID)
 	obligations, _ = c.store.ListPrototypeCleanupObligationsByRunID(ctx, in.RunID)
 	statuses = obligationStatuses(obligations)
-	if operationErr == nil && statuses["worktree"] != "complete" {
+	if statuses["worktree"] != "complete" {
 		if result.Runtime == nil || result.Target == nil || result.Target.WorktreePath != result.Runtime.WorktreePath {
-			operationErr = prototypeexecution.ErrCleanupWorktree
-			_ = c.failObligation(ctx, in.RunID, "worktree", operationErr.Error())
+			cleanupErr := prototypeexecution.ErrCleanupWorktree
+			recordErr(cleanupErr)
+			_ = c.failObligation(ctx, in.RunID, "worktree", cleanupErr.Error())
 		} else if err = c.cleanupWorktree(ctx, result.Runtime); err != nil {
-			operationErr = err
+			recordErr(err)
 			_ = c.failObligation(ctx, in.RunID, "worktree", err.Error())
 		} else {
 			_ = c.completeObligation(ctx, in.RunID, "worktree")
@@ -132,17 +138,18 @@ func (c *PrototypeCleanup) ReconcileCleanup(ctx context.Context, in prototypeexe
 	result, _ = c.load(ctx, in.RunID)
 	obligations, _ = c.store.ListPrototypeCleanupObligationsByRunID(ctx, in.RunID)
 	statuses = obligationStatuses(obligations)
-	if operationErr == nil && statuses["ephemeral_target"] != "complete" {
+	if statuses["ephemeral_target"] != "complete" {
 		if result.Target == nil || result.Target.TargetKey == "" {
-			operationErr = prototypeexecution.ErrCleanupTarget
-			_ = c.failObligation(ctx, in.RunID, "ephemeral_target", operationErr.Error())
+			cleanupErr := prototypeexecution.ErrCleanupTarget
+			recordErr(cleanupErr)
+			_ = c.failObligation(ctx, in.RunID, "ephemeral_target", cleanupErr.Error())
 		} else if released, e := c.releaseTarget(ctx, in.RunID, result.Target.TargetKey); e != nil || released.Status != "released" {
-			if e != nil {
-				operationErr = e
-			} else {
-				operationErr = prototypeexecution.ErrCleanupTarget
+			cleanupErr := e
+			if cleanupErr == nil {
+				cleanupErr = prototypeexecution.ErrCleanupTarget
 			}
-			_ = c.failObligation(ctx, in.RunID, "ephemeral_target", operationErr.Error())
+			recordErr(cleanupErr)
+			_ = c.failObligation(ctx, in.RunID, "ephemeral_target", cleanupErr.Error())
 		} else {
 			_ = c.completeObligation(ctx, in.RunID, "ephemeral_target")
 		}
@@ -150,17 +157,18 @@ func (c *PrototypeCleanup) ReconcileCleanup(ctx context.Context, in prototypeexe
 	result, _ = c.load(ctx, in.RunID)
 	obligations, _ = c.store.ListPrototypeCleanupObligationsByRunID(ctx, in.RunID)
 	statuses = obligationStatuses(obligations)
-	if operationErr == nil && statuses["prototype_lease"] != "complete" {
+	if statuses["prototype_lease"] != "complete" {
 		if result.Lease == nil || result.Lease.LeaseToken == "" {
-			operationErr = prototypeexecution.ErrCleanupLease
-			_ = c.failObligation(ctx, in.RunID, "prototype_lease", operationErr.Error())
+			cleanupErr := prototypeexecution.ErrCleanupLease
+			recordErr(cleanupErr)
+			_ = c.failObligation(ctx, in.RunID, "prototype_lease", cleanupErr.Error())
 		} else if released, e := c.releaseLease(ctx, in.RunID, result.Lease.LeaseToken); e != nil || released.Status != "released" {
-			if e != nil {
-				operationErr = e
-			} else {
-				operationErr = prototypeexecution.ErrCleanupLease
+			cleanupErr := e
+			if cleanupErr == nil {
+				cleanupErr = prototypeexecution.ErrCleanupLease
 			}
-			_ = c.failObligation(ctx, in.RunID, "prototype_lease", operationErr.Error())
+			recordErr(cleanupErr)
+			_ = c.failObligation(ctx, in.RunID, "prototype_lease", cleanupErr.Error())
 		} else {
 			_ = c.completeObligation(ctx, in.RunID, "prototype_lease")
 		}
