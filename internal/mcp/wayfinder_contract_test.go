@@ -174,6 +174,169 @@ func TestWayfinderAppSurfacePublishedActionsReachRealService(t *testing.T) {
 	}
 }
 
+func TestWayfinderRouteWorkspaceReturnsClosedPublicDTO(t *testing.T) {
+	ctx := context.Background()
+	server, _, artifactID := openWayfinderAppSurface(t, ctx)
+	artifactSHA := strings.Repeat("b", 64)
+
+	create := coldStartCall(t, server, "wayfinder-workspace-v1__create_workspace", map[string]any{
+		"project_id": "project-test", "feature_slug": "feature-test",
+	})
+	if create.Error != nil {
+		t.Fatalf("create workspace rejected: %v", create.Error)
+	}
+	var workspace workflowstore.FeatureWorkspace
+	createResult := decodeWayfinderToolResult(t, create)
+	decodeWayfinderResult(t, createResult, "workspace", &workspace)
+
+	admit := coldStartCall(t, server, "wayfinder-workspace-v1__admit_workspace_input", map[string]any{
+		"workspace_id": workspace.WorkspaceID, "expected_version": 1, "sequence": 1,
+		"name": "requirements", "role": "governing", "source_kind": "relay_artifact",
+		"source_reference": "confirmed requirements", "artifact_row_id": artifactID,
+		"artifact_sha256": artifactSHA,
+	})
+	if admit.Error != nil {
+		t.Fatalf("admit input rejected: %v", admit.Error)
+	}
+	admitResult := decodeWayfinderToolResult(t, admit)
+	decodeWayfinderResult(t, admitResult, "workspace", &workspace)
+
+	destination := coldStartCall(t, server, "wayfinder-workspace-v1__add_workspace_destination", map[string]any{
+		"workspace_id": workspace.WorkspaceID, "expected_version": 2, "sequence": 1,
+		"kind": "destination", "key": "internal/app/wayfinder",
+	})
+	if destination.Error != nil {
+		t.Fatalf("add destination rejected: %v", destination.Error)
+	}
+	destinationResult := decodeWayfinderToolResult(t, destination)
+	decodeWayfinderResult(t, destinationResult, "workspace", &workspace)
+
+	ticketResponse := coldStartCall(t, server, "wayfinder-discovery-v1__create_discovery_ticket", map[string]any{
+		"workspace_id": workspace.WorkspaceID, "expected_version": 3,
+		"ticket_key": "contract-drift", "subject": "Repair published contract",
+		"depends_on_ticket_ids": []string{}, "dependency_kind": "informs",
+	})
+	if ticketResponse.Error != nil {
+		t.Fatalf("create ticket rejected: %v", ticketResponse.Error)
+	}
+	ticketResult := decodeWayfinderToolResult(t, ticketResponse)
+	var ticket workflowstore.FeatureWorkspaceDiscoveryTicket
+	decodeWayfinderResult(t, ticketResult, "ticket", &ticket)
+	decodeWayfinderResult(t, ticketResult, "workspace", &workspace)
+	if workspace.Version != 4 || ticket.DiscoveryTicketID == "" {
+		t.Fatalf("ticket journey state = workspace %#v, ticket %#v", workspace, ticket)
+	}
+
+	requestTicketID := ticket.DiscoveryTicketID
+	routeResponse := coldStartCall(t, server, "wayfinder-workspace-v1__route_workspace", map[string]any{
+		"workspace_id": workspace.WorkspaceID, "expected_version": 4, "sequence": 2,
+		"state": "ready", "ticket_id": requestTicketID,
+	})
+	if routeResponse.Error != nil {
+		t.Fatalf("route workspace rejected: %v", routeResponse.Error)
+	}
+	result := decodeWayfinderToolResult(t, routeResponse)
+	if !reflect.DeepEqual(sortedStringKeys(result), []string{"route", "workspace"}) {
+		t.Fatalf("route response fields = %v", sortedStringKeys(result))
+	}
+	var route map[string]json.RawMessage
+	if err := json.Unmarshal(result["route"], &route); err != nil {
+		t.Fatal(err)
+	}
+	var routedWorkspace map[string]json.RawMessage
+	if err := json.Unmarshal(result["workspace"], &routedWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sortedStringKeys(route), []string{"created_at", "route_state_id", "sequence", "state", "ticket_id", "workspace_version"}) {
+		t.Fatalf("route fields = %v", sortedStringKeys(route))
+	}
+	if !reflect.DeepEqual(sortedStringKeys(routedWorkspace), []string{"created_at", "feature_slug", "state", "updated_at", "version", "workspace_id"}) {
+		t.Fatalf("workspace fields = %v", sortedStringKeys(routedWorkspace))
+	}
+	var routeView struct {
+		RouteStateID     string `json:"route_state_id"`
+		Sequence         int64  `json:"sequence"`
+		WorkspaceVersion int64  `json:"workspace_version"`
+		State            string `json:"state"`
+		TicketID         string `json:"ticket_id"`
+		CreatedAt        string `json:"created_at"`
+	}
+	decodeWayfinderResult(t, result, "route", &routeView)
+	if routeView.RouteStateID == "" || routeView.Sequence != 2 || routeView.WorkspaceVersion != 5 || routeView.State != "ready" || routeView.TicketID != requestTicketID || routeView.CreatedAt == "" {
+		t.Fatalf("route DTO = %#v", routeView)
+	}
+	var workspaceView struct {
+		WorkspaceID string `json:"workspace_id"`
+		FeatureSlug string `json:"feature_slug"`
+		State       string `json:"state"`
+		Version     int64  `json:"version"`
+		CreatedAt   string `json:"created_at"`
+		UpdatedAt   string `json:"updated_at"`
+	}
+	decodeWayfinderResult(t, result, "workspace", &workspaceView)
+	if workspaceView.WorkspaceID != workspace.WorkspaceID || workspaceView.FeatureSlug != "feature-test" || workspaceView.State != "open" || workspaceView.Version != 5 || workspaceView.CreatedAt == "" || workspaceView.UpdatedAt == "" {
+		t.Fatalf("workspace DTO = %#v", workspaceView)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(encoded)
+	for _, forbidden := range []string{"Int64", "Valid", "_row_id", `"id"`} {
+		if strings.Contains(serialized, forbidden) {
+			t.Fatalf("internal persistence identity leaked as %q: %s", forbidden, serialized)
+		}
+	}
+}
+
+func TestWayfinderRoutePublishedOutputSchemaIsClosedAndExact(t *testing.T) {
+	published, ok := registry.LookupPublishedToolContract("route_workspace")
+	if !ok {
+		t.Fatal("published route schema is missing")
+	}
+	var schema struct {
+		AdditionalProperties bool                       `json:"additionalProperties"`
+		Properties           map[string]json.RawMessage `json:"properties"`
+		Required             []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(published.OutputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.AdditionalProperties || !reflect.DeepEqual(sortedStringKeys(schema.Properties), []string{"route", "workspace"}) || !reflect.DeepEqual(sortedStringKeys(schema.Properties), sortedWireKeys(func() map[string]struct{} {
+		result := map[string]struct{}{"route": {}, "workspace": {}}
+		return result
+	}())) {
+		t.Fatalf("route output root is not closed and exact: properties=%v", sortedStringKeys(schema.Properties))
+	}
+	assertObject := func(raw json.RawMessage, name string, fields []string) {
+		t.Helper()
+		var object struct {
+			AdditionalProperties bool                       `json:"additionalProperties"`
+			Properties           map[string]json.RawMessage `json:"properties"`
+			Required             []string                   `json:"required"`
+		}
+		if err := json.Unmarshal(raw, &object); err != nil {
+			t.Fatalf("decode %s schema: %v", name, err)
+		}
+		expected := make(map[string]struct{}, len(fields))
+		for _, field := range fields {
+			expected[field] = struct{}{}
+		}
+		required := append([]string(nil), object.Required...)
+		sort.Strings(required)
+		if object.AdditionalProperties || !reflect.DeepEqual(sortedStringKeys(object.Properties), sortedWireKeys(expected)) || !reflect.DeepEqual(sortedStringKeys(object.Properties), required) {
+			t.Fatalf("%s schema fields are not closed and exact: properties=%v required=%v", name, sortedStringKeys(object.Properties), object.Required)
+		}
+	}
+	rootRequired := append([]string(nil), schema.Required...)
+	sort.Strings(rootRequired)
+	if !reflect.DeepEqual(rootRequired, []string{"route", "workspace"}) {
+		t.Fatalf("route output required fields = %v", schema.Required)
+	}
+	assertObject(schema.Properties["route"], "route", []string{"route_state_id", "sequence", "workspace_version", "state", "ticket_id", "created_at"})
+	assertObject(schema.Properties["workspace"], "workspace", []string{"workspace_id", "feature_slug", "state", "version", "created_at", "updated_at"})
+}
+
 func TestWayfinderCreateWorkspaceSchemaRejectsMissingRequiredProperties(t *testing.T) {
 	server, _, _ := openWayfinderAppSurface(t, context.Background())
 	for _, request := range []map[string]any{{"feature_slug": "feature-test"}, {"project_id": "project-test"}} {

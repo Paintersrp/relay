@@ -120,6 +120,44 @@ func buildWayfinderResolveDiscoveryTicketResponse(resolution workflowstore.Featu
 	}
 }
 
+type wayfinderRouteWorkspaceResponse struct {
+	Route     wayfinderRouteWorkspaceView    `json:"route"`
+	Workspace wayfinderRouteWorkspaceSummary `json:"workspace"`
+}
+
+type wayfinderRouteWorkspaceView struct {
+	RouteStateID     string `json:"route_state_id"`
+	Sequence         int64  `json:"sequence"`
+	WorkspaceVersion int64  `json:"workspace_version"`
+	State            string `json:"state"`
+	TicketID         string `json:"ticket_id"`
+	CreatedAt        string `json:"created_at"`
+}
+
+type wayfinderRouteWorkspaceSummary struct {
+	WorkspaceID string `json:"workspace_id"`
+	FeatureSlug string `json:"feature_slug"`
+	State       string `json:"state"`
+	Version     int64  `json:"version"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+func buildWayfinderRouteWorkspaceResponse(route workflowstore.FeatureWorkspaceRouteState, workspace workflowstore.FeatureWorkspace, ticketID string) wayfinderRouteWorkspaceResponse {
+	return wayfinderRouteWorkspaceResponse{
+		Route: wayfinderRouteWorkspaceView{
+			RouteStateID: route.RouteStateID, Sequence: route.Sequence,
+			WorkspaceVersion: route.WorkspaceVersion, State: route.State,
+			TicketID: ticketID, CreatedAt: route.CreatedAt,
+		},
+		Workspace: wayfinderRouteWorkspaceSummary{
+			WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug,
+			State: workspace.State, Version: workspace.Version,
+			CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt,
+		},
+	}
+}
+
 type wayfinderRouteView struct {
 	RouteStateID string  `json:"route_state_id"`
 	Sequence     int64   `json:"sequence"`
