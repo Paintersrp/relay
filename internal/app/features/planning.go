@@ -108,15 +108,15 @@ func candidateDestinationAllowed(family string, destination DiscoveryDestination
 		return false
 	}
 }
-func candidateFilenameAllowed(family, filename string) bool {
+func candidateFilenameAllowed(family, filename, featureSlug string) bool {
 	if filename == "" || strings.TrimSpace(filename) != filename || strings.ContainsAny(filename, `/\\`) {
 		return false
 	}
 	switch family {
 	case CandidateFamilyRequirements:
-		return filename == "requirements.md"
+		return featureSlug != "" && filename == featureSlug+".requirements.md"
 	case CandidateFamilySharedDesign:
-		return filename == "shared-design.md" || filename == "shared_design.md"
+		return featureSlug != "" && filename == featureSlug+".design.md"
 	case CandidateFamilyDeliveryTicket:
 		info, diagnostics := speccompiler.ParseFilename(filename)
 		return len(diagnostics) == 0 && info.Kind == speccompiler.ArtifactDeliveryTicket && strings.HasSuffix(filename, ".delivery-ticket.json")
@@ -130,7 +130,7 @@ func candidateFilenameAllowed(family, filename string) bool {
 func (s *Service) AdmitPlanningCandidate(ctx context.Context, input CandidateAdmissionInput) (CandidateAdmissionResult, error) {
 	if strings.TrimSpace(input.WorkspaceID) == "" || input.ExpectedVersion < 1 || len(input.Bytes) == 0 ||
 		!oneOf(input.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) ||
-		!candidateFilenameAllowed(input.Family, input.Filename) || !candidateDestinationAllowed(input.Family, input.Destination) ||
+		!candidateDestinationAllowed(input.Family, input.Destination) ||
 		strings.TrimSpace(input.RepoTarget) == "" || strings.TrimSpace(input.Branch) == "" || !validBaseCommit(input.BaseCommit) ||
 		strings.TrimSpace(input.CreatedIdentity) == "" {
 		if !oneOf(input.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) {
@@ -158,6 +158,9 @@ func (s *Service) AdmitPlanningCandidate(ctx context.Context, input CandidateAdm
 	}
 	if err != nil {
 		return CandidateAdmissionResult{}, err
+	}
+	if !candidateFilenameAllowed(input.Family, input.Filename, workspace.FeatureSlug) {
+		return CandidateAdmissionResult{}, ErrInvalidCandidateInput
 	}
 	artifactID := workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
 	batch, err := s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
@@ -477,11 +480,15 @@ func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input Ca
 			}
 		}
 		layers = append(layers, AuthorityLayerInput{Kind: candidate.Family, CandidateArtifactRowID: sql.NullInt64{Int64: candidate.ArtifactRowID, Valid: true}, ArtifactSHA256: candidate.ArtifactSha256})
+		candidateSourceClosure, err := planningCandidateSourceClosure(ctx, tx, candidate)
+		if err != nil {
+			return err
+		}
 		prior, err := tx.ListFeatureWorkspaceAuthorityRevisions(ctx, workspace.ID)
 		if err != nil {
 			return err
 		}
-		revision, err := tx.CreateFeatureWorkspaceAuthorityRevision(ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{AuthorityRevisionID: workflowstore.NewFeatureWorkspaceAuthorityRevisionID(), WorkspaceRowID: workspace.ID, RevisionNumber: int64(len(prior) + 1), SourceClosureRowID: currentSourceClosure(priorLayers)})
+		revision, err := tx.CreateFeatureWorkspaceAuthorityRevision(ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{AuthorityRevisionID: workflowstore.NewFeatureWorkspaceAuthorityRevisionID(), WorkspaceRowID: workspace.ID, RevisionNumber: int64(len(prior) + 1), SourceClosureRowID: sql.NullInt64{Int64: candidateSourceClosure.ID, Valid: true}})
 		if err != nil {
 			return err
 		}
@@ -508,14 +515,29 @@ func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input Ca
 	})
 	return result, err
 }
-func currentSourceClosure(layers []workflowstore.FeatureWorkspaceAuthorityLayer) sql.NullInt64 {
-	for _, layer := range layers {
-		if layer.SourceClosureRowID.Valid {
-			return layer.SourceClosureRowID
+func planningCandidateSourceClosure(ctx context.Context, tx *workflowstore.Tx, candidate workflowstore.PlanningCandidate) (workflowstore.SourceVaultClosure, error) {
+	if candidate.AuthorityRevisionRowID.Valid {
+		authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, candidate.AuthorityRevisionRowID.Int64)
+		if err != nil || !authority.SourceClosureRowID.Valid {
+			return workflowstore.SourceVaultClosure{}, ErrStaleCandidateBasis
 		}
+		closure, err := tx.GetSourceVaultClosureByRowID(ctx, authority.SourceClosureRowID.Int64)
+		if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.CommitOID != candidate.BaseCommit {
+			return workflowstore.SourceVaultClosure{}, ErrStaleCandidateBasis
+		}
+		vault, err := tx.GetSourceVaultByRepositoryTarget(ctx, candidate.RepoTarget)
+		if err != nil || vault.ID != closure.VaultRowID {
+			return workflowstore.SourceVaultClosure{}, ErrStaleCandidateBasis
+		}
+		return closure, nil
 	}
-	return sql.NullInt64{}
+	closure, err := tx.GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx, candidate.RepoTarget, candidate.BaseCommit)
+	if err != nil {
+		return workflowstore.SourceVaultClosure{}, ErrStaleCandidateBasis
+	}
+	return closure, nil
 }
+
 func (s *Service) PromoteCandidate(ctx context.Context, input CandidatePromotionInput) (CandidatePromotionResult, error) {
 	return s.PromoteApprovedPlanningCandidate(ctx, input)
 }

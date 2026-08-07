@@ -31,11 +31,12 @@ func TestPlanningCandidateRequirementsAndSharedDesignPromotionSequences(t *testi
 			if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-repo', 'C:/planning-repo', 'refs/heads/main', 1)`); err != nil {
 				t.Fatal(err)
 			}
+			closure := insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-repo", strings.Repeat("a", 40))
 			for index, family := range test.families {
 				bytes := []byte("# " + family + " candidate\nexact\x00bytes\n")
-				filename := "requirements.md"
+				filename := workspace.FeatureSlug + ".requirements.md"
 				if family == CandidateFamilySharedDesign {
-					filename = "shared-design.md"
+					filename = workspace.FeatureSlug + ".design.md"
 				}
 				candidateResult, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
 					WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: family,
@@ -69,6 +70,16 @@ func TestPlanningCandidateRequirementsAndSharedDesignPromotionSequences(t *testi
 					t.Fatal(err)
 				}
 				workspace = promoted.Workspace
+				if !promoted.Detail.Revision.SourceClosureRowID.Valid || promoted.Detail.Revision.SourceClosureRowID.Int64 != closure.ID {
+					t.Fatalf("authority source closure = %#v, want %d", promoted.Detail.Revision, closure.ID)
+				}
+				currentness, err := service.EvaluateCurrentness(ctx, workspace.WorkspaceID)
+				if err != nil || currentness.Readiness != FeatureCurrent {
+					t.Fatalf("promoted authority currentness = %#v, %v", currentness, err)
+				}
+				if err := requireCurrentnessForProgression(ctx, store, workspace); err != nil {
+					t.Fatalf("promoted authority progression gate = %v", err)
+				}
 			}
 			history, err := service.ReadAuthority(ctx, workspace.WorkspaceID)
 			if err != nil || len(history) != len(test.families) {
@@ -81,6 +92,9 @@ func TestPlanningCandidateRequirementsAndSharedDesignPromotionSequences(t *testi
 			for index, want := range test.wantLayers {
 				if layers[index].Sequence != int64(index+1) || layers[index].LayerKind != want || !layers[index].CandidateArtifactRowID.Valid {
 					t.Fatalf("layer %d = %#v", index, layers[index])
+				}
+				if layers[index].SourceClosureRowID.Valid {
+					t.Fatalf("layer %d unexpectedly supplied source closure mask = %#v", index, layers[index])
 				}
 			}
 			if len(history) > 1 && history[0].Layers[0].LayerKind != CandidateFamilyRequirements {
@@ -100,7 +114,7 @@ func TestPlanningCandidateAdmissionRejectsDeliveryAndInvalidInputs(t *testing.T)
 		t.Fatal(err)
 	}
 	bytes := []byte("# Requirements\n")
-	base := CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: "requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-invalid", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"}
+	base := CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-invalid", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"}
 	if _, err := service.AdmitPlanningCandidate(ctx, func() CandidateAdmissionInput { value := base; value.Family = "unsupported_family"; return value }()); !errors.Is(err, ErrInvalidCandidateFamily) {
 		t.Fatalf("unsupported candidate error = %v", err)
 	}
@@ -136,7 +150,7 @@ func TestPlanningCandidateApprovalReviewIsExactReadOnlyAndRejectsStaleOrAlteredB
 		t.Fatal(err)
 	}
 	bytes := []byte("# Review candidate\n\x00exact\n")
-	candidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: "requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-review", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"})
+	candidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-review", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +197,7 @@ func TestFeatureCurrentnessMarksLegacyAndReopenedWorkspacesStale(t *testing.T) {
 	legacyBytes := []byte("# legacy candidate\n")
 	if _, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
 		WorkspaceID: legacy.WorkspaceID, ExpectedVersion: legacy.Version, Family: CandidateFamilyRequirements,
-		Filename: "requirements.md", Bytes: legacyBytes, SHA256: discoveryTestDigest(legacyBytes), RepoTarget: "legacy-repo",
+		Filename: legacy.FeatureSlug + ".requirements.md", Bytes: legacyBytes, SHA256: discoveryTestDigest(legacyBytes), RepoTarget: "legacy-repo",
 		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
 	}); !errors.Is(err, ErrLegacyCurrentness) {
 		t.Fatalf("legacy candidate admission error = %v, want ErrLegacyCurrentness", err)
@@ -248,8 +262,9 @@ func TestPlanningCandidatePromotionConflictAndRollbackAreAtomic(t *testing.T) {
 	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-repo-conflict', 'C:/planning-repo-conflict', 'refs/heads/main', 1)`); err != nil {
 		t.Fatal(err)
 	}
+	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-repo-conflict", strings.Repeat("a", 40))
 	admit := func(value []byte, expectedVersion int64) (CandidateApprovalResult, error) {
-		candidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: expectedVersion, Family: CandidateFamilySharedDesign, Filename: "shared-design.md", Bytes: value, SHA256: discoveryTestDigest(value), RepoTarget: "planning-repo-conflict", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationSharedDesign, CreatedIdentity: "planner"})
+		candidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: expectedVersion, Family: CandidateFamilySharedDesign, Filename: workspace.FeatureSlug + ".design.md", Bytes: value, SHA256: discoveryTestDigest(value), RepoTarget: "planning-repo-conflict", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationSharedDesign, CreatedIdentity: "planner"})
 		if err != nil {
 			return CandidateApprovalResult{}, err
 		}
@@ -320,11 +335,12 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 		if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-repo-shared-design', 'C:/planning-repo-shared-design', 'refs/heads/main', 1)`); err != nil {
 			t.Fatal(err)
 		}
+		insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-repo-shared-design", strings.Repeat("a", 40))
 
 		requirementsBytes := []byte("# requirements candidate\n")
 		requirementsCandidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
 			WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
-			Filename: "requirements.md", Bytes: requirementsBytes, SHA256: discoveryTestDigest(requirementsBytes), RepoTarget: "planning-repo-shared-design",
+			Filename: workspace.FeatureSlug + ".requirements.md", Bytes: requirementsBytes, SHA256: discoveryTestDigest(requirementsBytes), RepoTarget: "planning-repo-shared-design",
 			Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
 		})
 		if err != nil {
@@ -362,7 +378,7 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 		sharedDesignCandidateBytes := []byte("# shared design candidate\n")
 		sharedDesignCandidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
 			WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilySharedDesign,
-			Filename: "shared-design.md", Bytes: sharedDesignCandidateBytes, SHA256: discoveryTestDigest(sharedDesignCandidateBytes), RepoTarget: "planning-repo-shared-design",
+			Filename: workspace.FeatureSlug + ".design.md", Bytes: sharedDesignCandidateBytes, SHA256: discoveryTestDigest(sharedDesignCandidateBytes), RepoTarget: "planning-repo-shared-design",
 			Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationSharedDesign, CreatedIdentity: "planner",
 		})
 		if err != nil {
@@ -400,4 +416,105 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 			t.Fatalf("authority candidate artifacts = %#v", layers)
 		}
 	})
+}
+
+func TestPlanningCandidateAdmissionRequiresCanonicalGoverningFilenames(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirementsThenSharedDesign)
+	var err error
+	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirementsThenSharedDesign, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-repo-filenames', 'C:/planning-repo-filenames', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	bytes := []byte("# canonical candidate\n")
+	admit := func(family, filename string) error {
+		_, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+			WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: family,
+			Filename: filename, Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-filenames",
+			Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirementsThenSharedDesign, CreatedIdentity: "planner",
+		})
+		return err
+	}
+	if err := admit(CandidateFamilyRequirements, workspace.FeatureSlug+".requirements.md"); err != nil {
+		t.Fatalf("canonical requirements filename rejected: %v", err)
+	}
+	if err := admit(CandidateFamilySharedDesign, workspace.FeatureSlug+".design.md"); err != nil {
+		t.Fatalf("canonical shared design filename rejected: %v", err)
+	}
+	for _, test := range []struct {
+		family, filename string
+	}{
+		{CandidateFamilyRequirements, "requirements.md"},
+		{CandidateFamilyRequirements, "wrong-slug.requirements.md"},
+		{CandidateFamilySharedDesign, "shared-design.md"},
+		{CandidateFamilySharedDesign, "shared_design.md"},
+		{CandidateFamilySharedDesign, "wrong-slug.design.md"},
+	} {
+		if err := admit(test.family, test.filename); !errors.Is(err, ErrInvalidCandidateInput) {
+			t.Fatalf("%s filename %q error = %v, want ErrInvalidCandidateInput", test.family, test.filename, err)
+		}
+	}
+	var count int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM planning_candidates`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("candidate count after filename validation = %d, err=%v", count, err)
+	}
+}
+
+func insertReadyPlanningSourceClosure(t *testing.T, ctx context.Context, store *workflowstore.Store, workspace workflowstore.FeatureWorkspace, repoTarget, commit string) workflowstore.SourceVaultClosure {
+	t.Helper()
+	vaultIDValue := "vault-planning-" + workspace.WorkspaceID + "-" + strings.ReplaceAll(repoTarget, "_", "-")
+	closureIDValue := "closure-planning-" + workspace.WorkspaceID + "-" + strings.ReplaceAll(repoTarget, "_", "-")
+	var vaultID int64
+	if err := store.DB().QueryRowContext(ctx, `INSERT INTO source_vaults (vault_id, repo_target, relative_path) VALUES (?, ?, ?) RETURNING id`, vaultIDValue, repoTarget, "vaults/"+repoTarget).Scan(&vaultID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO source_vault_closures (closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name, state, import_started_at, verified_at) VALUES (?, ?, ?, ?, 1, ?, 'ready', '2026-08-01T00:00:00.000000000Z', '2026-08-01T00:00:01.000000000Z')`, closureIDValue, vaultID, commit, strings.Repeat("b", 40), "refs/relay/closures/"+workspace.WorkspaceID); err != nil {
+		t.Fatal(err)
+	}
+	closure, err := store.GetSourceVaultClosureByClosureID(ctx, closureIDValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return closure
+}
+
+func TestPlanningCandidatePromotionRejectsUnavailableSourceClosure(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	var err error
+	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-repo-unavailable', 'C:/planning-repo-unavailable', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	closure := insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-repo-unavailable", strings.Repeat("a", 40))
+	bytes := []byte("# unavailable source candidate\n")
+	candidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
+		Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-unavailable",
+		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256,
+		ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: bytes, ExpectedVersion: workspace.Version,
+		ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID,
+		OperatorConfirmationEvidence: "source closure must remain ready", CreatedIdentity: "auditor",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'source_commit_missing', verified_at = NULL WHERE id = ?`, closure.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PromoteApprovedPlanningCandidate(ctx, CandidatePromotionInput{CandidateID: candidate.Candidate.CandidateID, ApprovalID: approval.Approval.ApprovalID, ExpectedVersion: workspace.Version, CreatedIdentity: "planner"}); !errors.Is(err, ErrStaleCandidateBasis) {
+		t.Fatalf("unavailable source promotion error = %v, want ErrStaleCandidateBasis", err)
+	}
+	var authorities int
+	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_authority_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&authorities); err != nil || authorities != 0 {
+		t.Fatalf("authority revisions after unavailable source = %d, err=%v", authorities, err)
+	}
 }

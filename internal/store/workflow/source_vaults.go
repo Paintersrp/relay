@@ -296,7 +296,9 @@ func sourceVaultNoRows(err error, operation string) error {
 // an explicit closure identity.
 func (tx *Tx) GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx context.Context, repoTarget, commitOID string) (SourceVaultClosure, error) {
 	return scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
-SELECT `+sourceVaultClosureColumns+`
+SELECT closure.id, closure.closure_id, closure.vault_row_id, closure.commit_oid, closure.tree_oid, closure.generation, closure.ref_name,
+    closure.state, closure.failure_reason, closure.import_started_at, closure.verified_at, closure.released_at,
+    closure.created_at, closure.updated_at
 FROM source_vault_closures AS closure
 JOIN source_vaults AS vault ON vault.id = closure.vault_row_id
 WHERE vault.repo_target = ? COLLATE NOCASE AND closure.commit_oid = ? AND closure.state = 'ready'
