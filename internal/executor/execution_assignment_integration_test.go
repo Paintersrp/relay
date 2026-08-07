@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	featureapp "relay/internal/app/features"
 	executionpackages "relay/internal/app/packages"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testfixtures"
@@ -417,6 +418,37 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE feature_workspaces SET current_authority_revision_row_id = ?, version = 2 WHERE id = ? AND version = 1`, authorityID, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	featureService, err := featureapp.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err = featureService.SetIntegratedDiscoveryCapability(ctx, workspace.WorkspaceID, workspace.Version, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, workspace, err = featureService.AdoptFeatureDiscoveryLifecycle(ctx, featureapp.AdoptFeatureDiscoveryLifecycleInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorIdentity: "executor-test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discovery := []byte("# Executor discovery\n")
+	started, workspace, err := featureService.StartIntegratedDiscovery(ctx, featureapp.StartIntegratedDiscoveryInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Markdown: discovery,
+		SHA256: sha256Hex(discovery), CreatedIdentity: "executor-test", Destination: featureapp.DiscoveryDestinationDirectDeliveryTicket,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = featureService.CloseFeatureDiscovery(ctx, featureapp.CloseFeatureDiscoveryInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version,
+		ExpectedRevisionID: started.Revision.DiscoveryRevisionID, Destination: featureapp.DiscoveryDestinationDirectDeliveryTicket, CreatedIdentity: "executor-test",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P2-T2', ?, 10) RETURNING id`, workspaceID).Scan(&ticketID); err != nil {

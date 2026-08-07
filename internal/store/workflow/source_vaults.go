@@ -290,3 +290,16 @@ func sourceVaultNoRows(err error, operation string) error {
 	}
 	return err
 }
+
+// GetReadySourceVaultClosureByRepositoryTargetAndCommit resolves the ready
+// source closure used by a direct candidate when no authority layer supplies
+// an explicit closure identity.
+func (tx *Tx) GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx context.Context, repoTarget, commitOID string) (SourceVaultClosure, error) {
+	return scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
+SELECT `+sourceVaultClosureColumns+`
+FROM source_vault_closures AS closure
+JOIN source_vaults AS vault ON vault.id = closure.vault_row_id
+WHERE vault.repo_target = ? COLLATE NOCASE AND closure.commit_oid = ? AND closure.state = 'ready'
+ORDER BY closure.generation DESC, closure.id DESC
+LIMIT 1`, repoTarget, commitOID))
+}

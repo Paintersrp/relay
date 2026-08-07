@@ -24,6 +24,9 @@ func TestPublishApprovalPriorityReplacementAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if first.Canonical.RelativePath != "delivery-tickets/P4-T2/revisions/1/delivery-ticket.json" || first.Rendered.RelativePath != "delivery-tickets/P4-T2/revisions/1/delivery-ticket.md" {
+		t.Fatalf("ordinary Publish artifact filenames changed = %#v %#v", first.Canonical, first.Rendered)
+	}
 	approval, err := service.Approve(ctx, ApproveInput{TicketID: first.Ticket.TicketID, RevisionRowID: first.Revision.ID, AuthorityRevisionID: authorityID, Rationale: "approved against current authority"})
 	if err != nil {
 		t.Fatal(err)

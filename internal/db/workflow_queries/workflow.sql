@@ -971,3 +971,97 @@ WHERE proposal_id = ?;
 SELECT *
 FROM feature_workspace_discovery_tickets
 WHERE id = ?;
+
+-- Planning candidate persistence remains application-neutral. Exact bytes are
+-- retained in feature_workspace_discovery_artifacts and coordinated with the
+-- database through workflow artifact batches.
+-- name: CreateFeatureWorkspaceDiscoveryArtifact :one
+INSERT INTO feature_workspace_discovery_artifacts (
+    discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: CreatePlanningCandidate :one
+INSERT INTO planning_candidates (
+    candidate_id, workspace_row_id, family, filename, artifact_row_id,
+    artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id,
+    authority_revision_row_id, repo_target, branch, base_commit, destination,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetPlanningCandidateByCandidateID :one
+SELECT *
+FROM planning_candidates
+WHERE candidate_id = ?;
+
+-- name: GetPlanningCandidateByRowID :one
+SELECT *
+FROM planning_candidates
+WHERE id = ?;
+
+-- name: ListPlanningCandidatesByWorkspace :many
+SELECT *
+FROM planning_candidates
+WHERE workspace_row_id = ?
+ORDER BY created_at, id;
+
+-- name: CreatePlanningCandidateApproval :one
+INSERT INTO planning_candidate_approvals (
+    approval_id, candidate_row_id, candidate_artifact_row_id,
+    candidate_sha256, candidate_size_bytes, operator_confirmation_evidence,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetPlanningCandidateApprovalByApprovalID :one
+SELECT *
+FROM planning_candidate_approvals
+WHERE approval_id = ?;
+
+-- name: GetPlanningCandidateApprovalByRowID :one
+SELECT *
+FROM planning_candidate_approvals
+WHERE id = ?;
+
+-- name: ListPlanningCandidateApprovalsByCandidate :many
+SELECT *
+FROM planning_candidate_approvals
+WHERE candidate_row_id = ?
+ORDER BY created_at, id;
+
+-- name: CreateDeliveryTicketProductionLink :one
+INSERT INTO delivery_ticket_production_links (
+    production_link_id, delivery_ticket_row_id, candidate_row_id,
+    candidate_artifact_row_id, candidate_sha256, candidate_size_bytes,
+    canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes,
+    rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes,
+    produced_revision_row_id, produced_revision_identity, created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetDeliveryTicketProductionLinkByLinkID :one
+SELECT *
+FROM delivery_ticket_production_links
+WHERE production_link_id = ?;
+
+-- name: GetDeliveryTicketProductionLinkByRowID :one
+SELECT *
+FROM delivery_ticket_production_links
+WHERE id = ?;
+
+-- name: ListDeliveryTicketProductionLinksByTicket :many
+SELECT *
+FROM delivery_ticket_production_links
+WHERE delivery_ticket_row_id = ?
+ORDER BY created_at, id;
+
+-- name: ListDeliveryTicketProductionLinksByCandidate :many
+SELECT *
+FROM delivery_ticket_production_links
+WHERE candidate_row_id = ?
+ORDER BY created_at, id;

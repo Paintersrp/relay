@@ -36,6 +36,10 @@ func (s *Service) AdmitPackageExecution(ctx context.Context, runID string) (work
 			return fmt.Errorf("package Run admission requires setup_ready or executing Run, got %q", run.Status)
 		}
 
+		if err := recheckPackageCurrentness(ctx, tx, run); err != nil {
+			return err
+		}
+
 		admitted = run
 		return nil
 	})
@@ -65,6 +69,9 @@ func (s *Service) CompletePackageDeterministicExecution(ctx context.Context, run
 		}
 		if !run.ExecutionPackageRowID.Valid {
 			return fmt.Errorf("deterministic package finalization requires an execution package")
+		}
+		if err := recheckPackageCurrentness(ctx, tx, run); err != nil {
+			return err
 		}
 
 		attempts, err := tx.ListExecutionAttemptsByRun(ctx, run.ID)

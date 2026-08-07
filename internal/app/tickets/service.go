@@ -17,11 +17,12 @@ import (
 )
 
 var (
-	ErrInvalidTicket        = errors.New("invalid delivery ticket")
-	ErrTicketNotFound       = errors.New("delivery ticket not found")
-	ErrRevisionConflict     = errors.New("delivery ticket revision conflict")
-	ErrDependencyNotCurrent = errors.New("delivery ticket dependency is not current")
-	ErrRemediationSeed      = errors.New("delivery ticket remediation seed is invalid")
+	ErrInvalidTicket           = errors.New("invalid delivery ticket")
+	ErrTicketNotFound          = errors.New("delivery ticket not found")
+	ErrTicketArtifactIntegrity = errors.New("delivery ticket artifact integrity mismatch")
+	ErrRevisionConflict        = errors.New("delivery ticket revision conflict")
+	ErrDependencyNotCurrent    = errors.New("delivery ticket dependency is not current")
+	ErrRemediationSeed         = errors.New("delivery ticket remediation seed is invalid")
 )
 
 type Service struct {
@@ -280,10 +281,28 @@ func (s *Service) Read(ctx context.Context, ticketID string) (TicketDetail, erro
 		return TicketDetail{}, err
 	}
 	if detail.Canonical, err = s.readArtifact(ticket.TicketID, revision.RevisionNumber, "delivery-ticket.json"); err != nil {
-		return TicketDetail{}, err
+		if link, linkErr := s.store.GetDeliveryTicketProductionLinkByProducedRevision(ctx, revision.ID); linkErr == nil {
+			artifact, artifactErr := s.store.GetFeatureWorkspaceDiscoveryArtifactByRowID(ctx, link.CanonicalJsonArtifactRowID)
+			if artifactErr != nil {
+				return TicketDetail{}, artifactErr
+			}
+			detail.Canonical, err = s.readLinkedArtifact(artifact, ticket.WorkspaceRowID, link.CanonicalJsonSha256, link.CanonicalJsonSizeBytes, "application/json")
+		}
+		if err != nil {
+			return TicketDetail{}, err
+		}
 	}
 	if detail.Rendered, err = s.readArtifact(ticket.TicketID, revision.RevisionNumber, "delivery-ticket.md"); err != nil {
-		return TicketDetail{}, err
+		if link, linkErr := s.store.GetDeliveryTicketProductionLinkByProducedRevision(ctx, revision.ID); linkErr == nil {
+			artifact, artifactErr := s.store.GetFeatureWorkspaceDiscoveryArtifactByRowID(ctx, link.RenderedMarkdownArtifactRowID)
+			if artifactErr != nil {
+				return TicketDetail{}, artifactErr
+			}
+			detail.Rendered, err = s.readLinkedArtifact(artifact, ticket.WorkspaceRowID, link.RenderedMarkdownSha256, link.RenderedMarkdownSizeBytes, "text/markdown")
+		}
+		if err != nil {
+			return TicketDetail{}, err
+		}
 	}
 	detail.Readiness, err = s.deriveReadiness(ctx, detail)
 	return detail, err
@@ -394,12 +413,30 @@ func deriveTicketReadiness(ctx context.Context, reader ticketReadStore, detail T
 
 func (s *Service) readArtifact(ticketID string, revisionNumber int64, filename string) (StoredArtifact, error) {
 	relativePath := filepath.ToSlash(filepath.Join(ticketRevisionNamespace(ticketID, revisionNumber), filename))
+	return s.readArtifactPath(relativePath)
+}
+
+func (s *Service) readArtifactPath(relativePath string) (StoredArtifact, error) {
 	data, err := os.ReadFile(filepath.Join(s.store.ArtifactStore().Root(), filepath.FromSlash(relativePath)))
 	if err != nil {
 		return StoredArtifact{}, fmt.Errorf("read delivery ticket artifact: %w", err)
 	}
 	digest := sha256.Sum256(data)
 	return storedArtifact(relativePath, hex.EncodeToString(digest[:]), int64(len(data))), nil
+}
+
+func (s *Service) readLinkedArtifact(artifact workflowstore.FeatureWorkspaceDiscoveryArtifact, workspaceRowID int64, expectedSHA256 string, expectedSizeBytes int64, expectedMediaType string) (StoredArtifact, error) {
+	if artifact.WorkspaceRowID != workspaceRowID || artifact.Sha256 != expectedSHA256 || artifact.SizeBytes != expectedSizeBytes || artifact.MediaType != expectedMediaType {
+		return StoredArtifact{}, ErrTicketArtifactIntegrity
+	}
+	stored, err := s.readArtifactPath(artifact.RelativePath)
+	if err != nil {
+		return StoredArtifact{}, err
+	}
+	if stored.SHA256 != expectedSHA256 || stored.SizeBytes != expectedSizeBytes {
+		return StoredArtifact{}, ErrTicketArtifactIntegrity
+	}
+	return stored, nil
 }
 
 func storedArtifact(relativePath, sha256 string, sizeBytes int64) StoredArtifact {

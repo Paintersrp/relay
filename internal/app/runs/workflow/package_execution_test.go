@@ -24,10 +24,12 @@ func newPackageAdmissionFixture(t *testing.T) *packageAdmissionFixture {
 	registerRunTestRepo(t, ctx, store, "relay")
 	baseCommit := strings.Repeat("a", 40)
 
-	// This fixture only needs the package/run identity; the package
-	// composition contract is owned by the package service tests. Disable
-	// those insert guards while creating the minimal durable fixture.
+	// The package/run identity remains intentionally compact, but its referenced
+	// Feature basis is current so owner-boundary rechecks exercise normal behavior.
 	db := store.DB()
+	if _, err := db.Exec(`UPDATE repository_targets SET configured_branch_ref = 'refs/heads/main', configuration_version = 2 WHERE repo_target = 'relay'`); err != nil {
+		t.Fatal(err)
+	}
 	for _, query := range []string{
 		"PRAGMA foreign_keys = OFF",
 		"DROP TRIGGER IF EXISTS execution_package_input_guard",
@@ -36,6 +38,58 @@ func newPackageAdmissionFixture(t *testing.T) *packageAdmissionFixture {
 		if _, err := db.Exec(query); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := db.Exec(`INSERT INTO projects (id, project_id, name) VALUES (1, 'project-package-admission', 'Package admission')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO source_vaults (id, vault_id, repo_target, relative_path) VALUES (1, 'vault-package-admission', 'relay', 'vaults/package-admission')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO source_vault_closures (id, closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name, state, import_started_at, verified_at) VALUES (1, 'closure-package-admission', 1, ?, ?, 1, 'refs/relay/closures/package-admission', 'ready', '2026-07-18T00:00:00.000000000Z', '2026-07-18T00:00:01.000000000Z')`, baseCommit, strings.Repeat("b", 40)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspaces (id, workspace_id, project_row_id, feature_slug) VALUES (1, 'workspace-package-admission', 1, 'admission')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_authority_revisions (id, authority_revision_id, workspace_row_id, revision_number, source_closure_row_id) VALUES (1, 'authority-package-admission', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_authority_revision_row_id = 1, version = 2 WHERE id = 1 AND version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_discovery_adoptions (workspace_row_id, adoption_id, operator_identity, adopted_workspace_version) VALUES (1, 'discovery-adoption-package-admission', 'run-fixture', 2)`); err != nil {
+		t.Fatal(err)
+	}
+	manifestSHA := strings.Repeat("f", 64)
+	if _, err := db.Exec(`INSERT INTO feature_workspace_discovery_artifacts (id, discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES (1, 'discovery-artifact-package-admission', 1, 'feature-discovery/admission/closure/manifest.json', ?, 'application/vnd.relay.feature-discovery-closure+json', 1)`, manifestSHA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_integrated_discovery_revisions (id, discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, created_identity, settled_destination, continuation_json) VALUES (1, 'discovery-revision-package-admission', 1, 1, 1, 'run-fixture', 'requirements', '{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_discovery_closure_packets (id, closure_packet_id, workspace_row_id, closing_revision_row_id, destination, manifest_artifact_row_id, manifest_sha256, manifest_size_bytes, manifest_media_type) VALUES (1, 'discovery-packet-package-admission', 1, 1, 'requirements', 1, ?, 1, 'application/vnd.relay.feature-discovery-closure+json')`, manifestSHA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_discovery_revision_row_id = 1, current_discovery_closure_packet_row_id = 1, version = 3 WHERE id = 1 AND version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO delivery_tickets (id, ticket_id, workspace_row_id, external_priority) VALUES (1, 'P2-T2', 1, 10)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO delivery_ticket_revisions (id, delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (1, 1, 1, 'relay', 'main', ?, 1, 'tickets/admission.json', 'Package admission', 'Package admission fixture', 'not_required')`, baseCommit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE delivery_tickets SET current_revision_row_id = 1 WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO delivery_ticket_revision_approvals (id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, authority_revision_row_id) VALUES (1, 'approval-package-admission', 1, 'delivery', 'approved', 'Run fixture approval', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO delivery_ticket_selections (id, selection_id, workspace_row_id, state, rationale, source_closure_row_id) VALUES (1, 'selection-package-admission', 1, 'consumed', 'Run fixture selection', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO delivery_ticket_selection_members (id, selection_row_id, sequence, revision_row_id, approval_row_id) VALUES (1, 1, 1, 1, 1)`); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO execution_packages (
         id, package_id, selection_row_id, workspace_row_id, repo_target, branch,
@@ -48,6 +102,12 @@ func newPackageAdmissionFixture(t *testing.T) *packageAdmissionFixture {
 	if _, err := db.Exec(`INSERT INTO execution_package_approvals (
         id, approval_id, package_row_id, package_sha256, operator_confirmation_evidence
     ) VALUES (1, 'pkg-approval-admission', 1, ?, 'package admission test approval')`, strings.Repeat("b", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO execution_package_members (id, package_row_id, selection_member_row_id, sequence, revision_row_id, member_sha256) VALUES (1, 1, 1, 1, 1, ?)`, strings.Repeat("e", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO execution_package_approval_bindings (package_row_id, package_member_row_id, approval_row_id, authority_revision_row_id, source_closure_row_id, approval_basis_sha256) VALUES (1, 1, 1, 1, 1, ?)`, strings.Repeat("f", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO runs (
@@ -499,5 +559,23 @@ func assertPackageFinalizationRunStatus(t *testing.T, store *workflowstore.Store
 	}
 	if run.Status != want {
 		t.Fatalf("Run status = %q, want %q", run.Status, want)
+	}
+}
+
+func TestAdmitPackageExecutionRejectsStaleSourceWithoutEffects(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageAdmissionFixture(t)
+	if _, err := fixture.store.DB().Exec(`UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'source_commit_missing', verified_at = NULL WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.AdmitPackageExecution(ctx, fixture.packageRun.RunID); err == nil {
+		t.Fatal("admission from unavailable source closure succeeded")
+	}
+	var attempts int
+	if err := fixture.store.DB().QueryRow(`SELECT COUNT(*) FROM execution_attempts WHERE run_row_id = ?`, fixture.packageRun.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatalf("execution attempts after stale admission = %d, want 0", attempts)
 	}
 }

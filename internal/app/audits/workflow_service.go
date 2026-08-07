@@ -359,6 +359,9 @@ func (s *WorkflowAuditService) readCurrentPackagePacket(ctx context.Context, run
 	if packet.RunRowID != run.ID || packet.Status != workflowstore.AuditPacketStatusCurrent || packet.BaseCommit != run.BaseCommit || !workflowPackageValidSHA40(packet.AuditedCommit) || !workflowPackageValidSHA256(packet.PacketSHA256) {
 		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
+	if err := verifyWorkflowPackageCurrentness(ctx, s.store, run); err != nil {
+		return GetWorkflowAuditPacketResult{}, err
+	}
 	artifact, err := s.store.GetArtifactByRowID(ctx, packet.ArtifactRowID)
 	if err != nil {
 		return GetWorkflowAuditPacketResult{}, err

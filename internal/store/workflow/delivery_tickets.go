@@ -173,6 +173,19 @@ func (tx *Tx) ListDeliveryTicketRevisionDependencies(ctx context.Context, revisi
 	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisionDependencies(ctx, revisionRowID)
 }
 
+func (tx *Tx) GetDeliveryTicketRevisionApprovalByRowID(ctx context.Context, rowID int64) (DeliveryTicketRevisionApproval, error) {
+	var value DeliveryTicketRevisionApproval
+	err := tx.tx.QueryRowContext(ctx, `
+SELECT id, approval_id, revision_row_id, approval_kind, approval_state, rationale, source_closure_row_id, created_at, authority_revision_row_id
+FROM delivery_ticket_revision_approvals
+WHERE id = ?`, rowID).Scan(
+		&value.ID, &value.ApprovalID, &value.RevisionRowID, &value.ApprovalKind,
+		&value.ApprovalState, &value.Rationale, &value.SourceClosureRowID, &value.CreatedAt,
+		&value.AuthorityRevisionRowID,
+	)
+	return value, err
+}
+
 func (tx *Tx) ListDeliveryTicketRevisionApprovals(ctx context.Context, revisionRowID int64) ([]DeliveryTicketRevisionApproval, error) {
 	return workflowgenerated.New(tx.tx).ListDeliveryTicketRevisionApprovals(ctx, revisionRowID)
 }

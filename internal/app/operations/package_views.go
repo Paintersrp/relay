@@ -68,12 +68,14 @@ type PackageDetailView struct {
 	DeterministicOperations *PackageArtifactView         `json:"deterministicOperations,omitempty"`
 	Run                     *RunView                     `json:"run"`
 	PackageApprovalID       string                       `json:"packageApprovalId,omitempty"`
+	Currentness             *CurrentnessProjection       `json:"currentness,omitempty"`
 }
 
 type PackageApprovalView struct {
-	Package           PackageIdentityView `json:"package"`
-	Run               RunView             `json:"run"`
-	PackageApprovalID string              `json:"packageApprovalId"`
+	Package           PackageIdentityView    `json:"package"`
+	Run               RunView                `json:"run"`
+	PackageApprovalID string                 `json:"packageApprovalId"`
+	Currentness       *CurrentnessProjection `json:"currentness,omitempty"`
 }
 
 // MutationLeaseView intentionally contains durable Run and lease identities

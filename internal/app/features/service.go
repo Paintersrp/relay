@@ -77,12 +77,13 @@ func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, e
 }
 
 type AuthorityLayerInput struct {
-	Kind             string
-	ArtifactRowID    sql.NullInt64
-	RetainedArtifact sql.NullInt64
-	ArtifactSHA256   string
-	SourceClosureID  sql.NullInt64
-	ApprovalRowID    sql.NullInt64
+	Kind                   string
+	ArtifactRowID          sql.NullInt64
+	RetainedArtifact       sql.NullInt64
+	CandidateArtifactRowID sql.NullInt64
+	ArtifactSHA256         string
+	SourceClosureID        sql.NullInt64
+	ApprovalRowID          sql.NullInt64
 }
 
 type PublishAuthorityInput struct {
@@ -93,8 +94,9 @@ type PublishAuthorityInput struct {
 }
 
 type AuthorityRevisionDetail struct {
-	Revision workflowstore.FeatureWorkspaceAuthorityRevision
-	Layers   []workflowstore.FeatureWorkspaceAuthorityLayer
+	Revision   workflowstore.FeatureWorkspaceAuthorityRevision
+	Layers     []workflowstore.FeatureWorkspaceAuthorityLayer
+	Historical bool
 }
 
 // PublishAuthority creates immutable replacement history. A workspace may
@@ -154,7 +156,7 @@ func (s *Service) PublishAuthority(ctx context.Context, input PublishAuthorityIn
 			created, err := tx.CreateFeatureWorkspaceAuthorityLayer(ctx, workflowstore.CreateFeatureWorkspaceAuthorityLayerParams{
 				AuthorityRevisionRowID: detail.Revision.ID, LayerKind: storageLayerKind(layer.Kind),
 				Sequence: int64(sequence + 1), ArtifactRowID: layer.ArtifactRowID,
-				RetainedArtifactRowID: layer.RetainedArtifact, ArtifactSha256: layer.ArtifactSHA256,
+				RetainedArtifactRowID: layer.RetainedArtifact, CandidateArtifactRowID: layer.CandidateArtifactRowID, ArtifactSha256: layer.ArtifactSHA256,
 				SourceClosureRowID: layer.SourceClosureID,
 				ApprovalRowID:      sql.NullInt64{Int64: approval.ID, Valid: true},
 			})
@@ -236,6 +238,7 @@ func (s *Service) ReadAuthority(ctx context.Context, workspaceID string) ([]Auth
 	result := make([]AuthorityRevisionDetail, len(revisions))
 	for index, revision := range revisions {
 		result[index].Revision = revision
+		result[index].Historical = !workspace.CurrentAuthorityRevisionRowID.Valid || workspace.CurrentAuthorityRevisionRowID.Int64 != revision.ID
 		result[index].Layers, err = s.store.ListFeatureWorkspaceAuthorityLayers(ctx, revision.ID)
 		if err != nil {
 			return nil, err
@@ -263,12 +266,18 @@ func storageLayerKind(kind string) string {
 	if kind == "transition_plan" {
 		return "plan"
 	}
+	if kind == "shared_design" {
+		return "design"
+	}
 	return kind
 }
 
 func applicationLayerKind(layer workflowstore.FeatureWorkspaceAuthorityLayer) workflowstore.FeatureWorkspaceAuthorityLayer {
 	if layer.LayerKind == "plan" {
 		layer.LayerKind = "transition_plan"
+	}
+	if layer.LayerKind == "design" {
+		layer.LayerKind = "shared_design"
 	}
 	return layer
 }
@@ -436,6 +445,8 @@ func (s *Service) Complete(ctx context.Context, input CompletionInput) (Completi
 }
 
 type featureCompletionReader interface {
+	GetDiscoveryLifecycleAdoption(context.Context, int64) (workflowstore.DiscoveryLifecycleAdoption, error)
+	GetDiscoveryClosurePacketByRowID(context.Context, int64) (workflowstore.DiscoveryClosurePacket, error)
 	GetFeatureWorkspaceAuthorityRevisionByRowID(context.Context, int64) (workflowstore.FeatureWorkspaceAuthorityRevision, error)
 	GetSourceVaultClosureByRowID(context.Context, int64) (workflowstore.SourceVaultClosure, error)
 	ListFeatureWorkspaceAuthorityLayers(context.Context, int64) ([]workflowstore.FeatureWorkspaceAuthorityLayer, error)
@@ -443,27 +454,41 @@ type featureCompletionReader interface {
 	GetDeliveryTicketRevisionByRowID(context.Context, int64) (workflowstore.DeliveryTicketRevision, error)
 	GetDeliveryTicketRevisionSatisfaction(context.Context, int64) (workflowstore.DeliveryTicketRevisionSatisfaction, error)
 	ListDeliveryTicketSelectionsByWorkspace(context.Context, int64) ([]workflowstore.DeliveryTicketSelection, error)
+	ListExecutionPackagesByWorkspace(context.Context, int64) ([]workflowstore.ExecutionPackage, error)
 	ListAuditRemediationSeedsByWorkspace(context.Context, int64) ([]workflowstore.AuditRemediationSeed, error)
 	GetAuditRemediationSeedReopening(context.Context, int64) (workflowstore.AuditRemediationSeedReopening, error)
 }
 
 func featureCompletionGates(ctx context.Context, reader featureCompletionReader, workspace workflowstore.FeatureWorkspace) ([]CompletionGate, error) {
+	closureReady := true
+	if _, err := reader.GetDiscoveryLifecycleAdoption(ctx, workspace.ID); err == nil {
+		closureReady = workspace.CurrentDiscoveryRevisionRowID.Valid && workspace.CurrentDiscoveryClosurePacketRowID.Valid
+		if closureReady {
+			packet, packetErr := reader.GetDiscoveryClosurePacketByRowID(ctx, workspace.CurrentDiscoveryClosurePacketRowID.Int64)
+			closureReady = packetErr == nil && packet.WorkspaceRowID == workspace.ID && packet.ClosingRevisionRowID == workspace.CurrentDiscoveryRevisionRowID.Int64
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
 	authorityReady := workspace.CurrentAuthorityRevisionRowID.Valid
 	var authority workflowstore.FeatureWorkspaceAuthorityRevision
 	if authorityReady {
 		value, err := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
-		if err != nil {
-			return nil, err
-		}
-		authority = value
-		if !authority.SourceClosureRowID.Valid {
+		if errors.Is(err, sql.ErrNoRows) {
 			authorityReady = false
+		} else if err != nil {
+			return nil, err
 		} else {
-			closure, err := reader.GetSourceVaultClosureByRowID(ctx, authority.SourceClosureRowID.Int64)
-			if err != nil {
-				return nil, err
+			authority = value
+			if !authority.SourceClosureRowID.Valid {
+				authorityReady = false
+			} else {
+				closure, err := reader.GetSourceVaultClosureByRowID(ctx, authority.SourceClosureRowID.Int64)
+				if err != nil {
+					return nil, err
+				}
+				authorityReady = authority.WorkspaceRowID == workspace.ID && closure.State == workflowstore.SourceVaultClosureStateReady
 			}
-			authorityReady = authority.WorkspaceRowID == workspace.ID && closure.State == workflowstore.SourceVaultClosureStateReady
 		}
 	}
 
@@ -549,11 +574,26 @@ func featureCompletionGates(ctx context.Context, reader featureCompletionReader,
 			break
 		}
 	}
+	packageReady := true
+	packages, err := reader.ListExecutionPackagesByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, packageRow := range packages {
+		if !workspace.CurrentAuthorityRevisionRowID.Valid || packageRow.AuthorityRevisionRowID != workspace.CurrentAuthorityRevisionRowID.Int64 || packageRow.SourceClosureRowID < 1 {
+			packageReady = false
+			break
+		}
+	}
+	currentnessReady := closureReady && authorityReady && packageReady
 	return []CompletionGate{
+		{Name: "closure", Ready: closureReady},
 		{Name: "authority", Ready: authorityReady},
+		{Name: "currentness", Ready: currentnessReady},
 		{Name: "tickets", Ready: ticketsReady},
 		{Name: "integration", Ready: integrationReady},
 		{Name: "transitions", Ready: transitionsReady},
+		{Name: "package", Ready: packageReady},
 		{Name: "remediation", Ready: remediationReady},
 		{Name: "audit", Ready: auditReady},
 	}, nil

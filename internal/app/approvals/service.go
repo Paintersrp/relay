@@ -113,3 +113,65 @@ func (s *Service) ApproveDeliveryTicket(ctx context.Context, input ApproveDelive
 	}
 	return approval, err
 }
+
+// DeliveryTicketRevisionApprovalInput is the transaction-aware approval owner
+// hook used by deterministic candidate production. The caller must keep the
+// approval and all production mutations in the same CommitArtifactBatch
+// transaction; this hook deliberately does not advance currentness.
+type DeliveryTicketRevisionApprovalInput struct {
+	Ticket                 workflowstore.DeliveryTicket
+	Revision               workflowstore.DeliveryTicketRevision
+	AuthorityRevisionID    sql.NullInt64
+	Rationale              string
+	RequireCurrentRevision bool
+	RequireAuthority       bool
+}
+
+func (s *Service) ApproveDeliveryTicketRevisionInTx(ctx context.Context, tx *workflowstore.Tx, input DeliveryTicketRevisionApprovalInput) (workflowstore.DeliveryTicketRevisionApproval, error) {
+	if s == nil || tx == nil || input.Ticket.ID < 1 || input.Revision.ID < 1 || input.Revision.DeliveryTicketRowID != input.Ticket.ID || strings.TrimSpace(input.Rationale) != input.Rationale || input.Rationale == "" {
+		return workflowstore.DeliveryTicketRevisionApproval{}, ErrInvalidApproval
+	}
+	if input.RequireCurrentRevision && (!input.Ticket.CurrentRevisionRowID.Valid || input.Ticket.CurrentRevisionRowID.Int64 != input.Revision.ID) {
+		return workflowstore.DeliveryTicketRevisionApproval{}, ErrStaleAuthority
+	}
+	workspace, err := tx.GetFeatureWorkspaceByRowID(ctx, input.Ticket.WorkspaceRowID)
+	if err != nil {
+		return workflowstore.DeliveryTicketRevisionApproval{}, err
+	}
+	authorityRevisionID := input.AuthorityRevisionID
+	if workspace.CurrentAuthorityRevisionRowID.Valid {
+		if authorityRevisionID.Valid && authorityRevisionID.Int64 != workspace.CurrentAuthorityRevisionRowID.Int64 {
+			return workflowstore.DeliveryTicketRevisionApproval{}, ErrStaleAuthority
+		}
+		authority, authorityErr := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+		if authorityErr != nil {
+			return workflowstore.DeliveryTicketRevisionApproval{}, authorityErr
+		}
+		if authority.WorkspaceRowID != workspace.ID || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != input.Revision.SourceClosureRowID {
+			return workflowstore.DeliveryTicketRevisionApproval{}, ErrStaleAuthority
+		}
+		authorityRevisionID = sql.NullInt64{Int64: authority.ID, Valid: true}
+	} else if input.RequireAuthority {
+		return workflowstore.DeliveryTicketRevisionApproval{}, ErrStaleAuthority
+	}
+	closure, err := tx.GetSourceVaultClosureByRowID(ctx, input.Revision.SourceClosureRowID)
+	if err != nil {
+		return workflowstore.DeliveryTicketRevisionApproval{}, err
+	}
+	if closure.State != workflowstore.SourceVaultClosureStateReady {
+		return workflowstore.DeliveryTicketRevisionApproval{}, ErrStaleAuthority
+	}
+	existing, err := tx.ListDeliveryTicketRevisionApprovals(ctx, input.Revision.ID)
+	if err != nil {
+		return workflowstore.DeliveryTicketRevisionApproval{}, err
+	}
+	for _, value := range existing {
+		if value.ApprovalKind == "delivery" {
+			return workflowstore.DeliveryTicketRevisionApproval{}, fmt.Errorf("delivery ticket revision is already approved")
+		}
+	}
+	return tx.CreateDeliveryTicketRevisionApproval(ctx, workflowstore.CreateDeliveryTicketRevisionApprovalParams{
+		ApprovalID: s.ids.ApprovalID(), RevisionRowID: input.Revision.ID, ApprovalKind: "delivery", ApprovalState: "approved",
+		Rationale: input.Rationale, SourceClosureRowID: input.Revision.SourceClosureRowID, AuthorityRevisionRowID: authorityRevisionID,
+	})
+}

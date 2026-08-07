@@ -125,6 +125,11 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		default:
 			return fmt.Errorf("run %q cannot start execution from status %q", run.RunID, run.Status)
 		}
+		if run.ExecutionPackageRowID.Valid {
+			if err := recheckPackageCurrentness(ctx, tx, run); err != nil {
+				return fmt.Errorf("package Run currentness recheck: %w", err)
+			}
+		}
 		// The Run transition and attempt creation commit together. Any failure
 		// rolls the Run back to its prior persisted status and prevents an
 		// executor adapter from receiving an attempt.

@@ -477,6 +477,77 @@ func (q *Queries) CreateDeliveryTicket(ctx context.Context, arg CreateDeliveryTi
 	return i, err
 }
 
+const createDeliveryTicketProductionLink = `-- name: CreateDeliveryTicketProductionLink :one
+INSERT INTO delivery_ticket_production_links (
+    production_link_id, delivery_ticket_row_id, candidate_row_id,
+    candidate_artifact_row_id, candidate_sha256, candidate_size_bytes,
+    canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes,
+    rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes,
+    produced_revision_row_id, produced_revision_identity, created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, production_link_id, delivery_ticket_row_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes, rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes, produced_revision_row_id, produced_revision_identity, created_identity, created_at
+`
+
+type CreateDeliveryTicketProductionLinkParams struct {
+	ProductionLinkID              string `json:"production_link_id"`
+	DeliveryTicketRowID           int64  `json:"delivery_ticket_row_id"`
+	CandidateRowID                int64  `json:"candidate_row_id"`
+	CandidateArtifactRowID        int64  `json:"candidate_artifact_row_id"`
+	CandidateSha256               string `json:"candidate_sha256"`
+	CandidateSizeBytes            int64  `json:"candidate_size_bytes"`
+	CanonicalJsonArtifactRowID    int64  `json:"canonical_json_artifact_row_id"`
+	CanonicalJsonSha256           string `json:"canonical_json_sha256"`
+	CanonicalJsonSizeBytes        int64  `json:"canonical_json_size_bytes"`
+	RenderedMarkdownArtifactRowID int64  `json:"rendered_markdown_artifact_row_id"`
+	RenderedMarkdownSha256        string `json:"rendered_markdown_sha256"`
+	RenderedMarkdownSizeBytes     int64  `json:"rendered_markdown_size_bytes"`
+	ProducedRevisionRowID         int64  `json:"produced_revision_row_id"`
+	ProducedRevisionIdentity      string `json:"produced_revision_identity"`
+	CreatedIdentity               string `json:"created_identity"`
+}
+
+func (q *Queries) CreateDeliveryTicketProductionLink(ctx context.Context, arg CreateDeliveryTicketProductionLinkParams) (DeliveryTicketProductionLink, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketProductionLink,
+		arg.ProductionLinkID,
+		arg.DeliveryTicketRowID,
+		arg.CandidateRowID,
+		arg.CandidateArtifactRowID,
+		arg.CandidateSha256,
+		arg.CandidateSizeBytes,
+		arg.CanonicalJsonArtifactRowID,
+		arg.CanonicalJsonSha256,
+		arg.CanonicalJsonSizeBytes,
+		arg.RenderedMarkdownArtifactRowID,
+		arg.RenderedMarkdownSha256,
+		arg.RenderedMarkdownSizeBytes,
+		arg.ProducedRevisionRowID,
+		arg.ProducedRevisionIdentity,
+		arg.CreatedIdentity,
+	)
+	var i DeliveryTicketProductionLink
+	err := row.Scan(
+		&i.ID,
+		&i.ProductionLinkID,
+		&i.DeliveryTicketRowID,
+		&i.CandidateRowID,
+		&i.CandidateArtifactRowID,
+		&i.CandidateSha256,
+		&i.CandidateSizeBytes,
+		&i.CanonicalJsonArtifactRowID,
+		&i.CanonicalJsonSha256,
+		&i.CanonicalJsonSizeBytes,
+		&i.RenderedMarkdownArtifactRowID,
+		&i.RenderedMarkdownSha256,
+		&i.RenderedMarkdownSizeBytes,
+		&i.ProducedRevisionRowID,
+		&i.ProducedRevisionIdentity,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createDeliveryTicketRevision = `-- name: CreateDeliveryTicketRevision :one
 INSERT INTO delivery_ticket_revisions (
     delivery_ticket_row_id, revision_number, replaces_revision_row_id,
@@ -1296,6 +1367,49 @@ func (q *Queries) CreateFeatureWorkspaceDestination(ctx context.Context, arg Cre
 	return i, err
 }
 
+const createFeatureWorkspaceDiscoveryArtifact = `-- name: CreateFeatureWorkspaceDiscoveryArtifact :one
+INSERT INTO feature_workspace_discovery_artifacts (
+    discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes
+)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes, created_at
+`
+
+type CreateFeatureWorkspaceDiscoveryArtifactParams struct {
+	DiscoveryArtifactID string `json:"discovery_artifact_id"`
+	WorkspaceRowID      int64  `json:"workspace_row_id"`
+	RelativePath        string `json:"relative_path"`
+	Sha256              string `json:"sha256"`
+	MediaType           string `json:"media_type"`
+	SizeBytes           int64  `json:"size_bytes"`
+}
+
+// Planning candidate persistence remains application-neutral. Exact bytes are
+// retained in feature_workspace_discovery_artifacts and coordinated with the
+// database through workflow artifact batches.
+func (q *Queries) CreateFeatureWorkspaceDiscoveryArtifact(ctx context.Context, arg CreateFeatureWorkspaceDiscoveryArtifactParams) (FeatureWorkspaceDiscoveryArtifact, error) {
+	row := q.db.QueryRowContext(ctx, createFeatureWorkspaceDiscoveryArtifact,
+		arg.DiscoveryArtifactID,
+		arg.WorkspaceRowID,
+		arg.RelativePath,
+		arg.Sha256,
+		arg.MediaType,
+		arg.SizeBytes,
+	)
+	var i FeatureWorkspaceDiscoveryArtifact
+	err := row.Scan(
+		&i.ID,
+		&i.DiscoveryArtifactID,
+		&i.WorkspaceRowID,
+		&i.RelativePath,
+		&i.Sha256,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createFeatureWorkspaceDiscoveryTicket = `-- name: CreateFeatureWorkspaceDiscoveryTicket :one
 INSERT INTO feature_workspace_discovery_tickets (
     discovery_ticket_id, workspace_row_id, ticket_key, subject
@@ -1678,6 +1792,118 @@ func (q *Queries) CreatePlanRepositoryTarget(ctx context.Context, arg CreatePlan
 	return i, err
 }
 
+const createPlanningCandidate = `-- name: CreatePlanningCandidate :one
+INSERT INTO planning_candidates (
+    candidate_id, workspace_row_id, family, filename, artifact_row_id,
+    artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id,
+    authority_revision_row_id, repo_target, branch, base_commit, destination,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, authority_revision_row_id, repo_target, branch, base_commit, destination, created_identity, created_at
+`
+
+type CreatePlanningCandidateParams struct {
+	CandidateID                 string        `json:"candidate_id"`
+	WorkspaceRowID              int64         `json:"workspace_row_id"`
+	Family                      string        `json:"family"`
+	Filename                    string        `json:"filename"`
+	ArtifactRowID               int64         `json:"artifact_row_id"`
+	ArtifactSha256              string        `json:"artifact_sha256"`
+	ArtifactSizeBytes           int64         `json:"artifact_size_bytes"`
+	DiscoveryClosurePacketRowID int64         `json:"discovery_closure_packet_row_id"`
+	AuthorityRevisionRowID      sql.NullInt64 `json:"authority_revision_row_id"`
+	RepoTarget                  string        `json:"repo_target"`
+	Branch                      string        `json:"branch"`
+	BaseCommit                  string        `json:"base_commit"`
+	Destination                 string        `json:"destination"`
+	CreatedIdentity             string        `json:"created_identity"`
+}
+
+func (q *Queries) CreatePlanningCandidate(ctx context.Context, arg CreatePlanningCandidateParams) (PlanningCandidate, error) {
+	row := q.db.QueryRowContext(ctx, createPlanningCandidate,
+		arg.CandidateID,
+		arg.WorkspaceRowID,
+		arg.Family,
+		arg.Filename,
+		arg.ArtifactRowID,
+		arg.ArtifactSha256,
+		arg.ArtifactSizeBytes,
+		arg.DiscoveryClosurePacketRowID,
+		arg.AuthorityRevisionRowID,
+		arg.RepoTarget,
+		arg.Branch,
+		arg.BaseCommit,
+		arg.Destination,
+		arg.CreatedIdentity,
+	)
+	var i PlanningCandidate
+	err := row.Scan(
+		&i.ID,
+		&i.CandidateID,
+		&i.WorkspaceRowID,
+		&i.Family,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.DiscoveryClosurePacketRowID,
+		&i.AuthorityRevisionRowID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.Destination,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createPlanningCandidateApproval = `-- name: CreatePlanningCandidateApproval :one
+INSERT INTO planning_candidate_approvals (
+    approval_id, candidate_row_id, candidate_artifact_row_id,
+    candidate_sha256, candidate_size_bytes, operator_confirmation_evidence,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, approval_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, operator_confirmation_evidence, created_identity, created_at
+`
+
+type CreatePlanningCandidateApprovalParams struct {
+	ApprovalID                   string `json:"approval_id"`
+	CandidateRowID               int64  `json:"candidate_row_id"`
+	CandidateArtifactRowID       int64  `json:"candidate_artifact_row_id"`
+	CandidateSha256              string `json:"candidate_sha256"`
+	CandidateSizeBytes           int64  `json:"candidate_size_bytes"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+	CreatedIdentity              string `json:"created_identity"`
+}
+
+func (q *Queries) CreatePlanningCandidateApproval(ctx context.Context, arg CreatePlanningCandidateApprovalParams) (PlanningCandidateApproval, error) {
+	row := q.db.QueryRowContext(ctx, createPlanningCandidateApproval,
+		arg.ApprovalID,
+		arg.CandidateRowID,
+		arg.CandidateArtifactRowID,
+		arg.CandidateSha256,
+		arg.CandidateSizeBytes,
+		arg.OperatorConfirmationEvidence,
+		arg.CreatedIdentity,
+	)
+	var i PlanningCandidateApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.CandidateRowID,
+		&i.CandidateArtifactRowID,
+		&i.CandidateSha256,
+		&i.CandidateSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createRepositoryBranchMutationLease = `-- name: CreateRepositoryBranchMutationLease :one
 INSERT INTO repository_branch_mutation_leases (
     lease_id,
@@ -2010,6 +2236,68 @@ func (q *Queries) GetDeliveryTicketByTicketID(ctx context.Context, ticketID stri
 		&i.CurrentRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketProductionLinkByLinkID = `-- name: GetDeliveryTicketProductionLinkByLinkID :one
+SELECT id, production_link_id, delivery_ticket_row_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes, rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes, produced_revision_row_id, produced_revision_identity, created_identity, created_at
+FROM delivery_ticket_production_links
+WHERE production_link_id = ?
+`
+
+func (q *Queries) GetDeliveryTicketProductionLinkByLinkID(ctx context.Context, productionLinkID string) (DeliveryTicketProductionLink, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketProductionLinkByLinkID, productionLinkID)
+	var i DeliveryTicketProductionLink
+	err := row.Scan(
+		&i.ID,
+		&i.ProductionLinkID,
+		&i.DeliveryTicketRowID,
+		&i.CandidateRowID,
+		&i.CandidateArtifactRowID,
+		&i.CandidateSha256,
+		&i.CandidateSizeBytes,
+		&i.CanonicalJsonArtifactRowID,
+		&i.CanonicalJsonSha256,
+		&i.CanonicalJsonSizeBytes,
+		&i.RenderedMarkdownArtifactRowID,
+		&i.RenderedMarkdownSha256,
+		&i.RenderedMarkdownSizeBytes,
+		&i.ProducedRevisionRowID,
+		&i.ProducedRevisionIdentity,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketProductionLinkByRowID = `-- name: GetDeliveryTicketProductionLinkByRowID :one
+SELECT id, production_link_id, delivery_ticket_row_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes, rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes, produced_revision_row_id, produced_revision_identity, created_identity, created_at
+FROM delivery_ticket_production_links
+WHERE id = ?
+`
+
+func (q *Queries) GetDeliveryTicketProductionLinkByRowID(ctx context.Context, id int64) (DeliveryTicketProductionLink, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketProductionLinkByRowID, id)
+	var i DeliveryTicketProductionLink
+	err := row.Scan(
+		&i.ID,
+		&i.ProductionLinkID,
+		&i.DeliveryTicketRowID,
+		&i.CandidateRowID,
+		&i.CandidateArtifactRowID,
+		&i.CandidateSha256,
+		&i.CandidateSizeBytes,
+		&i.CanonicalJsonArtifactRowID,
+		&i.CanonicalJsonSha256,
+		&i.CanonicalJsonSizeBytes,
+		&i.RenderedMarkdownArtifactRowID,
+		&i.RenderedMarkdownSha256,
+		&i.RenderedMarkdownSizeBytes,
+		&i.ProducedRevisionRowID,
+		&i.ProducedRevisionIdentity,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -2540,6 +2828,112 @@ func (q *Queries) GetPlanPassByRowID(ctx context.Context, id int64) (PlanPass, e
 		&i.UpdatedAt,
 		&i.StartedAt,
 		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateApprovalByApprovalID = `-- name: GetPlanningCandidateApprovalByApprovalID :one
+SELECT id, approval_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, operator_confirmation_evidence, created_identity, created_at
+FROM planning_candidate_approvals
+WHERE approval_id = ?
+`
+
+func (q *Queries) GetPlanningCandidateApprovalByApprovalID(ctx context.Context, approvalID string) (PlanningCandidateApproval, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateApprovalByApprovalID, approvalID)
+	var i PlanningCandidateApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.CandidateRowID,
+		&i.CandidateArtifactRowID,
+		&i.CandidateSha256,
+		&i.CandidateSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateApprovalByRowID = `-- name: GetPlanningCandidateApprovalByRowID :one
+SELECT id, approval_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, operator_confirmation_evidence, created_identity, created_at
+FROM planning_candidate_approvals
+WHERE id = ?
+`
+
+func (q *Queries) GetPlanningCandidateApprovalByRowID(ctx context.Context, id int64) (PlanningCandidateApproval, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateApprovalByRowID, id)
+	var i PlanningCandidateApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.CandidateRowID,
+		&i.CandidateArtifactRowID,
+		&i.CandidateSha256,
+		&i.CandidateSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateByCandidateID = `-- name: GetPlanningCandidateByCandidateID :one
+SELECT id, candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, authority_revision_row_id, repo_target, branch, base_commit, destination, created_identity, created_at
+FROM planning_candidates
+WHERE candidate_id = ?
+`
+
+func (q *Queries) GetPlanningCandidateByCandidateID(ctx context.Context, candidateID string) (PlanningCandidate, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateByCandidateID, candidateID)
+	var i PlanningCandidate
+	err := row.Scan(
+		&i.ID,
+		&i.CandidateID,
+		&i.WorkspaceRowID,
+		&i.Family,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.DiscoveryClosurePacketRowID,
+		&i.AuthorityRevisionRowID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.Destination,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateByRowID = `-- name: GetPlanningCandidateByRowID :one
+SELECT id, candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, authority_revision_row_id, repo_target, branch, base_commit, destination, created_identity, created_at
+FROM planning_candidates
+WHERE id = ?
+`
+
+func (q *Queries) GetPlanningCandidateByRowID(ctx context.Context, id int64) (PlanningCandidate, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateByRowID, id)
+	var i PlanningCandidate
+	err := row.Scan(
+		&i.ID,
+		&i.CandidateID,
+		&i.WorkspaceRowID,
+		&i.Family,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.DiscoveryClosurePacketRowID,
+		&i.AuthorityRevisionRowID,
+		&i.RepoTarget,
+		&i.Branch,
+		&i.BaseCommit,
+		&i.Destination,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -3166,6 +3560,102 @@ func (q *Queries) ListAuditTicketRevisionDecisions(ctx context.Context, auditDec
 			&i.CreatedAt,
 			&i.PackageApprovalRowID,
 			&i.ApprovedPackageSha256,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketProductionLinksByCandidate = `-- name: ListDeliveryTicketProductionLinksByCandidate :many
+SELECT id, production_link_id, delivery_ticket_row_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes, rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes, produced_revision_row_id, produced_revision_identity, created_identity, created_at
+FROM delivery_ticket_production_links
+WHERE candidate_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListDeliveryTicketProductionLinksByCandidate(ctx context.Context, candidateRowID int64) ([]DeliveryTicketProductionLink, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketProductionLinksByCandidate, candidateRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketProductionLink{}
+	for rows.Next() {
+		var i DeliveryTicketProductionLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductionLinkID,
+			&i.DeliveryTicketRowID,
+			&i.CandidateRowID,
+			&i.CandidateArtifactRowID,
+			&i.CandidateSha256,
+			&i.CandidateSizeBytes,
+			&i.CanonicalJsonArtifactRowID,
+			&i.CanonicalJsonSha256,
+			&i.CanonicalJsonSizeBytes,
+			&i.RenderedMarkdownArtifactRowID,
+			&i.RenderedMarkdownSha256,
+			&i.RenderedMarkdownSizeBytes,
+			&i.ProducedRevisionRowID,
+			&i.ProducedRevisionIdentity,
+			&i.CreatedIdentity,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketProductionLinksByTicket = `-- name: ListDeliveryTicketProductionLinksByTicket :many
+SELECT id, production_link_id, delivery_ticket_row_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes, rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes, produced_revision_row_id, produced_revision_identity, created_identity, created_at
+FROM delivery_ticket_production_links
+WHERE delivery_ticket_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListDeliveryTicketProductionLinksByTicket(ctx context.Context, deliveryTicketRowID int64) ([]DeliveryTicketProductionLink, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketProductionLinksByTicket, deliveryTicketRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketProductionLink{}
+	for rows.Next() {
+		var i DeliveryTicketProductionLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductionLinkID,
+			&i.DeliveryTicketRowID,
+			&i.CandidateRowID,
+			&i.CandidateArtifactRowID,
+			&i.CandidateSha256,
+			&i.CandidateSizeBytes,
+			&i.CanonicalJsonArtifactRowID,
+			&i.CanonicalJsonSha256,
+			&i.CanonicalJsonSizeBytes,
+			&i.RenderedMarkdownArtifactRowID,
+			&i.RenderedMarkdownSha256,
+			&i.RenderedMarkdownSizeBytes,
+			&i.ProducedRevisionRowID,
+			&i.ProducedRevisionIdentity,
+			&i.CreatedIdentity,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -4268,6 +4758,93 @@ func (q *Queries) ListPlanRepositoryTargets(ctx context.Context, planRowID int64
 			&i.RepoTarget,
 			&i.Branch,
 			&i.PlanningBaseCommit,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlanningCandidateApprovalsByCandidate = `-- name: ListPlanningCandidateApprovalsByCandidate :many
+SELECT id, approval_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, operator_confirmation_evidence, created_identity, created_at
+FROM planning_candidate_approvals
+WHERE candidate_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListPlanningCandidateApprovalsByCandidate(ctx context.Context, candidateRowID int64) ([]PlanningCandidateApproval, error) {
+	rows, err := q.db.QueryContext(ctx, listPlanningCandidateApprovalsByCandidate, candidateRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PlanningCandidateApproval{}
+	for rows.Next() {
+		var i PlanningCandidateApproval
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApprovalID,
+			&i.CandidateRowID,
+			&i.CandidateArtifactRowID,
+			&i.CandidateSha256,
+			&i.CandidateSizeBytes,
+			&i.OperatorConfirmationEvidence,
+			&i.CreatedIdentity,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlanningCandidatesByWorkspace = `-- name: ListPlanningCandidatesByWorkspace :many
+SELECT id, candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, authority_revision_row_id, repo_target, branch, base_commit, destination, created_identity, created_at
+FROM planning_candidates
+WHERE workspace_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListPlanningCandidatesByWorkspace(ctx context.Context, workspaceRowID int64) ([]PlanningCandidate, error) {
+	rows, err := q.db.QueryContext(ctx, listPlanningCandidatesByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PlanningCandidate{}
+	for rows.Next() {
+		var i PlanningCandidate
+		if err := rows.Scan(
+			&i.ID,
+			&i.CandidateID,
+			&i.WorkspaceRowID,
+			&i.Family,
+			&i.Filename,
+			&i.ArtifactRowID,
+			&i.ArtifactSha256,
+			&i.ArtifactSizeBytes,
+			&i.DiscoveryClosurePacketRowID,
+			&i.AuthorityRevisionRowID,
+			&i.RepoTarget,
+			&i.Branch,
+			&i.BaseCommit,
+			&i.Destination,
+			&i.CreatedIdentity,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

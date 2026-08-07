@@ -186,6 +186,23 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if _, err := db.ExecContext(ctx, `UPDATE feature_workspaces SET current_authority_revision_row_id = ?, version = 2 WHERE id = ? AND version = 1`, authorityID, workspaceID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO feature_workspace_discovery_adoptions (workspace_row_id, adoption_id, operator_identity, adopted_workspace_version) VALUES (?, 'discovery-adoption-package', 'package-fixture', 2)`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	manifestSHA := strings.Repeat("f", 64)
+	var discoveryArtifactID, discoveryRevisionID, discoveryPacketID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-package', ?, 'feature-discovery/checkout/closure/manifest.json', ?, 'application/vnd.relay.feature-discovery-closure+json', 1) RETURNING id`, workspaceID, manifestSHA).Scan(&discoveryArtifactID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, created_identity, settled_destination, continuation_json) VALUES ('discovery-revision-package', ?, 1, ?, 'package-fixture', 'requirements', '{}') RETURNING id`, workspaceID, discoveryArtifactID).Scan(&discoveryRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_closure_packets (closure_packet_id, workspace_row_id, closing_revision_row_id, destination, manifest_artifact_row_id, manifest_sha256, manifest_size_bytes, manifest_media_type) VALUES ('discovery-packet-package', ?, ?, 'requirements', ?, ?, 1, 'application/vnd.relay.feature-discovery-closure+json') RETURNING id`, workspaceID, discoveryRevisionID, discoveryArtifactID, manifestSHA).Scan(&discoveryPacketID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE feature_workspaces SET current_discovery_revision_row_id = ?, current_discovery_closure_packet_row_id = ?, version = 3 WHERE id = ? AND version = 2`, discoveryRevisionID, discoveryPacketID, workspaceID); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P2-T2', ?, 10) RETURNING id`, workspaceID).Scan(&ticketID); err != nil {
 		t.Fatal(err)
 	}

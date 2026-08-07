@@ -439,3 +439,21 @@ func setPackageRunValidating(t *testing.T, fixture *packageEvidenceFixture) {
 		t.Fatal(err)
 	}
 }
+
+func TestWorkflowPackageAuditPrepareRejectsStaleSourceClosure(t *testing.T) {
+	fixture, service := newPackageAuditPrepareFixture(t, false)
+	if _, err := fixture.store.DB().Exec(`UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'source_commit_missing', verified_at = NULL WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: strings.Repeat("c", 40)})
+	if !errors.Is(err, ErrWorkflowAuditPacketStale) && !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("stale source prepare error = %v, want an audit evidence/package stale error", err)
+	}
+	var packets int
+	if err := fixture.store.DB().QueryRow(`SELECT COUNT(*) FROM audit_packets WHERE run_row_id = ?`, fixture.run.ID).Scan(&packets); err != nil {
+		t.Fatal(err)
+	}
+	if packets != 0 {
+		t.Fatalf("audit packets after stale preparation = %d, want 0", packets)
+	}
+}

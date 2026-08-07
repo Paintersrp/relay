@@ -51,7 +51,7 @@ func (s *Store) CommitOperationPacketPublication(ctx context.Context, batch *wor
 		}
 	}()
 
-	wrapped := &Tx{tx: tx}
+	wrapped := &Tx{tx: tx, artifacts: s.artifacts}
 	if err := fn(wrapped); err != nil {
 		return err
 	}

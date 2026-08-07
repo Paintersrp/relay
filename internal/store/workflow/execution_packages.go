@@ -63,6 +63,10 @@ func (tx *Tx) GetExecutionPackageByPackageID(ctx context.Context, packageID stri
 	return workflowgenerated.New(tx.tx).GetExecutionPackageByPackageID(ctx, packageID)
 }
 
+func (tx *Tx) ListExecutionPackagesByWorkspace(ctx context.Context, workspaceRowID int64) ([]ExecutionPackage, error) {
+	return workflowgenerated.New(tx.tx).ListExecutionPackagesByWorkspace(ctx, workspaceRowID)
+}
+
 func (tx *Tx) GetExecutionPackageBySelectionRowID(ctx context.Context, selectionRowID int64) (ExecutionPackage, error) {
 	return workflowgenerated.New(tx.tx).GetExecutionPackageBySelectionRowID(ctx, selectionRowID)
 }

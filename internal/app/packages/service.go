@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	featureapp "relay/internal/app/features"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/planningartifacts"
@@ -481,6 +482,15 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	workspace, err := tx.GetFeatureWorkspaceByRowID(ctx, selection.WorkspaceRowID)
 	if err != nil {
 		return packageBasis{}, err
+	}
+	currentness, currentnessErr := featureapp.EvaluateCurrentness(ctx, tx, workspace.WorkspaceID)
+	if currentnessErr != nil {
+		return packageBasis{}, currentnessErr
+	}
+	if currentness.Readiness != featureapp.FeatureCurrent || currentness.WorkspaceVersion != workspace.Version ||
+		!currentness.AuthorityRevisionRowID.Valid || !workspace.CurrentAuthorityRevisionRowID.Valid ||
+		currentness.AuthorityRevisionRowID.Int64 != workspace.CurrentAuthorityRevisionRowID.Int64 {
+		return packageBasis{}, fmt.Errorf("%w: Feature currentness is not current for package progression", ErrPackageBasisChanged)
 	}
 	if workspace.FeatureSlug != validated.brief.identity.FeatureSlug || !workspace.CurrentAuthorityRevisionRowID.Valid {
 		return packageBasis{}, fmt.Errorf("%w: current workspace authority does not match the Ticket Design Brief", ErrPackageBasisChanged)

@@ -465,3 +465,40 @@ func assertExecFails(t *testing.T, db *sql.DB, query string, args ...any) {
 }
 
 func testTimestamp() string { return "2026-07-24T21:00:00.000000000Z" }
+
+func TestPlanningCandidateMigrationFrom40PreservesLegacyWorkspacesWithoutCandidates(t *testing.T) {
+	db := openMigrationTestDB(t, "planning-candidate-upgrade")
+	defer db.Close()
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 40); err != nil {
+		t.Fatal(err)
+	}
+	var projectID, workspaceID int64
+	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-legacy-candidate', 'Legacy Candidate') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-legacy-candidate', ?, 'legacy') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+	var candidateTables int
+	for _, table := range []string{"planning_candidates", "planning_candidate_approvals", "delivery_ticket_production_links"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		candidateTables += count
+	}
+	var currentRevision, currentPacket sql.NullInt64
+	if err := db.QueryRow(`SELECT current_discovery_revision_row_id, current_discovery_closure_packet_row_id FROM feature_workspaces WHERE id = ?`, workspaceID).Scan(&currentRevision, &currentPacket); err != nil {
+		t.Fatal(err)
+	}
+	if candidateTables != 0 || currentRevision.Valid || currentPacket.Valid {
+		t.Fatalf("legacy candidate migration synthesized state: rows=%d revision=%v packet=%v", candidateTables, currentRevision, currentPacket)
+	}
+}

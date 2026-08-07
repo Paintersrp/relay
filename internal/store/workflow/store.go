@@ -124,7 +124,7 @@ func (s *Store) WithTx(ctx context.Context, fn func(*Tx) error) (err error) {
 			err = errors.Join(err, fmt.Errorf("rollback workflow transaction: %w", rollbackErr))
 		}
 	}()
-	if err := fn(&Tx{tx: tx}); err != nil {
+	if err := fn(&Tx{tx: tx, artifacts: s.artifacts}); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -160,7 +160,7 @@ func (s *Store) CommitArtifactBatch(ctx context.Context, batch *workflowartifact
 		}
 	}()
 
-	if err := fn(&Tx{tx: tx}); err != nil {
+	if err := fn(&Tx{tx: tx, artifacts: s.artifacts}); err != nil {
 		return err
 	}
 	promote := batch.Promote

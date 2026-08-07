@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	featureapp "relay/internal/app/features"
 	"relay/internal/mcp/semanticidentity"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/sourcevault"
@@ -80,6 +81,39 @@ func newRemediationLifecycleFixture(t *testing.T) remediationLifecycleFixture {
 	}); err != nil {
 		t.Fatal(err)
 	}
+
+	featureService, err := featureapp.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.workspace, err = featureService.SetIntegratedDiscoveryCapability(ctx, fixture.workspace.WorkspaceID, fixture.workspace.Version, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, fixture.workspace, err = featureService.AdoptFeatureDiscoveryLifecycle(ctx, featureapp.AdoptFeatureDiscoveryLifecycleInput{
+		WorkspaceID: fixture.workspace.WorkspaceID, ExpectedVersion: fixture.workspace.Version, OperatorIdentity: "operator",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discovery := []byte("# Remediation discovery\n")
+	started, updatedWorkspace, err := featureService.StartIntegratedDiscovery(ctx, featureapp.StartIntegratedDiscoveryInput{
+		WorkspaceID: fixture.workspace.WorkspaceID, ExpectedVersion: fixture.workspace.Version, Markdown: discovery,
+		SHA256: lifecycleSHA(discovery), CreatedIdentity: "operator", Destination: featureapp.DiscoveryDestinationDirectDeliveryTicket,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, updatedWorkspace, err := featureService.CloseFeatureDiscovery(ctx, featureapp.CloseFeatureDiscoveryInput{
+		WorkspaceID: updatedWorkspace.WorkspaceID, ExpectedVersion: updatedWorkspace.Version,
+		ExpectedRevisionID: started.Revision.DiscoveryRevisionID, Destination: featureapp.DiscoveryDestinationDirectDeliveryTicket, CreatedIdentity: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Packet.WorkspaceRowID != updatedWorkspace.ID {
+		t.Fatalf("discovery closure workspace = %d, want %d", closed.Packet.WorkspaceRowID, updatedWorkspace.ID)
+	}
+	fixture.workspace = updatedWorkspace
 
 	fixture.authorityLayers = []remediationAuthorityLayer{
 		{kind: "requirements", bytes: []byte("exact requirements bytes\n")},
@@ -215,7 +249,11 @@ func TestResolveCurrentWorkspaceAndDeliveryTicketReferences(t *testing.T) {
 	}
 	var route workflowstore.FeatureWorkspaceRouteState
 	if err := fixture.store.WithTx(fixture.ctx, func(tx *workflowstore.Tx) error {
-		route, err = tx.CreateFeatureWorkspaceRouteState(fixture.ctx, workflowstore.CreateFeatureWorkspaceRouteStateParams{RouteStateID: "route-remediation-1", WorkspaceRowID: workspace.ID, Sequence: 1, WorkspaceVersion: workspace.Version + 1, State: "ready"})
+		routes, err := tx.ListFeatureWorkspaceRouteStates(fixture.ctx, workspace.ID)
+		if err != nil {
+			return err
+		}
+		route, err = tx.CreateFeatureWorkspaceRouteState(fixture.ctx, workflowstore.CreateFeatureWorkspaceRouteStateParams{RouteStateID: "route-remediation-1", WorkspaceRowID: workspace.ID, Sequence: int64(len(routes) + 1), WorkspaceVersion: workspace.Version + 1, State: "ready"})
 		if err != nil {
 			return err
 		}
@@ -580,8 +618,12 @@ func assertCurrentAuthority(t *testing.T, fixture remediationLifecycleFixture, d
 		t.Fatalf("authority document = %#v err=%v", document, err)
 	}
 	for index, layer := range layers {
+		expectedKind := layer.kind
+		if expectedKind == "design" {
+			expectedKind = "shared_design"
+		}
 		bytesValue, err := base64.StdEncoding.Strict().DecodeString(document.Layers[index].BytesBase64)
-		if err != nil || !bytesEqual(bytesValue, layer.bytes) || document.Layers[index].Sequence != int64(index+1) || document.Layers[index].LayerKind != layer.kind || document.Layers[index].ArtifactSHA256 != layer.artifact.SHA256 || lifecycleSHA(layer.bytes) != layer.artifact.SHA256 {
+		if err != nil || !bytesEqual(bytesValue, layer.bytes) || document.Layers[index].Sequence != int64(index+1) || document.Layers[index].LayerKind != expectedKind || document.Layers[index].ArtifactSHA256 != layer.artifact.SHA256 || lifecycleSHA(layer.bytes) != layer.artifact.SHA256 {
 			t.Fatalf("authority layer %d = %#v", index, document.Layers[index])
 		}
 	}
@@ -595,7 +637,11 @@ func mustAuthorityDocument(t *testing.T, authorityRevisionID string, layers []re
 	t.Helper()
 	document := retainedAuthorityDocument{AuthorityRevisionID: authorityRevisionID, Layers: make([]retainedAuthorityLayer, len(layers))}
 	for index, layer := range layers {
-		document.Layers[index] = retainedAuthorityLayer{Sequence: int64(index + 1), LayerKind: layer.kind, ArtifactSHA256: layer.artifact.SHA256, BytesBase64: base64.StdEncoding.EncodeToString(layer.bytes)}
+		expectedKind := layer.kind
+		if expectedKind == "design" {
+			expectedKind = "shared_design"
+		}
+		document.Layers[index] = retainedAuthorityLayer{Sequence: int64(index + 1), LayerKind: expectedKind, ArtifactSHA256: layer.artifact.SHA256, BytesBase64: base64.StdEncoding.EncodeToString(layer.bytes)}
 	}
 	data, err := canonicalJSON(document)
 	if err != nil {

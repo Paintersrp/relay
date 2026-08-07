@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	workflowartifacts "relay/internal/artifacts/workflow"
 )
 
 type Tx struct {
-	tx *sql.Tx
+	tx        *sql.Tx
+	artifacts *workflowartifacts.Store
 }
 
 func (tx *Tx) CreateOperationPacketArtifact(ctx context.Context, params CreateOperationPacketArtifactParams) (OperationPacketArtifact, error) {

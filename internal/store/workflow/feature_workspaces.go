@@ -11,6 +11,18 @@ import (
 // aliases make the feature-workspace transaction surface available to the
 // application owners without exposing generated queries directly.
 type (
+	FeatureWorkspaceAuthorityLayerParams struct {
+		AuthorityRevisionRowID int64
+		LayerKind              string
+		Sequence               int64
+		ArtifactRowID          sql.NullInt64
+		RetainedArtifactRowID  sql.NullInt64
+		CandidateArtifactRowID sql.NullInt64
+		ArtifactSha256         string
+		SourceClosureRowID     sql.NullInt64
+		ApprovalRowID          sql.NullInt64
+	}
+
 	FeatureWorkspace                  = workflowgenerated.FeatureWorkspace
 	FeatureWorkspaceAdmittedInput     = workflowgenerated.FeatureWorkspaceAdmittedInput
 	FeatureWorkspaceDestination       = workflowgenerated.FeatureWorkspaceDestination
@@ -30,7 +42,7 @@ type (
 	CreateFeatureWorkspaceTicketDependencyParams  = workflowgenerated.CreateFeatureWorkspaceTicketDependencyParams
 	CreateFeatureWorkspaceTicketResolutionParams  = workflowgenerated.CreateFeatureWorkspaceTicketResolutionParams
 	CreateFeatureWorkspaceAuthorityRevisionParams = workflowgenerated.CreateFeatureWorkspaceAuthorityRevisionParams
-	CreateFeatureWorkspaceAuthorityLayerParams    = workflowgenerated.CreateFeatureWorkspaceAuthorityLayerParams
+	CreateFeatureWorkspaceAuthorityLayerParams    = FeatureWorkspaceAuthorityLayerParams
 	CreateGoverningArtifactApprovalParams         = workflowgenerated.CreateGoverningArtifactApprovalParams
 	GetValidGoverningArtifactApprovalParams       = workflowgenerated.GetValidGoverningArtifactApprovalParams
 )
@@ -175,7 +187,7 @@ func (tx *Tx) ListFeatureWorkspaceAuthorityRevisions(ctx context.Context, worksp
 }
 
 func (tx *Tx) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, revisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
-	return workflowgenerated.New(tx.tx).ListFeatureWorkspaceAuthorityLayers(ctx, revisionRowID)
+	return listFeatureWorkspaceAuthorityLayers(ctx, tx.tx, revisionRowID)
 }
 
 func (tx *Tx) ListFeatureWorkspaceTicketResolutions(ctx context.Context, ticketRowID int64) ([]FeatureWorkspaceTicketResolution, error) {
@@ -215,7 +227,23 @@ func (tx *Tx) CreateFeatureWorkspaceAuthorityRevision(ctx context.Context, param
 }
 
 func (tx *Tx) CreateFeatureWorkspaceAuthorityLayer(ctx context.Context, params CreateFeatureWorkspaceAuthorityLayerParams) (FeatureWorkspaceAuthorityLayer, error) {
-	return workflowgenerated.New(tx.tx).CreateFeatureWorkspaceAuthorityLayer(ctx, params)
+	var value FeatureWorkspaceAuthorityLayer
+	err := tx.tx.QueryRowContext(ctx, `
+INSERT INTO feature_workspace_authority_layers (
+ authority_revision_row_id, layer_kind, sequence, artifact_row_id,
+ retained_artifact_row_id, candidate_artifact_row_id, artifact_sha256,
+ source_closure_row_id, approval_row_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, authority_revision_row_id, layer_kind, sequence, artifact_row_id,
+ retained_artifact_row_id, candidate_artifact_row_id, artifact_sha256,
+ source_closure_row_id, created_at, approval_row_id`,
+		params.AuthorityRevisionRowID, params.LayerKind, params.Sequence,
+		params.ArtifactRowID, params.RetainedArtifactRowID, params.CandidateArtifactRowID,
+		params.ArtifactSha256, params.SourceClosureRowID, params.ApprovalRowID).Scan(
+		&value.ID, &value.AuthorityRevisionRowID, &value.LayerKind, &value.Sequence,
+		&value.ArtifactRowID, &value.RetainedArtifactRowID, &value.CandidateArtifactRowID,
+		&value.ArtifactSha256, &value.SourceClosureRowID, &value.CreatedAt, &value.ApprovalRowID)
+	return value, err
 }
 
 func (tx *Tx) AdvanceFeatureWorkspaceRouteState(ctx context.Context, routeRowID int64, workspaceState, workspaceID string, expectedVersion int64) (FeatureWorkspace, error) {
@@ -255,7 +283,7 @@ func (s *Store) ListGoverningArtifactApprovalsByWorkspace(ctx context.Context, w
 }
 
 func (s *Store) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, revisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
-	return workflowgenerated.New(s.db).ListFeatureWorkspaceAuthorityLayers(ctx, revisionRowID)
+	return listFeatureWorkspaceAuthorityLayers(ctx, s.db, revisionRowID)
 }
 
 func (tx *Tx) CreateGoverningArtifactApproval(ctx context.Context, params CreateGoverningArtifactApprovalParams) (GoverningArtifactApproval, error) {
@@ -340,4 +368,21 @@ WHERE id = ?`, rowID).Scan(
 		&value.SourceClosureRowID, &value.CreatedAt,
 	)
 	return value, err
+}
+
+func listFeatureWorkspaceAuthorityLayers(ctx context.Context, q rowsQueryer, revisionRowID int64) ([]FeatureWorkspaceAuthorityLayer, error) {
+	rows, err := q.QueryContext(ctx, `SELECT id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, candidate_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id FROM feature_workspace_authority_layers WHERE authority_revision_row_id = ? ORDER BY sequence, id`, revisionRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]FeatureWorkspaceAuthorityLayer, 0)
+	for rows.Next() {
+		var value FeatureWorkspaceAuthorityLayer
+		if err := rows.Scan(&value.ID, &value.AuthorityRevisionRowID, &value.LayerKind, &value.Sequence, &value.ArtifactRowID, &value.RetainedArtifactRowID, &value.CandidateArtifactRowID, &value.ArtifactSha256, &value.SourceClosureRowID, &value.CreatedAt, &value.ApprovalRowID); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
 }

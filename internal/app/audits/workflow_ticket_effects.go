@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	featureapp "relay/internal/app/features"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -15,6 +16,87 @@ const (
 	maxWorkflowAuditMaterialFindings = 32
 	maxWorkflowAuditObservations     = 32
 )
+
+type workflowAuditCurrentnessReader interface {
+	featureapp.CurrentnessReader
+	GetFeatureWorkspaceByRowID(context.Context, int64) (workflowstore.FeatureWorkspace, error)
+	GetExecutionPackageByRowID(context.Context, int64) (workflowstore.ExecutionPackage, error)
+	GetRunExecutionPackageApproval(context.Context, int64) (workflowstore.ExecutionPackageApproval, error)
+	GetDeliveryTicketSelectionByRowID(context.Context, int64) (workflowstore.DeliveryTicketSelection, error)
+	ListDeliveryTicketSelectionMembers(context.Context, int64) ([]workflowstore.DeliveryTicketSelectionMember, error)
+	ListExecutionPackageMembers(context.Context, int64) ([]workflowstore.ExecutionPackageMember, error)
+	GetDeliveryTicketRevisionByRowID(context.Context, int64) (workflowstore.DeliveryTicketRevision, error)
+	GetDeliveryTicketByRowID(context.Context, int64) (workflowstore.DeliveryTicket, error)
+	GetDeliveryTicketRevisionApprovalByRowID(context.Context, int64) (workflowstore.DeliveryTicketRevisionApproval, error)
+}
+
+func verifyWorkflowPackageCurrentness(ctx context.Context, reader workflowAuditCurrentnessReader, run workflowstore.Run) error {
+	if !run.ExecutionPackageRowID.Valid || !run.PackageApprovalRowID.Valid {
+		return ErrWorkflowAuditPacketStale
+	}
+	pkg, err := reader.GetExecutionPackageByRowID(ctx, run.ExecutionPackageRowID.Int64)
+	if err != nil || pkg.ID != run.ExecutionPackageRowID.Int64 || pkg.RepoTarget != run.RepoTarget || pkg.Branch != run.Branch || pkg.BaseCommit != run.BaseCommit {
+		return ErrWorkflowAuditPacketStale
+	}
+	approval, err := reader.GetRunExecutionPackageApproval(ctx, run.ID)
+	if err != nil || approval.ID != run.PackageApprovalRowID.Int64 || approval.PackageRowID != pkg.ID || approval.PackageSha256 != pkg.PackageSha256 {
+		return ErrWorkflowAuditPacketStale
+	}
+	workspace, err := reader.GetFeatureWorkspaceByRowID(ctx, pkg.WorkspaceRowID)
+	if err != nil {
+		return ErrWorkflowAuditPacketStale
+	}
+	currentness, err := featureapp.EvaluateCurrentness(ctx, reader, workspace.WorkspaceID)
+	if err != nil || currentness.Readiness != featureapp.FeatureCurrent || currentness.WorkspaceVersion != workspace.Version || !currentness.AuthorityRevisionRowID.Valid || currentness.AuthorityRevisionRowID.Int64 != pkg.AuthorityRevisionRowID {
+		return ErrWorkflowAuditPacketStale
+	}
+	authority, err := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, pkg.AuthorityRevisionRowID)
+	if err != nil || authority.WorkspaceRowID != workspace.ID || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != pkg.SourceClosureRowID {
+		return ErrWorkflowAuditPacketStale
+	}
+	closure, err := reader.GetSourceVaultClosureByRowID(ctx, pkg.SourceClosureRowID)
+	if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.CommitOID != pkg.BaseCommit {
+		return ErrWorkflowAuditPacketStale
+	}
+	selection, err := reader.GetDeliveryTicketSelectionByRowID(ctx, pkg.SelectionRowID)
+	if err != nil || selection.State != "consumed" || !selection.SourceClosureRowID.Valid || selection.SourceClosureRowID.Int64 != closure.ID {
+		return ErrWorkflowAuditPacketStale
+	}
+	members, err := reader.ListExecutionPackageMembers(ctx, pkg.ID)
+	if err != nil || len(members) == 0 {
+		return ErrWorkflowAuditPacketStale
+	}
+	selectionMembers, err := reader.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+	if err != nil || len(selectionMembers) != len(members) {
+		return ErrWorkflowAuditPacketStale
+	}
+	for _, member := range members {
+		var selected workflowstore.DeliveryTicketSelectionMember
+		found := false
+		for _, candidate := range selectionMembers {
+			if candidate.ID == member.SelectionMemberRowID && candidate.RevisionRowID == member.RevisionRowID {
+				selected, found = candidate, true
+				break
+			}
+		}
+		if !found || selected.ApprovalRowID < 1 {
+			return ErrWorkflowAuditPacketStale
+		}
+		revision, err := reader.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
+		if err != nil || revision.CancellationReason.Valid || revision.SourceClosureRowID != closure.ID || revision.RepoTarget != pkg.RepoTarget || revision.Branch != pkg.Branch || revision.BaseCommit != pkg.BaseCommit {
+			return ErrWorkflowAuditPacketStale
+		}
+		ticket, err := reader.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+		if err != nil || ticket.WorkspaceRowID != workspace.ID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID {
+			return ErrWorkflowAuditPacketStale
+		}
+		ticketApproval, err := reader.GetDeliveryTicketRevisionApprovalByRowID(ctx, selected.ApprovalRowID)
+		if err != nil || ticketApproval.RevisionRowID != revision.ID || ticketApproval.ApprovalKind != "delivery" || ticketApproval.ApprovalState != "approved" || ticketApproval.SourceClosureRowID != closure.ID || !ticketApproval.AuthorityRevisionRowID.Valid || ticketApproval.AuthorityRevisionRowID.Int64 != authority.ID {
+			return ErrWorkflowAuditPacketStale
+		}
+	}
+	return nil
+}
 
 func bindWorkflowAuditPacketTicketObligations(
 	ctx context.Context,
@@ -40,12 +122,13 @@ func bindWorkflowAuditPacketTicketObligations(
 	if approval.PackageRowID != pkg.ID || approval.PackageSha256 != pkg.PackageSha256 {
 		return ErrWorkflowAuditPacketStale
 	}
-	selection, err := tx.GetDeliveryTicketSelectionByRowID(ctx, pkg.SelectionRowID)
-	if err != nil || selection.State != "consumed" || !selection.SourceClosureRowID.Valid || selection.SourceClosureRowID.Int64 != pkg.SourceClosureRowID {
+	workspace, err := tx.GetFeatureWorkspaceByRowID(ctx, pkg.WorkspaceRowID)
+	if err != nil {
 		return ErrWorkflowAuditPacketStale
 	}
-	workspace, err := tx.GetFeatureWorkspaceByRowID(ctx, pkg.WorkspaceRowID)
-	if err != nil || !workspace.CurrentAuthorityRevisionRowID.Valid || workspace.CurrentAuthorityRevisionRowID.Int64 != pkg.AuthorityRevisionRowID {
+	currentness, err := featureapp.EvaluateCurrentness(ctx, tx, workspace.WorkspaceID)
+	if err != nil || currentness.Readiness != featureapp.FeatureCurrent || currentness.WorkspaceVersion != workspace.Version ||
+		!currentness.AuthorityRevisionRowID.Valid || currentness.AuthorityRevisionRowID.Int64 != pkg.AuthorityRevisionRowID {
 		return ErrWorkflowAuditPacketStale
 	}
 	authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, pkg.AuthorityRevisionRowID)
@@ -56,18 +139,40 @@ func bindWorkflowAuditPacketTicketObligations(
 	if err != nil || closure.State != workflowstore.SourceVaultClosureStateReady || closure.CommitOID != pkg.BaseCommit {
 		return ErrWorkflowAuditPacketStale
 	}
+	selection, err := tx.GetDeliveryTicketSelectionByRowID(ctx, pkg.SelectionRowID)
+	if err != nil || selection.State != "consumed" || !selection.SourceClosureRowID.Valid || selection.SourceClosureRowID.Int64 != closure.ID {
+		return ErrWorkflowAuditPacketStale
+	}
 	members, err := tx.ListExecutionPackageMembers(ctx, pkg.ID)
 	if err != nil || len(members) == 0 {
 		return ErrWorkflowAuditPacketStale
 	}
+	selectionMembers, err := tx.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+	if err != nil || len(selectionMembers) != len(members) {
+		return ErrWorkflowAuditPacketStale
+	}
 	for _, member := range members {
+		var selectedMember workflowstore.DeliveryTicketSelectionMember
+		found := false
+		for _, candidate := range selectionMembers {
+			if candidate.ID == member.SelectionMemberRowID && candidate.RevisionRowID == member.RevisionRowID {
+				selectedMember, found = candidate, true
+				break
+			}
+		}
+		if !found || selectedMember.ApprovalRowID < 1 {
+			return ErrWorkflowAuditPacketStale
+		}
 		revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
-		if err != nil || revision.CancellationReason.Valid || revision.SourceClosureRowID != pkg.SourceClosureRowID ||
-			revision.RepoTarget != pkg.RepoTarget || revision.Branch != pkg.Branch || revision.BaseCommit != pkg.BaseCommit {
+		if err != nil || revision.SourceClosureRowID != closure.ID || revision.RepoTarget != pkg.RepoTarget || revision.Branch != pkg.Branch || revision.BaseCommit != pkg.BaseCommit || revision.CancellationReason.Valid {
 			return ErrWorkflowAuditPacketStale
 		}
 		ticket, err := tx.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
 		if err != nil || ticket.WorkspaceRowID != workspace.ID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID {
+			return ErrWorkflowAuditPacketStale
+		}
+		ticketApproval, err := tx.GetDeliveryTicketRevisionApprovalByRowID(ctx, selectedMember.ApprovalRowID)
+		if err != nil || ticketApproval.RevisionRowID != revision.ID || ticketApproval.ApprovalKind != "delivery" || ticketApproval.ApprovalState != "approved" || ticketApproval.SourceClosureRowID != closure.ID || !ticketApproval.AuthorityRevisionRowID.Valid || ticketApproval.AuthorityRevisionRowID.Int64 != authority.ID {
 			return ErrWorkflowAuditPacketStale
 		}
 		if _, err := tx.CreateAuditPacketTicketObligation(ctx, workflowstore.CreateAuditPacketTicketObligationParams{
@@ -195,6 +300,9 @@ func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *wor
 // the caller's transaction. The pre-transaction evidence is the immutable
 // comparison basis; it must never be loaded again while persistence is open.
 func verifyWorkflowPackageDecisionAuthority(ctx context.Context, tx *workflowstore.Tx, run workflowstore.Run, packet workflowstore.AuditPacket, evidence WorkflowPackageExecutionEvidence) error {
+	if err := verifyWorkflowPackageCurrentness(ctx, tx, run); err != nil {
+		return err
+	}
 	if !sameWorkflowPackageRunIdentity(evidence.Run, run) {
 		return ErrWorkflowAuditPacketStale
 	}
@@ -218,6 +326,10 @@ func verifyWorkflowPackageDecisionAuthority(ctx context.Context, tx *workflowsto
 	workspace, err := tx.GetFeatureWorkspaceByRowID(ctx, pkg.WorkspaceRowID)
 	if err != nil {
 		return err
+	}
+	currentness, err := featureapp.EvaluateCurrentness(ctx, tx, workspace.WorkspaceID)
+	if err != nil || currentness.Readiness != featureapp.FeatureCurrent || currentness.WorkspaceVersion != workspace.Version || !currentness.AuthorityRevisionRowID.Valid || currentness.AuthorityRevisionRowID.Int64 != pkg.AuthorityRevisionRowID {
+		return ErrWorkflowAuditPacketStale
 	}
 	authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, pkg.AuthorityRevisionRowID)
 	if err != nil {
@@ -249,7 +361,7 @@ func verifyWorkflowPackageDecisionAuthority(ctx context.Context, tx *workflowsto
 			break
 		}
 	}
-	if !reflect.DeepEqual(ticket, evidence.Authority.Ticket) || !reflect.DeepEqual(revision, evidence.Authority.TicketRevision) || !approved || ticket.TicketID != evidence.Authority.Ticket.TicketID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID || revision.DeliveryTicketRowID != ticket.ID || revision.CancellationReason.Valid || revision.SourceClosureRowID != closure.ID || evidence.Authority.TicketApproval.RevisionRowID != revision.ID || evidence.Authority.TicketApproval.ApprovalState != "approved" || evidence.Authority.TicketApproval.SourceClosureRowID != closure.ID || !evidence.Authority.TicketApproval.AuthorityRevisionRowID.Valid || evidence.Authority.TicketApproval.AuthorityRevisionRowID.Int64 != authority.ID {
+	if !reflect.DeepEqual(ticket, evidence.Authority.Ticket) || !reflect.DeepEqual(revision, evidence.Authority.TicketRevision) || !approved || ticket.TicketID != evidence.Authority.Ticket.TicketID || ticket.WorkspaceRowID != workspace.ID || !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID || revision.DeliveryTicketRowID != ticket.ID || revision.RepoTarget != pkg.RepoTarget || revision.Branch != pkg.Branch || revision.BaseCommit != pkg.BaseCommit || revision.CancellationReason.Valid || revision.SourceClosureRowID != closure.ID || evidence.Authority.TicketApproval.RevisionRowID != revision.ID || evidence.Authority.TicketApproval.ApprovalKind != "delivery" || evidence.Authority.TicketApproval.ApprovalState != "approved" || evidence.Authority.TicketApproval.SourceClosureRowID != closure.ID || !evidence.Authority.TicketApproval.AuthorityRevisionRowID.Valid || evidence.Authority.TicketApproval.AuthorityRevisionRowID.Int64 != authority.ID {
 		return ErrWorkflowAuditPacketStale
 	}
 	members, err := tx.ListExecutionPackageMembers(ctx, pkg.ID)

@@ -60,12 +60,18 @@ func (s *PackageWorkflowService) Prepare(ctx context.Context, input packages.Pre
 	if err != nil {
 		return PackageDetailView{}, err
 	}
-	return packageDetailView(packages.Detail{
+	view := packageDetailView(packages.Detail{
 		Package:                 result.Package,
 		Members:                 result.Members,
 		TicketDesignBrief:       result.TicketDesignBrief,
 		DeterministicOperations: result.DeterministicOperations,
-	}), nil
+	})
+	currentness, err := s.packageCurrentness(ctx, result.Package.WorkspaceRowID)
+	if err != nil {
+		return PackageDetailView{}, err
+	}
+	view.Currentness = currentness
+	return view, nil
 }
 
 func (s *PackageWorkflowService) Approve(ctx context.Context, input packages.ApproveInput) (PackageApprovalView, error) {
@@ -76,10 +82,15 @@ func (s *PackageWorkflowService) Approve(ctx context.Context, input packages.App
 	if err != nil {
 		return PackageApprovalView{}, err
 	}
+	currentness, err := s.packageCurrentness(ctx, result.Package.WorkspaceRowID)
+	if err != nil {
+		return PackageApprovalView{}, err
+	}
 	return PackageApprovalView{
 		Package:           packageIdentityView(result.Package),
 		Run:               runView(result.Run),
 		PackageApprovalID: result.PackageApproval.ApprovalID,
+		Currentness:       currentness,
 	}, nil
 }
 
@@ -91,7 +102,13 @@ func (s *PackageWorkflowService) Get(ctx context.Context, packageID string) (Pac
 	if err != nil {
 		return PackageDetailView{}, err
 	}
-	return packageDetailView(detail), nil
+	view := packageDetailView(detail)
+	currentness, err := s.packageCurrentness(ctx, detail.Package.WorkspaceRowID)
+	if err != nil {
+		return PackageDetailView{}, err
+	}
+	view.Currentness = currentness
+	return view, nil
 }
 
 func (s *PackageWorkflowService) GetMutationLease(ctx context.Context, runID string) (*MutationLeaseView, error) {
