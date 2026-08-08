@@ -519,14 +519,10 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 		badRequest(w, "Guided feature action and expected version are required")
 		return
 	}
-	if !request.Confirmation {
-		writeWorkspaceError(w, featureapp.ErrFeatureCompletionConfirmation)
-		return
-	}
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "complete_feature":
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "continue_established_route", "complete_feature":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
@@ -540,13 +536,36 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 		writeWorkspaceError(w, err)
 		return
 	}
+	currentness, err := h.guided.Currentness(r.Context(), workspaceID)
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
 	completion, err := h.completion.Evaluate(r.Context(), workspaceID)
 	if err != nil {
 		writeWorkspaceError(w, err)
 		return
 	}
-	primaryAction, primaryEnabled := guidedPrimaryAction(assessment, completion.CurrentDecision, guidedCompletionReady(completion.Gates))
-	if action != primaryAction || !primaryEnabled {
+	authority, err := h.authority.ReadAuthority(r.Context(), workspaceID)
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	layers := []string{}
+	for _, revision := range authority {
+		if !revision.Historical {
+			for _, layer := range revision.Layers {
+				layers = append(layers, layer.LayerKind)
+			}
+		}
+	}
+	decision := guidedDecision(assessment, currentness, completion.CurrentDecision, completion.Gates, layers)
+	primary := decision.AvailableActions[0]
+	if primary.RequiresConfirmation && !request.Confirmation {
+		writeWorkspaceError(w, featureapp.ErrFeatureCompletionConfirmation)
+		return
+	}
+	if action != string(primary.Action) || !primary.Enabled {
 		writeWorkspaceError(w, errGuidedActionBlocked)
 		return
 	}
@@ -582,6 +601,10 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 			writeWorkspaceError(w, err)
 			return
 		}
+	case "author_requirements", "author_shared_design", "author_delivery_ticket", "continue_established_route":
+		// A guided role handoff is intentionally read-only: the existing role
+		// owner performs its own bounded operation and the operator returns here.
+		// No lifecycle mutation is fabricated by the Feature workspace endpoint.
 	case "complete_feature":
 		if _, err := h.completion.Complete(r.Context(), featureapp.CompletionInput{WorkspaceID: workspaceID, ExpectedVersion: request.ExpectedVersion, OperatorConfirmed: request.Confirmation}); err != nil {
 			writeWorkspaceError(w, err)
@@ -659,8 +682,20 @@ func guidedProjectionDTO(detail wayfinder.WorkspaceDetail, assessment GuidedAsse
 		}
 		authorityRevisions = append(authorityRevisions, map[string]any{"revisionNumber": revision.Revision.RevisionNumber, "layers": layers, "historical": revision.Historical})
 	}
-	primaryAction, primaryEnabled := guidedPrimaryAction(assessment, completion.CurrentDecision, completionReady)
-	availableActions := []map[string]any{{"action": primaryAction, "primary": true, "enabled": primaryEnabled, "requiresConfirmation": primaryEnabled}}
+	currentLayers := []string{}
+	for _, revision := range authority {
+		if !revision.Historical {
+			for _, layer := range revision.Layers {
+				currentLayers = append(currentLayers, layer.LayerKind)
+			}
+		}
+	}
+	decision := guidedDecision(assessment, currentness, completion.CurrentDecision, completion.Gates, currentLayers)
+	primaryAction := string(decision.PrimaryAction)
+	availableActions := make([]map[string]any, 0, len(decision.AvailableActions))
+	for _, action := range decision.AvailableActions {
+		availableActions = append(availableActions, map[string]any{"action": string(action.Action), "primary": action.Primary, "enabled": action.Enabled, "requiresConfirmation": action.RequiresConfirmation, "blockedReason": action.BlockedReason, "handoff": action.Handoff})
+	}
 	workspace := Workspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, State: detail.Workspace.State, Version: detail.Workspace.Version, CreatedAt: detail.Workspace.CreatedAt, UpdatedAt: detail.Workspace.UpdatedAt}
 	if completion.Workspace.Version > workspace.Version {
 		workspace = Workspace{WorkspaceID: completion.Workspace.WorkspaceID, FeatureSlug: completion.Workspace.FeatureSlug, State: completion.Workspace.State, Version: completion.Workspace.Version, CreatedAt: completion.Workspace.CreatedAt, UpdatedAt: completion.Workspace.UpdatedAt}
@@ -682,17 +717,25 @@ func guidedProjectionDTO(detail wayfinder.WorkspaceDetail, assessment GuidedAsse
 	}
 }
 
-func guidedPrimaryAction(assessment GuidedAssessment, decision *appoperations.FeatureCompletionDecision, completionReady bool) (string, bool) {
-	if assessment.State == featureapp.DiscoveryStateClosed {
-		if decision != nil {
-			return "completion_recorded", false
-		}
-		return "complete_feature", completionReady
+// guidedDecision is a transport adapter only. The Feature application owner
+// determines eligibility and the one-primary-action contract.
+func guidedDecision(assessment GuidedAssessment, currentness featureapp.FeatureCurrentnessDecision, decision *appoperations.FeatureCompletionDecision, gates []appoperations.FeatureCompletionGate, layers []string) featureapp.GuidedFeatureDecision {
+	completionGates := make([]featureapp.GuidedCompletionGate, 0, len(gates))
+	for _, gate := range gates {
+		completionGates = append(completionGates, featureapp.GuidedCompletionGate{Name: gate.Name, Ready: gate.Ready})
 	}
-	if assessment.CurrentRevisionID != "" && assessment.Destination != "" && assessment.State == featureapp.DiscoveryStateActive && len(assessment.Blockers) == 0 && len(assessment.PendingIntegrations) == 0 && len(assessment.ActiveOperations) == 0 && len(assessment.RouteMaterialOpen) == 0 && len(assessment.RequiredEvidence) == 0 {
-		return "close_discovery", true
-	}
-	return "continue_discovery", assessment.CurrentRevisionID != ""
+	return featureapp.DecideGuidedFeatureAction(featureapp.GuidedJourneyState{
+		State: assessment.State, Destination: assessment.Destination, Continuation: assessment.Continuation,
+		HasCurrentRevision: assessment.CurrentRevisionID != "", AuthorityLayers: layers, Blockers: assessment.Blockers,
+		PendingIntegrations: assessment.PendingIntegrations, ActiveOperations: assessment.ActiveOperations,
+		RouteMaterialOpen: assessment.RouteMaterialOpen, RequiredEvidence: assessment.RequiredEvidence,
+	}, currentness, featureapp.GuidedCompletion{Gates: completionGates, Recorded: decision != nil})
+}
+
+func guidedPrimaryAction(assessment GuidedAssessment, currentness featureapp.FeatureCurrentnessDecision, decision *appoperations.FeatureCompletionDecision, completionReady bool) (string, bool) {
+	applicationDecision := guidedDecision(assessment, currentness, decision, []appoperations.FeatureCompletionGate{{Name: "completion", Ready: completionReady}}, nil)
+	primary := applicationDecision.AvailableActions[0]
+	return string(primary.Action), primary.Enabled
 }
 
 func guidedCompletionReady(gates []appoperations.FeatureCompletionGate) bool {

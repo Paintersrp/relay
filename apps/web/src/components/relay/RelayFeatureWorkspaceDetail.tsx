@@ -12,6 +12,11 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "continue_discovery": return "Continue discovery";
     case "close_discovery": return "Close discovery";
     case "complete_feature": return "Complete feature";
+    case "author_requirements": return "Author Requirements";
+    case "author_shared_design": return "Author Shared Design";
+    case "author_delivery_ticket": return "Author Delivery Ticket";
+    case "continue_established_route": return "Continue established route";
+    case "legacy_recovery": return "Legacy recovery";
     case "completion_recorded": return "Completion recorded";
   }
 }
@@ -62,7 +67,8 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     },
   });
   const actionEnabled = primary.enabled;
-  const actionDisabledReason = primary.enabled ? "Confirm this action before continuing." : "This action is blocked by the current guided workspace state.";
+  const isRoleHandoff = !primary.requiresConfirmation && Boolean(primary.handoff);
+  const actionDisabledReason = primary.enabled ? "Confirm this action before continuing." : (primary.blockedReason || "This action is blocked by the current guided workspace state.");
 
   return <div className="space-y-6">
     <div className="flex items-center gap-2">
@@ -118,9 +124,10 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     <section aria-labelledby="guided-action" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <h2 id="guided-action" className="font-semibold">Next guided action</h2>
       <p className="mt-1 text-sm text-muted-foreground">The server selected one primary action for this workspace.</p>
-      <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(primary.action)}” against this displayed workspace state.</span></label>
+      {primary.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(primary.action)}” against this displayed workspace state.</span></label> : null}
+      {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} This page has not performed that role operation; return here after the bounded role work is complete.</p> : null}
       {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
-      <Button className="mt-4" type="button" disabled={!actionEnabled || !confirmed || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button>
+      {!isRoleHandoff ? <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button> : null}
     </section>
 
     <details className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">

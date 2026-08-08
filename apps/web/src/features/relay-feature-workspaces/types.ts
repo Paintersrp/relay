@@ -113,7 +113,7 @@ export interface ProjectFeatureWorkspaceListResponse {
   items: ProjectFeatureWorkspaceSummary[];
 }
 
-export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "complete_feature" | "completion_recorded";
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "continue_established_route" | "complete_feature" | "completion_recorded" | "legacy_recovery";
 
 export interface GuidedFeatureDetail {
   workspace: FeatureWorkspace;
@@ -143,7 +143,7 @@ export interface GuidedFeatureDetail {
       requiredEvidence: string[];
     };
   };
-  availableActions: Array<{ action: GuidedFeatureAction; primary: boolean; enabled: boolean; requiresConfirmation: boolean }>;
+  availableActions: Array<{ action: GuidedFeatureAction; primary: boolean; enabled: boolean; requiresConfirmation: boolean; blockedReason?: string; handoff?: string }>;
   primaryAction: GuidedFeatureAction;
 }
 
