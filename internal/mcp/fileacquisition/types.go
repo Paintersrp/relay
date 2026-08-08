@@ -9,10 +9,10 @@ const (
 )
 
 type FileParameter struct {
-	DownloadURL string
-	FileID      string
-	MIMEType    string
-	FileName    string
+	DownloadURL string `json:"download_url"`
+	FileID      string `json:"file_id"`
+	MIMEType    string `json:"mime_type,omitempty"`
+	FileName    string `json:"file_name,omitempty"`
 }
 
 type DeclaredFile struct {
