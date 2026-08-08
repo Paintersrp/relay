@@ -3,6 +3,7 @@ package features
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	apptickets "relay/internal/app/tickets"
@@ -116,6 +117,14 @@ type GuidedRecoverySection struct {
 }
 type GuidedDiagnosticsSection struct {
 	Stale, Historical, Discovery, Delivery, Prototype []string
+	Integrity                                         GuidedIntegritySection
+}
+
+// GuidedIntegritySection is a read-only, owner-derived identity inspection
+// surface. It is intentionally separate from progression state and is never
+// accepted by GuidedActionInput.
+type GuidedIntegritySection struct {
+	Discovery, Authority, Planning, Delivery, Prototype []string
 }
 
 // GuidedHandoff transfers the actual owner-composed operation surface for the
@@ -143,7 +152,10 @@ type GuidedTicketTransfer struct {
 	TicketID       string
 	RevisionNumber int64
 	Readiness      []string
-	DesignBrief    string
+	// OperationID identifies the established planner operation that owns the
+	// approved Ticket Design Brief. The ticket's canonical JSON is deliberately
+	// not a Design Brief and is never substituted for one here.
+	OperationID string
 }
 type GuidedPackageTransfer struct {
 	PackageID string
@@ -231,7 +243,42 @@ func (s *Service) ReadGuidedProjection(ctx context.Context, workspaceID string) 
 	if err != nil {
 		return GuidedFeatureProjection{}, err
 	}
-	return composeGuidedFeatureProjection(workspace, project, assessment, currentness, authority, completion, planning, delivery, prototype), nil
+	projection := composeGuidedFeatureProjection(workspace, project, assessment, currentness, authority, completion, planning, delivery, prototype)
+	projection.Diagnostics.Integrity = guidedIntegrity(ctx, s, workspace, assessment, authority, planning, delivery, prototype)
+	return projection, nil
+}
+
+func guidedIntegrity(ctx context.Context, s *Service, workspace workflowstore.FeatureWorkspace, assessment DiscoveryAssessment, authority []AuthorityRevisionDetail, planning GuidedPlanningSection, delivery GuidedDeliverySection, prototype GuidedPrototypeSection) GuidedIntegritySection {
+	result := GuidedIntegritySection{}
+	if assessment.Revision != nil {
+		result.Discovery = append(result.Discovery, assessment.Revision.DiscoveryRevisionID)
+	}
+	if workspace.CurrentDiscoveryClosurePacketRowID.Valid {
+		if packet, err := s.store.GetDiscoveryClosurePacketByRowID(ctx, workspace.CurrentDiscoveryClosurePacketRowID.Int64); err == nil {
+			result.Discovery = append(result.Discovery, packet.ClosurePacketID)
+		}
+	}
+	for _, revision := range authority {
+		prefix := "historical:"
+		if !revision.Historical {
+			prefix = "current:"
+		}
+		result.Authority = append(result.Authority, prefix+revision.Revision.AuthorityRevisionID)
+		for _, layer := range revision.Layers {
+			result.Authority = append(result.Authority, prefix+layer.LayerKind)
+		}
+	}
+	if planning.CandidateCount > 0 {
+		result.Planning = append(result.Planning, "candidates:"+strconv.Itoa(planning.CandidateCount))
+	}
+	for _, entry := range delivery.Frontier {
+		result.Delivery = append(result.Delivery, entry.TicketID+"@"+strconv.FormatInt(entry.RevisionNumber, 10))
+	}
+	result.Delivery = append(result.Delivery, nonEmpty(delivery.PackageID, delivery.RunID, delivery.AuditPacketID)...)
+	if prototype.RunID != "" {
+		result.Prototype = append(result.Prototype, prototype.RunID)
+	}
+	return result
 }
 
 func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, project workflowstore.Project, assessment DiscoveryAssessment, currentness FeatureCurrentnessDecision, authority []AuthorityRevisionDetail, completion CompletionStatus, planning GuidedPlanningSection, delivery GuidedDeliverySection, prototype GuidedPrototypeSection) GuidedFeatureProjection {
@@ -547,7 +594,7 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 	case GuidedActionLegacyRecovery:
 		_, _, err = s.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorIdentity: "guided-operator"})
 	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryTicket, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate,
-		GuidedActionPreparePackage, GuidedActionLaunchRun, GuidedActionPrepareAudit, GuidedActionRecordAuditDecision,
+		GuidedActionPreparePackage, GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun, GuidedActionPrepareAudit, GuidedActionRecordAuditDecision,
 		GuidedActionRemediate, GuidedActionPrototypeExecute, GuidedActionPrototypeCleanup, GuidedActionPrototypeQA:
 		handoff, handoffErr := s.guidedHandoff(ctx, input.WorkspaceID, requested, before)
 		if handoffErr != nil {
@@ -576,7 +623,7 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action GuidedFeatureAction, projection GuidedFeatureProjection) (GuidedHandoff, error) {
 	handoff := GuidedHandoff{Role: string(action), ResumeRoute: "/feature-workspaces/" + workspaceID + "/guided", Context: map[string]string{"destination": projection.Discovery.Destination, "currentness": projection.Currentness.Readiness}}
 	switch action {
-	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryTicket, GuidedActionContinueEstablishedRoute:
+	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionContinueEstablishedRoute:
 		// Compose the existing planner authoring and auditor review envelopes with
 		// workspace context only. The guided handoff prepares the owner surface;
 		// it never authors, reviews, approves, or promotes a candidate or ticket.
@@ -601,6 +648,14 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Context["continuation"] = projection.Discovery.Continuation
 		handoff.Transfer = &GuidedOperationTransfer{Members: closureMemberRoles(planner.Members), AuthorityLayers: authorityLayerKinds(review.Authority)}
 		handoff.Summary = "Planner authoring and review are prepared through their existing owners. Author the current planning artifact, complete its read-only review, then explicitly approve and promote it before resuming the guided workspace."
+	case GuidedActionAuthorDeliveryTicket:
+		// Delivery Ticket authoring is a distinct planner operation, not a
+		// planning-candidate projection. The ticket-design-brief operation owns
+		// the authority subsequently consumed by package preparation.
+		handoff.Context["owner"] = "ticket_design_brief_authoring"
+		handoff.Context["operationId"] = "planner.ticket_design_brief"
+		handoff.Transfer = &GuidedOperationTransfer{Ticket: &GuidedTicketTransfer{OperationID: "planner.ticket_design_brief"}}
+		handoff.Summary = "Enter the existing Delivery Ticket Design Brief authoring operation, then return here when the resulting Ticket is ready for selection."
 	case GuidedActionReviewPlanningCandidate:
 		// Review is a read-only auditor preparation step. It composes the same
 		// owner envelope the planner review path uses and never writes review or
@@ -629,7 +684,7 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Context["owner"] = "execution_package_preparation"
 		handoff.Transfer = &GuidedOperationTransfer{Ticket: ticket}
 		handoff.Summary = "The selected Delivery Ticket is identified through the delivery owner. Prepare the execution package with the ticket design brief, then return here to approve it server-side."
-	case GuidedActionLaunchRun:
+	case GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun:
 		if s.guidedPackages == nil {
 			return GuidedHandoff{}, ErrGuidedPackageOwnerUnavailable
 		}
@@ -643,7 +698,14 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		transfer := &GuidedRunTransfer{RunID: packageState.RunID, Status: packageState.RunStatus, RepoTarget: packageState.RunRepoTarget, Branch: packageState.RunBranch, BaseCommit: packageState.RunBaseCommit, PackageID: packageState.PackageID}
 		handoff.Context["owner"] = "package_run"
 		handoff.Transfer = &GuidedOperationTransfer{Run: transfer}
-		handoff.Summary = "The package Run is identified through its existing owner. Continue its execution through the Run owner, then return here for a fresh currentness check."
+		switch action {
+		case GuidedActionLaunchRun:
+			handoff.Summary = "The package Run is identified through its existing owner. Launch its initial execution through the Run owner, then return here for a fresh currentness check."
+		case GuidedActionContinueRun:
+			handoff.Summary = "The active package Run is identified through its existing owner. Continue or view its execution through the Run owner, then return here for a fresh currentness check."
+		default:
+			handoff.Summary = "The failed or cancelled package Run is identified through its existing owner. Use its supported recovery operation through the Run owner, then return here for a fresh currentness check."
+		}
 	case GuidedActionPrepareAudit, GuidedActionRecordAuditDecision:
 		if projection.Delivery.RunID == "" {
 			return GuidedHandoff{}, ErrGuidedActionBlocked
@@ -757,7 +819,10 @@ func (s *Service) guidedSelectedTicketTransfer(ctx context.Context, workspaceID 
 	if err != nil {
 		return nil, err
 	}
-	transfer := &GuidedTicketTransfer{TicketID: detail.Ticket.TicketID, RevisionNumber: detail.Revision.RevisionNumber, Readiness: append([]string(nil), detail.Readiness.Reasons...), DesignBrief: detail.Canonical.RelativePath}
+	// A Delivery Ticket canonical artifact is not the approved Ticket Design
+	// Brief. Package preparation enters the established ticket-design-brief
+	// operation, which resolves and validates that authority itself.
+	transfer := &GuidedTicketTransfer{TicketID: detail.Ticket.TicketID, RevisionNumber: detail.Revision.RevisionNumber, Readiness: append([]string(nil), detail.Readiness.Reasons...), OperationID: "planner.ticket_design_brief"}
 	return transfer, nil
 }
 

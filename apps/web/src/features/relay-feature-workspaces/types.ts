@@ -118,7 +118,7 @@ export interface ProjectFeatureWorkspaceListResponse {
   items: ProjectFeatureWorkspaceSummary[];
 }
 
-export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "prepare_package" | "approve_package" | "launch_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
 
 export interface GuidedFrontierEntry {
   ticketId: string;
@@ -132,7 +132,7 @@ export interface GuidedTicketTransfer {
   ticketId: string;
   revisionNumber: number;
   readiness: string[];
-  designBrief: string;
+  operationId: string;
 }
 export interface GuidedPackageTransfer {
   packageId: string;
@@ -226,6 +226,7 @@ export interface GuidedFeatureDetail {
     };
     delivery: string[];
     prototype: string[];
+    integrity: { discovery: string[]; authority: string[]; planning: string[]; delivery: string[]; prototype: string[] };
   };
   availableActions: Array<{ action: GuidedFeatureAction; primary: boolean; enabled: boolean; requiresConfirmation: boolean; blockedReason?: string; handoff?: string }>;
   primaryAction: GuidedFeatureAction;

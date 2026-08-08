@@ -280,7 +280,7 @@ describe("Project to Feature workspace normal entry journeys", () => {
     ];
     const posts = [
       { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active" }, ...primaryAction("prepare_package", false) }) },
-      { body: guidedWith("prepare_package", false, { handoff: handoff("prepare_package", { ...emptyTransfer(), ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], designBrief: "relay/designs/P5-T1.md" } }, "The selected Delivery Ticket is identified through the delivery owner.") }) },
+      { body: guidedWith("prepare_package", false, { handoff: handoff("prepare_package", { ...emptyTransfer(), ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" } }, "The selected Delivery Ticket is identified through the delivery owner.") }) },
       { body: guidedBody({ workspace: { version: 4 }, delivery: { selectionState: "consumed", packageState: "approved", runState: "setup_ready" }, ...primaryAction("launch_run", false) }) },
       { body: guidedWith("launch_run", false, { handoff: handoff("launch_run", { ...emptyTransfer(), run: { runId: "run-1", status: "setup_ready", repoTarget: "relay", branch: "main", baseCommit: "a".repeat(40), packageId: "package-1" } }, "The package Run is identified through its existing owner.") }) },
       { body: guidedWith("prepare_audit", false, { handoff: handoff("prepare_audit", { ...emptyTransfer(), audit: { runId: "run-1", runStatus: "audit_ready", auditState: "awaiting_audit", auditPacketId: "", auditedCommit: "" } }, "The workflow audit state is identified through the audit owner.") }) },

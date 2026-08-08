@@ -23,6 +23,8 @@ const (
 	GuidedActionPreparePackage           GuidedFeatureAction = "prepare_package"
 	GuidedActionApprovePackage           GuidedFeatureAction = "approve_package"
 	GuidedActionLaunchRun                GuidedFeatureAction = "launch_run"
+	GuidedActionContinueRun              GuidedFeatureAction = "continue_run"
+	GuidedActionRecoverRun               GuidedFeatureAction = "recover_run"
 	GuidedActionPrepareAudit             GuidedFeatureAction = "prepare_audit"
 	GuidedActionRecordAuditDecision      GuidedFeatureAction = "record_audit_decision"
 	GuidedActionRemediate                GuidedFeatureAction = "remediate"
@@ -241,8 +243,14 @@ func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompl
 	switch delivery.RunState {
 	case "", "none":
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the existing package owner using the selected Delivery Ticket design brief, then return here to approve it server-side."}}
-	case "created", "setup_ready", "executing", "execution_failed", "cancelled", "needs_revision":
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionLaunchRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run is the current bounded operation. Continue its execution through the Run owner, then return here for a fresh currentness check."}}
+	case "created", "setup_ready":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionLaunchRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run is ready for its initial execution. Launch it through the Run owner, then return here for a fresh currentness check."}}
+	case "executing":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionContinueRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run is already executing. Continue or view the active Run through the Run owner, then return here for a fresh currentness check."}}
+	case "execution_failed", "cancelled":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionRecoverRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run did not complete. Use the Run owner's supported recovery or retry operation, then return here for a fresh currentness check."}}
+	case "needs_revision":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionRemediate, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run requires a delivery revision. Continue the audit remediation owner to publish the required replacement Delivery Ticket revision, then return here."}}
 	case "validating", "validation_failed", "audit_ready":
 		switch delivery.AuditState {
 		case "", "none", "awaiting_audit":

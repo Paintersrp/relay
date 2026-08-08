@@ -53,10 +53,10 @@ func TestGuidedHandoffIsDistinctAndCarriesOwnerPreparationContext(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if handoff.ResumeRoute == "" || handoff.Summary == "" || handoff.Context["owner"] != "planner_authoring_and_review" {
+	if handoff.ResumeRoute == "" || handoff.Summary == "" || handoff.Context["owner"] != "ticket_design_brief_authoring" || handoff.Context["operationId"] != "planner.ticket_design_brief" {
 		t.Fatalf("handoff=%+v", handoff)
 	}
-	if handoff.Transfer == nil || len(handoff.Transfer.Members) == 0 || handoff.Transfer.AuthorityLayers == nil {
+	if handoff.Transfer == nil || handoff.Transfer.Ticket == nil || handoff.Transfer.Ticket.OperationID != "planner.ticket_design_brief" {
 		t.Fatalf("delivery handoff does not transfer the authoring owner surface: %+v", handoff.Transfer)
 	}
 	for _, forbidden := range []string{"frontier_identified", "route_identified", "not_performed", "frontierCount", "routeState"} {

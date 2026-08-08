@@ -793,7 +793,7 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
 		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},
-		"diagnostics":      map[string]any{"stale": value.Diagnostics.Stale, "historical": value.Diagnostics.Historical, "discovery": value.Diagnostics.Discovery, "delivery": value.Diagnostics.Delivery, "prototype": value.Diagnostics.Prototype},
+		"diagnostics":      map[string]any{"stale": value.Diagnostics.Stale, "historical": value.Diagnostics.Historical, "discovery": value.Diagnostics.Discovery, "delivery": value.Diagnostics.Delivery, "prototype": value.Diagnostics.Prototype, "integrity": map[string]any{"discovery": value.Diagnostics.Integrity.Discovery, "authority": value.Diagnostics.Integrity.Authority, "planning": value.Diagnostics.Integrity.Planning, "delivery": value.Diagnostics.Integrity.Delivery, "prototype": value.Diagnostics.Integrity.Prototype}},
 		"availableActions": availableActions, "primaryAction": string(value.PrimaryAction.Action),
 		"handoff": guidedHandoffDTO(value.Handoff),
 	}
@@ -822,7 +822,7 @@ func guidedOperationTransferDTO(value *featureapp.GuidedOperationTransfer) any {
 	}
 	ticket := map[string]any(nil)
 	if value.Ticket != nil {
-		ticket = map[string]any{"ticketId": value.Ticket.TicketID, "revisionNumber": value.Ticket.RevisionNumber, "readiness": value.Ticket.Readiness, "designBrief": value.Ticket.DesignBrief}
+		ticket = map[string]any{"ticketId": value.Ticket.TicketID, "revisionNumber": value.Ticket.RevisionNumber, "readiness": value.Ticket.Readiness, "operationId": value.Ticket.OperationID}
 	}
 	pkg := map[string]any(nil)
 	if value.Package != nil {

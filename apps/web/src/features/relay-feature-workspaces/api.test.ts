@@ -72,7 +72,7 @@ describe("feature workspace transport", () => {
         handoff: {
           role: "prepare_package", summary: "The selected Delivery Ticket is identified through the delivery owner.", resumeRoute: "/feature-workspaces/workspace-1/guided",
           context: { owner: "execution_package_preparation" },
-          transfer: { frontier: [], members: [], authorityLayers: [], route: [], ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], designBrief: "relay/designs/P5-T1.md" }, package: null, run: null, audit: null, remediation: null, prototype: null },
+          transfer: { frontier: [], members: [], authorityLayers: [], route: [], ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" }, package: null, run: null, audit: null, remediation: null, prototype: null },
         },
       },
     };
@@ -80,7 +80,7 @@ describe("feature workspace transport", () => {
     const detail = await getGuidedFeatureWorkspace("workspace-1");
     expect(detail.handoff.available).toBe(true);
     expect(detail.handoff.instruction).toContain("selected Delivery Ticket");
-    expect(detail.handoff.transfer?.ticket).toEqual({ ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], designBrief: "relay/designs/P5-T1.md" });
+    expect(detail.handoff.transfer?.ticket).toEqual({ ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" });
     expect(detail.handoff.transfer?.package).toBeUndefined();
   });
 

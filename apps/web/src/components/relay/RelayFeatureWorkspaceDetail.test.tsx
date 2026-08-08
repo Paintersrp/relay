@@ -44,6 +44,7 @@ const base: GuidedFeatureDetail = {
     discovery: { blockers: ["missing evidence"], restorationActions: ["collect evidence"], pendingIntegrations: [], activeOperations: [], routeMaterialOpen: false, requiredEvidence: ["approval"] },
     delivery: ["remediation_open"],
     prototype: ["cleanup_pending"],
+    integrity: { discovery: ["discovery-1", "closure-1"], authority: ["current:authority-1"], planning: [], delivery: ["P5-T1@2"], prototype: [] },
   },
   availableActions: [{ action: "continue_discovery", primary: true, enabled: true, requiresConfirmation: true }],
   primaryAction: "continue_discovery",
@@ -127,14 +128,14 @@ describe("RelayFeatureWorkspaceDetail", () => {
         returnGuidance: "Return here to approve it server-side.",
         transfer: {
           frontier: [], members: [], authorityLayers: [],
-          ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], designBrief: "relay/designs/P5-T1.md" },
+          ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" },
           package: undefined, run: undefined, audit: undefined, remediation: undefined, prototype: undefined,
         },
       },
     };
     render(<RelayFeatureWorkspaceDetail detail={handedOff} />, { wrapper });
     expect(screen.getByText("Operation transfer")).toBeInTheDocument();
-    expect(screen.getByText(/relay\/designs\/P5-T1\.md/)).toBeInTheDocument();
+    expect(screen.getByText(/planner\.ticket_design_brief/)).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Prepare package" })).toBeEnabled();
   });

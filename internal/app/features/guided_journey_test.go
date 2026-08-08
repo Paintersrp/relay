@@ -143,11 +143,26 @@ func TestDecideGuidedFeatureActionEmitsPreciseDeliveryPrimaryActions(t *testing.
 			d.PackageState = "approved"
 			d.RunState = "setup_ready"
 		})}, GuidedActionLaunchRun, true},
-		{"needs revision run resumes execution", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+		{"executing run continues execution", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "executing"
+		})}, GuidedActionContinueRun, true},
+		{"failed run recovers through run owner", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "execution_failed"
+		})}, GuidedActionRecoverRun, true},
+		{"cancelled run recovers through run owner", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "cancelled"
+		})}, GuidedActionRecoverRun, true},
+		{"needs revision run enters remediation", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
 			d.SelectionState = "consumed"
 			d.PackageState = "approved"
 			d.RunState = "needs_revision"
-		})}, GuidedActionLaunchRun, true},
+		})}, GuidedActionRemediate, true},
 		{"validating run prepares audit", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
 			d.SelectionState = "consumed"
 			d.PackageState = "approved"
