@@ -1,6 +1,7 @@
 package features
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -151,5 +152,82 @@ func TestGuidedPlannerHandoffUsesOwnerCompositionWithoutInternalContext(t *testi
 		if strings.Contains(key+value, closed.Packet.ClosurePacketID) || strings.Contains(key+value, workspace.WorkspaceID) {
 			t.Fatalf("handoff exposed internal identity: %q=%q", key, value)
 		}
+	}
+}
+
+func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	var err error
+	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('guided-actions-repo', 'C:/guided-actions-repo', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "guided-actions-repo", strings.Repeat("a", 40))
+	bytes := []byte("# guided server-side candidate\n")
+	if _, err = service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
+		Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "guided-actions-repo",
+		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.PrimaryAction.Action != GuidedActionReviewPlanningCandidate || !before.PrimaryAction.Enabled || guidedAvailableAction(before.AvailableActions, GuidedActionApprovePlanningCandidate) == nil {
+		t.Fatalf("admitted projection primary=%+v available=%+v", before.PrimaryAction, before.AvailableActions)
+	}
+
+	// Review is a read-only handoff composed from the existing auditor owner
+	// envelope; it must not mutate approval or promotion state.
+	review, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionReviewPlanningCandidate), ExpectedVersion: before.Workspace.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Handoff == nil || review.Handoff.Context["owner"] != "auditor_review" || review.Handoff.Context["preparationStatus"] != "ready" || review.Handoff.Context["externalRoleWork"] != "not_performed" || review.Handoff.Context["candidateState"] != "admitted" {
+		t.Fatalf("review handoff=%+v", review.Handoff)
+	}
+	stillAdmitted, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stillAdmitted.PrimaryAction.Action != GuidedActionReviewPlanningCandidate || stillAdmitted.Workspace.Version != before.Workspace.Version {
+		t.Fatalf("review mutated state: primary=%+v version=%d", stillAdmitted.PrimaryAction, stillAdmitted.Workspace.Version)
+	}
+
+	// Approval requires operator confirmation and is dispatched server-side with
+	// no client-supplied candidate identity.
+	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: stillAdmitted.Workspace.Version}); !errors.Is(err, ErrFeatureCompletionConfirmation) {
+		t.Fatalf("approve without confirmation error=%v", err)
+	}
+	approved, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: stillAdmitted.Workspace.Version, Confirmation: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Projection.PrimaryAction.Action != GuidedActionPromotePlanningCandidate || !approved.Projection.PrimaryAction.Enabled {
+		t.Fatalf("approved projection primary=%+v", approved.Projection.PrimaryAction)
+	}
+	if candidate, candidateErr := service.guidedCurrentPlanningCandidate(ctx, workspace.WorkspaceID, DiscoveryDestinationRequirements, false); !errors.Is(candidateErr, ErrGuidedActionBlocked) {
+		t.Fatalf("approved candidate still resolvable as admitted: %+v err=%v", candidate, candidateErr)
+	}
+
+	// Promotion publishes the approved candidate as workspace authority and
+	// advances the journey to the Delivery Ticket frontier.
+	promoted, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionPromotePlanningCandidate), ExpectedVersion: approved.Projection.Workspace.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promoted.Projection.PrimaryAction.Action != GuidedActionAuthorDeliveryTicket || !promoted.Projection.PrimaryAction.Enabled {
+		t.Fatalf("promoted projection primary=%+v", promoted.Projection.PrimaryAction)
+	}
+	if !hasGuidedLayer(promoted.Projection.Authority.Layers, CandidateFamilyRequirements) {
+		t.Fatalf("promoted authority layers=%v", promoted.Projection.Authority.Layers)
+	}
+	if _, candidateErr := service.guidedCurrentPlanningCandidate(ctx, workspace.WorkspaceID, DiscoveryDestinationRequirements, true); !errors.Is(candidateErr, ErrGuidedActionBlocked) {
+		t.Fatalf("promoted candidate still resolvable as approved: err=%v", candidateErr)
 	}
 }

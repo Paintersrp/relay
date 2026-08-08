@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	featureapp "relay/internal/app/features"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -172,49 +173,31 @@ func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWo
 	if err != nil {
 		return nil, err
 	}
+	featureService, err := featureapp.NewService(s.store)
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]ProjectFeatureWorkspaceSummary, 0, len(workspaces))
 	for _, workspace := range workspaces {
-		summaries = append(summaries, projectFeatureWorkspaceSummary(workspace))
+		guided, readErr := featureService.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		summaries = append(summaries, projectFeatureWorkspaceSummary(workspace, guided))
 	}
 	return summaries, nil
 }
 
-func projectFeatureWorkspaceSummary(workspace workflowstore.FeatureWorkspace) ProjectFeatureWorkspaceSummary {
-	summary := ProjectFeatureWorkspaceSummary{Workspace: workspace}
-	if workspace.State == "closed" {
-		summary.ProgressionSummary = "Feature workspace is closed; downstream work can resume from its established route."
-		summary.ResumeSummary = "Resume downstream delivery."
-		if !workspace.CurrentAuthorityRevisionRowID.Valid {
-			summary.Blocked = true
-			summary.BlockedReason = "Current authority is not published yet."
-			summary.RecoveryCategory = "publish_current_authority"
-		}
-		return summary
+func projectFeatureWorkspaceSummary(workspace workflowstore.FeatureWorkspace, guided featureapp.GuidedFeatureProjection) ProjectFeatureWorkspaceSummary {
+	primary := guided.PrimaryAction
+	resume := string(primary.Action)
+	if resume == "" {
+		resume = "Review guided feature state."
 	}
-	if !workspace.CurrentDiscoveryRevisionRowID.Valid {
-		summary.ProgressionSummary = "Discovery has not started for this feature workspace."
-		summary.ResumeSummary = "Start discovery."
-		summary.Blocked = true
-		summary.BlockedReason = "A current discovery revision is required before progression."
-		summary.RecoveryCategory = "start_discovery"
-		return summary
+	return ProjectFeatureWorkspaceSummary{
+		Workspace: workspace, ProgressionSummary: "Current guided action: " + resume + ".", ResumeSummary: resume,
+		Blocked: !primary.Enabled, BlockedReason: primary.BlockedReason, RecoveryCategory: guided.Recovery.Category,
 	}
-	if !workspace.CurrentDiscoveryClosurePacketRowID.Valid {
-		summary.ProgressionSummary = "Discovery is in progress and can be resumed from its current revision."
-		summary.ResumeSummary = "Continue discovery."
-		return summary
-	}
-	if !workspace.CurrentAuthorityRevisionRowID.Valid {
-		summary.ProgressionSummary = "Discovery is current; authority work is the next progression frontier."
-		summary.ResumeSummary = "Resume authority handoff."
-		summary.Blocked = true
-		summary.BlockedReason = "Current authority is required before downstream progression."
-		summary.RecoveryCategory = "publish_current_authority"
-		return summary
-	}
-	summary.ProgressionSummary = "Current discovery and authority are available for downstream progression."
-	summary.ResumeSummary = "Resume downstream progression."
-	return summary
 }
 
 func (s *Service) CreateProject(ctx context.Context, input CreateProjectInput) (workflowstore.Project, error) {

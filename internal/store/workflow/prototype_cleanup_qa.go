@@ -263,6 +263,25 @@ func (s *Store) ListPrototypeQAPacketsByRunID(ctx context.Context, runID string)
 	}
 	return out, rows.Err()
 }
+
+// ListPrototypeQAPacketsByWorkspace exposes QA packet state at the prototype
+// lifecycle boundary, avoiding consumers querying packet tables directly.
+func (s *Store) ListPrototypeQAPacketsByWorkspace(ctx context.Context, workspaceRowID int64) ([]PrototypeQAPacket, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+qaPacketColumns+` FROM feature_workspace_prototype_qa_packets WHERE workspace_row_id=? ORDER BY id DESC`, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []PrototypeQAPacket{}
+	for rows.Next() {
+		value, scanErr := scanPrototypeQAPacket(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
 func (s *Store) ListPrototypeQAPacketMembers(ctx context.Context, packetID string) ([]PrototypeQAPacketMember, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.qa_packet_member_id,m.qa_packet_row_id,m.sequence,m.member_kind,m.artifact_row_id,m.sha256,m.media_type,m.size_bytes,m.created_at FROM feature_workspace_prototype_qa_packet_members m JOIN feature_workspace_prototype_qa_packets p ON p.id=m.qa_packet_row_id WHERE p.qa_packet_id=? ORDER BY m.sequence`, packetID)
 	if err != nil {

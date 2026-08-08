@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	apptickets "relay/internal/app/tickets"
+	appworkflow "relay/internal/app/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -57,6 +58,15 @@ type GuidedPlanningSection struct {
 	Status, CandidateState, ReviewState, ApprovalState, PromotionState            string
 	CandidateCount, AwaitingReview, AwaitingApproval, AwaitingPromotion, Promoted int
 	HistoricalCount                                                               int
+	Requirements, SharedDesign                                                    GuidedPlanningFamilySection
+}
+
+// GuidedPlanningFamilySection carries the semantic progression of one planning
+// family so the guided decision can sequence author -> review -> approval ->
+// promotion -> next family or ticket without relying on authority presence.
+type GuidedPlanningFamilySection struct {
+	Count, AwaitingReview, AwaitingPromotion, Promoted int
+	State                                              string // none | admitted | approved | promoted
 }
 
 type GuidedDeliverySection struct {
@@ -153,7 +163,7 @@ func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, pr
 	}
 	decision := DecideGuidedFeatureAction(GuidedJourneyState{
 		State: assessment.State, Destination: assessment.Destination, HasCurrentRevision: assessment.Revision != nil,
-		AuthorityLayers: layers, Continuation: assessment.Continuation, Blockers: assessment.Blockers,
+		AuthorityLayers: layers, Planning: planning, Continuation: assessment.Continuation, Blockers: assessment.Blockers,
 		PendingIntegrations: assessment.PendingIntegrations, ActiveOperations: assessment.ActiveOperations,
 		RouteMaterialOpen: assessment.RouteMaterialOpen, RequiredEvidence: assessment.RequiredEvidence,
 	}, currentness, GuidedCompletion{Gates: gates, Recorded: completion.CurrentDecision != nil})
@@ -222,6 +232,8 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 		return GuidedPlanningSection{}, err
 	}
 	result := GuidedPlanningSection{Status: "not_started", CandidateState: "none", ReviewState: "none", ApprovalState: "none", PromotionState: "none"}
+	requirements := GuidedPlanningFamilySection{}
+	sharedDesign := GuidedPlanningFamilySection{}
 	for _, candidate := range candidates {
 		promoted := candidatePromotedInCurrentAuthority(candidate, authority)
 		historical := s.planningCandidateHistorical(ctx, workspace, candidate)
@@ -234,13 +246,32 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 		if approvalErr != nil {
 			return GuidedPlanningSection{}, approvalErr
 		}
+		var family *GuidedPlanningFamilySection
+		switch candidate.Family {
+		case CandidateFamilyRequirements:
+			family = &requirements
+		case CandidateFamilySharedDesign:
+			family = &sharedDesign
+		}
 		switch {
 		case promoted:
 			result.Promoted++
+			if family != nil {
+				family.Promoted++
+			}
 		case len(approvals) > 0:
 			result.AwaitingPromotion++
+			if family != nil {
+				family.AwaitingPromotion++
+			}
 		default:
 			result.AwaitingReview++
+			if family != nil {
+				family.AwaitingReview++
+			}
+		}
+		if family != nil {
+			family.Count++
 		}
 	}
 	if result.CandidateCount > 0 {
@@ -257,99 +288,61 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 	if currentness.Readiness != FeatureCurrent && result.CandidateCount == 0 {
 		result.Status = "blocked"
 	}
+	requirements.State = guidedPlanningFamilyState(requirements)
+	sharedDesign.State = guidedPlanningFamilyState(sharedDesign)
+	result.Requirements = requirements
+	result.SharedDesign = sharedDesign
 	return result, nil
 }
 
+func guidedPlanningFamilyState(family GuidedPlanningFamilySection) string {
+	switch {
+	case family.Count > 0 && family.Promoted == family.Count:
+		return "promoted"
+	case family.AwaitingPromotion > 0:
+		return "approved"
+	case family.AwaitingReview > 0:
+		return "admitted"
+	default:
+		return "none"
+	}
+}
+
 func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.FeatureWorkspace) (GuidedDeliverySection, error) {
-	owner, err := apptickets.NewService(s.store)
+	owner, err := appworkflow.NewService(s.store)
 	if err != nil {
 		return GuidedDeliverySection{}, err
 	}
-	frontier, err := owner.ListFrontier(ctx, workspace.WorkspaceID)
+	state, err := owner.ReadWorkspaceDeliveryState(ctx, workspace.WorkspaceID)
 	if err != nil {
 		return GuidedDeliverySection{}, err
 	}
-	result := GuidedDeliverySection{FrontierCount: len(frontier.Entries), SelectionState: "none", PackageState: "none", RunState: "none", AuditState: "none", RemediationState: "none"}
-	selections, err := s.store.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
-	if err != nil {
-		return GuidedDeliverySection{}, err
-	}
-	for _, selection := range selections {
-		if selection.State == "active" {
-			result.SelectionState = "active"
-		} else if result.SelectionState == "none" {
-			result.SelectionState = selection.State
-		}
-	}
-	packages, err := s.store.ListExecutionPackagesByWorkspace(ctx, workspace.ID)
-	if err != nil {
-		return GuidedDeliverySection{}, err
-	}
-	for _, packageRow := range packages {
-		result.PackageState = "prepared"
-		if run, runErr := s.store.GetRunByExecutionPackageRowID(ctx, packageRow.ID); runErr == nil {
-			result.RunState = run.Status
-		}
-	}
-	seeds, err := s.store.ListAuditRemediationSeedsByWorkspace(ctx, workspace.ID)
-	if err != nil {
-		return GuidedDeliverySection{}, err
-	}
-	if len(seeds) > 0 {
-		result.RemediationState = "open"
-	}
-	for _, seed := range seeds {
-		if _, reopenErr := s.store.GetAuditRemediationSeedReopening(ctx, seed.ID); reopenErr == nil {
-			result.RemediationState = "reopened"
-		}
-	}
-	if len(packages) > 0 {
-		result.AuditState = "awaiting_audit"
-	}
-	var auditPackets, auditDecisions int
-	if err := s.store.DB().QueryRowContext(ctx, `SELECT count(*) FROM audit_packets p JOIN runs r ON r.id=p.run_row_id JOIN execution_packages ep ON ep.id=r.execution_package_row_id WHERE ep.workspace_row_id=?`, workspace.ID).Scan(&auditPackets); err != nil {
-		return GuidedDeliverySection{}, err
-	}
-	if err := s.store.DB().QueryRowContext(ctx, `SELECT count(*) FROM audit_decisions d JOIN runs r ON r.id=d.run_row_id JOIN execution_packages ep ON ep.id=r.execution_package_row_id WHERE ep.workspace_row_id=?`, workspace.ID).Scan(&auditDecisions); err != nil {
-		return GuidedDeliverySection{}, err
-	}
-	if auditPackets > 0 {
-		result.AuditState = "packet_recorded"
-	}
-	if auditDecisions > 0 {
-		result.AuditState = "decision_recorded"
-	}
-	return result, nil
+	return GuidedDeliverySection{FrontierCount: state.FrontierCount, SelectionState: state.SelectionState, PackageState: state.PackageState, RunState: state.RunState, AuditState: state.AuditState, RemediationState: state.RemediationState}, nil
 }
 
 func (s *Service) guidedPrototype(ctx context.Context, workspace workflowstore.FeatureWorkspace) (GuidedPrototypeSection, error) {
 	result := GuidedPrototypeSection{RunState: "none", CleanupState: "none", QAState: "none", EvidenceState: "none"}
-	rows, err := s.store.DB().QueryContext(ctx, `SELECT lifecycle_state, cleanup_status FROM feature_workspace_prototype_runs WHERE workspace_row_id=? ORDER BY id DESC`, workspace.ID)
+	runs, err := s.store.ListPrototypeRunsByWorkspace(ctx, workspace.ID)
 	if err != nil {
 		return result, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var lifecycle, cleanup string
-		if err := rows.Scan(&lifecycle, &cleanup); err != nil {
-			return result, err
-		}
-		result.RunState = lifecycle
-		result.CleanupState = cleanup
+	if len(runs) > 0 {
+		result.RunState = runs[0].LifecycleState
+		result.CleanupState = runs[0].CleanupStatus
 	}
-	if err := rows.Err(); err != nil {
+	packets, err := s.store.ListPrototypeQAPacketsByWorkspace(ctx, workspace.ID)
+	if err != nil {
 		return result, err
 	}
-	var qaPrepared, qaAdmitted int
-	if err := s.store.DB().QueryRowContext(ctx, `SELECT count(*), coalesce(sum(CASE WHEN status='admitted' THEN 1 ELSE 0 END),0) FROM feature_workspace_prototype_qa_packets WHERE workspace_row_id=?`, workspace.ID).Scan(&qaPrepared, &qaAdmitted); err != nil {
-		return result, err
-	}
-	if qaPrepared > 0 {
+	if len(packets) > 0 {
 		result.QAState = "prepared"
 	}
-	if qaAdmitted > 0 {
-		result.QAState = "admitted"
-		result.EvidenceState = "admitted"
+	for _, packet := range packets {
+		if packet.Status == "admitted" {
+			result.QAState = "admitted"
+			result.EvidenceState = "admitted"
+			break
+		}
 	}
 	return result, nil
 }
@@ -369,14 +362,21 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 	if before.Workspace.Version != input.ExpectedVersion {
 		return GuidedActionResult{}, ErrVersionConflict
 	}
-	primary := before.PrimaryAction
-	if string(primary.Action) != input.Action || !primary.Enabled {
+	requested := GuidedFeatureAction(input.Action)
+	var availability *GuidedFeatureActionAvailability
+	for i := range before.AvailableActions {
+		if before.AvailableActions[i].Action == requested {
+			availability = &before.AvailableActions[i]
+			break
+		}
+	}
+	if availability == nil || !availability.Enabled {
 		return GuidedActionResult{}, ErrGuidedActionBlocked
 	}
-	if primary.RequiresConfirmation && !input.Confirmation {
+	if availability.RequiresConfirmation && !input.Confirmation {
 		return GuidedActionResult{}, ErrFeatureCompletionConfirmation
 	}
-	switch GuidedFeatureAction(input.Action) {
+	switch requested {
 	case GuidedActionContinueDiscovery:
 		_, _, err = s.RecordDiscoveryDestinationAssessment(ctx, RecordDiscoveryDestinationAssessmentInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, CreatedIdentity: "guided-operator"})
 	case GuidedActionCloseDiscovery:
@@ -394,13 +394,17 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		_, _, err = s.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, ExpectedRevisionID: assessment.Revision.DiscoveryRevisionID, Destination: destination, CreatedIdentity: "guided-operator"})
 	case GuidedActionCompleteFeature:
 		_, err = s.Complete(ctx, CompletionInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorConfirmed: input.Confirmation})
-	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryTicket, GuidedActionContinueEstablishedRoute:
-		handoff, handoffErr := s.guidedHandoff(ctx, input.WorkspaceID, GuidedFeatureAction(input.Action), before)
+	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryTicket, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate:
+		handoff, handoffErr := s.guidedHandoff(ctx, input.WorkspaceID, requested, before)
 		if handoffErr != nil {
 			return GuidedActionResult{}, handoffErr
 		}
 		before.Handoff = &handoff
 		return GuidedActionResult{Projection: before, Handoff: &handoff}, nil
+	case GuidedActionApprovePlanningCandidate:
+		_, err = s.guidedApproveCurrentCandidate(ctx, input, DiscoveryDestination(before.Discovery.Destination))
+	case GuidedActionPromotePlanningCandidate:
+		_, err = s.guidedPromoteCurrentCandidate(ctx, input, DiscoveryDestination(before.Discovery.Destination))
 	default:
 		return GuidedActionResult{}, ErrGuidedActionBlocked
 	}
@@ -426,32 +430,13 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		if err != nil {
 			return GuidedHandoff{}, err
 		}
-		family := CandidateFamilyRequirements
-		if action == GuidedActionAuthorSharedDesign {
-			family = CandidateFamilySharedDesign
-		}
-		candidates, err := s.ReadPlanningCandidates(ctx, workspaceID)
+		workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
 		if err != nil {
 			return GuidedHandoff{}, err
 		}
-		candidateState := "not_admitted"
-		for _, candidate := range candidates {
-			promoted := candidatePromotedInCurrentAuthorityLayers(candidate, planner.Authority)
-			historical := s.planningCandidateHistorical(ctx, planner.Workspace, candidate)
-			if candidate.Family != family || (historical && !(promoted && planner.Workspace.CurrentDiscoveryClosurePacketRowID.Valid && candidate.DiscoveryClosurePacketRowID == planner.Workspace.CurrentDiscoveryClosurePacketRowID.Int64)) {
-				continue
-			}
-			approvals, approvalErr := s.store.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
-			if approvalErr != nil {
-				return GuidedHandoff{}, approvalErr
-			}
-			candidateState = "admitted"
-			if promoted {
-				candidateState = "promoted"
-			} else if len(approvals) > 0 {
-				candidateState = "approved_awaiting_promotion"
-			}
-			break
+		candidateState, err := s.guidedFamilyCandidateState(ctx, workspace, DiscoveryDestination(projection.Discovery.Destination), planner.Authority)
+		if err != nil {
+			return GuidedHandoff{}, err
 		}
 		handoff.Context["owner"] = "planner_authoring_and_review"
 		handoff.Context["preparationStatus"] = "ready"
@@ -460,6 +445,29 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Context["candidateState"] = candidateState
 		handoff.Context["externalRoleWork"] = "not_performed"
 		handoff.Summary = "Planner authoring and review are prepared through their existing owners. External role work remains outside this handoff; approve and promote explicitly before resuming the guided workspace."
+	case GuidedActionReviewPlanningCandidate:
+		// Review is a read-only auditor preparation step. It composes the same
+		// owner envelope the planner review path uses and never writes review or
+		// approval state; approval is a separate explicit server-side action.
+		review, err := s.ReadAuditorReview(ctx, AuditorReviewInput{WorkspaceID: workspaceID})
+		if err != nil {
+			return GuidedHandoff{}, err
+		}
+		workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+		if err != nil {
+			return GuidedHandoff{}, err
+		}
+		candidateState, err := s.guidedFamilyCandidateState(ctx, workspace, DiscoveryDestination(projection.Discovery.Destination), review.Authority)
+		if err != nil {
+			return GuidedHandoff{}, err
+		}
+		handoff.Context["owner"] = "auditor_review"
+		handoff.Context["preparationStatus"] = "ready"
+		handoff.Context["candidateState"] = candidateState
+		handoff.Context["sourceMemberCount"] = stringInt(len(review.Members))
+		handoff.Context["authorityLayerCount"] = stringInt(len(review.Authority))
+		handoff.Context["externalRoleWork"] = "not_performed"
+		handoff.Summary = "The auditor review surface is prepared through its existing owner envelope. Review the current planning candidate, then explicitly approve and promote it before resuming the guided workspace."
 	case GuidedActionAuthorDeliveryTicket:
 		owner, err := apptickets.NewService(s.store)
 		if err != nil {
@@ -496,6 +504,120 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Summary = "The current established route operation is identified through its existing owner read surface. No route work is performed by this handoff; return here for a fresh currentness check."
 	}
 	return handoff, nil
+}
+
+// guidedApprovalEvidence is the server-side confirmation evidence recorded when
+// the guided boundary approves the current planning candidate. The operator's
+// confirmation of the guided approval action is enforced by the action gate.
+const guidedApprovalEvidence = "guided-operator-approval"
+
+// guidedFamilyCandidateState resolves the semantic candidate state for the
+// family currently in flight, matching the guided decision's family priority.
+func (s *Service) guidedFamilyCandidateState(ctx context.Context, workspace workflowstore.FeatureWorkspace, destination DiscoveryDestination, layers []workflowstore.FeatureWorkspaceAuthorityLayer) (string, error) {
+	candidates, err := s.store.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return "", err
+	}
+	for _, family := range guidedCandidateFamiliesForDestination(destination) {
+		for _, candidate := range candidates {
+			promoted := candidatePromotedInCurrentAuthorityLayers(candidate, layers)
+			historical := s.planningCandidateHistorical(ctx, workspace, candidate)
+			if candidate.Family != family || (historical && !(promoted && workspace.CurrentDiscoveryClosurePacketRowID.Valid && candidate.DiscoveryClosurePacketRowID == workspace.CurrentDiscoveryClosurePacketRowID.Int64)) {
+				continue
+			}
+			approvals, approvalErr := s.store.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
+			if approvalErr != nil {
+				return "", approvalErr
+			}
+			state := "admitted"
+			if promoted {
+				state = "promoted"
+			} else if len(approvals) > 0 {
+				state = "approved_awaiting_promotion"
+			}
+			return state, nil
+		}
+	}
+	return "not_admitted", nil
+}
+
+// guidedCurrentPlanningCandidate resolves, without any client-supplied
+// identity, the current-basis planning candidate for the family the closed
+// destination requires. wantApproved selects approved (awaiting promotion)
+// versus admitted (awaiting review and approval) candidates.
+func (s *Service) guidedCurrentPlanningCandidate(ctx context.Context, workspaceID string, destination DiscoveryDestination, wantApproved bool) (workflowstore.PlanningCandidate, error) {
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+	if err != nil {
+		return workflowstore.PlanningCandidate{}, err
+	}
+	authority, err := s.ReadAuthority(ctx, strings.TrimSpace(workspaceID))
+	if err != nil {
+		return workflowstore.PlanningCandidate{}, err
+	}
+	candidates, err := s.store.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return workflowstore.PlanningCandidate{}, err
+	}
+	for _, family := range guidedCandidateFamiliesForDestination(destination) {
+		for _, candidate := range candidates {
+			if candidate.Family != family || s.planningCandidateHistorical(ctx, workspace, candidate) || candidatePromotedInCurrentAuthority(candidate, authority) {
+				continue
+			}
+			approvals, approvalErr := s.store.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
+			if approvalErr != nil {
+				return workflowstore.PlanningCandidate{}, approvalErr
+			}
+			if (len(approvals) > 0) != wantApproved {
+				continue
+			}
+			return candidate, nil
+		}
+	}
+	return workflowstore.PlanningCandidate{}, ErrGuidedActionBlocked
+}
+
+// guidedApproveCurrentCandidate approves the current appropriate planning
+// candidate server-side: the candidate identity, artifact bytes, and basis are
+// all resolved from the workspace rather than accepted from the client.
+func (s *Service) guidedApproveCurrentCandidate(ctx context.Context, input GuidedActionInput, destination DiscoveryDestination) (CandidateApprovalResult, error) {
+	candidate, err := s.guidedCurrentPlanningCandidate(ctx, input.WorkspaceID, destination, false)
+	if err != nil {
+		return CandidateApprovalResult{}, err
+	}
+	bytes, err := s.store.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, int(candidate.ArtifactSizeBytes))
+	if err != nil {
+		return CandidateApprovalResult{}, ErrCandidateBytesMismatch
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(input.WorkspaceID))
+	if err != nil {
+		return CandidateApprovalResult{}, err
+	}
+	return s.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+		CandidateID: candidate.CandidateID, ExpectedSHA256: candidate.ArtifactSha256, ExpectedSizeBytes: candidate.ArtifactSizeBytes,
+		Bytes: bytes, ExpectedVersion: input.ExpectedVersion,
+		ExpectedClosurePacketRowID:     workspace.CurrentDiscoveryClosurePacketRowID,
+		ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID,
+		OperatorConfirmationEvidence:   guidedApprovalEvidence,
+		CreatedIdentity:                "guided-operator",
+	})
+}
+
+// guidedPromoteCurrentCandidate promotes the current approved planning
+// candidate server-side. The candidate and its approval are resolved from the
+// workspace; the client never supplies their identities.
+func (s *Service) guidedPromoteCurrentCandidate(ctx context.Context, input GuidedActionInput, destination DiscoveryDestination) (CandidatePromotionResult, error) {
+	candidate, err := s.guidedCurrentPlanningCandidate(ctx, input.WorkspaceID, destination, true)
+	if err != nil {
+		return CandidatePromotionResult{}, err
+	}
+	approvals, err := s.store.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
+	if err != nil || len(approvals) == 0 {
+		return CandidatePromotionResult{}, ErrGuidedActionBlocked
+	}
+	return s.PromoteApprovedPlanningCandidate(ctx, CandidatePromotionInput{
+		CandidateID: candidate.CandidateID, ApprovalID: approvals[0].ApprovalID,
+		ExpectedVersion: input.ExpectedVersion, CreatedIdentity: "guided-operator",
+	})
 }
 
 func stringInt(value int) string { return strconvItoa(value) }

@@ -547,7 +547,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "continue_established_route", "complete_feature":
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return

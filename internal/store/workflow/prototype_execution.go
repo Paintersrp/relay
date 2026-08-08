@@ -46,6 +46,25 @@ func (s *Store) GetPrototypeRun(ctx context.Context, id string) (PrototypeRun, e
 func (s *Store) ReadPrototypeExecution(ctx context.Context, workspaceID, runID string) (PrototypeExecutionAggregate, error) {
 	return readPrototypeExecution(ctx, s.db, workspaceID, runID)
 }
+
+// ListPrototypeRunsByWorkspace is the owner read surface for current prototype
+// execution state. Consumers must not reconstruct it with ad-hoc SQL.
+func (s *Store) ListPrototypeRunsByWorkspace(ctx context.Context, workspaceRowID int64) ([]PrototypeRun, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+prototypeRunColumns+` FROM feature_workspace_prototype_runs WHERE workspace_row_id=? ORDER BY id DESC`, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []PrototypeRun{}
+	for rows.Next() {
+		value, scanErr := scanPrototypeRun(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
 func (tx *Tx) GetPrototypeProposal(ctx context.Context, id string) (PrototypeProposal, error) {
 	return getPrototypeProposal(ctx, tx.tx, id)
 }

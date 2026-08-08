@@ -27,6 +27,83 @@ type Service struct {
 	registry *workflowrepos.Registry
 }
 
+// WorkspaceDeliveryState is the workflow-owner's compact semantic read model
+// for guided consumers. It hides persistence identities while preserving the
+// current package, Run, audit, and remediation states.
+type WorkspaceDeliveryState struct {
+	FrontierCount                          int
+	SelectionState, PackageState, RunState string
+	AuditState, RemediationState           string
+}
+
+func (s *Service) ReadWorkspaceDeliveryState(ctx context.Context, workspaceID string) (WorkspaceDeliveryState, error) {
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		return WorkspaceDeliveryState{}, err
+	}
+	state := WorkspaceDeliveryState{SelectionState: "none", PackageState: "none", RunState: "none", AuditState: "none", RemediationState: "none"}
+	tickets, err := s.store.ListDeliveryTicketsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return state, err
+	}
+	for _, ticket := range tickets {
+		if ticket.CurrentRevisionRowID.Valid {
+			state.FrontierCount++
+		}
+	}
+	selections, err := s.store.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return state, err
+	}
+	for _, selection := range selections {
+		if selection.State == "active" {
+			state.SelectionState = "active"
+		} else if state.SelectionState == "none" {
+			state.SelectionState = selection.State
+		}
+	}
+	packages, err := s.store.ListExecutionPackagesByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return state, err
+	}
+	for _, pkg := range packages {
+		state.PackageState = "prepared"
+		run, runErr := s.store.GetRunByExecutionPackageRowID(ctx, pkg.ID)
+		if errors.Is(runErr, sql.ErrNoRows) {
+			continue
+		}
+		if runErr != nil {
+			return state, runErr
+		}
+		state.RunState = run.Status
+		if _, packetErr := s.store.GetCurrentAuditPacketByRun(ctx, run.ID); packetErr == nil {
+			state.AuditState = "packet_recorded"
+		} else if !errors.Is(packetErr, sql.ErrNoRows) {
+			return state, packetErr
+		} else if state.AuditState == "none" {
+			state.AuditState = "awaiting_audit"
+		}
+		if decision, decisionErr := s.store.GetAuditDecisionByRun(ctx, run.ID); decisionErr == nil && decision.AuditDecisionID != "" {
+			state.AuditState = "decision_recorded"
+		} else if !errors.Is(decisionErr, sql.ErrNoRows) {
+			return state, decisionErr
+		}
+	}
+	seeds, err := s.store.ListAuditRemediationSeedsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return state, err
+	}
+	for _, seed := range seeds {
+		state.RemediationState = "open"
+		if _, reopenErr := s.store.GetAuditRemediationSeedReopening(ctx, seed.ID); reopenErr == nil {
+			state.RemediationState = "reopened"
+		} else if !errors.Is(reopenErr, sql.ErrNoRows) {
+			return state, reopenErr
+		}
+	}
+	return state, nil
+}
+
 func NewService(store *workflowstore.Store, sourceVaultRoot ...string) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")

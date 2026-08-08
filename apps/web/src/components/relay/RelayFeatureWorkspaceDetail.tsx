@@ -15,6 +15,9 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "author_requirements": return "Author Requirements";
     case "author_shared_design": return "Author Shared Design";
     case "author_delivery_ticket": return "Author Delivery Ticket";
+    case "review_planning_candidate": return "Review planning candidate";
+    case "approve_planning_candidate": return "Approve planning candidate";
+    case "promote_planning_candidate": return "Promote planning candidate";
     case "continue_established_route": return "Continue established route";
     case "legacy_recovery": return "Legacy recovery";
     case "completion_recorded": return "Completion recorded";
@@ -47,10 +50,13 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     enabled: false,
     requiresConfirmation: true,
   };
+  const [requestedAction, setRequestedAction] = React.useState<GuidedFeatureAction>(primary.action);
+  React.useEffect(() => { setRequestedAction(primary.action); setConfirmed(false); }, [primary.action]);
+  const requested = detail.availableActions.find((action) => action.action === requestedAction) ?? primary;
   const mutation = useMutation({
     mutationFn: () => actOnGuidedFeatureWorkspace(workspaceId, {
       expectedVersion: detail.workspace.version,
-      action: primary.action,
+      action: requested.action,
       confirmation: confirmed,
       destination: detail.discovery.destination || undefined,
     }),
@@ -66,8 +72,8 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       }
     },
   });
-  const actionEnabled = primary.enabled;
-  const actionDisabledReason = primary.enabled ? "Confirm this action before continuing." : (primary.blockedReason || "This action is blocked by the current guided workspace state.");
+  const actionEnabled = requested.enabled;
+  const actionDisabledReason = requested.enabled ? "Confirm this action before continuing." : (requested.blockedReason || "This action is blocked by the current guided workspace state.");
 
   return <div className="space-y-6">
     <div className="flex items-center gap-2">
@@ -156,10 +162,11 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     <section aria-labelledby="guided-action" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <h2 id="guided-action" className="font-semibold">Next guided action</h2>
       <p className="mt-1 text-sm text-muted-foreground">The server selected one primary action for this workspace.</p>
-      {primary.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(primary.action)}” against this displayed workspace state.</span></label> : null}
-      {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} Use the primary action to acknowledge this handoff, then return here after the bounded role work is complete.</p> : null}
-      {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
-      <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button>
+       {requested.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(requested.action)}” against this displayed workspace state.</span></label> : null}
+       {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} Use the primary action to acknowledge this handoff, then return here after the bounded role work is complete.</p> : null}
+       {detail.availableActions.filter((action) => !action.primary && action.enabled).map((action) => <Button key={action.action} className="mt-3" type="button" variant="outline" disabled={mutation.isPending} onClick={() => { setRequestedAction(action.action); setConfirmed(false); }}>{requested.action === action.action ? `Selected: ${actionLabel(action.action)}` : actionLabel(action.action)}</Button>)}
+       {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
+       <Button className="mt-4" type="button" disabled={!actionEnabled || (requested.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(requested.action)}</Button>
     </section>
 
     <details className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">

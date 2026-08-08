@@ -118,7 +118,7 @@ export interface ProjectFeatureWorkspaceListResponse {
   items: ProjectFeatureWorkspaceSummary[];
 }
 
-export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "continue_established_route" | "complete_feature" | "completion_recorded" | "legacy_recovery";
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "completion_recorded" | "legacy_recovery";
 
 export interface GuidedFeatureDetail {
   workspace: FeatureWorkspace;
