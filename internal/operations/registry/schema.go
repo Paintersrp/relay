@@ -127,12 +127,14 @@ func specializeRouteSchemaNode(value map[string]any, surface string, operations 
 			member["const"] = surface
 		}
 		if member, ok := properties["operation_id"].(map[string]any); ok && len(operations) != 0 {
-			delete(member, "const")
-			values := make([]any, len(operations))
-			for index, operation := range operations {
-				values[index] = string(operation)
+			if _, hasConst := member["const"]; !hasConst {
+				delete(member, "const")
+				values := make([]any, len(operations))
+				for index, operation := range operations {
+					values[index] = string(operation)
+				}
+				member["enum"] = values
 			}
-			member["enum"] = values
 		}
 		for _, child := range properties {
 			if childMap, ok := child.(map[string]any); ok {
@@ -141,6 +143,27 @@ func specializeRouteSchemaNode(value map[string]any, surface string, operations 
 		}
 	}
 	if defs, ok := value["$defs"].(map[string]any); ok {
+		if admission, ok := defs["OperationAdmission"].(map[string]any); ok {
+			if branches, ok := admission["oneOf"].([]any); ok {
+				filtered := make([]any, 0, len(branches))
+				for _, branch := range branches {
+					branchMap, ok := branch.(map[string]any)
+					if !ok {
+						continue
+					}
+					branchProperties, ok := branchMap["properties"].(map[string]any)
+					if !ok {
+						continue
+					}
+					operation, ok := branchProperties["operation_id"].(map[string]any)
+					operationID, ok := operation["const"].(string)
+					if ok && containsStringAny(operations, operationID) {
+						filtered = append(filtered, branch)
+					}
+				}
+				admission["oneOf"] = filtered
+			}
+		}
 		if member, ok := defs["SurfaceContractID"].(map[string]any); ok {
 			member["enum"] = []any{surface}
 		}
@@ -153,6 +176,32 @@ func specializeRouteSchemaNode(value map[string]any, surface string, operations 
 		}
 	}
 	if branches, ok := value["oneOf"].([]any); ok {
+		operationBranches := make([]any, 0, len(branches))
+		hasOperationBranches := false
+		for _, branch := range branches {
+			branchMap, ok := branch.(map[string]any)
+			if !ok {
+				continue
+			}
+			branchProperties, ok := branchMap["properties"].(map[string]any)
+			if !ok {
+				continue
+			}
+			operationProperty, ok := branchProperties["operation_id"].(map[string]any)
+			if !ok {
+				continue
+			}
+			if operationID, ok := operationProperty["const"].(string); ok {
+				hasOperationBranches = true
+				if containsStringAny(operations, operationID) {
+					operationBranches = append(operationBranches, branch)
+				}
+			}
+		}
+		if hasOperationBranches {
+			value["oneOf"] = operationBranches
+			branches = operationBranches
+		}
 		for _, branch := range branches {
 			if branchMap, ok := branch.(map[string]any); ok {
 				specializeRouteSchemaNode(branchMap, surface, operations)
@@ -162,10 +211,10 @@ func specializeRouteSchemaNode(value map[string]any, surface string, operations 
 }
 
 func schemaDirection(value map[string]any) string {
-	if _, ok := value["oneOf"]; ok {
-		return "output"
+	if schemaType, ok := value["type"].(string); ok && schemaType == "object" {
+		return "input"
 	}
-	return "input"
+	return "output"
 }
 
 // ValidateSchemaInstance validates one decoded JSON object against one
@@ -217,7 +266,7 @@ func validateSchemaNode(schema *orderedValue, documentRoot bool) error {
 	allowed := map[string]struct{}{
 		"$schema": {}, "$id": {}, "$ref": {}, "$defs": {}, "title": {}, "description": {},
 		"type": {}, "const": {}, "enum": {}, "additionalProperties": {}, "properties": {},
-		"required": {}, "items": {}, "oneOf": {}, "minLength": {}, "maxLength": {},
+		"required": {}, "items": {}, "oneOf": {}, "allOf": {}, "contains": {}, "minContains": {}, "maxContains": {}, "minLength": {}, "maxLength": {},
 		"pattern": {}, "format": {}, "minimum": {}, "maximum": {}, "minItems": {},
 		"maxItems": {}, "uniqueItems": {},
 	}
@@ -271,6 +320,14 @@ func validateSchemaNode(schema *orderedValue, documentRoot bool) error {
 			if err := validateSchemaNode(member.Value, false); err != nil {
 				return fmt.Errorf("items: %w", err)
 			}
+		case "contains":
+			if err := validateSchemaNode(member.Value, false); err != nil {
+				return fmt.Errorf("contains: %w", err)
+			}
+		case "minContains", "maxContains":
+			if _, err := nonNegativeSchemaInteger(member.Value); err != nil {
+				return fmt.Errorf("%s: %w", member.Name, err)
+			}
 		case "oneOf":
 			if member.Value.kind != 'a' || len(member.Value.array) == 0 {
 				return errors.New("oneOf must be a non-empty array")
@@ -278,6 +335,15 @@ func validateSchemaNode(schema *orderedValue, documentRoot bool) error {
 			for index, branch := range member.Value.array {
 				if err := validateSchemaNode(branch, false); err != nil {
 					return fmt.Errorf("oneOf[%d]: %w", index, err)
+				}
+			}
+		case "allOf":
+			if member.Value.kind != 'a' || len(member.Value.array) == 0 {
+				return errors.New("allOf must be a non-empty array")
+			}
+			for index, branch := range member.Value.array {
+				if err := validateSchemaNode(branch, false); err != nil {
+					return fmt.Errorf("allOf[%d]: %w", index, err)
 				}
 			}
 		case "enum":
@@ -328,6 +394,15 @@ func validateSchemaNode(schema *orderedValue, documentRoot bool) error {
 			}
 		}
 	}
+	if minimum, ok := objectValue(schema, "minContains"); ok {
+		if maximum, ok := objectValue(schema, "maxContains"); ok {
+			minValue, _ := nonNegativeSchemaInteger(minimum)
+			maxValue, _ := nonNegativeSchemaInteger(maximum)
+			if minValue > maxValue {
+				return errors.New("minContains exceeds maxContains")
+			}
+		}
+	}
 	return nil
 }
 
@@ -335,6 +410,13 @@ func validateInstance(value any, schema *orderedValue, definitions map[string]*o
 	resolved, err := resolveSchema(schema, definitions)
 	if err != nil {
 		return requestError("request_schema_invalid", path)
+	}
+	if allOf, ok := objectValue(resolved, "allOf"); ok {
+		for _, branch := range allOf.array {
+			if err := validateInstance(value, branch, definitions, path); err != nil {
+				return err
+			}
+		}
 	}
 	if branches, ok := objectValue(resolved, "oneOf"); ok {
 		base := *resolved
@@ -377,6 +459,29 @@ func validateInstance(value any, schema *orderedValue, definitions map[string]*o
 	if hasType {
 		if typeNode.kind != 's' || !instanceMatchesType(value, typeNode.text) {
 			return requestError("request_type_invalid", path)
+		}
+	}
+	if contains, ok := objectValue(resolved, "contains"); ok {
+		array, isArray := value.([]any)
+		if !isArray {
+			return requestError("request_type_invalid", path)
+		}
+		minimum := 1
+		if member, exists := objectValue(resolved, "minContains"); exists {
+			minimum, _ = nonNegativeSchemaInteger(member)
+		}
+		maximum := len(array)
+		if member, exists := objectValue(resolved, "maxContains"); exists {
+			maximum, _ = nonNegativeSchemaInteger(member)
+		}
+		matches := 0
+		for index, child := range array {
+			if validateInstance(child, contains, definitions, joinArrayPath(path, index)) == nil {
+				matches++
+			}
+		}
+		if matches < minimum || matches > maximum {
+			return requestError("request_contains_invalid", path)
 		}
 	}
 	if !hasType {
@@ -779,6 +884,15 @@ func joinSchemaPath(path, name string) string {
 
 func joinArrayPath(path string, index int) string {
 	return path + "[" + strconv.Itoa(index) + "]"
+}
+
+func containsStringAny(values []OperationID, expected string) bool {
+	for _, value := range values {
+		if string(value) == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(values []string, expected string) bool {

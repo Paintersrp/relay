@@ -179,14 +179,14 @@ func TestSemanticRequestBasisRejectsDuplicateAndOperationDisallowedValues(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", raw); err == nil || err.Error() != "request_semantic_invalid:$" {
+	if _, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", raw); err == nil || (err.Error() != "request_semantic_invalid:$" && err.Error() != "request_union_invalid:$") {
 		t.Fatalf("duplicate input error = %v", err)
 	}
 
 	disallowed := mutateObject(t, plannerAuthoringRequest(false), func(value map[string]any) {
 		value["workflow_references"] = []any{map[string]any{"kind": "run", "run_id": "run-1"}}
 	})
-	if _, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", disallowed); err == nil || err.Error() != "request_semantic_invalid:$" {
+	if _, err := SemanticRequestBasis("planner-authoring.v1", "create_operation_packet", disallowed); err == nil || (err.Error() != "request_semantic_invalid:$" && err.Error() != "request_union_invalid:$") {
 		t.Fatalf("operation-disallowed reference error = %v", err)
 	}
 }
@@ -288,7 +288,13 @@ func TestValidateOperationRequestRejectsOperationSemanticViolations(t *testing.T
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := ValidateOperationRequest("planner-authoring.v1", "create_operation_packet", test.raw); err == nil || err.Error() != "request_semantic_invalid:$" {
+			err := ValidateOperationRequest("planner-authoring.v1", "create_operation_packet", test.raw)
+			errText := ""
+			if err != nil {
+				errText = err.Error()
+			}
+			allowedSchemaRejection := test.name == "operation_disallowed_reference" || test.name == "source_kind_branch_mismatch" || test.name == "workflow_record_digest_mismatch"
+			if err == nil || (errText != "request_semantic_invalid:$" && !(allowedSchemaRejection && errText == "request_union_invalid:$")) {
 				t.Fatalf("operation validation error = %v", err)
 			}
 		})

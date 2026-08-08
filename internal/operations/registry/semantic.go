@@ -1195,6 +1195,12 @@ func encodeBySchema(output *bytes.Buffer, value any, schema *orderedValue, defin
 	if err != nil {
 		return err
 	}
+	if allOf, ok := objectValue(resolved, "allOf"); ok {
+		if len(allOf.array) == 0 {
+			return errors.New("allOf is empty")
+		}
+		return encodeBySchema(output, value, allOf.array[0], definitions)
+	}
 	if branches, ok := objectValue(resolved, "oneOf"); ok {
 		selected, err := selectSchemaBranch(branches, value, definitions)
 		if err != nil {
@@ -1296,6 +1302,9 @@ func selectSchemaBranch(branches *orderedValue, value any, definitions map[strin
 		}
 		properties, ok := objectValue(resolved, "properties")
 		if !ok {
+			if validateInstance(value, branch, definitions, "$") == nil {
+				return branch, nil
+			}
 			continue
 		}
 		if discriminatorMatches(properties, object) && objectKeysCovered(properties, object) {

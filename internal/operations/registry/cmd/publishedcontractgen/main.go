@@ -145,6 +145,39 @@ type binding struct {
 	DispatcherOwner string `json:"dispatcher_owner"`
 }
 
+type operationDocument struct {
+	SchemaVersion  string                         `json:"schema_version"`
+	OperationOrder []string                       `json:"operation_order"`
+	Operations     map[string]operationDefinition `json:"operations"`
+}
+
+type operationDefinition struct {
+	OperationID              string          `json:"operation_id"`
+	Role                     string          `json:"role"`
+	SurfaceContract          string          `json:"surface_contract"`
+	ManifestDomain           json.RawMessage `json:"manifest_domain"`
+	OutputKind               string          `json:"output_kind"`
+	OutputPersistence        string          `json:"output_persistence"`
+	RequiredInputs           []operationSlot `json:"required_inputs"`
+	OptionalInputs           []operationSlot `json:"optional_inputs"`
+	ConditionalRefreshInputs []operationSlot `json:"conditional_refresh_inputs"`
+	DerivedInputs            []operationSlot `json:"derived_inputs"`
+	WorkflowReferenceKinds   []string        `json:"workflow_reference_kinds"`
+	ComparisonAnchorPurposes []string        `json:"comparison_anchor_purposes"`
+	SourcePolicy             string          `json:"source_policy"`
+	HistoricalAuthority      string          `json:"historical_authority"`
+	AllowedNonSourceActions  []string        `json:"allowed_non_source_actions"`
+	PacketSemanticProjection string          `json:"packet_semantic_projection"`
+}
+
+type operationSlot struct {
+	InputName            string   `json:"input_name"`
+	InputRole            string   `json:"input_role"`
+	AttestationKind      string   `json:"attestation_kind"`
+	AllowedSourceKinds   []string `json:"allowed_source_kinds"`
+	WorkflowRecordPolicy string   `json:"workflow_record_policy"`
+}
+
 type generatedDocument struct {
 	SchemaVersion                     string                   `json:"schema_version"`
 	SchemaDialect                     string                   `json:"schema_dialect"`
@@ -190,10 +223,12 @@ func main() {
 	schemasRaw := mustRead(filepath.Join(dir, schemasSource))
 
 	var routes routeDocument
+	var operations operationDocument
 	var family familyDocument
 	var metadata metadataDocument
 	var bindings bindingDocument
 	var schemas schemaDocument
+	decodeStrict(operationsRaw, &operations)
 	decodeStrict(routesRaw, &routes)
 	decodeStrict(familyRaw, &family)
 	decodeStrict(metadataRaw, &metadata)
@@ -210,7 +245,7 @@ func main() {
 		fatalf("metadata source digest differs")
 	}
 
-	packetToolSchemas := buildPacketToolSchemas(routes.Routes)
+	packetToolSchemas := buildPacketToolSchemas(routes.Routes, operations)
 	familyToolSchemas := buildFamilyToolSchemas(family)
 	explicitToolSchemas := buildExplicitToolSchemas(schemas)
 	order := orderedTools(routes.Routes)
@@ -291,7 +326,7 @@ func main() {
 	writePins(filepath.Join(dir, pinsOutput), mustRead(filepath.Join(dir, operationsOutput)), mustRead(filepath.Join(dir, publicOutput)), bindingsRaw)
 }
 
-func buildPacketToolSchemas(routes []routeDefinition) map[string]generatedTool {
+func buildPacketToolSchemas(routes []routeDefinition, operations operationDocument) map[string]generatedTool {
 	operationIDs := make([]string, 0)
 	seenOperations := map[string]struct{}{}
 	for _, route := range routes {
@@ -330,13 +365,13 @@ func buildPacketToolSchemas(routes []routeDefinition) map[string]generatedTool {
 	}
 	result := make(map[string]generatedTool, len(titles))
 	for name, title := range titles {
-		input, output := explicitPacketSchemas(name, operationIDs)
+		input, output := explicitPacketSchemas(name, operationIDs, operations)
 		result[name] = generatedTool{Name: name, Title: title, Description: descriptions[name], SemanticToolID: semanticIDs[name], Invoking: invoking[name], Invoked: invoked[name], InputSchema: input, OutputSchema: output}
 	}
 	return result
 }
 
-func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage, json.RawMessage) {
+func explicitPacketSchemas(tool string, operationIDs []string, operations operationDocument) (json.RawMessage, json.RawMessage) {
 	ref := func(name string) map[string]any { return map[string]any{"$ref": "#/$defs/" + name} }
 	array := func(item string, max int) map[string]any {
 		return map[string]any{"type": "array", "minItems": 0, "maxItems": max, "items": ref(item)}
@@ -389,10 +424,17 @@ func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage,
 		required = []string{"surface_contract", "packet_id"}
 	}
 	input := objectSchema(required, inputProperties)
+	if tool == "create_operation_packet" {
+		input["oneOf"] = operationRequestAdmissionBranches(operations, inputProperties)
+	}
 	if tool == "create_operation_packet" || tool == "refresh_operation_packet" {
 		input["$defs"] = map[string]any{
 			"WorkflowReferenceRequest": workflowReferenceRequestSchema(),
 			"InputBinding":             inputBindingSchema(),
+			"AttestationRequest":       attestationRequestSchema(),
+		}
+		if tool == "create_operation_packet" {
+			input["$defs"].(map[string]any)["OperationAdmission"] = operationAdmissionSchema(operations)
 		}
 	}
 	var output map[string]any
@@ -412,6 +454,340 @@ func explicitPacketSchemas(tool string, operationIDs []string) (json.RawMessage,
 	}
 	output = map[string]any{"oneOf": []any{output}}
 	return marshalSchema(input), marshalSchema(output)
+}
+
+func operationAdmissionSchema(document operationDocument) map[string]any {
+	branches := make([]any, 0, len(document.OperationOrder))
+	for _, operationID := range document.OperationOrder {
+		operation, ok := document.Operations[operationID]
+		if !ok {
+			fatalf("operation %q missing from source authority", operationID)
+		}
+		callerSlots := append(append([]operationSlot{}, operation.RequiredInputs...), operation.OptionalInputs...)
+		requiredAttestations := operationAttestationKinds(operation.RequiredInputs)
+		properties := map[string]any{
+			"operation_id":               map[string]any{"type": "string", "const": operation.OperationID},
+			"caller_input_cardinality":   cardinalitySchema(len(operation.RequiredInputs), len(callerSlots)),
+			"caller_inputs":              operationSlotArraySchemaWithCardinality(callerSlots, len(operation.RequiredInputs), len(callerSlots)),
+			"required_inputs":            operationSlotArraySchema(operation.RequiredInputs),
+			"optional_inputs":            operationSlotArraySchema(operation.OptionalInputs),
+			"conditional_refresh_inputs": operationSlotArraySchema(operation.ConditionalRefreshInputs),
+			"derived_inputs":             operationSlotArraySchema(operation.DerivedInputs),
+			"required_attestation_kinds": stringArraySchema(requiredAttestations),
+			"workflow_reference_kinds":   stringArraySchema(operation.WorkflowReferenceKinds),
+			"comparison_anchor_purposes": stringArraySchema(operation.ComparisonAnchorPurposes),
+			"source_policy":              map[string]any{"type": "string", "const": operation.SourcePolicy},
+			"historical_authority":       map[string]any{"type": "string", "const": operation.HistoricalAuthority},
+		}
+		required := []string{"operation_id", "caller_input_cardinality", "caller_inputs", "required_inputs", "optional_inputs", "conditional_refresh_inputs", "derived_inputs", "required_attestation_kinds", "workflow_reference_kinds", "comparison_anchor_purposes", "source_policy", "historical_authority"}
+		branches = append(branches, objectSchema(required, properties))
+	}
+	return map[string]any{
+		"title":       "Operation admission semantics",
+		"description": "Machine-readable operation-specific packet admission authority. Caller inputs and Relay-derived inputs are represented separately.",
+		"oneOf":       branches,
+	}
+}
+
+// operationRequestAdmissionBranches links operation_id to the operation's
+// caller-input projection on the actual create request. The generic
+// InputBinding union remains available on inputs, while this operation branch
+// makes the published operation authority discoverable at the request surface.
+func operationRequestAdmissionBranches(document operationDocument, baseProperties map[string]any) []any {
+	branches := make([]any, 0, len(document.OperationOrder))
+	for _, operationID := range document.OperationOrder {
+		operation, ok := document.Operations[operationID]
+		if !ok {
+			fatalf("operation %q missing from source authority", operationID)
+		}
+		callerSlots := append(append([]operationSlot{}, operation.RequiredInputs...), operation.OptionalInputs...)
+		properties := cloneJSONMap(baseProperties)
+		properties["operation_id"] = map[string]any{"type": "string", "const": operation.OperationID}
+		properties["inputs"] = operationCallerInputsSchema(callerSlots, len(operation.RequiredInputs), len(callerSlots))
+		properties["workflow_references"] = operationWorkflowReferencesSchema(operation.WorkflowReferenceKinds)
+		properties["attestations"] = operationAttestationsSchema(operation)
+		branches = append(branches, map[string]any{
+			"type":       "object",
+			"required":   []string{"operation_id", "inputs"},
+			"properties": properties,
+		})
+	}
+	return branches
+}
+
+func operationCallerInputsSchema(slots []operationSlot, minimum, maximum int) map[string]any {
+	branches := make([]any, 0, len(slots))
+	for _, slot := range slots {
+		branches = append(branches, map[string]any{
+			"allOf": []any{
+				map[string]any{"$ref": "#/$defs/InputBinding"},
+				operationCallerSlotSchema(slot),
+			},
+		})
+	}
+	items := map[string]any{"type": "object"}
+	if len(branches) == 1 {
+		items = branches[0].(map[string]any)
+	} else if len(branches) > 1 {
+		items = map[string]any{"oneOf": branches}
+	}
+	return map[string]any{
+		"type":     "array",
+		"minItems": minimum,
+		"maxItems": maximum,
+		"items":    items,
+	}
+}
+
+func operationCallerSlotSchema(slot operationSlot) map[string]any {
+	return map[string]any{
+		"type":     "object",
+		"required": []string{"input_name", "source_kind"},
+		"properties": map[string]any{
+			"input_name":  map[string]any{"type": "string", "const": slot.InputName},
+			"source_kind": map[string]any{"type": "string", "enum": append([]string(nil), slot.AllowedSourceKinds...)},
+		},
+	}
+}
+
+func cloneJSONMap(value map[string]any) map[string]any {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		fatalf("clone schema: %v", err)
+	}
+	var clone map[string]any
+	if err := json.Unmarshal(encoded, &clone); err != nil {
+		fatalf("clone schema: %v", err)
+	}
+	return clone
+}
+
+func operationSlotArraySchema(slots []operationSlot) map[string]any {
+	return operationSlotArraySchemaWithCardinality(slots, len(slots), len(slots))
+}
+
+func operationSlotArraySchemaWithCardinality(slots []operationSlot, minimum, maximum int) map[string]any {
+	branches := make([]any, 0, len(slots))
+	for _, slot := range slots {
+		branches = append(branches, operationSlotSchema(slot))
+	}
+	array := map[string]any{"type": "array", "minItems": minimum, "maxItems": maximum}
+	if len(branches) == 1 {
+		array["items"] = branches[0]
+	} else if len(branches) > 1 {
+		array["items"] = map[string]any{"oneOf": branches}
+	} else {
+		array["items"] = map[string]any{"type": "object"}
+	}
+	return array
+}
+
+func operationSlotSchema(slot operationSlot) map[string]any {
+	properties := map[string]any{
+		"input_name":                 map[string]any{"type": "string", "const": slot.InputName},
+		"input_role":                 map[string]any{"type": "string", "const": slot.InputRole},
+		"attestation_kind":           map[string]any{"type": "string", "const": slot.AttestationKind},
+		"required_attestation_kinds": stringArraySchema(operationSlotAttestationKinds(slot)),
+		"allowed_source_kinds":       stringArraySchema(slot.AllowedSourceKinds),
+		"workflow_record_policy":     map[string]any{"type": "string", "const": slot.WorkflowRecordPolicy},
+	}
+	return objectSchema([]string{"input_name", "input_role", "attestation_kind", "required_attestation_kinds", "allowed_source_kinds", "workflow_record_policy"}, properties)
+}
+
+func operationSlotAttestationKinds(slot operationSlot) []string {
+	if len(slot.AllowedSourceKinds) == 0 {
+		return []string{}
+	}
+	result := []string{slot.AttestationKind}
+	if operationUsesExternalSource(slot.AllowedSourceKinds) {
+		result = append(result, "sensitive_data_clearance")
+	}
+	return result
+}
+
+func operationUsesExternalSource(sourceKinds []string) bool {
+	for _, sourceKind := range sourceKinds {
+		switch sourceKind {
+		case "uploaded_file", "relay_artifact", "inline_text", "workflow_record":
+			return true
+		}
+	}
+	return false
+}
+
+func cardinalitySchema(minimum, maximum int) map[string]any {
+	return objectSchema([]string{"minimum", "maximum"}, map[string]any{
+		"minimum": map[string]any{"type": "integer", "const": minimum},
+		"maximum": map[string]any{"type": "integer", "const": maximum},
+	})
+}
+
+func stringArraySchema(values []string) map[string]any {
+	array := map[string]any{"type": "array", "minItems": len(values), "maxItems": len(values)}
+	if len(values) == 0 {
+		array["items"] = map[string]any{"type": "string"}
+		return array
+	}
+	items := map[string]any{"type": "string", "enum": append([]string(nil), values...)}
+	array["items"] = items
+	return array
+}
+
+func operationAttestationKinds(slots []operationSlot) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(slots)+1)
+	for _, slot := range slots {
+		for _, kind := range operationSlotAttestationKinds(slot) {
+			if kind == "" {
+				continue
+			}
+			if _, ok := seen[kind]; !ok {
+				seen[kind] = struct{}{}
+				result = append(result, kind)
+			}
+		}
+	}
+	return result
+}
+
+func operationAttestationRequirementSchema(requirement attestationRequirement) map[string]any {
+	return map[string]any{
+		"allOf": []any{
+			map[string]any{"$ref": "#/$defs/AttestationRequest"},
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"kind":       map[string]any{"type": "string", "const": requirement.Kind},
+					"input_name": map[string]any{"type": "string", "const": requirement.InputName},
+				},
+				"required": []string{"kind", "input_name"},
+			},
+		},
+	}
+}
+
+type attestationRequirement struct {
+	Kind      string
+	InputName string
+}
+
+func operationAttestationRequirements(slots []operationSlot) []attestationRequirement {
+	result := make([]attestationRequirement, 0, len(slots)*2)
+	seen := map[string]struct{}{}
+	appendRequirement := func(kind, inputName string) {
+		if kind == "" || inputName == "" {
+			return
+		}
+		key := kind + "\x00" + inputName
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, attestationRequirement{Kind: kind, InputName: inputName})
+	}
+	for _, slot := range slots {
+		appendRequirement(slot.AttestationKind, slot.InputName)
+		if operationUsesExternalSource(slot.AllowedSourceKinds) {
+			appendRequirement("sensitive_data_clearance", slot.InputName)
+		}
+	}
+	return result
+}
+
+func operationAttestationsSchema(operation operationDefinition) map[string]any {
+	allSlots := append(append([]operationSlot{}, operation.RequiredInputs...), operation.OptionalInputs...)
+	requiredSlots := operationAttestationRequirements(operation.RequiredInputs)
+	allRequirements := operationAttestationRequirements(allSlots)
+	branches := make([]any, 0, len(allRequirements))
+	for _, requirement := range allRequirements {
+		branches = append(branches, operationAttestationRequirementSchema(requirement))
+	}
+	items := map[string]any{"$ref": "#/$defs/AttestationRequest"}
+	if len(branches) == 1 {
+		items = branches[0].(map[string]any)
+	} else if len(branches) > 1 {
+		items = map[string]any{"oneOf": branches}
+	}
+	base := map[string]any{
+		"type":     "array",
+		"minItems": len(requiredSlots),
+		"maxItems": len(allRequirements),
+		"items":    items,
+	}
+	constraints := []any{base}
+	for _, requirement := range requiredSlots {
+		constraints = append(constraints, map[string]any{
+			"contains":    operationAttestationRequirementSchema(requirement),
+			"minContains": 1,
+			"maxContains": 1,
+		})
+	}
+	if len(constraints) == 1 {
+		return base
+	}
+	return map[string]any{"allOf": constraints}
+}
+
+func operationWorkflowReferencesSchema(kinds []string) map[string]any {
+	branches := make([]any, 0, len(kinds))
+	for _, kind := range kinds {
+		branches = append(branches, map[string]any{
+			"allOf": []any{
+				map[string]any{"$ref": "#/$defs/WorkflowReferenceRequest"},
+				map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"kind": map[string]any{"type": "string", "const": kind}},
+					"required":   []string{"kind"},
+				},
+			},
+		})
+	}
+	items := map[string]any{"$ref": "#/$defs/WorkflowReferenceRequest"}
+	if len(branches) == 1 {
+		items = branches[0].(map[string]any)
+	} else if len(branches) > 1 {
+		items = map[string]any{"oneOf": branches}
+	}
+	return map[string]any{
+		"type":        "array",
+		"minItems":    len(kinds),
+		"maxItems":    len(kinds),
+		"uniqueItems": true,
+		"items":       items,
+	}
+}
+
+func attestationRequestSchema() map[string]any {
+	sha256 := map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"}
+	identifier := map[string]any{"type": "string", "minLength": 1, "maxLength": 255}
+	declarationNames := []string{
+		"password", "api_key_or_access_token", "refresh_token_or_session_material",
+		"cookie_or_authorization_header", "private_or_ssh_key", "credential",
+		"complete_secret_bearing_environment_file", "avoidable_signed_secret_bearing_url",
+	}
+	declarationProperties := make(map[string]any, len(declarationNames))
+	for _, name := range declarationNames {
+		declarationProperties[name] = map[string]any{"type": "boolean", "const": false}
+	}
+	clearance := objectSchema([]string{"policy_version", "subject_sha256", "declaration", "confirmed"}, map[string]any{
+		"policy_version": map[string]any{"type": "string", "const": "relay.canonical-artifact-sensitive-data.v1"},
+		"subject_sha256": sha256,
+		"declaration":    objectSchema(declarationNames, declarationProperties),
+		"confirmed":      map[string]any{"type": "boolean", "const": true},
+	})
+	return objectSchema([]string{"kind", "input_name"}, map[string]any{
+		"kind":                      map[string]any{"type": "string", "enum": []string{"approved_artifact", "candidate_for_review", "complete_review_result", "completed_dependency_outcomes", "confirmed_intent", "derived_authority", "exact_evidence", "sensitive_data_clearance"}},
+		"input_name":                identifier,
+		"subject_sha256":            sha256,
+		"confirmed":                 map[string]any{"type": "boolean"},
+		"approved":                  map[string]any{"type": "boolean"},
+		"complete_transfer":         map[string]any{"type": "boolean"},
+		"selected_mode":             map[string]any{"type": "string", "enum": []string{"plan", "one_shot"}},
+		"reviewed_candidate_sha256": sha256,
+		"review_result":             map[string]any{"type": "string", "enum": []string{"ready_for_approval", "needs_revision"}},
+		"complete":                  map[string]any{"type": "boolean"},
+		"clearance":                 clearance,
+	})
 }
 
 func workflowReferenceRequestSchema() map[string]any {
