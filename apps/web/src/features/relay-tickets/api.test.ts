@@ -12,7 +12,7 @@ describe("ticket transport", () => {
 
     await expect(getTicketFrontier("workspace-1")).resolves.toEqual({ workspaceId: "workspace-1", entries: [] });
 
-    expect(fetch.mock.calls[0]?.[0]).toBe("http://localhost:8080/api/feature-workspaces/workspace-1/tickets/frontier");
+    expect(fetch.mock.calls[0]?.[0]).toBe("http://localhost:18080/api/feature-workspaces/workspace-1/tickets/frontier");
     expect(fetch.mock.calls[0]?.[1]).toMatchObject({ method: "GET" });
   });
 

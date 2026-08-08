@@ -2,12 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RelayFeatureWorkspaceDetail } from "@/components/relay/RelayFeatureWorkspaceDetail";
 import { Button } from "@/components/ui/button";
-import { featureWorkspaceDetailQueryOptions } from "@/features/relay-feature-workspaces";
+import { featureWorkspaceGuidedQueryOptions } from "@/features/relay-feature-workspaces";
 
 export const Route = createFileRoute("/feature-workspaces/$workspaceId")({ component: FeatureWorkspacePage });
 function FeatureWorkspacePage() {
   const { workspaceId } = Route.useParams();
-  const query = useQuery(featureWorkspaceDetailQueryOptions(workspaceId));
+  const query = useQuery(featureWorkspaceGuidedQueryOptions(workspaceId));
   return (
     <section data-testid="route-scroll-region" className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">
       {query.isLoading ? (

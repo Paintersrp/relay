@@ -2,6 +2,7 @@ package features
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -78,6 +79,10 @@ func (f *fakeCompletion) Evaluate(context.Context, string) (appoperations.Featur
 }
 func (f *fakeCompletion) Complete(_ context.Context, input featureapp.CompletionInput) (appoperations.FeatureCompletionResult, error) {
 	f.input = input
+	if f.err == nil && f.result.Decision.Decision != "" {
+		f.status.Workspace = f.result.Workspace
+		f.status.CurrentDecision = &f.result.Decision
+	}
 	return f.result, f.err
 }
 
@@ -307,5 +312,171 @@ func TestPrototypePart3RoutesForwardBoundedInputsAndDTOs(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/prototype-runs/run-api/qa-packets", strings.NewReader(`{"expectedRunVersion":4,"mutationIdentity":"packet-api","operatorPrompt":"review","validationInstructions":[],"extra":true}`)))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("unknown QA packet field status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+type fakeGuided struct {
+	assessment    GuidedAssessment
+	current       featureapp.FeatureCurrentnessDecision
+	assessmentErr error
+	recordInput   featureapp.RecordDiscoveryDestinationAssessmentInput
+	closeInput    featureapp.CloseFeatureDiscoveryInput
+	recordErr     error
+	closeErr      error
+}
+
+func (f *fakeGuided) AssessDiscoveryDestination(context.Context, string) (GuidedAssessment, error) {
+	return f.assessment, f.assessmentErr
+}
+func (f *fakeGuided) Currentness(context.Context, string) (featureapp.FeatureCurrentnessDecision, error) {
+	return f.current, nil
+}
+func (f *fakeGuided) RecordDiscoveryDestinationAssessment(_ context.Context, input featureapp.RecordDiscoveryDestinationAssessmentInput) error {
+	f.recordInput = input
+	return f.recordErr
+}
+func (f *fakeGuided) CloseFeatureDiscovery(_ context.Context, input featureapp.CloseFeatureDiscoveryInput) error {
+	f.closeInput = input
+	return f.closeErr
+}
+
+func guidedRouter(wayfinderService WayfinderService, authorityService AuthorityService, completionService CompletionService, guidedService GuidedService) http.Handler {
+	router := chi.NewRouter()
+	MountWorkspaceRoutes(router, NewWorkspaceHandlerWithGuided(wayfinderService, authorityService, completionService, guidedService))
+	return router
+}
+
+func TestGuidedGetProjectsSemanticStateWithExactlyOnePrimaryAndNoArtifactFields(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", State: "open", Version: 8}, Project: workflowstore.Project{ProjectID: "project-guided", Name: "Payments"}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, Currentness: featureapp.DiscoveryCurrent, Rationale: "ready to close", CurrentRevisionID: "revision-secret"}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent, WorkspaceID: detail.Workspace.WorkspaceID, WorkspaceVersion: detail.Workspace.Version}}
+	authority := &fakeAuthority{revisions: []featureapp.AuthorityRevisionDetail{{Revision: workflowstore.FeatureWorkspaceAuthorityRevision{ID: 41, RevisionNumber: 2}, Layers: []workflowstore.FeatureWorkspaceAuthorityLayer{{LayerKind: "requirements", ArtifactRowID: sql.NullInt64{Int64: 99, Valid: true}}}}}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, Version: detail.Workspace.Version}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, authority, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-guided/guided", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Guided struct {
+			AvailableActions []struct {
+				Primary bool `json:"primary"`
+			} `json:"availableActions"`
+			PrimaryAction string `json:"primaryAction"`
+		} `json:"guided"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	primaryCount := 0
+	for _, action := range body.Guided.AvailableActions {
+		if action.Primary {
+			primaryCount++
+		}
+	}
+	if primaryCount != 1 || body.Guided.PrimaryAction != "close_discovery" {
+		t.Fatalf("guided actions=%s", response.Body.String())
+	}
+	for _, forbidden := range []string{"artifactRowId", "artifactSha256", "approvalRowId", "revision-secret"} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("guided response exposed %q: %s", forbidden, response.Body.String())
+		}
+	}
+	if !strings.Contains(response.Body.String(), `"projectId":"project-guided"`) || !strings.Contains(response.Body.String(), `"destination":"requirements"`) {
+		t.Fatalf("missing semantic projection: %s", response.Body.String())
+	}
+}
+
+func TestGuidedProjectionProjectsRouteMaterialOpenAsBoolean(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, CurrentRevisionID: "revision-guided", RouteMaterialOpen: []string{"ticket-1"}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-guided/guided", nil))
+	var body struct {
+		Guided struct {
+			Diagnostics struct {
+				Discovery struct {
+					RouteMaterialOpen bool `json:"routeMaterialOpen"`
+				} `json:"discovery"`
+			} `json:"diagnostics"`
+		} `json:"guided"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &body) != nil || !body.Guided.Diagnostics.Discovery.RouteMaterialOpen {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGuidedActionDelegatesRevisionServerSideAndReturnsRefreshedProjection(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", State: "open", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, CurrentRevisionID: "revision-server-owned"}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"destination":"requirements"}`)))
+	if response.Code != http.StatusOK || guided.closeInput.ExpectedRevisionID != "revision-server-owned" || guided.closeInput.ExpectedVersion != 8 || guided.closeInput.Destination != featureapp.DiscoveryDestinationRequirements || guided.closeInput.CreatedIdentity != "guided-operator" {
+		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.closeInput, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"primaryAction":"close_discovery"`) {
+		t.Fatalf("missing refreshed guided projection: %s", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "revision-server-owned") {
+		t.Fatalf("raw revision identifier leaked: %s", response.Body.String())
+	}
+}
+
+func TestGuidedActionRequiresConfirmationAndPreservesTypedStaleHandling(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, CurrentRevisionID: "revision-server-owned"}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent}, closeErr: featureapp.ErrDiscoveryStaleState}
+	router := guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided)
+	missingConfirmation := httptest.NewRecorder()
+	router.ServeHTTP(missingConfirmation, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"close_discovery","destination":"requirements"}`)))
+	if missingConfirmation.Code != http.StatusBadRequest || guided.closeInput != (featureapp.CloseFeatureDiscoveryInput{}) {
+		t.Fatalf("confirmation status=%d input=%#v body=%s", missingConfirmation.Code, guided.closeInput, missingConfirmation.Body.String())
+	}
+	falseConfirmation := httptest.NewRecorder()
+	router.ServeHTTP(falseConfirmation, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"close_discovery","confirmation":false,"destination":"requirements"}`)))
+	if falseConfirmation.Code != http.StatusBadRequest || guided.closeInput != (featureapp.CloseFeatureDiscoveryInput{}) {
+		t.Fatalf("false confirmation status=%d input=%#v body=%s", falseConfirmation.Code, guided.closeInput, falseConfirmation.Body.String())
+	}
+	stale := httptest.NewRecorder()
+	router.ServeHTTP(stale, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"close_discovery","confirmation":true}`)))
+	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), `"error":"VERSION_CONFLICT"`) {
+		t.Fatalf("stale status=%d body=%s", stale.Code, stale.Body.String())
+	}
+}
+
+func TestGuidedActionBlocksNonPrimaryActionWithoutMutation(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{
+		State:             featureapp.DiscoveryStateActive,
+		Destination:       featureapp.DiscoveryDestinationRequirements,
+		CurrentRevisionID: "revision-guided",
+		Blockers:          []string{"ticket-1"},
+	}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"close_discovery","confirmation":true}`)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"GUIDED_ACTION_BLOCKED"`) || guided.closeInput != (featureapp.CloseFeatureDiscoveryInput{}) || guided.recordInput != (featureapp.RecordDiscoveryDestinationAssessmentInput{}) || completion.input != (featureapp.CompletionInput{}) {
+		t.Fatalf("status=%d close=%#v record=%#v completion=%#v body=%s", response.Code, guided.closeInput, guided.recordInput, completion.input, response.Body.String())
+	}
+}
+
+func TestGuidedActionCannotCompleteWhileDiscoveryPrimaryIsActive(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, CurrentRevisionID: "revision-guided"}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"complete_feature","confirmation":true}`)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"GUIDED_ACTION_BLOCKED"`) || completion.input != (featureapp.CompletionInput{}) {
+		t.Fatalf("status=%d completion=%#v body=%s", response.Code, completion.input, response.Body.String())
+	}
+}
+
+func TestGuidedCompletionReturnsRefreshedRecordedState(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", Version: 9}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateClosed, Currentness: featureapp.DiscoveryCurrent}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: 9}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}, result: appoperations.FeatureCompletionResult{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: 10}, Decision: appoperations.FeatureCompletionDecision{CompletionDecisionID: "decision-guided", Decision: "completed"}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":9,"action":"complete_feature","confirmation":true}`)))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"recorded":true`) || !strings.Contains(response.Body.String(), `"version":10`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

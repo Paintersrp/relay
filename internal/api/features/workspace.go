@@ -49,6 +49,32 @@ type CompletionService interface {
 	Complete(context.Context, featureapp.CompletionInput) (appoperations.FeatureCompletionResult, error)
 }
 
+// GuidedService is the narrow Feature-owned mutation/read boundary used by
+// the operator journey. The handler deliberately resolves internal revision
+// identifiers from the current assessment instead of accepting them from the
+// guided client.
+type GuidedService interface {
+	AssessDiscoveryDestination(context.Context, string) (GuidedAssessment, error)
+	Currentness(context.Context, string) (featureapp.FeatureCurrentnessDecision, error)
+	RecordDiscoveryDestinationAssessment(context.Context, featureapp.RecordDiscoveryDestinationAssessmentInput) error
+	CloseFeatureDiscovery(context.Context, featureapp.CloseFeatureDiscoveryInput) error
+}
+
+type GuidedAssessment struct {
+	State               featureapp.DiscoveryState
+	Destination         featureapp.DiscoveryDestination
+	Rationale           string
+	Blockers            []string
+	RestorationActions  []string
+	PendingIntegrations []string
+	ActiveOperations    []string
+	RouteMaterialOpen   []string
+	RequiredEvidence    []string
+	Continuation        string
+	Currentness         featureapp.DiscoveryCurrentness
+	CurrentRevisionID   string
+}
+
 type Workspace struct {
 	WorkspaceID string
 	FeatureSlug string
@@ -131,16 +157,22 @@ type WorkspaceHandler struct {
 	wayfinder  WayfinderService
 	authority  AuthorityService
 	completion CompletionService
+	guided     GuidedService
 }
 
 func NewWorkspaceHandler(wayfinderService WayfinderService, authorityService AuthorityService, completionService CompletionService) *WorkspaceHandler {
-	return &WorkspaceHandler{wayfinder: wayfinderService, authority: authorityService, completion: completionService}
+	return NewWorkspaceHandlerWithGuided(wayfinderService, authorityService, completionService, nil)
+}
+
+func NewWorkspaceHandlerWithGuided(wayfinderService WayfinderService, authorityService AuthorityService, completionService CompletionService, guidedService GuidedService) *WorkspaceHandler {
+	return &WorkspaceHandler{wayfinder: wayfinderService, authority: authorityService, completion: completionService, guided: guidedService}
 }
 
 // NewWorkspaceHandlerFromServices binds the application owners to the HTTP
 // projection boundary without exposing persistence models from this package.
 func NewWorkspaceHandlerFromServices(wayfinderService *wayfinder.Service, authorityService *featureapp.Service, completionService *appoperations.FeatureCompletionWorkflowService) *WorkspaceHandler {
-	return NewWorkspaceHandler(appWayfinderAdapter{service: wayfinderService}, appAuthorityAdapter{service: authorityService}, completionService)
+	adapter := appAuthorityAdapter{service: authorityService}
+	return NewWorkspaceHandlerWithGuided(appWayfinderAdapter{service: wayfinderService}, adapter, completionService, adapter)
 }
 
 type appWayfinderAdapter struct{ service *wayfinder.Service }
@@ -192,6 +224,25 @@ func (a appAuthorityAdapter) PublishAuthority(ctx context.Context, input feature
 func (a appAuthorityAdapter) RecordAuthorityApproval(ctx context.Context, input featureapp.RecordAuthorityApprovalInput) (featureapp.RecordAuthorityApprovalResult, error) {
 	value, err := a.service.RecordAuthorityApproval(ctx, input)
 	return value, err
+}
+
+func (a appAuthorityAdapter) AssessDiscoveryDestination(ctx context.Context, workspaceID string) (GuidedAssessment, error) {
+	value, err := a.service.AssessDiscoveryDestination(ctx, workspaceID)
+	if err != nil {
+		return GuidedAssessment{}, err
+	}
+	return guidedAssessmentDTO(value), nil
+}
+func (a appAuthorityAdapter) Currentness(ctx context.Context, workspaceID string) (featureapp.FeatureCurrentnessDecision, error) {
+	return a.service.Currentness(ctx, workspaceID)
+}
+func (a appAuthorityAdapter) RecordDiscoveryDestinationAssessment(ctx context.Context, input featureapp.RecordDiscoveryDestinationAssessmentInput) error {
+	_, _, err := a.service.RecordDiscoveryDestinationAssessment(ctx, input)
+	return err
+}
+func (a appAuthorityAdapter) CloseFeatureDiscovery(ctx context.Context, input featureapp.CloseFeatureDiscoveryInput) error {
+	_, _, err := a.service.CloseFeatureDiscovery(ctx, input)
+	return err
 }
 
 type createWorkspaceRequest struct {
@@ -267,6 +318,15 @@ type recordAuthorityApprovalRequest struct {
 type completeWorkspaceRequest struct {
 	ExpectedVersion   int64 `json:"expectedVersion"`
 	OperatorConfirmed bool  `json:"operatorConfirmed"`
+}
+
+var errGuidedActionBlocked = errors.New("guided action is not the presently enabled primary action")
+
+type guidedActionRequest struct {
+	ExpectedVersion int64  `json:"expectedVersion"`
+	Action          string `json:"action"`
+	Confirmation    bool   `json:"confirmation"`
+	Destination     string `json:"destination"`
 }
 type cleanupRequest struct {
 	ExpectedRunVersion int64  `json:"expectedRunVersion"`
@@ -432,6 +492,223 @@ func (h *WorkspaceHandler) RecordApproval(w http.ResponseWriter, r *http.Request
 	shared.JSON(w, http.StatusCreated, map[string]any{"approval": approvalDTO(result.Approval), "workspace": workspaceDTO(Workspace{WorkspaceID: result.Workspace.WorkspaceID, FeatureSlug: result.Workspace.FeatureSlug, State: result.Workspace.State, Version: result.Workspace.Version, CreatedAt: result.Workspace.CreatedAt, UpdatedAt: result.Workspace.UpdatedAt})})
 }
 
+func (h *WorkspaceHandler) GuidedGet(w http.ResponseWriter, r *http.Request) {
+	if h.guided == nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Guided feature service is unavailable")
+		return
+	}
+	projection, err := h.guidedProjection(r.Context(), workspaceID(r))
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{"guided": projection})
+}
+
+func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) {
+	if h.guided == nil || h.completion == nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Guided feature service is unavailable")
+		return
+	}
+	var request guidedActionRequest
+	if !decodeStrict(r, &request) {
+		badRequest(w, "Invalid guided feature action request")
+		return
+	}
+	if request.ExpectedVersion < 1 || strings.TrimSpace(request.Action) == "" {
+		badRequest(w, "Guided feature action and expected version are required")
+		return
+	}
+	if !request.Confirmation {
+		writeWorkspaceError(w, featureapp.ErrFeatureCompletionConfirmation)
+		return
+	}
+	workspaceID := workspaceID(r)
+	action := strings.TrimSpace(request.Action)
+	switch action {
+	case "continue_discovery", "close_discovery", "complete_feature":
+	default:
+		badRequest(w, "Unsupported guided feature action")
+		return
+	}
+
+	// Recompute the current primary action and its enabled state immediately
+	// before dispatching any mutation. The client action is only a request; the
+	// current assessment and completion gates remain the authority.
+	assessment, err := h.guided.AssessDiscoveryDestination(r.Context(), workspaceID)
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	completion, err := h.completion.Evaluate(r.Context(), workspaceID)
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	primaryAction, primaryEnabled := guidedPrimaryAction(assessment, completion.CurrentDecision, guidedCompletionReady(completion.Gates))
+	if action != primaryAction || !primaryEnabled {
+		writeWorkspaceError(w, errGuidedActionBlocked)
+		return
+	}
+
+	switch action {
+	case "continue_discovery":
+		err = h.guided.RecordDiscoveryDestinationAssessment(r.Context(), featureapp.RecordDiscoveryDestinationAssessmentInput{
+			WorkspaceID: workspaceID, ExpectedVersion: request.ExpectedVersion, CreatedIdentity: "guided-operator",
+		})
+		if err != nil {
+			writeWorkspaceError(w, err)
+			return
+		}
+	case "close_discovery":
+		if assessment.CurrentRevisionID == "" {
+			writeWorkspaceError(w, featureapp.ErrDiscoveryNotStarted)
+			return
+		}
+		destination := assessment.Destination
+		if strings.TrimSpace(request.Destination) != "" {
+			destination = featureapp.DiscoveryDestination(strings.TrimSpace(request.Destination))
+		}
+		if destination == "" {
+			writeWorkspaceError(w, featureapp.ErrDiscoveryInvalidDestination)
+			return
+		}
+		err = h.guided.CloseFeatureDiscovery(r.Context(), featureapp.CloseFeatureDiscoveryInput{
+			WorkspaceID: workspaceID, ExpectedVersion: request.ExpectedVersion,
+			ExpectedRevisionID: assessment.CurrentRevisionID, Destination: destination,
+			CreatedIdentity: "guided-operator",
+		})
+		if err != nil {
+			writeWorkspaceError(w, err)
+			return
+		}
+	case "complete_feature":
+		if _, err := h.completion.Complete(r.Context(), featureapp.CompletionInput{WorkspaceID: workspaceID, ExpectedVersion: request.ExpectedVersion, OperatorConfirmed: request.Confirmation}); err != nil {
+			writeWorkspaceError(w, err)
+			return
+		}
+	}
+	projection, err := h.guidedProjection(r.Context(), workspaceID)
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{"guided": projection})
+}
+
+func (h *WorkspaceHandler) guidedProjection(ctx context.Context, workspaceID string) (map[string]any, error) {
+	detail, err := h.wayfinder.ReadWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	assessment, err := h.guided.AssessDiscoveryDestination(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	currentness, err := h.guided.Currentness(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	authority, err := h.authority.ReadAuthority(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	completion, err := h.completion.Evaluate(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return guidedProjectionDTO(detail, assessment, currentness, authority, completion), nil
+}
+
+func guidedAssessmentDTO(value featureapp.DiscoveryAssessment) GuidedAssessment {
+	assessment := GuidedAssessment{
+		State:               value.State,
+		Destination:         value.Destination,
+		Rationale:           value.Rationale,
+		Blockers:            append([]string(nil), value.Blockers...),
+		RestorationActions:  append([]string(nil), value.RestorationActions...),
+		PendingIntegrations: append([]string(nil), value.PendingIntegrations...),
+		ActiveOperations:    append([]string(nil), value.ActiveOperations...),
+		RouteMaterialOpen:   append([]string(nil), value.RouteMaterialOpen...),
+		RequiredEvidence:    append([]string(nil), value.RequiredEvidence...),
+		Continuation:        value.Continuation,
+		Currentness:         value.Currentness,
+	}
+	if value.Revision != nil {
+		assessment.CurrentRevisionID = value.Revision.DiscoveryRevisionID
+	}
+	return assessment
+}
+
+func guidedProjectionDTO(detail wayfinder.WorkspaceDetail, assessment GuidedAssessment, currentness featureapp.FeatureCurrentnessDecision, authority []featureapp.AuthorityRevisionDetail, completion appoperations.FeatureCompletionStatus) map[string]any {
+	gates := make([]map[string]any, 0, len(completion.Gates))
+	completionReady := true
+	for _, gate := range completion.Gates {
+		gates = append(gates, map[string]any{"name": gate.Name, "ready": gate.Ready})
+		completionReady = completionReady && gate.Ready
+	}
+	authorityRevisions := make([]map[string]any, 0, len(authority))
+	currentAuthorityRevision := int64(0)
+	for _, revision := range authority {
+		layers := make([]string, 0, len(revision.Layers))
+		for _, layer := range revision.Layers {
+			layers = append(layers, layer.LayerKind)
+		}
+		if detail.Workspace.CurrentAuthorityRevisionRowID.Valid && revision.Revision.ID == detail.Workspace.CurrentAuthorityRevisionRowID.Int64 {
+			currentAuthorityRevision = revision.Revision.RevisionNumber
+		}
+		authorityRevisions = append(authorityRevisions, map[string]any{"revisionNumber": revision.Revision.RevisionNumber, "layers": layers, "historical": revision.Historical})
+	}
+	primaryAction, primaryEnabled := guidedPrimaryAction(assessment, completion.CurrentDecision, completionReady)
+	availableActions := []map[string]any{{"action": primaryAction, "primary": true, "enabled": primaryEnabled, "requiresConfirmation": primaryEnabled}}
+	workspace := Workspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, State: detail.Workspace.State, Version: detail.Workspace.Version, CreatedAt: detail.Workspace.CreatedAt, UpdatedAt: detail.Workspace.UpdatedAt}
+	if completion.Workspace.Version > workspace.Version {
+		workspace = Workspace{WorkspaceID: completion.Workspace.WorkspaceID, FeatureSlug: completion.Workspace.FeatureSlug, State: completion.Workspace.State, Version: completion.Workspace.Version, CreatedAt: completion.Workspace.CreatedAt, UpdatedAt: completion.Workspace.UpdatedAt}
+	}
+	return map[string]any{
+		"workspace":  workspaceDTO(workspace),
+		"project":    map[string]any{"projectId": detail.Project.ProjectID, "name": detail.Project.Name},
+		"discovery":  map[string]any{"state": string(assessment.State), "destination": string(assessment.Destination), "rationale": assessment.Rationale, "continuation": assessment.Continuation, "currentness": string(assessment.Currentness)},
+		"authority":  map[string]any{"currentRevisionNumber": currentAuthorityRevision, "revisions": authorityRevisions},
+		"planning":   map[string]any{"readiness": string(currentness.Readiness), "status": guidedPlanningStatus(currentness), "recoveryCategory": currentness.RecoveryCategory},
+		"completion": map[string]any{"gates": gates, "ready": completionReady, "recorded": completion.CurrentDecision != nil},
+		"diagnostics": map[string]any{
+			"history":   map[string]any{"discoveryCurrentness": string(assessment.Currentness), "historicalIdentity": currentness.HistoricalIdentity},
+			"stale":     map[string]any{"readiness": string(currentness.Readiness), "owner": currentness.StaleOwner, "blockedOperation": currentness.BlockedOperation, "effect": currentness.Effect, "recoveryCategory": currentness.RecoveryCategory, "basis": currentness.Basis},
+			"discovery": map[string]any{"blockers": assessment.Blockers, "restorationActions": assessment.RestorationActions, "pendingIntegrations": assessment.PendingIntegrations, "activeOperations": assessment.ActiveOperations, "routeMaterialOpen": len(assessment.RouteMaterialOpen) > 0, "requiredEvidence": assessment.RequiredEvidence},
+		},
+		"availableActions": availableActions,
+		"primaryAction":    primaryAction,
+	}
+}
+
+func guidedPrimaryAction(assessment GuidedAssessment, decision *appoperations.FeatureCompletionDecision, completionReady bool) (string, bool) {
+	if assessment.State == featureapp.DiscoveryStateClosed {
+		if decision != nil {
+			return "completion_recorded", false
+		}
+		return "complete_feature", completionReady
+	}
+	if assessment.CurrentRevisionID != "" && assessment.Destination != "" && assessment.State == featureapp.DiscoveryStateActive && len(assessment.Blockers) == 0 && len(assessment.PendingIntegrations) == 0 && len(assessment.ActiveOperations) == 0 && len(assessment.RouteMaterialOpen) == 0 && len(assessment.RequiredEvidence) == 0 {
+		return "close_discovery", true
+	}
+	return "continue_discovery", assessment.CurrentRevisionID != ""
+}
+
+func guidedCompletionReady(gates []appoperations.FeatureCompletionGate) bool {
+	ready := true
+	for _, gate := range gates {
+		ready = ready && gate.Ready
+	}
+	return ready
+}
+
+func guidedPlanningStatus(value featureapp.FeatureCurrentnessDecision) string {
+	if value.Readiness == featureapp.FeatureCurrent {
+		return "ready"
+	}
+	return "blocked"
+}
 func (h *WorkspaceHandler) CompletionStatus(w http.ResponseWriter, r *http.Request) {
 	if h.completion == nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature completion service is unavailable")
@@ -634,13 +911,17 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusConflict, "PROTOTYPE_CONFLICT", err.Error())
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, wayfinder.ErrWorkspaceNotFound), errors.Is(err, wayfinder.ErrDiscoveryTicketNotFound), errors.Is(err, featureapp.ErrWorkspaceNotFound), errors.Is(err, featureapp.ErrApprovalNotFound):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Feature workspace or discovery ticket was not found")
-	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict):
+	case errors.Is(err, wayfinder.ErrVersionConflict), errors.Is(err, featureapp.ErrVersionConflict), errors.Is(err, featureapp.ErrDiscoveryStaleState), errors.Is(err, featureapp.ErrDiscoveryStalePacket):
 		shared.Error(w, http.StatusConflict, "VERSION_CONFLICT", "Feature workspace was changed by another operator. Reload before retrying.")
+	case errors.Is(err, featureapp.ErrDiscoveryLegacyUnbound), errors.Is(err, featureapp.ErrDiscoveryIntegrity), errors.Is(err, featureapp.ErrDiscoveryManifestIntegrity), errors.Is(err, featureapp.ErrLegacyCurrentness), errors.Is(err, featureapp.ErrStaleCandidateBasis), errors.Is(err, featureapp.ErrHistoricalBasis):
+		shared.Error(w, http.StatusConflict, "CURRENTNESS_BLOCKED", err.Error())
+	case errors.Is(err, errGuidedActionBlocked), errors.Is(err, featureapp.ErrDiscoveryBlocked), errors.Is(err, featureapp.ErrDiscoveryClosureIneligible), errors.Is(err, featureapp.ErrDiscoveryPendingIntegration), errors.Is(err, featureapp.ErrDiscoveryActiveOperation), errors.Is(err, featureapp.ErrDiscoveryUnadopted), errors.Is(err, featureapp.ErrDiscoveryNotStarted), errors.Is(err, featureapp.ErrDiscoveryAlreadyClosed), errors.Is(err, featureapp.ErrDiscoveryNotClosed):
+		shared.Error(w, http.StatusConflict, "GUIDED_ACTION_BLOCKED", err.Error())
 	case errors.Is(err, featureapp.ErrFeatureCompletionNotReady), errors.Is(err, featureapp.ErrFeatureCompletionRecorded), errors.Is(err, appoperations.ErrFeatureCompletionAdmission):
 		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently eligible. Reload the completion gates.")
 	case errors.Is(err, featureapp.ErrFeatureCompletionConfirmation):
 		badRequest(w, err.Error())
-	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated):
+	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated), errors.Is(err, featureapp.ErrInvalidDiscoveryConsequence), errors.Is(err, featureapp.ErrDiscoveryInvalidDestination):
 		badRequest(w, err.Error())
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature workspace operation failed")
@@ -655,6 +936,9 @@ func MountWorkspaceRoutes(r chi.Router, handler *WorkspaceHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/discovery-tickets", handler.CreateTicket)
 	r.Post("/feature-workspaces/{workspaceID}/discovery-tickets/{ticketID}/resolutions", handler.ResolveTicket)
 	r.Post("/feature-workspaces/{workspaceID}/routes", handler.Route)
+	r.Get("/feature-workspaces/{workspaceID}/guided", handler.GuidedGet)
+	r.Post("/feature-workspaces/{workspaceID}/guided", handler.GuidedAction)
+	r.Post("/feature-workspaces/{workspaceID}/guided/actions", handler.GuidedAction)
 	r.Post("/feature-workspaces/{workspaceID}/authority-revisions", handler.PublishAuthority)
 	r.Post("/feature-workspaces/{workspaceID}/authority-approvals", handler.RecordApproval)
 	r.Get("/feature-workspaces/{workspaceID}/completion", handler.CompletionStatus)

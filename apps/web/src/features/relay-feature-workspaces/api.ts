@@ -1,5 +1,5 @@
 import { asWorkflowRecord, RelayApiError, requestWorkflowJson, requiredWorkflowArray, requiredWorkflowInteger, requiredWorkflowString, type WorkflowHttpMethod, type WorkflowJsonRecord } from "@/features/workflow-api";
-import type { AuthorityRevision, CompleteFeatureWorkspaceRequest, CreateDiscoveryTicketRequest, CreateFeatureWorkspaceRequest, FeatureCompletionStatus, FeatureWorkspace, FeatureWorkspaceDetail, GoverningArtifactApproval, ProjectFeatureWorkspaceListResponse, ProjectFeatureWorkspaceSummary, PublishAuthorityRequest, RecordAuthorityApprovalRequest, ResolveDiscoveryTicketRequest, RouteFeatureWorkspaceRequest } from "./types";
+import type { AuthorityRevision, CompleteFeatureWorkspaceRequest, CreateDiscoveryTicketRequest, CreateFeatureWorkspaceRequest, FeatureCompletionStatus, FeatureWorkspace, FeatureWorkspaceDetail, GoverningArtifactApproval, GuidedFeatureAction, GuidedFeatureActionRequest, GuidedFeatureDetail, ProjectFeatureWorkspaceListResponse, ProjectFeatureWorkspaceSummary, PublishAuthorityRequest, RecordAuthorityApprovalRequest, ResolveDiscoveryTicketRequest, RouteFeatureWorkspaceRequest } from "./types";
 
 function record(value: unknown, method: WorkflowHttpMethod, path: string, context: string): WorkflowJsonRecord { return asWorkflowRecord(value, method, path, context); }
 function nullableInteger(value: unknown, method: WorkflowHttpMethod, path: string, field: string): number | null { if (value === null || value === undefined) return null; if (!Number.isInteger(value)) throw new RelayApiError(`Malformed JSON response from ${method} ${path}: ${field} must be an integer or null`, 502, path, method); return value as number; }
@@ -10,9 +10,87 @@ function approval(value: unknown, method: WorkflowHttpMethod, path: string): Gov
 function workspaceProject(value: unknown, method: WorkflowHttpMethod, path: string): FeatureWorkspaceDetail["project"] { const item = record(value, method, path, "workspace project"); return { projectId: requiredWorkflowString(item, "projectId", method, path, "workspace project"), name: requiredWorkflowString(item, "name", method, path, "workspace project", true) }; }
 
 function detail(value: unknown, method: WorkflowHttpMethod, path: string): FeatureWorkspaceDetail { const item = record(value, method, path, "workspace detail"); const sourceBasis = record(item.sourceBasis, method, path, "sourceBasis"); return { workspace: workspace(item.workspace, method, path), project: workspaceProject(item.project, method, path), inputs: requiredWorkflowArray(item, "inputs", method, path, "workspace detail"), destinations: requiredWorkflowArray(item, "destinations", method, path, "workspace detail"), tickets: requiredWorkflowArray(item, "tickets", method, path, "workspace detail").map((ticket) => { const value = record(ticket, method, path, "ticket"); return { ticketId: requiredWorkflowString(value, "ticketId", method, path, "ticket"), ticketKey: requiredWorkflowString(value, "ticketKey", method, path, "ticket"), subject: requiredWorkflowString(value, "subject", method, path, "ticket"), state: requiredWorkflowString(value, "state", method, path, "ticket") as FeatureWorkspaceDetail["tickets"][number]["state"], version: requiredWorkflowInteger(value, "version", method, path, "ticket", 1), dependencies: requiredWorkflowArray(value, "dependencies", method, path, "ticket").map((dependency) => { const item = record(dependency, method, path, "ticket dependency"); return { dependsOnTicketRowId: requiredWorkflowInteger(item, "dependsOnTicketRowId", method, path, "ticket dependency", 1), kind: requiredWorkflowString(item, "kind", method, path, "ticket dependency") as "blocks" | "informs" }; }), resolutions: requiredWorkflowArray(value, "resolutions", method, path, "ticket").map((resolution) => { const item = record(resolution, method, path, "resolution"); return { resolutionId: requiredWorkflowString(item, "resolutionId", method, path, "resolution"), sequence: requiredWorkflowInteger(item, "sequence", method, path, "resolution", 1), kind: requiredWorkflowString(item, "kind", method, path, "resolution") as "resolved" | "rejected" | "deferred", artifactRowId: nullableInteger(item.artifactRowId, method, path, "artifactRowId"), retainedArtifactRowId: nullableInteger(item.retainedArtifactRowId, method, path, "retainedArtifactRowId"), artifactSha256: requiredWorkflowString(item, "artifactSha256", method, path, "resolution"), sourceClosureRowId: nullableInteger(item.sourceClosureRowId, method, path, "sourceClosureRowId"), createdAt: requiredWorkflowString(item, "createdAt", method, path, "resolution", true) }; }), createdAt: requiredWorkflowString(value, "createdAt", method, path, "ticket", true), updatedAt: requiredWorkflowString(value, "updatedAt", method, path, "ticket", true) }; }), routes: requiredWorkflowArray(item, "routes", method, path, "workspace detail").map((route) => { const value = record(route, method, path, "route"); return { routeId: requiredWorkflowString(value, "routeId", method, path, "route"), sequence: requiredWorkflowInteger(value, "sequence", method, path, "route", 1), workspaceVersion: requiredWorkflowInteger(value, "workspaceVersion", method, path, "route", 1), state: requiredWorkflowString(value, "state", method, path, "route") as FeatureWorkspaceDetail["routes"][number]["state"], createdAt: requiredWorkflowString(value, "createdAt", method, path, "route", true) }; }), authorityRevisions: requiredWorkflowArray(item, "authorityRevisions", method, path, "workspace detail").map((revision) => authority(revision, method, path)), sourceBasis: { status: requiredWorkflowString(sourceBasis, "status", method, path, "sourceBasis") as "retained" | "not_recorded", investigationCount: requiredWorkflowInteger(sourceBasis, "investigationCount", method, path, "sourceBasis", 0) } }; }
+function guidedAction(value: unknown, method: WorkflowHttpMethod, path: string, context: string): GuidedFeatureAction {
+  const action = typeof value === "string" ? value : "";
+  if (!["continue_discovery", "close_discovery", "complete_feature", "completion_recorded"].includes(action)) {
+    throw new RelayApiError(`Malformed JSON response from ${method} ${path}: ${context}.action is invalid`, 502, path, method);
+  }
+  return action as GuidedFeatureAction;
+}
+
+function guidedStringArray(value: unknown, method: WorkflowHttpMethod, path: string, context: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new RelayApiError(`Malformed JSON response from ${method} ${path}: ${context} must be an array of strings`, 502, path, method);
+  }
+  return value as string[];
+}
+
+function guided(value: unknown, method: WorkflowHttpMethod, path: string): GuidedFeatureDetail {
+  const item = record(value, method, path, "guided feature workspace");
+  const discovery = record(item.discovery, method, path, "guided discovery");
+  const authorityValue = record(item.authority, method, path, "guided authority");
+  const planning = record(item.planning, method, path, "guided planning");
+  const completion = record(item.completion, method, path, "guided completion");
+  const diagnostics = record(item.diagnostics, method, path, "guided diagnostics");
+  const history = record(diagnostics.history, method, path, "guided history diagnostics");
+  const stale = record(diagnostics.stale, method, path, "guided stale diagnostics");
+  const discoveryDiagnostics = record(diagnostics.discovery, method, path, "guided discovery diagnostics");
+  const revisions = requiredWorkflowArray(authorityValue, "revisions", method, path, "guided authority").map((revision) => {
+    const value = record(revision, method, path, "guided authority revision");
+    return {
+      revisionNumber: requiredWorkflowInteger(value, "revisionNumber", method, path, "guided authority revision", 0),
+      layers: guidedStringArray(value.layers, method, path, "guided authority revision.layers"),
+      historical: typeof value.historical === "boolean" ? value.historical : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided authority revision.historical must be a boolean`, 502, path, method); })(),
+    };
+  });
+  const gates = requiredWorkflowArray(completion, "gates", method, path, "guided completion").map((gate) => {
+    const value = record(gate, method, path, "guided completion gate");
+    return { name: requiredWorkflowString(value, "name", method, path, "guided completion gate"), ready: typeof value.ready === "boolean" ? value.ready : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided completion gate.ready must be a boolean`, 502, path, method); })() };
+  });
+  const availableActions = requiredWorkflowArray(item, "availableActions", method, path, "guided feature workspace").map((action) => {
+    const value = record(action, method, path, "guided action");
+    return {
+      action: guidedAction(value.action, method, path, "guided action"),
+      primary: typeof value.primary === "boolean" ? value.primary : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided action.primary must be a boolean`, 502, path, method); })(),
+      enabled: typeof value.enabled === "boolean" ? value.enabled : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided action.enabled must be a boolean`, 502, path, method); })(),
+      requiresConfirmation: typeof value.requiresConfirmation === "boolean" ? value.requiresConfirmation : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided action.requiresConfirmation must be a boolean`, 502, path, method); })(),
+    };
+  });
+  return {
+    workspace: workspace(item.workspace, method, path),
+    project: workspaceProject(item.project, method, path),
+    discovery: {
+      state: requiredWorkflowString(discovery, "state", method, path, "guided discovery"),
+      destination: requiredWorkflowString(discovery, "destination", method, path, "guided discovery", true),
+      rationale: requiredWorkflowString(discovery, "rationale", method, path, "guided discovery", true),
+      continuation: requiredWorkflowString(discovery, "continuation", method, path, "guided discovery", true),
+      currentness: requiredWorkflowString(discovery, "currentness", method, path, "guided discovery", true),
+    },
+    authority: { currentRevisionNumber: requiredWorkflowInteger(authorityValue, "currentRevisionNumber", method, path, "guided authority", 0), revisions },
+    planning: { readiness: requiredWorkflowString(planning, "readiness", method, path, "guided planning", true), status: requiredWorkflowString(planning, "status", method, path, "guided planning", true), recoveryCategory: requiredWorkflowString(planning, "recoveryCategory", method, path, "guided planning", true) },
+    completion: { gates, ready: typeof completion.ready === "boolean" ? completion.ready : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided completion.ready must be a boolean`, 502, path, method); })(), recorded: typeof completion.recorded === "boolean" ? completion.recorded : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided completion.recorded must be a boolean`, 502, path, method); })() },
+    diagnostics: {
+      history: { discoveryCurrentness: requiredWorkflowString(history, "discoveryCurrentness", method, path, "guided history diagnostics", true), historicalIdentity: requiredWorkflowString(history, "historicalIdentity", method, path, "guided history diagnostics", true) },
+      stale: { readiness: requiredWorkflowString(stale, "readiness", method, path, "guided stale diagnostics", true), owner: requiredWorkflowString(stale, "owner", method, path, "guided stale diagnostics", true), blockedOperation: requiredWorkflowString(stale, "blockedOperation", method, path, "guided stale diagnostics", true), effect: requiredWorkflowString(stale, "effect", method, path, "guided stale diagnostics", true), recoveryCategory: requiredWorkflowString(stale, "recoveryCategory", method, path, "guided stale diagnostics", true), basis: requiredWorkflowString(stale, "basis", method, path, "guided stale diagnostics", true) },
+      discovery: { blockers: guidedStringArray(discoveryDiagnostics.blockers, method, path, "guided discovery diagnostics.blockers"), restorationActions: guidedStringArray(discoveryDiagnostics.restorationActions, method, path, "guided discovery diagnostics.restorationActions"), pendingIntegrations: guidedStringArray(discoveryDiagnostics.pendingIntegrations, method, path, "guided discovery diagnostics.pendingIntegrations"), activeOperations: guidedStringArray(discoveryDiagnostics.activeOperations, method, path, "guided discovery diagnostics.activeOperations"), routeMaterialOpen: typeof discoveryDiagnostics.routeMaterialOpen === "boolean" ? discoveryDiagnostics.routeMaterialOpen : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided discovery diagnostics.routeMaterialOpen must be a boolean`, 502, path, method); })(), requiredEvidence: guidedStringArray(discoveryDiagnostics.requiredEvidence, method, path, "guided discovery diagnostics.requiredEvidence") },
+    },
+    availableActions,
+    primaryAction: guidedAction(item.primaryAction, method, path, "guided feature workspace"),
+  };
+}
+
+function guidedResponse(value: unknown, method: WorkflowHttpMethod, path: string): GuidedFeatureDetail {
+  return guided(record(value, method, path, "guided response").guided, method, path);
+}
+
 function completionStatus(value: unknown, method: WorkflowHttpMethod, path: string): FeatureCompletionStatus { const item = record(value, method, path, "completion status"); const current = item.currentDecision === undefined ? undefined : record(item.currentDecision, method, path, "current completion decision"); return { workspace: workspace(item.workspace, method, path), gates: requiredWorkflowArray(item, "gates", method, path, "completion status").map((gate) => { const value = record(gate, method, path, "completion gate"); const name = requiredWorkflowString(value, "name", method, path, "completion gate"); if (!["authority", "tickets", "integration", "transitions", "remediation", "audit"].includes(name) || typeof value.ready !== "boolean") throw new RelayApiError(`Malformed JSON response from ${method} ${path}: completion gate is invalid`, 502, path, method); return { name: name as FeatureCompletionStatus["gates"][number]["name"], ready: value.ready }; }), currentDecision: current ? { completionDecisionId: requiredWorkflowString(current, "completionDecisionId", method, path, "current completion decision"), authorityRevisionRowId: requiredWorkflowInteger(current, "authorityRevisionRowId", method, path, "current completion decision", 1), sourceClosureRowId: requiredWorkflowInteger(current, "sourceClosureRowId", method, path, "current completion decision", 1), decision: requiredWorkflowString(current, "decision", method, path, "current completion decision"), createdAt: requiredWorkflowString(current, "createdAt", method, path, "current completion decision", true) } : undefined }; }
 
 export async function getFeatureWorkspace(workspaceId: string): Promise<FeatureWorkspaceDetail> { const path = `/api/feature-workspaces/${encodeURIComponent(workspaceId)}`; return detail(await requestWorkflowJson<unknown>("GET", path), "GET", path); }
+export async function getGuidedFeatureWorkspace(workspaceId: string): Promise<GuidedFeatureDetail> { const path = `/api/feature-workspaces/${encodeURIComponent(workspaceId)}/guided`; return guidedResponse(await requestWorkflowJson<unknown>("GET", path), "GET", path); }
+export async function guidedFeatureWorkspaceAction(workspaceId: string, request: GuidedFeatureActionRequest): Promise<GuidedFeatureDetail> { const path = `/api/feature-workspaces/${encodeURIComponent(workspaceId)}/guided/actions`; return guidedResponse(await requestWorkflowJson<unknown>("POST", path, request), "POST", path); }
+// Compatibility aliases keep the guided transport discoverable under both verb-first and resource-first names.
+export const getFeatureWorkspaceGuided = getGuidedFeatureWorkspace;
+export const actOnGuidedFeatureWorkspace = guidedFeatureWorkspaceAction;
 export async function createFeatureWorkspace(request: CreateFeatureWorkspaceRequest): Promise<FeatureWorkspace> { const path = "/api/feature-workspaces"; const response = record(await requestWorkflowJson<unknown>("POST", path, request), "POST", path, "create workspace"); return workspace(response.workspace, "POST", path); }
 export async function createDiscoveryTicket(workspaceId: string, request: CreateDiscoveryTicketRequest): Promise<void> { await requestWorkflowJson<unknown>("POST", `/api/feature-workspaces/${encodeURIComponent(workspaceId)}/discovery-tickets`, request); }
 export async function resolveDiscoveryTicket(workspaceId: string, ticketId: string, request: ResolveDiscoveryTicketRequest): Promise<void> { await requestWorkflowJson<unknown>("POST", `/api/feature-workspaces/${encodeURIComponent(workspaceId)}/discovery-tickets/${encodeURIComponent(ticketId)}/resolutions`, request); }

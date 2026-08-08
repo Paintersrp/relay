@@ -26,24 +26,33 @@ import {
 } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@tanstack/react-devtools", () => ({ TanStackDevtools: () => null }));
+
 import { routeTree } from "@/routeTree.gen";
 
 const workspaceDetailBody = {
-  workspace: {
-    workspaceId: "workspace-ccd47919-307f-40b9-88d4-c8ef7026cc05",
-    featureSlug: "wayfinder-bootstrap",
-    state: "open",
-    version: 4,
-    createdAt: "2026-07-01T00:00:00Z",
-    updatedAt: "2026-07-02T00:00:00Z",
+  guided: {
+    workspace: {
+      workspaceId: "workspace-ccd47919-307f-40b9-88d4-c8ef7026cc05",
+      featureSlug: "wayfinder-bootstrap",
+      state: "open",
+      version: 4,
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-02T00:00:00Z",
+    },
+    project: { projectId: "project-d0820795-2c29-40f6-a863-fc60c6c390f3", name: "Relay" },
+    discovery: { state: "active", destination: "delivery", rationale: "rationale", continuation: "continue", currentness: "current" },
+    authority: { currentRevisionNumber: 0, revisions: [] },
+    planning: { readiness: "current", status: "ready", recoveryCategory: "" },
+    completion: { gates: [], ready: true, recorded: false },
+    diagnostics: {
+      history: { discoveryCurrentness: "current", historicalIdentity: "none" },
+      stale: { readiness: "current", owner: "", blockedOperation: "", effect: "", recoveryCategory: "", basis: "" },
+      discovery: { blockers: [], restorationActions: [], pendingIntegrations: [], activeOperations: [], routeMaterialOpen: false, requiredEvidence: [] },
+    },
+    availableActions: [{ action: "continue_discovery", primary: true, enabled: false, requiresConfirmation: true }],
+    primaryAction: "continue_discovery",
   },
-  project: { projectId: "project-d0820795-2c29-40f6-a863-fc60c6c390f3", name: "Relay" },
-  inputs: [],
-  destinations: [],
-  tickets: [],
-  routes: [],
-  authorityRevisions: [],
-  sourceBasis: { status: "not_recorded", investigationCount: 0 },
 };
 
 function jsonResponse(body: unknown): Response {
@@ -58,9 +67,9 @@ function installFetchStub() {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/completion")) {
-      return jsonResponse({ workspace: workspaceDetailBody.workspace, gates: [], currentDecision: undefined });
+      return jsonResponse({ workspace: workspaceDetailBody.guided.workspace, gates: [], currentDecision: undefined });
     }
-    if (url.includes("/api/feature-workspaces/")) {
+    if (url.includes("/api/feature-workspaces/") && url.includes("/guided")) {
       return jsonResponse(workspaceDetailBody);
     }
     if (url.includes("/api/projects")) {
@@ -138,7 +147,7 @@ describe("feature-workspace route scrolling", () => {
     scrollRegion.scrollTop = 3400;
     expect(scrollRegion.scrollTop).toBe(3400);
 
-    const completionHeading = await screen.findByText("Feature completion");
+    const completionHeading = await screen.findByText("Completion");
     const scrollIntoView = vi.fn();
     completionHeading.scrollIntoView = scrollIntoView;
     completionHeading.scrollIntoView({ block: "end" });
@@ -178,8 +187,8 @@ describe("feature-workspace route scrolling", () => {
     expect(scrollRegion.scrollTop).toBe(1500);
   });
 
-  it("keeps the same scroll-capable route boundary across loading, error, and successful states", async () => {
-    // Loading state: fetch never resolves during this assertion window.
+  it("keeps the scroll-capable route boundary in the loading state", async () => {
+    // Keep this query pending only within its own render lifecycle.
     let resolveFetch: (() => void) | undefined;
     globalThis.fetch = vi.fn(
       () =>
@@ -189,16 +198,26 @@ describe("feature-workspace route scrolling", () => {
     ) as unknown as typeof fetch;
 
     const { unmount } = await renderRoute("/feature-workspaces/workspace-loading-state");
-    expect(screen.getByText("Loading workspace…")).toBeInTheDocument();
-    expect(document.querySelectorAll('[data-testid="route-scroll-region"]')).toHaveLength(1);
-    resolveFetch?.();
-    unmount();
+    try {
+      expect(screen.getByText("Loading workspace…")).toBeInTheDocument();
+      expect(document.querySelectorAll('[data-testid="route-scroll-region"]')).toHaveLength(1);
+    } finally {
+      unmount();
+      resolveFetch?.();
+    }
+  });
 
-    // Error state.
-    restoreFetch();
+  it("keeps the scroll-capable route boundary in the error state", async () => {
+    // Use a fresh rejected fetch in a separate render rather than transitioning
+    // from the loading query, whose pending state can otherwise leak into this route.
     globalThis.fetch = vi.fn(() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;
-    await renderRoute("/feature-workspaces/workspace-error-state");
-    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(document.querySelectorAll('[data-testid="route-scroll-region"]')).toHaveLength(1);
+
+    const { unmount } = await renderRoute("/feature-workspaces/workspace-error-state");
+    try {
+      await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument(), { timeout: 2_000 });
+      expect(document.querySelectorAll('[data-testid="route-scroll-region"]')).toHaveLength(1);
+    } finally {
+      unmount();
+    }
   });
 });

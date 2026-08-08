@@ -112,3 +112,44 @@ export interface ProjectFeatureWorkspaceListResponse {
   count: number;
   items: ProjectFeatureWorkspaceSummary[];
 }
+
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "complete_feature" | "completion_recorded";
+
+export interface GuidedFeatureDetail {
+  workspace: FeatureWorkspace;
+  project: FeatureWorkspaceProject;
+  discovery: {
+    state: string;
+    destination: string;
+    rationale: string;
+    continuation: string;
+    currentness: string;
+  };
+  authority: {
+    currentRevisionNumber: number;
+    revisions: Array<{ revisionNumber: number; layers: string[]; historical: boolean }>;
+  };
+  planning: { readiness: string; status: string; recoveryCategory: string };
+  completion: { gates: Array<{ name: string; ready: boolean }>; ready: boolean; recorded: boolean };
+  diagnostics: {
+    history: { discoveryCurrentness: string; historicalIdentity: string };
+    stale: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string; basis: string };
+    discovery: {
+      blockers: string[];
+      restorationActions: string[];
+      pendingIntegrations: string[];
+      activeOperations: string[];
+      routeMaterialOpen: boolean;
+      requiredEvidence: string[];
+    };
+  };
+  availableActions: Array<{ action: GuidedFeatureAction; primary: boolean; enabled: boolean; requiresConfirmation: boolean }>;
+  primaryAction: GuidedFeatureAction;
+}
+
+export interface GuidedFeatureActionRequest {
+  expectedVersion: number;
+  action: GuidedFeatureAction;
+  confirmation: boolean;
+  destination?: string;
+}

@@ -23,6 +23,11 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
+vi.mock("@/features/relay-feature-workspaces/api", async () => {
+  const actual = await vi.importActual<typeof import("@/features/relay-feature-workspaces/api")>("@/features/relay-feature-workspaces/api");
+  return { ...actual, listProjectFeatureWorkspaces: mocks.listProjectFeatureWorkspaces };
+});
+
 vi.mock("@/features/relay-feature-workspaces", async () => {
   const actual = await vi.importActual<
     typeof import("@/features/relay-feature-workspaces")
@@ -78,6 +83,7 @@ describe("RelayProjectFeatureWorkspacesPanel", () => {
 
     const link = await screen.findByRole("link", { name: /wayfinder-bootstrap/ });
     expect(link).toHaveAttribute("data-workspace-id", "workspace-ccd47919");
+    expect(link).toHaveTextContent("Resume wayfinder-bootstrap");
     expect(screen.getByText("open")).toBeInTheDocument();
     expect(screen.getByText("Version 3")).toBeInTheDocument();
   });

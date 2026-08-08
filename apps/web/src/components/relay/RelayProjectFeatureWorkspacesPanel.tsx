@@ -83,7 +83,7 @@ export function RelayProjectFeatureWorkspacesPanel({
                 </p>
               </div>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                Open {workspace.featureSlug}
+                {workspace.state === "open" ? "Resume" : "Open"} {workspace.featureSlug}
                 <ArrowRight className="size-3.5" />
               </span>
             </Link>
