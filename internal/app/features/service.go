@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
+	"relay/internal/guidedapp"
 	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -47,6 +48,8 @@ type Service struct {
 	ids               IDGenerator
 	prototypeExecutor prototypeexecution.Executor
 	prototypeCleaner  prototypeexecution.Cleaner
+	guidedPackages    guidedapp.PackageOwner
+	guidedAudit       guidedapp.AuditOwner
 }
 
 func (s *Service) SetPrototypeExecutor(v prototypeexecution.Executor) error {
@@ -65,6 +68,31 @@ func (s *Service) SetPrototypeCleaner(v prototypeexecution.Cleaner) error {
 	s.prototypeCleaner = v
 	return nil
 }
+
+// SetGuidedPackageOwner binds the packages owner used by the guided delivery
+// projection and approve action. The owner resolves all package identities
+// server-side; the guided boundary never accepts them from a client.
+func (s *Service) SetGuidedPackageOwner(v guidedapp.PackageOwner) error {
+	if v == nil {
+		return fmt.Errorf("guided package owner is required")
+	}
+	s.guidedPackages = v
+	return nil
+}
+func (s *Service) SetGuidedPackageOwnerForTest(v guidedapp.PackageOwner) { s.guidedPackages = v }
+
+// SetGuidedAuditOwner binds the audits owner used by the guided delivery
+// projection and audit/remediation handoffs. The owner resolves all audit and
+// remediation identities server-side; the guided boundary never reconstructs
+// them from rows.
+func (s *Service) SetGuidedAuditOwner(v guidedapp.AuditOwner) error {
+	if v == nil {
+		return fmt.Errorf("guided audit owner is required")
+	}
+	s.guidedAudit = v
+	return nil
+}
+func (s *Service) SetGuidedAuditOwnerForTest(v guidedapp.AuditOwner) { s.guidedAudit = v }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})

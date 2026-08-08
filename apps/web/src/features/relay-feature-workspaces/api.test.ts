@@ -9,22 +9,21 @@ const guidedBody = {
   guided: {
     workspace,
     project: { projectId: "project-1", name: "Relay" },
-    discovery: { state: "active", destination: "delivery", rationale: "rationale", continuation: "continue", currentness: "current" },
-    authority: { currentRevisionNumber: 1, revisions: [{ revisionNumber: 1, layers: ["requirements"], historical: false }] },
-    planning: { readiness: "current", status: "ready", recoveryCategory: "" },
-    completion: { gates: [{ name: "authority", ready: true }], ready: true, recorded: false },
-    ticketFrontier: { status: "open", summary: "Continue discovery", blockers: [], downstream: [] },
-    downstream: { status: "delivery", summary: "Continue downstream" },
-    prototypeQA: { status: "role-owned", summary: "Return after QA", requiredEvidence: [] },
-    recovery: { blocked: false, summary: "No recovery", category: "", actions: [] },
-    handoff: { available: false, instruction: "", returnGuidance: "Return here" },
+    discovery: { state: "closed", destination: "direct_delivery_ticket", rationale: "rationale", continuation: "continue", currentness: "current", basis: "closure packet verified", reopenState: "none" },
+    authority: { currentRevisionNumber: 1, layers: ["requirements"] },
+    currentness: { readiness: "current", owner: "", blockedOperation: "", effect: "", recoveryCategory: "" },
+    planning: { status: "promoted", candidateState: "none", reviewState: "none", approvalState: "none", promotionState: "promoted", candidateCount: 1, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 0, promoted: 1, historicalCount: 0 },
+    delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "none", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+    prototype: { runState: "none", cleanupState: "none", qaState: "none", evidenceState: "none", processOutcome: "" },
+    completion: { gates: [{ name: "authority", ready: true }, { name: "audit", ready: false }], ready: false, recorded: false },
+    recovery: { state: "none", category: "", available: [] },
     diagnostics: {
-      history: { discoveryCurrentness: "current", status: "current_basis" },
-      stale: { readiness: "current", owner: "", blockedOperation: "", effect: "", recoveryCategory: "" },
-      discovery: { blockers: [], restorationActions: [], pendingIntegrations: [], activeOperations: [], routeMaterialOpen: false, requiredEvidence: [] },
+      stale: [], historical: [], discovery: [],
+      delivery: ["remediation_open"], prototype: ["cleanup_pending"],
     },
-    availableActions: [{ action: "continue_discovery", primary: true, enabled: true, requiresConfirmation: true }],
-    primaryAction: "continue_discovery",
+    availableActions: [{ action: "select_delivery_ticket", primary: true, enabled: true, requiresConfirmation: true, handoff: "Select the current frontier Delivery Ticket server-side." }],
+    primaryAction: "select_delivery_ticket",
+    handoff: null,
   },
 };
 
@@ -37,15 +36,58 @@ describe("feature workspace transport", () => {
     expect(JSON.stringify(detail)).not.toContain("vault");
   });
 
-  it("parses the guided projection and posts the typed action payload", async () => {
+  it("parses the guided projection frontier, closure, prototype, and diagnostics sections", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(guidedBody)));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.discovery.destination).toBe("direct_delivery_ticket");
+    expect(detail.discovery.basis).toBe("closure packet verified");
+    expect(detail.discovery.reopenState).toBe("none");
+    expect(detail.delivery?.frontier).toEqual([{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }]);
+    expect(detail.ticketFrontier.status).toBe("1 delivery frontier ticket(s) ready");
+    expect(detail.prototype?.processOutcome).toBe("");
+    expect(detail.diagnostics.delivery).toContain("remediation_open");
+    expect(detail.diagnostics.prototype).toContain("cleanup_pending");
+    expect(detail.availableActions[0]).toEqual({ action: "select_delivery_ticket", primary: true, enabled: true, requiresConfirmation: true, handoff: "Select the current frontier Delivery Ticket server-side." });
+  });
+
+  it("posts only the server-selected primary action with expected version and confirmation", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(response(guidedBody)).mockResolvedValueOnce(response(guidedBody));
     vi.stubGlobal("fetch", fetch);
-    const detail = await getGuidedFeatureWorkspace("workspace-1");
-    expect(detail.discovery.destination).toBe("delivery");
-    expect(detail.availableActions[0]).toEqual({ action: "continue_discovery", primary: true, enabled: true, requiresConfirmation: true });
-    await guidedFeatureWorkspaceAction("workspace-1", { expectedVersion: 2, action: "continue_discovery", confirmation: true, destination: "delivery" });
+    await getGuidedFeatureWorkspace("workspace-1");
+    await guidedFeatureWorkspaceAction("workspace-1", { expectedVersion: 2, action: "select_delivery_ticket", confirmation: true });
     expect(fetch.mock.calls[1]?.[0]).toContain("/api/feature-workspaces/workspace-1/guided/actions");
-    expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toEqual({ expectedVersion: 2, action: "continue_discovery", confirmation: true, destination: "delivery" });
+    expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toEqual({ expectedVersion: 2, action: "select_delivery_ticket", confirmation: true });
+    const posted = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string);
+    expect(Object.keys(posted).sort()).toEqual(["action", "confirmation", "expectedVersion"]);
+    expect(JSON.stringify(posted)).not.toMatch(/(ticketId|packageId|runId|workspaceId|sha256|rowId)/i);
+  });
+
+  it("parses the owner-composed handoff transfer after a handoff action", async () => {
+    const handoffBody = {
+      guided: {
+        ...guidedBody.guided,
+        delivery: { frontier: [], selectionState: "active", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+        availableActions: [{ action: "prepare_package", primary: true, enabled: true, requiresConfirmation: false, handoff: "Prepare the execution package through the existing package owner." }],
+        primaryAction: "prepare_package",
+        handoff: {
+          role: "prepare_package", summary: "The selected Delivery Ticket is identified through the delivery owner.", resumeRoute: "/feature-workspaces/workspace-1/guided",
+          context: { owner: "execution_package_preparation" },
+          transfer: { frontier: [], members: [], authorityLayers: [], route: [], ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], designBrief: "relay/designs/P5-T1.md" }, package: null, run: null, audit: null, remediation: null, prototype: null },
+        },
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(handoffBody)));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.handoff.available).toBe(true);
+    expect(detail.handoff.instruction).toContain("selected Delivery Ticket");
+    expect(detail.handoff.transfer?.ticket).toEqual({ ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], designBrief: "relay/designs/P5-T1.md" });
+    expect(detail.handoff.transfer?.package).toBeUndefined();
+  });
+
+  it("rejects an unknown guided action from the projection", async () => {
+    const invalid = { guided: { ...guidedBody.guided, availableActions: [{ action: "completion_recorded", primary: true, enabled: true, requiresConfirmation: false }], primaryAction: "completion_recorded" } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(invalid)));
+    await expect(getGuidedFeatureWorkspace("workspace-1")).rejects.toMatchObject({ status: 502 });
   });
 
   it("preserves the typed stale-write conflict for workspace controls", async () => {

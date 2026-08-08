@@ -23,7 +23,7 @@ func TestDecideGuidedFeatureActionOwnsExactlyOnePrimaryAction(t *testing.T) {
 		{"existing route continuation", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Continuation: "resume package"}, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, GuidedCompletion{}, GuidedActionContinueEstablishedRoute, true},
 
 		{"closed completion blocked", GuidedJourneyState{State: DiscoveryStateClosed}, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, GuidedCompletion{Gates: []GuidedCompletionGate{{Name: "audit", Ready: false}}}, GuidedActionCompleteFeature, false},
-		{"completion recorded", GuidedJourneyState{State: DiscoveryStateClosed}, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, GuidedCompletion{Recorded: true}, GuidedActionCompletionRecorded, false},
+		{"completion recorded reopens discovery", GuidedJourneyState{State: DiscoveryStateClosed}, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, GuidedCompletion{Recorded: true}, GuidedActionReopenDiscovery, true},
 		{"stale recovery", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket}, FeatureCurrentnessDecision{Readiness: FeatureStale, RecoveryCategory: "replace_current_closure"}, GuidedCompletion{}, GuidedActionContinueDiscovery, false},
 		{"legacy recovery", GuidedJourneyState{State: DiscoveryStateActive, HasCurrentRevision: true}, FeatureCurrentnessDecision{Readiness: FeatureLegacy, RecoveryCategory: "adopt_discovery_lifecycle"}, GuidedCompletion{}, GuidedActionLegacyRecovery, true},
 	}
@@ -118,4 +118,89 @@ func guidedAvailableAction(available []GuidedFeatureActionAvailability, wanted G
 		}
 	}
 	return nil
+}
+
+func TestDecideGuidedFeatureActionEmitsPreciseDeliveryPrimaryActions(t *testing.T) {
+	current := FeatureCurrentnessDecision{Readiness: FeatureCurrent}
+	frontier := []GuidedFrontierEntry{{TicketID: "P5-T1", RevisionNumber: 1, ExternalPriority: 50}}
+	delivery := func(mutate func(*GuidedDeliverySection)) GuidedDeliverySection {
+		section := GuidedDeliverySection{SelectionState: "none", PackageState: "none", RunState: "none", AuditState: "none", RemediationState: "none"}
+		mutate(&section)
+		return section
+	}
+	cases := []struct {
+		name    string
+		state   GuidedJourneyState
+		want    GuidedFeatureAction
+		enabled bool
+	}{
+		{"frontier ready selects server-side", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.Frontier = frontier })}, GuidedActionSelectDeliveryTicket, true},
+		{"no frontier authors ticket", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket}, GuidedActionAuthorDeliveryTicket, true},
+		{"active selection prepares package", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active" })}, GuidedActionPreparePackage, true},
+		{"prepared package approves server-side", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active"; d.PackageState = "prepared" })}, GuidedActionApprovePackage, true},
+		{"approved package launches run", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "setup_ready"
+		})}, GuidedActionLaunchRun, true},
+		{"needs revision run resumes execution", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "needs_revision"
+		})}, GuidedActionLaunchRun, true},
+		{"validating run prepares audit", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "audit_ready"
+			d.AuditState = "awaiting_audit"
+		})}, GuidedActionPrepareAudit, true},
+		{"audit packet recorded records decision", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "audit_ready"
+			d.AuditState = "packet_recorded"
+		})}, GuidedActionRecordAuditDecision, true},
+		{"open remediation publishes replacement", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.RemediationState = "open" })}, GuidedActionRemediate, true},
+		{"completed run completes feature", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "consumed"
+			d.PackageState = "approved"
+			d.RunState = "completed"
+		})}, GuidedActionCompleteFeature, true},
+		{"requirements promoted with frontier selects", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirements, HasCurrentRevision: true, Planning: GuidedPlanningSection{Status: "promoted", CandidateCount: 1, Promoted: 1, Requirements: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"}}, Delivery: delivery(func(d *GuidedDeliverySection) { d.Frontier = frontier })}, GuidedActionSelectDeliveryTicket, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DecideGuidedFeatureAction(tc.state, current, GuidedCompletion{})
+			if got.PrimaryAction != tc.want || len(got.AvailableActions) != 1 || !got.AvailableActions[0].Primary || got.AvailableActions[0].Action != tc.want || got.AvailableActions[0].Enabled != tc.enabled {
+				t.Fatalf("decision=%+v", got)
+			}
+		})
+	}
+}
+
+func TestDecideGuidedFeatureActionEmitsPrototypePrimaryActions(t *testing.T) {
+	current := FeatureCurrentnessDecision{Readiness: FeatureCurrent}
+	prototype := func(run, cleanup, qa string) GuidedPrototypeSection {
+		return GuidedPrototypeSection{RunState: run, CleanupState: cleanup, QAState: qa, EvidenceState: "none"}
+	}
+	cases := []struct {
+		name    string
+		state   GuidedJourneyState
+		want    GuidedFeatureAction
+		enabled bool
+	}{
+		{"proposed run launches prototype", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Prototype: prototype("proposed", "none", "none")}, GuidedActionPrototypeExecute, true},
+		{"pending cleanup reconciles", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Prototype: prototype("cleanup_required", "pending", "none")}, GuidedActionPrototypeCleanup, true},
+		{"closed run prepares QA", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Prototype: prototype("closed", "complete", "prepared")}, GuidedActionPrototypeQA, true},
+		{"admitted QA resumes journey", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Prototype: prototype("closed", "complete", "admitted")}, GuidedActionAuthorDeliveryTicket, true},
+		{"running run continues journey", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Prototype: prototype("running", "none", "none")}, GuidedActionAuthorDeliveryTicket, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DecideGuidedFeatureAction(tc.state, current, GuidedCompletion{})
+			if got.PrimaryAction != tc.want || len(got.AvailableActions) != 1 || !got.AvailableActions[0].Primary || got.AvailableActions[0].Action != tc.want || got.AvailableActions[0].Enabled != tc.enabled {
+				t.Fatalf("decision=%+v", got)
+			}
+		})
+	}
 }

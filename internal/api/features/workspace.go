@@ -343,6 +343,9 @@ type guidedActionRequest struct {
 	Action          string `json:"action"`
 	Confirmation    bool   `json:"confirmation"`
 	Destination     string `json:"destination"`
+	Cause           string `json:"cause"`
+	Markdown        string `json:"markdown"`
+	Continuation    string `json:"continuation"`
 }
 type cleanupRequest struct {
 	ExpectedRunVersion int64  `json:"expectedRunVersion"`
@@ -547,13 +550,14 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery":
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
+		"reopen_discovery", "select_delivery_ticket", "prepare_package", "approve_package", "launch_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
 	}
 	if executor, ok := h.guided.(GuidedActionService); ok {
-		result, err := executor.ExecuteGuidedAction(r.Context(), featureapp.GuidedActionInput{WorkspaceID: workspaceID, Action: action, ExpectedVersion: request.ExpectedVersion, Confirmation: request.Confirmation, Destination: featureapp.DiscoveryDestination(strings.TrimSpace(request.Destination))})
+		result, err := executor.ExecuteGuidedAction(r.Context(), featureapp.GuidedActionInput{WorkspaceID: workspaceID, Action: action, ExpectedVersion: request.ExpectedVersion, Confirmation: request.Confirmation, Destination: featureapp.DiscoveryDestination(strings.TrimSpace(request.Destination)), Cause: request.Cause, Markdown: []byte(request.Markdown), Continuation: request.Continuation})
 		if err != nil {
 			writeWorkspaceError(w, err)
 			return
@@ -643,7 +647,8 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 			writeWorkspaceError(w, err)
 			return
 		}
-	case "author_requirements", "author_shared_design", "author_delivery_ticket", "continue_established_route":
+	case "author_requirements", "author_shared_design", "author_delivery_ticket", "continue_established_route",
+		"reopen_discovery", "prepare_package", "launch_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 		guidedHandoff = map[string]any{
 			"role":        action,
 			"summary":     "Continue through the existing bounded owner, then return to the guided workspace for a fresh currentness check.",
@@ -773,18 +778,22 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 			"requiresConfirmation": action.RequiresConfirmation, "blockedReason": action.BlockedReason, "handoff": action.Handoff,
 		})
 	}
+	frontier := make([]map[string]any, 0, len(value.Delivery.Frontier))
+	for _, entry := range value.Delivery.Frontier {
+		frontier = append(frontier, map[string]any{"ticketId": entry.TicketID, "revisionNumber": entry.RevisionNumber, "externalPriority": entry.ExternalPriority, "repoTarget": entry.RepoTarget, "branch": entry.Branch})
+	}
 	return map[string]any{
 		"workspace":        workspaceDTO(Workspace{WorkspaceID: value.Workspace.WorkspaceID, FeatureSlug: value.Workspace.FeatureSlug, State: value.Workspace.State, Version: value.Workspace.Version, CreatedAt: value.Workspace.CreatedAt, UpdatedAt: value.Workspace.UpdatedAt}),
 		"project":          map[string]any{"projectId": value.Project.ProjectID, "name": value.Project.Name},
-		"discovery":        map[string]any{"state": value.Discovery.State, "destination": value.Discovery.Destination, "rationale": value.Discovery.Rationale, "continuation": value.Discovery.Continuation, "currentness": value.Discovery.Currentness, "hasCurrentRevision": value.Discovery.HasCurrentRevision},
+		"discovery":        map[string]any{"state": value.Discovery.State, "destination": value.Discovery.Destination, "rationale": value.Discovery.Rationale, "continuation": value.Discovery.Continuation, "currentness": value.Discovery.Currentness, "basis": value.Discovery.Basis, "reopenState": value.Discovery.ReopenState, "hasCurrentRevision": value.Discovery.HasCurrentRevision},
 		"authority":        map[string]any{"currentRevisionNumber": value.Authority.CurrentRevisionNumber, "layers": value.Authority.Layers},
 		"currentness":      map[string]any{"readiness": value.Currentness.Readiness, "owner": value.Currentness.Owner, "blockedOperation": value.Currentness.BlockedOperation, "effect": value.Currentness.Effect, "recoveryCategory": value.Currentness.RecoveryCategory},
 		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
-		"delivery":         map[string]any{"frontierCount": value.Delivery.FrontierCount, "selectionState": value.Delivery.SelectionState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
-		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState},
+		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
+		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
 		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},
-		"diagnostics":      map[string]any{"stale": value.Diagnostics.Stale, "historical": value.Diagnostics.Historical, "discovery": value.Diagnostics.Discovery},
+		"diagnostics":      map[string]any{"stale": value.Diagnostics.Stale, "historical": value.Diagnostics.Historical, "discovery": value.Diagnostics.Discovery, "delivery": value.Diagnostics.Delivery, "prototype": value.Diagnostics.Prototype},
 		"availableActions": availableActions, "primaryAction": string(value.PrimaryAction.Action),
 		"handoff": guidedHandoffDTO(value.Handoff),
 	}
@@ -800,7 +809,50 @@ func guidedHandoffDTO(value *featureapp.GuidedHandoff) any {
 	if value == nil {
 		return nil
 	}
-	return map[string]any{"role": value.Role, "summary": value.Summary, "resumeRoute": value.ResumeRoute, "context": value.Context}
+	return map[string]any{"role": value.Role, "summary": value.Summary, "resumeRoute": value.ResumeRoute, "context": value.Context, "transfer": guidedOperationTransferDTO(value.Transfer)}
+}
+
+func guidedOperationTransferDTO(value *featureapp.GuidedOperationTransfer) any {
+	if value == nil {
+		return nil
+	}
+	frontier := make([]map[string]any, 0, len(value.Frontier))
+	for _, entry := range value.Frontier {
+		frontier = append(frontier, map[string]any{"ticketId": entry.TicketID, "revisionNumber": entry.RevisionNumber, "externalPriority": entry.ExternalPriority, "repoTarget": entry.RepoTarget, "branch": entry.Branch})
+	}
+	ticket := map[string]any(nil)
+	if value.Ticket != nil {
+		ticket = map[string]any{"ticketId": value.Ticket.TicketID, "revisionNumber": value.Ticket.RevisionNumber, "readiness": value.Ticket.Readiness, "designBrief": value.Ticket.DesignBrief}
+	}
+	pkg := map[string]any(nil)
+	if value.Package != nil {
+		pkg = map[string]any{"packageId": value.Package.PackageID, "state": value.Package.State}
+	}
+	run := map[string]any(nil)
+	if value.Run != nil {
+		run = map[string]any{"runId": value.Run.RunID, "status": value.Run.Status, "repoTarget": value.Run.RepoTarget, "branch": value.Run.Branch, "baseCommit": value.Run.BaseCommit, "packageId": value.Run.PackageID}
+	}
+	audit := map[string]any(nil)
+	if value.Audit != nil {
+		audit = map[string]any{"runId": value.Audit.RunID, "runStatus": value.Audit.RunStatus, "auditState": value.Audit.AuditState, "auditPacketId": value.Audit.AuditPacketID, "auditedCommit": value.Audit.AuditedCommit}
+	}
+	remediation := map[string]any(nil)
+	if value.Remediation != nil {
+		remediation = map[string]any{"state": value.Remediation.State, "seedIds": value.Remediation.SeedIDs}
+	}
+	prototype := map[string]any(nil)
+	if value.Prototype != nil {
+		cleanup := make([]map[string]any, 0, len(value.Prototype.Cleanup))
+		for _, item := range value.Prototype.Cleanup {
+			cleanup = append(cleanup, map[string]any{"kind": item.Kind, "status": item.Status})
+		}
+		packets := make([]map[string]any, 0, len(value.Prototype.QAPackets))
+		for _, item := range value.Prototype.QAPackets {
+			packets = append(packets, map[string]any{"packetId": item.PacketID, "status": item.Status, "evidence": item.Evidence})
+		}
+		prototype = map[string]any{"runId": value.Prototype.RunID, "runState": value.Prototype.RunState, "processOutcome": value.Prototype.ProcessOutcome, "cleanup": cleanup, "qaPackets": packets}
+	}
+	return map[string]any{"frontier": frontier, "members": value.Members, "authorityLayers": value.AuthorityLayers, "ticket": ticket, "package": pkg, "run": run, "audit": audit, "remediation": remediation, "prototype": prototype}
 }
 
 func guidedDecision(assessment GuidedAssessment, currentness featureapp.FeatureCurrentnessDecision, decision *appoperations.FeatureCompletionDecision, gates []appoperations.FeatureCompletionGate, layers []string) featureapp.GuidedFeatureDecision {

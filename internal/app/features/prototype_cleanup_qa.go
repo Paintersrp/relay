@@ -388,6 +388,75 @@ func (s *Service) ReadPrototypeEvidenceForWayfinder(ctx context.Context, workspa
 	return view, nil
 }
 
+// ReadCurrentPrototypeState is the Feature-owned semantic read of the current
+// prototype Run for one workspace. It resolves the latest Run bound to the
+// workspace's current integrated discovery revision (source currentness and
+// recovery: reopened workspaces advance the revision, so older prototype Runs
+// are historical) and derives the cleanup and QA states from the existing
+// prototype execution and cleanup-QA owner reads. Consumers must not list
+// prototype rows or re-derive these states themselves.
+func (s *Service) ReadCurrentPrototypeState(ctx context.Context, workspaceID string) (GuidedPrototypeSection, error) {
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+	if err != nil {
+		return GuidedPrototypeSection{}, err
+	}
+	runs, err := s.store.ListPrototypeRunsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return GuidedPrototypeSection{}, err
+	}
+	none := GuidedPrototypeSection{RunState: "none", CleanupState: "none", QAState: "none", EvidenceState: "none"}
+	if len(runs) == 0 {
+		return none, nil
+	}
+	// The store returns Runs newest first; surface the latest Run that is still
+	// bound to the current integrated discovery revision.
+	for _, run := range runs {
+		aggregate, e := s.store.ReadPrototypeExecution(ctx, workspaceID, run.PrototypeRunID)
+		if e != nil {
+			return GuidedPrototypeSection{}, e
+		}
+		if workspace.CurrentDiscoveryRevisionRowID.Valid && aggregate.Authorization.DiscoveryRevisionRowID != workspace.CurrentDiscoveryRevisionRowID.Int64 {
+			continue
+		}
+		view, e := s.ReadPrototypeEvidenceForWayfinder(ctx, workspaceID, run.PrototypeRunID)
+		if e != nil {
+			return GuidedPrototypeSection{}, e
+		}
+		return composeGuidedPrototypeSection(view), nil
+	}
+	return none, nil
+}
+
+func composeGuidedPrototypeSection(view PrototypeWayfinderEvidenceView) GuidedPrototypeSection {
+	result := GuidedPrototypeSection{RunID: view.RunID, RunState: view.RunState, ProcessOutcome: view.ProcessOutcome}
+	switch {
+	case len(view.Cleanup) == 0:
+		result.CleanupState = "none"
+	default:
+		result.CleanupState = "complete"
+		for _, obligation := range view.Cleanup {
+			if obligation.Status != "complete" {
+				result.CleanupState = "pending"
+				break
+			}
+		}
+	}
+	for _, packet := range view.QAPackets {
+		result.QAState = packet.Packet.Status
+		if packet.Admission != nil {
+			result.EvidenceState = "admitted"
+		}
+	}
+	if result.QAState == "" {
+		result.QAState = "none"
+	}
+	if result.EvidenceState == "" {
+		result.EvidenceState = "none"
+	}
+	result.Diagnostics = guidedPrototypeDiagnostics(result)
+	return result
+}
+
 func (s *Service) packetSource(ctx context.Context, runID string) (*workflowstore.PrototypeResult, []workflowstore.PrototypeEvidenceMember, error) {
 	result, e := s.store.GetPrototypeResultByRunID(ctx, runID)
 	if errors.Is(e, sql.ErrNoRows) {

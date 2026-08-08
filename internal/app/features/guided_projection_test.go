@@ -53,8 +53,18 @@ func TestGuidedHandoffIsDistinctAndCarriesOwnerPreparationContext(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if handoff.ResumeRoute == "" || handoff.Summary == "" || handoff.Context["owner"] != "delivery_ticket_frontier" || handoff.Context["preparationStatus"] != "frontier_identified" || handoff.Context["frontierCount"] != "0" || handoff.Context["externalRoleWork"] != "not_performed" {
+	if handoff.ResumeRoute == "" || handoff.Summary == "" || handoff.Context["owner"] != "planner_authoring_and_review" {
 		t.Fatalf("handoff=%+v", handoff)
+	}
+	if handoff.Transfer == nil || len(handoff.Transfer.Members) == 0 || handoff.Transfer.AuthorityLayers == nil {
+		t.Fatalf("delivery handoff does not transfer the authoring owner surface: %+v", handoff.Transfer)
+	}
+	for _, forbidden := range []string{"frontier_identified", "route_identified", "not_performed", "frontierCount", "routeState"} {
+		for key, value := range handoff.Context {
+			if strings.Contains(key, forbidden) || strings.Contains(value, forbidden) {
+				t.Fatalf("delivery handoff still carries forbidden placeholder %q: %+v", forbidden, handoff.Context)
+			}
+		}
 	}
 }
 
@@ -145,8 +155,17 @@ func TestGuidedPlannerHandoffUsesOwnerCompositionWithoutInternalContext(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if handoff.Context["owner"] != "planner_authoring_and_review" || handoff.Context["preparationStatus"] != "ready" || handoff.Context["externalRoleWork"] != "not_performed" || handoff.Context["sourceMemberCount"] == "" || handoff.Context["authorityLayerCount"] == "" {
+	if handoff.Context["owner"] != "planner_authoring_and_review" || handoff.Context["candidateState"] == "" {
 		t.Fatalf("handoff=%+v", handoff)
+	}
+	if handoff.Transfer == nil || len(handoff.Transfer.Members) == 0 || handoff.Transfer.AuthorityLayers == nil {
+		t.Fatalf("planner handoff does not transfer the actual owner surface: %+v", handoff.Transfer)
+	}
+	if _, present := handoff.Context["sourceMemberCount"]; present {
+		t.Fatalf("planner handoff still carries a generic member count: %+v", handoff.Context)
+	}
+	if _, present := handoff.Context["externalRoleWork"]; present {
+		t.Fatalf("planner handoff still carries the forbidden external-role placeholder: %+v", handoff.Context)
 	}
 	for key, value := range handoff.Context {
 		if strings.Contains(key+value, closed.Packet.ClosurePacketID) || strings.Contains(key+value, workspace.WorkspaceID) {
@@ -157,6 +176,7 @@ func TestGuidedPlannerHandoffUsesOwnerCompositionWithoutInternalContext(t *testi
 
 func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	service.SetGuidedAuditOwnerForTest(&guidedFakeAuditOwner{})
 	var err error
 	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
 		t.Fatal(err)
@@ -189,8 +209,11 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if review.Handoff == nil || review.Handoff.Context["owner"] != "auditor_review" || review.Handoff.Context["preparationStatus"] != "ready" || review.Handoff.Context["externalRoleWork"] != "not_performed" || review.Handoff.Context["candidateState"] != "admitted" {
+	if review.Handoff == nil || review.Handoff.Context["owner"] != "auditor_review" || review.Handoff.Context["candidateState"] != "admitted" {
 		t.Fatalf("review handoff=%+v", review.Handoff)
+	}
+	if _, present := review.Handoff.Context["externalRoleWork"]; present {
+		t.Fatalf("review handoff still carries the forbidden external-role placeholder: %+v", review.Handoff.Context)
 	}
 	stillAdmitted, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
 	if err != nil {

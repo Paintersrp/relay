@@ -126,6 +126,12 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct package service: %w", err)
 	}
+	if err := featureAuthorityService.SetGuidedPackageOwner(packageService); err != nil {
+		return nil, nil, fmt.Errorf("bind guided package owner: %w", err)
+	}
+	if err := featureAuthorityService.SetGuidedAuditOwner(auditService); err != nil {
+		return nil, nil, fmt.Errorf("bind guided audit owner: %w", err)
+	}
 	packageWorkflowService, err := appoperations.NewPackageWorkflowService(packageService, executionService, workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct package workflow service: %w", err)

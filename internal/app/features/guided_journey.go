@@ -18,6 +18,17 @@ const (
 	GuidedActionCompleteFeature          GuidedFeatureAction = "complete_feature"
 	GuidedActionCompletionRecorded       GuidedFeatureAction = "completion_recorded"
 	GuidedActionLegacyRecovery           GuidedFeatureAction = "legacy_recovery"
+	GuidedActionReopenDiscovery          GuidedFeatureAction = "reopen_discovery"
+	GuidedActionSelectDeliveryTicket     GuidedFeatureAction = "select_delivery_ticket"
+	GuidedActionPreparePackage           GuidedFeatureAction = "prepare_package"
+	GuidedActionApprovePackage           GuidedFeatureAction = "approve_package"
+	GuidedActionLaunchRun                GuidedFeatureAction = "launch_run"
+	GuidedActionPrepareAudit             GuidedFeatureAction = "prepare_audit"
+	GuidedActionRecordAuditDecision      GuidedFeatureAction = "record_audit_decision"
+	GuidedActionRemediate                GuidedFeatureAction = "remediate"
+	GuidedActionPrototypeExecute         GuidedFeatureAction = "prototype_execute"
+	GuidedActionPrototypeCleanup         GuidedFeatureAction = "prototype_cleanup"
+	GuidedActionPrototypeQA              GuidedFeatureAction = "prototype_qa"
 )
 
 // GuidedCompletion is the small completion-owner projection the Feature
@@ -52,13 +63,18 @@ type GuidedFeatureDecision struct {
 // progression action. It intentionally carries no persistence identifier.
 // Planning carries the semantic planning progression (admitted, reviewed,
 // approved, promoted) so the decision does not infer progression from the bare
-// presence of an authority layer.
+// presence of an authority layer. Delivery and Prototype carry the material
+// downstream and prototype owner states so the decision can emit precise
+// primary actions for selection, package, Run, audit, remediation, and
+// prototype cleanup/QA instead of generic continuation.
 type GuidedJourneyState struct {
 	State               DiscoveryState
 	Destination         DiscoveryDestination
 	HasCurrentRevision  bool
 	AuthorityLayers     []string
 	Planning            GuidedPlanningSection
+	Delivery            GuidedDeliverySection
+	Prototype           GuidedPrototypeSection
 	Continuation        string
 	Blockers            []string
 	PendingIntegrations []string
@@ -97,6 +113,12 @@ func DecideGuidedFeatureAction(state GuidedJourneyState, currentness FeatureCurr
 		} else {
 			available = append(available, GuidedFeatureActionAvailability{Action: GuidedActionContinueDiscovery, Primary: true, Enabled: false, RequiresConfirmation: false, BlockedReason: reason})
 		}
+	} else if steps := guidedPrototypeAvailability(state.Prototype); steps != nil {
+		// Prototype execution, cleanup reconciliation, and QA admission are
+		// Feature-owned exploration work. When a prototype Run is in a
+		// source-backed actionable state, it is the operator's next primary
+		// action regardless of the downstream journey position.
+		available = steps
 	} else if state.State == DiscoveryStateClosed {
 		available = guidedClosedDestinationAvailability(state, completion)
 	} else if state.HasCurrentRevision && state.Destination != "" && state.State == DiscoveryStateActive && len(state.Blockers) == 0 && len(state.PendingIntegrations) == 0 && len(state.ActiveOperations) == 0 && len(state.RouteMaterialOpen) == 0 && len(state.RequiredEvidence) == 0 {
@@ -122,7 +144,12 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 	switch state.Destination {
 	case DiscoveryDestinationNoDeliveryWork, "":
 		if completion.Recorded {
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionCompletionRecorded, Primary: true, Enabled: false, RequiresConfirmation: false, BlockedReason: "Feature completion is already recorded."}}
+			// After completion is recorded the only source-backed continuation
+			// is revising the closed discovery. The reopen owner reopens the
+			// completion decision and returns the workspace to active
+			// discovery; the server resolves the current closure packet basis
+			// and requires operator confirmation of the replacement.
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionReopenDiscovery, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Revise the closed discovery through the existing reopen owner: author the replacement integrated revision, confirm the reopen, then reclose and complete again."}}
 		}
 		enabled := completionReady
 		reason := ""
@@ -131,16 +158,16 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: enabled, RequiresConfirmation: true, BlockedReason: reason}}
 	case DiscoveryDestinationDirectDeliveryTicket:
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Delivery Ticket authoring is the current bounded role operation. Return here when it is complete."}}
+		return guidedDeliveryAvailability(state, completion)
 	case DiscoveryDestinationRequirements:
 		if guidedPlanningActive(state.Planning) {
 			if steps := guidedPlanningStep(state.Planning.Requirements, GuidedActionAuthorRequirements, "Requirements", "Author Requirements, complete its read-only review, then explicitly approve and promote it before returning."); steps != nil {
 				return steps
 			}
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "Requirements authority is current; continue with Delivery Ticket authoring."}}
+			return guidedDeliveryAvailability(state, completion)
 		}
 		if hasGuidedLayer(state.AuthorityLayers, "requirements") {
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "Requirements authority is current; continue with Delivery Ticket authoring."}}
+			return guidedDeliveryAvailability(state, completion)
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorRequirements, Primary: true, Enabled: true, Handoff: "Author Requirements, complete its read-only review, then explicitly approve and promote it before returning."}}
 	case DiscoveryDestinationSharedDesign:
@@ -148,10 +175,10 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 			if steps := guidedPlanningStep(state.Planning.SharedDesign, GuidedActionAuthorSharedDesign, "Shared Design", "Author Shared Design, complete its read-only review, then explicitly approve and promote it before returning."); steps != nil {
 				return steps
 			}
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "Shared Design authority is current; continue with Delivery Ticket authoring."}}
+			return guidedDeliveryAvailability(state, completion)
 		}
 		if hasGuidedLayer(state.AuthorityLayers, "shared_design") {
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "Shared Design authority is current; continue with Delivery Ticket authoring."}}
+			return guidedDeliveryAvailability(state, completion)
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorSharedDesign, Primary: true, Enabled: true, Handoff: "Author Shared Design, complete its read-only review, then explicitly approve and promote it before returning."}}
 	case DiscoveryDestinationRequirementsThenSharedDesign:
@@ -161,7 +188,7 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 				if steps := guidedPlanningStep(state.Planning.SharedDesign, GuidedActionAuthorSharedDesign, "Shared Design", "Author Shared Design, then explicitly approve and promote it."); steps != nil {
 					return steps
 				}
-				return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "Requirements and Shared Design authority are current; continue with Delivery Ticket authoring."}}
+				return guidedDeliveryAvailability(state, completion)
 			case state.Planning.Requirements.Count > 0:
 				if steps := guidedPlanningStep(state.Planning.Requirements, GuidedActionAuthorRequirements, "Requirements", "Author Requirements, then explicitly approve and promote it before Shared Design."); steps != nil {
 					return steps
@@ -172,7 +199,7 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 			}
 		}
 		if hasGuidedLayer(state.AuthorityLayers, "shared_design") {
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "Requirements and Shared Design authority are current; continue with Delivery Ticket authoring."}}
+			return guidedDeliveryAvailability(state, completion)
 		}
 		if hasGuidedLayer(state.AuthorityLayers, "requirements") {
 			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorSharedDesign, Primary: true, Enabled: true, Handoff: "Requirements authority is current. Author Shared Design, then explicitly approve and promote it."}}
@@ -182,6 +209,77 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionContinueEstablishedRoute, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: state.Continuation}}
 	default:
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionContinueDiscovery, Primary: true, Enabled: false, RequiresConfirmation: false, BlockedReason: "The closed discovery packet has no supported destination continuation."}}
+	}
+}
+
+// guidedDeliveryAvailability maps the delivery owner state to the precise
+// primary action: selection when the frontier has a ready ticket, package
+// preparation or approval while a selection is active, Run launch while a
+// package Run is pending execution, audit preparation or decision recording in
+// the audit phase, remediation while an audit remediation seed is open, and
+// Feature completion once the delivered Run has completed.
+func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompletion) []GuidedFeatureActionAvailability {
+	completionReady := GuidedCompletionReady(completion.Gates)
+	delivery := state.Delivery
+	if delivery.RemediationState == "open" {
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionRemediate, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The current audit decision requires remediation. Publish the replacement Delivery Ticket revision through the existing owner, then return here to resume selection."}}
+	}
+	switch delivery.SelectionState {
+	case "", "none":
+		if len(delivery.Frontier) > 0 {
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionSelectDeliveryTicket, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Select the current frontier Delivery Ticket server-side; the selection resolves the exact current revision from the delivery owner."}}
+		}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Delivery Ticket authoring is the current bounded role operation. Return here when it is complete."}}
+	case "active":
+		switch delivery.PackageState {
+		case "", "none":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the existing package owner using the selected Delivery Ticket design brief, then return here to approve it server-side."}}
+		case "prepared":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePackage, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the prepared execution package server-side; the approval resolves the exact package identity and digest from the package owner."}}
+		}
+	}
+	switch delivery.RunState {
+	case "", "none":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the existing package owner using the selected Delivery Ticket design brief, then return here to approve it server-side."}}
+	case "created", "setup_ready", "executing", "execution_failed", "cancelled", "needs_revision":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionLaunchRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run is the current bounded operation. Continue its execution through the Run owner, then return here for a fresh currentness check."}}
+	case "validating", "validation_failed", "audit_ready":
+		switch delivery.AuditState {
+		case "", "none", "awaiting_audit":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionPrepareAudit, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the workflow audit packet through the audit owner for the current Run, then return here to record the audit decision."}}
+		case "packet_recorded":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionRecordAuditDecision, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Record the workflow audit decision through the audit owner for the current packet, then return here."}}
+		}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}}
+	case "completed":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}}
+	}
+	return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}}
+}
+
+func guidedCompletionBlockedReason(ready bool) string {
+	if ready {
+		return ""
+	}
+	return "Feature completion is blocked by one or more current completion gates."
+}
+
+// guidedPrototypeAvailability maps the prototype owner state to the precise
+// primary action when a prototype Run is in a source-backed actionable state:
+// launch when the approved Run is proposed, cleanup reconciliation when the
+// Run is terminal with cleanup pending, and QA when the closed Run still needs
+// operator QA evidence. It returns nil when no prototype action is due so the
+// journey decision continues.
+func guidedPrototypeAvailability(prototype GuidedPrototypeSection) []GuidedFeatureActionAvailability {
+	switch {
+	case prototype.RunState == "proposed":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPrototypeExecute, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The approved prototype execution is ready to launch. Launch it through the prototype owner, then return here."}}
+	case prototype.CleanupState == "pending":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPrototypeCleanup, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The prototype Run has cleanup obligations pending. Reconcile cleanup through the prototype owner, then return here."}}
+	case prototype.RunState == "closed" && prototype.CleanupState == "complete" && prototype.QAState != "admitted":
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPrototypeQA, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The prototype Run is closed with cleanup complete. Prepare and admit the QA packet through the prototype QA owner, then return here."}}
+	default:
+		return nil
 	}
 }
 

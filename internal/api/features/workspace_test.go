@@ -505,3 +505,19 @@ func TestGuidedRichHandoffDelegatesInsteadOfNoOp(t *testing.T) {
 		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
 	}
 }
+
+func TestGuidedReopenTransportCarriesNoClientDigest(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", Version: 8}}
+	guided := &richFakeGuided{projection: featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionReopenDiscovery, Primary: true, Enabled: true, RequiresConfirmation: true}}, result: featureapp.GuidedActionResult{Projection: featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionReopenDiscovery, Primary: true, Enabled: true}}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"reopen_discovery","confirmation":true,"cause":"new exact evidence","markdown":"# Reopened discovery\n"}`)))
+	if response.Code != http.StatusOK || guided.input.Action != "reopen_discovery" || !guided.input.Confirmation || guided.input.Cause != "new exact evidence" || string(guided.input.Markdown) != "# Reopened discovery\n" {
+		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
+	}
+	// The guided request contract rejects any client-supplied digest outright.
+	rejected := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"reopen_discovery","confirmation":true,"cause":"new exact evidence","markdown":"# Reopened discovery\n","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)))
+	if rejected.Code != http.StatusBadRequest {
+		t.Fatalf("client digest status=%d body=%s", rejected.Code, rejected.Body.String())
+	}
+}

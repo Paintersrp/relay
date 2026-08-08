@@ -5,13 +5,14 @@ import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { RelayApiError } from "@/features/workflow-api";
-import { actOnGuidedFeatureWorkspace, featureWorkspaceKeys, type GuidedFeatureAction, type GuidedFeatureDetail } from "@/features/relay-feature-workspaces";
+import { actOnGuidedFeatureWorkspace, featureWorkspaceKeys, type GuidedFeatureAction, type GuidedFeatureDetail, type GuidedOperationTransfer } from "@/features/relay-feature-workspaces";
 
 function actionLabel(action: GuidedFeatureAction): string {
   switch (action) {
     case "continue_discovery": return "Continue discovery";
     case "close_discovery": return "Close discovery";
     case "complete_feature": return "Complete feature";
+    case "reopen_discovery": return "Reopen discovery";
     case "author_requirements": return "Author Requirements";
     case "author_shared_design": return "Author Shared Design";
     case "author_delivery_ticket": return "Author Delivery Ticket";
@@ -20,7 +21,16 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "promote_planning_candidate": return "Promote planning candidate";
     case "continue_established_route": return "Continue established route";
     case "legacy_recovery": return "Adopt discovery lifecycle";
-    case "completion_recorded": return "Completion recorded";
+    case "select_delivery_ticket": return "Select delivery ticket";
+    case "prepare_package": return "Prepare package";
+    case "approve_package": return "Approve package";
+    case "launch_run": return "Launch run";
+    case "prepare_audit": return "Prepare audit";
+    case "record_audit_decision": return "Record audit decision";
+    case "remediate": return "Remediate";
+    case "prototype_execute": return "Execute prototype";
+    case "prototype_cleanup": return "Clean up prototype";
+    case "prototype_qa": return "Prepare prototype QA";
   }
 }
 
@@ -39,9 +49,30 @@ function ProjectionList({ items, empty = "None recorded." }: { items: string[]; 
   return items.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">{empty}</p>;
 }
 
+function OperationTransfer({ transfer }: { transfer: GuidedOperationTransfer }) {
+  const hasContent = transfer.frontier.length > 0 || transfer.members.length > 0 || transfer.authorityLayers.length > 0 || Boolean(transfer.ticket || transfer.package || transfer.run || transfer.audit || transfer.remediation || transfer.prototype);
+  if (!hasContent) return null;
+  return <div className="mt-4">
+    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Operation transfer</h3>
+    <dl className="mt-2 grid gap-3 text-sm sm:grid-cols-2">
+      {transfer.frontier.length ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Frontier tickets</dt><dd className="mt-1">{transfer.frontier.map((entry) => `${entry.ticketId} v${entry.revisionNumber} (priority ${entry.externalPriority}${entry.repoTarget ? `, ${entry.repoTarget}` : ""}${entry.branch ? ` @ ${entry.branch}` : ""})`).join("; ")}</dd></div> : null}
+      {transfer.members.length ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Closure members</dt><dd className="mt-1">{transfer.members.join(", ")}</dd></div> : null}
+      {transfer.authorityLayers.length ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Authority layers</dt><dd className="mt-1">{transfer.authorityLayers.join(", ")}</dd></div> : null}
+      {transfer.ticket ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selected delivery ticket</dt><dd className="mt-1">{transfer.ticket.ticketId} v{transfer.ticket.revisionNumber}{transfer.ticket.designBrief ? ` — ${transfer.ticket.designBrief}` : ""}{transfer.ticket.readiness.length ? `; readiness: ${transfer.ticket.readiness.join(", ")}` : ""}</dd></div> : null}
+      {transfer.package ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Execution package</dt><dd className="mt-1">{transfer.package.packageId} ({transfer.package.state})</dd></div> : null}
+      {transfer.run ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package run</dt><dd className="mt-1">{transfer.run.runId} ({transfer.run.status}){transfer.run.repoTarget ? ` on ${transfer.run.repoTarget}${transfer.run.branch ? ` @ ${transfer.run.branch}` : ""}` : ""}{transfer.run.baseCommit ? ` base ${transfer.run.baseCommit}` : ""}</dd></div> : null}
+      {transfer.audit ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workflow audit</dt><dd className="mt-1">{transfer.audit.runId} ({transfer.audit.runStatus}) — {transfer.audit.auditState}{transfer.audit.auditPacketId ? `; packet ${transfer.audit.auditPacketId}` : ""}{transfer.audit.auditedCommit ? `; commit ${transfer.audit.auditedCommit}` : ""}</dd></div> : null}
+      {transfer.remediation ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Remediation</dt><dd className="mt-1">{transfer.remediation.state}{transfer.remediation.seedIds.length ? `; seeds: ${transfer.remediation.seedIds.join(", ")}` : ""}</dd></div> : null}
+      {transfer.prototype ? <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prototype run</dt><dd className="mt-1">{transfer.prototype.runId} ({transfer.prototype.runState}){transfer.prototype.processOutcome ? `; outcome ${transfer.prototype.processOutcome}` : ""}{transfer.prototype.cleanup.length ? `; cleanup: ${transfer.prototype.cleanup.map((item) => `${item.kind}=${item.status}`).join(", ")}` : ""}{transfer.prototype.qaPackets.length ? `; QA: ${transfer.prototype.qaPackets.map((packet) => `${packet.packetId} (${packet.status}${packet.evidence.length ? `, evidence ${packet.evidence.join(", ")}` : ""})`).join(", ")}` : ""}</dd></div> : null}
+    </dl>
+  </div>;
+}
+
 export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureDetail }) {
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = React.useState(false);
+  const [reopenMarkdown, setReopenMarkdown] = React.useState("");
+  const [reopenCause, setReopenCause] = React.useState("");
   const [message, setMessage] = React.useState<string | null>(null);
   const workspaceId = detail.workspace.workspaceId;
   const primary = detail.availableActions.find((action) => action.primary) ?? {
@@ -50,14 +81,26 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     enabled: false,
     requiresConfirmation: true,
   };
-  React.useEffect(() => { setConfirmed(false); }, [primary.action]);
+  React.useEffect(() => { setConfirmed(false); setReopenMarkdown(""); setReopenCause(""); }, [primary.action]);
   const mutation = useMutation({
-    mutationFn: () => actOnGuidedFeatureWorkspace(workspaceId, {
-      expectedVersion: detail.workspace.version,
-      action: primary.action,
-      confirmation: confirmed,
-      destination: detail.discovery.destination || undefined,
-    }),
+    mutationFn: async () => {
+      const request: {
+        expectedVersion: number;
+        action: GuidedFeatureAction;
+        confirmation: boolean;
+        cause?: string;
+        markdown?: string;
+      } = {
+        expectedVersion: detail.workspace.version,
+        action: primary.action,
+        confirmation: confirmed,
+      };
+      if (primary.action === "reopen_discovery") {
+        request.cause = reopenCause;
+        request.markdown = reopenMarkdown;
+      }
+      return actOnGuidedFeatureWorkspace(workspaceId, request);
+    },
     onSuccess: (next) => {
       queryClient.setQueryData(featureWorkspaceKeys.guided(workspaceId), next);
       setConfirmed(false);
@@ -70,8 +113,8 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       }
     },
   });
-  const actionEnabled = primary.enabled;
-  const actionDisabledReason = primary.enabled ? "Confirm this action before continuing." : (primary.blockedReason || "This action is blocked by the current guided workspace state.");
+  const actionEnabled = primary.enabled && (primary.action !== "reopen_discovery" || (reopenMarkdown.trim().length > 0 && reopenCause.trim().length > 0));
+  const actionDisabledReason = !primary.enabled ? (primary.blockedReason || "This action is blocked by the current guided workspace state.") : primary.action === "reopen_discovery" ? "Author the replacement integrated revision and its reopen cause before confirming the reopen." : "Confirm this action before continuing.";
 
   return <div className="space-y-6">
     <div className="flex items-center gap-2">
@@ -99,18 +142,33 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Destination</dt><dd className="mt-1 text-sm">{detail.discovery.destination || "Not selected"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Currentness</dt><dd className="mt-1 text-sm">{detail.discovery.currentness || "Not available"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Continuation</dt><dd className="mt-1 text-sm">{detail.discovery.continuation || "No continuation guidance recorded."}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Closure basis</dt><dd className="mt-1 text-sm">{detail.discovery.basis || "No closure basis recorded."}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reopen state</dt><dd className="mt-1 text-sm">{detail.discovery.reopenState || "none"}</dd></div>
       </dl>
       <div className="mt-4 rounded border p-3 text-sm"><span className="font-medium">Rationale: </span>{detail.discovery.rationale || "No rationale recorded."}</div>
     </section>
 
-    <section aria-labelledby="guided-ticket-frontier" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
-      <h2 id="guided-ticket-frontier" className="font-semibold">Ticket frontier and downstream</h2>
+    <section aria-labelledby="guided-history" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-history" className="font-semibold">History</h2>
+      <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Discovery currentness</dt><dd className="mt-1 text-sm">{detail.diagnostics.history.discoveryCurrentness || "None recorded."}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</dt><dd className="mt-1 text-sm">{detail.diagnostics.history.status || "None recorded."}</dd></div>
+      </dl>
+      <div className="mt-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Historical basis diagnostics</h3><ProjectionList items={detail.diagnostics.historical} /></div>
+    </section>
+
+    <section aria-labelledby="guided-delivery" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-delivery" className="font-semibold">Delivery</h2>
       <dl className="mt-3 grid gap-3 sm:grid-cols-3">
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Frontier</dt><dd className="mt-1 text-sm">{detail.ticketFrontier.status || "Not available"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Destination</dt><dd className="mt-1 text-sm">{detail.downstream.status || "Not selected"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Downstream</dt><dd className="mt-1 text-sm">{detail.downstream.summary || "No downstream guidance recorded."}</dd></div>
       </dl>
       <p className="mt-3 text-sm text-muted-foreground">{detail.ticketFrontier.summary || "No ticket frontier guidance recorded."}</p>
+      {detail.delivery?.frontier.length ? <div className="mt-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Frontier tickets</h3>
+        <ul className="mt-2 space-y-1 text-sm">{detail.delivery.frontier.map((entry) => <li key={entry.ticketId}>{entry.ticketId} v{entry.revisionNumber} (priority {entry.externalPriority}{entry.repoTarget ? `, ${entry.repoTarget}` : ""}{entry.branch ? ` @ ${entry.branch}` : ""})</li>)}</ul>
+      </div> : null}
       {detail.delivery ? <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selection</dt><dd className="mt-1 text-sm">{detail.delivery.selectionState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package</dt><dd className="mt-1 text-sm">{detail.delivery.packageState || "none"}</dd></div>
@@ -130,6 +188,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cleanup</dt><dd className="mt-1 text-sm">{detail.prototype.cleanupState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">QA packet</dt><dd className="mt-1 text-sm">{detail.prototype.qaState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">QA evidence</dt><dd className="mt-1 text-sm">{detail.prototype.evidenceState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Process outcome</dt><dd className="mt-1 text-sm">{detail.prototype.processOutcome || "none"}</dd></div>
       </dl> : null}
       <div className="mt-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Required evidence</h3><ProjectionList items={detail.prototypeQA.requiredEvidence} /></div>
     </section>
@@ -158,7 +217,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     </section>
 
     <section aria-labelledby="guided-completion" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
-      <h2 id="guided-completion" className="font-semibold">Completion</h2>
+      <h2 id="guided-completion" className="font-semibold">Completion and closing</h2>
       <p className="mt-1 text-sm text-muted-foreground">{detail.completion.recorded ? "Completion has been recorded." : detail.completion.ready ? "All completion gates are ready." : "Completion remains blocked by one or more gates."}</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">{detail.completion.gates.map((gate) => <div key={gate.name} className="rounded border p-3 text-sm"><span className="font-medium">{gate.name}</span><span className={gate.ready ? "ml-2 text-success" : "ml-2 text-destructive"}>{gate.ready ? "ready" : "blocked"}</span></div>)}</div>
     </section>
@@ -167,6 +226,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       <h2 id="guided-handoff" className="font-semibold">Handoff and return</h2>
       <p className="mt-1 text-sm text-muted-foreground">{detail.handoff.available ? detail.handoff.instruction : "No role handoff is currently selected."}</p>
       <p className="mt-2 text-sm text-muted-foreground">{detail.handoff.returnGuidance || "Return here after bounded role work."}</p>
+      {detail.handoff.transfer ? <OperationTransfer transfer={detail.handoff.transfer} /> : null}
       <Link to="/projects/$projectId" params={{ projectId: detail.project.projectId }} className="mt-3 inline-flex text-sm font-medium underline-offset-2 hover:underline">Return to {detail.project.name || "Project"}</Link>
     </section>
 
@@ -174,6 +234,16 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       <h2 id="guided-action" className="font-semibold">Next guided action</h2>
       <p className="mt-1 text-sm text-muted-foreground">The server selected one primary action for this workspace.</p>
        {primary.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(primary.action)}” against this displayed workspace state.</span></label> : null}
+       {primary.action === "reopen_discovery" ? <div className="mt-4 space-y-3">
+         <label className="block text-sm">
+           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Replacement integrated revision (markdown)</span>
+           <textarea aria-label="Replacement integrated revision" className="mt-1 w-full rounded border bg-background p-2 font-mono text-xs" rows={8} value={reopenMarkdown} onChange={(event) => setReopenMarkdown(event.target.value)} placeholder="# Reopened discovery" />
+         </label>
+         <label className="block text-sm">
+           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reopen cause</span>
+           <input aria-label="Reopen cause" className="mt-1 w-full rounded border bg-background p-2 text-sm" value={reopenCause} onChange={(event) => setReopenCause(event.target.value)} placeholder="Why is the closed discovery being reopened?" />
+         </label>
+       </div> : null}
        {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} Use the primary action to acknowledge this handoff, then return here after the bounded role work is complete.</p> : null}
        {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
        <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button>
@@ -182,9 +252,10 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     <details className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <summary className="cursor-pointer font-semibold">Diagnostics</summary>
       <div className="mt-4 space-y-5 text-sm">
-        <div><h3 className="font-medium">History</h3><p className="mt-1 text-muted-foreground">Currentness: {detail.diagnostics.history.discoveryCurrentness || "None"}</p><p className="text-muted-foreground">Status: {detail.diagnostics.history.status || "None"}</p></div>
-        <div><h3 className="font-medium">Stale state</h3><dl className="mt-2 grid gap-2 sm:grid-cols-2">{Object.entries(detail.diagnostics.stale).map(([name, value]) => <div key={name}><dt className="text-xs uppercase tracking-wide text-muted-foreground">{name}</dt><dd>{value || "None"}</dd></div>)}</dl></div>
+        <div><h3 className="font-medium">Stale state</h3>{detail.diagnostics.staleItems.length ? <ProjectionList items={detail.diagnostics.staleItems} /> : <dl className="mt-2 grid gap-2 sm:grid-cols-2">{Object.entries(detail.diagnostics.stale).map(([name, value]) => <div key={name}><dt className="text-xs uppercase tracking-wide text-muted-foreground">{name}</dt><dd>{value || "None"}</dd></div>)}</dl>}</div>
         <div><h3 className="font-medium">Discovery diagnostics</h3><p className="mt-1 text-muted-foreground">Route material open: {detail.diagnostics.discovery.routeMaterialOpen ? "yes" : "no"}</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Blockers</h4><ProjectionList items={detail.diagnostics.discovery.blockers} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Restoration actions</h4><ProjectionList items={detail.diagnostics.discovery.restorationActions} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending integrations</h4><ProjectionList items={detail.diagnostics.discovery.pendingIntegrations} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Active operations</h4><ProjectionList items={detail.diagnostics.discovery.activeOperations} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Required evidence</h4><ProjectionList items={detail.diagnostics.discovery.requiredEvidence} /></div></div></div>
+        <div><h3 className="font-medium">Delivery diagnostics</h3><ProjectionList items={detail.diagnostics.delivery} empty="No delivery diagnostics recorded." /></div>
+        <div><h3 className="font-medium">Prototype diagnostics</h3><ProjectionList items={detail.diagnostics.prototype} empty="No prototype diagnostics recorded." /></div>
       </div>
     </details>
   </div>;

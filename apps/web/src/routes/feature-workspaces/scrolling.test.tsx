@@ -147,7 +147,7 @@ describe("feature-workspace route scrolling", () => {
     scrollRegion.scrollTop = 3400;
     expect(scrollRegion.scrollTop).toBe(3400);
 
-    const completionHeading = await screen.findByText("Completion");
+    const completionHeading = await screen.findByText("Completion and closing");
     const scrollIntoView = vi.fn();
     completionHeading.scrollIntoView = scrollIntoView;
     completionHeading.scrollIntoView({ block: "end" });
