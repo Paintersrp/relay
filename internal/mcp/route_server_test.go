@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -271,6 +272,278 @@ func TestAppSurfaceActionDispatchPreservesClientArguments(t *testing.T) {
 	if _, err := server.dispatchSurfaceTool(selected.AdvertisedName, json.RawMessage(`{"project_id":"project-test","feature_slug":"feature-test","surface_contract":"wayfinder-workspace.v1"}`)); err == nil {
 		t.Fatal("action schema accepted surface_contract")
 	}
+}
+
+func TestPlannerPublicToolsListPublishesDeliveryTicketSchema(t *testing.T) {
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var planner routecontracts.AppSurfaceManifest
+	for _, surface := range surfaces.Surfaces {
+		if surface.Surface == routecontracts.AppSurfacePlanner {
+			planner = surface
+			break
+		}
+	}
+	if planner.Surface == "" {
+		t.Fatal("planner app surface is missing")
+	}
+
+	registrations, err := BuildAppSurfaceHandlers(planner, fakeAppSurfaceDispatchers(routes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServerForAppSurface(nil, planner, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const advertisedName = "planner-authoring-v1__create_operation_packet"
+	var registration AppToolRegistration
+	for _, candidate := range registrations {
+		if candidate.AdvertisedName == advertisedName {
+			registration = candidate
+			break
+		}
+	}
+	if registration.AdvertisedName == "" || registration.InternalToolName != "create_operation_packet" {
+		t.Fatalf("planner delivery-ticket registration = %#v", registration)
+	}
+
+	var routeTool routecontracts.ToolManifest
+	foundRoute := false
+	for _, manifest := range routes.Manifests {
+		if manifest.RoutePath != registration.InternalRoutePath {
+			continue
+		}
+		for _, tool := range manifest.Tools {
+			if tool.Name == registration.InternalToolName {
+				routeTool = tool
+				foundRoute = true
+				break
+			}
+		}
+	}
+	if !foundRoute {
+		t.Fatalf("route manifest tool %s/%s is missing", registration.InternalRoutePath, registration.InternalToolName)
+	}
+
+	response := server.handleLine([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	if response.Error != nil {
+		t.Fatalf("tools/list response error = %#v", response.Error)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		JSONRPC string `json:"jsonrpc"`
+		Result  struct {
+			Tools []struct {
+				Name        string          `json:"name"`
+				InputSchema json.RawMessage `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatalf("decode tools/list response: %v; json=%s", err, encoded)
+	}
+	if wire.JSONRPC != JSONRPCVersion {
+		t.Fatalf("jsonrpc version = %q", wire.JSONRPC)
+	}
+	var advertised struct {
+		Name        string          `json:"name"`
+		InputSchema json.RawMessage `json:"inputSchema"`
+	}
+	for _, tool := range wire.Result.Tools {
+		if tool.Name == advertisedName {
+			advertised = tool
+			break
+		}
+	}
+	if advertised.Name == "" {
+		t.Fatalf("tools/list did not advertise %q", advertisedName)
+	}
+	if !bytes.Equal(advertised.InputSchema, routeTool.InputSchema) {
+		t.Fatalf("advertised input schema differs from mounted route schema: advertised=%s route=%s", advertised.InputSchema, routeTool.InputSchema)
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal(advertised.InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schemaHasUnconstrainedObjectFallback(schema) {
+		t.Fatal("advertised input schema contains an unconstrained object/additionalProperties-only fallback")
+	}
+	defs := plannerSchemaObject(t, schema, "$defs")
+	admission := plannerSchemaObject(t, defs, "OperationAdmission")
+	delivery := plannerSchemaBranchByOperation(t, plannerSchemaArray(t, admission, "oneOf"), "planner.delivery_ticket")
+	properties := plannerSchemaObject(t, delivery, "properties")
+	linkedDelivery := plannerSchemaBranchByOperation(t, plannerSchemaArray(t, schema, "oneOf"), "planner.delivery_ticket")
+	linkedProperties := plannerSchemaObject(t, linkedDelivery, "properties")
+
+	requiredInputs := plannerSchemaObject(t, properties, "required_inputs")
+	requiredSlot := plannerSchemaOneOfSlot(t, plannerSchemaObject(t, requiredInputs, "items"))
+	requiredProperties := plannerSchemaObject(t, requiredSlot, "properties")
+	if got := plannerSchemaConst(t, requiredProperties, "input_name"); got != "confirmed_delivery_boundary" {
+		t.Fatalf("required delivery-ticket input = %q", got)
+	}
+	if got := plannerSchemaStringValues(t, requiredProperties, "allowed_source_kinds"); !samePlannerSchemaStrings(got, []string{"inline_text"}) {
+		t.Fatalf("delivery-ticket source kinds = %#v", got)
+	}
+
+	workflowReferences := plannerSchemaObject(t, properties, "workflow_reference_kinds")
+	if got := plannerSchemaStringValues(t, workflowReferences, "items"); !samePlannerSchemaStrings(got, []string{"feature_workspace"}) {
+		t.Fatalf("delivery-ticket workflow references = %#v", got)
+	}
+
+	callerInputs := plannerSchemaObject(t, linkedProperties, "inputs")
+	callerItem := plannerSchemaObject(t, callerInputs, "items")
+	for _, candidate := range plannerSchemaArray(t, callerItem, "oneOf") {
+		branch, ok := candidate.(map[string]any)
+		if !ok {
+			t.Fatalf("caller input branch is not an object: %#v", candidate)
+		}
+		slot := branch
+		allOf := plannerSchemaArray(t, slot, "allOf")
+		if len(allOf) != 2 {
+			t.Fatalf("caller input allOf = %#v", slot)
+		}
+		constrainedSlot, ok := allOf[1].(map[string]any)
+		if !ok {
+			t.Fatalf("caller input constrained slot is not an object: %#v", allOf[1])
+		}
+		slotProperties := plannerSchemaObject(t, constrainedSlot, "properties")
+		if plannerSchemaConst(t, slotProperties, "input_name") == "current_feature_workspace_route" {
+			t.Fatal("derived current_feature_workspace_route is exposed as a caller input")
+		}
+		if containsPlannerSchemaString(plannerSchemaStringValues(t, slotProperties, "source_kind"), "committed_source") {
+			t.Fatal("committed_source is exposed for planner.delivery_ticket caller inputs")
+		}
+	}
+}
+
+func plannerSchemaObject(t *testing.T, value map[string]any, key string) map[string]any {
+	t.Helper()
+	child, ok := value[key].(map[string]any)
+	if !ok {
+		t.Fatalf("schema member %q is not an object", key)
+	}
+	return child
+}
+
+func plannerSchemaArray(t *testing.T, value map[string]any, key string) []any {
+	t.Helper()
+	child, ok := value[key].([]any)
+	if !ok {
+		t.Fatalf("schema member %q is not an array", key)
+	}
+	return child
+}
+
+func plannerSchemaConst(t *testing.T, properties map[string]any, key string) string {
+	t.Helper()
+	return plannerSchemaObject(t, properties, key)["const"].(string)
+}
+
+func plannerSchemaOneOfSlot(t *testing.T, value map[string]any) map[string]any {
+	if branches, ok := value["oneOf"].([]any); ok && len(branches) == 1 {
+		branch, ok := branches[0].(map[string]any)
+		if !ok {
+			t.Fatalf("schema oneOf slot is not an object: %#v", value)
+		}
+		return branch
+	}
+	return value
+}
+
+func plannerSchemaBranchByOperation(t *testing.T, branches []any, operation string) map[string]any {
+	t.Helper()
+	for _, candidate := range branches {
+		branch, ok := candidate.(map[string]any)
+		if !ok {
+			t.Fatalf("operation branch is not an object: %#v", candidate)
+		}
+		properties, ok := branch["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if operationSchema, ok := properties["operation_id"].(map[string]any); ok && operationSchema["const"] == operation {
+			return branch
+		}
+	}
+	if operation == "planner.delivery_ticket" {
+		t.Fatalf("operation branch %q is missing", operation)
+	}
+	return nil
+}
+
+func plannerSchemaStringValues(t *testing.T, properties map[string]any, key string) []string {
+	t.Helper()
+	property := plannerSchemaObject(t, properties, key)
+	if items, ok := property["items"].(map[string]any); ok {
+		property = items
+	}
+	if value, ok := property["enum"].([]any); ok {
+		result := make([]string, 0, len(value))
+		for _, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				t.Fatalf("schema member %q enum value is not a string: %#v", key, item)
+			}
+			result = append(result, text)
+		}
+		return result
+	}
+	if value, ok := property["const"].(string); ok {
+		return []string{value}
+	}
+	t.Fatalf("schema member %q has neither string enum nor const", key)
+	return nil
+}
+
+func samePlannerSchemaStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func containsPlannerSchemaString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func schemaHasUnconstrainedObjectFallback(value any) bool {
+	object, ok := value.(map[string]any)
+	if !ok || object["type"] != "object" || hasPlannerSchemaConstraint(object) {
+		return false
+	}
+	additional, exists := object["additionalProperties"]
+	return !exists || additional == true
+}
+
+func hasPlannerSchemaConstraint(value map[string]any) bool {
+	for _, key := range []string{"properties", "required", "oneOf", "allOf", "anyOf", "not", "$ref", "patternProperties", "dependentSchemas"} {
+		if _, ok := value[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func appRouteCount(registrations []AppToolRegistration) int {
