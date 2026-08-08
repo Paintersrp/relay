@@ -28,7 +28,7 @@ type WorkflowProjectService interface {
 	CreateNote(context.Context, workflowprojects.CreateNoteInput) (workflowprojects.ProjectNote, error)
 	UpdateNote(context.Context, workflowprojects.UpdateNoteInput) (workflowprojects.ProjectNote, error)
 	DeleteNote(context.Context, string, string) error
-	ListFeatureWorkspaces(context.Context, workflowprojects.ListFeatureWorkspacesInput) ([]workflowprojects.FeatureWorkspace, error)
+	ListFeatureWorkspaces(context.Context, workflowprojects.ListFeatureWorkspacesInput) ([]workflowprojects.ProjectFeatureWorkspaceSummary, error)
 }
 
 type WorkflowHandler struct {
@@ -67,13 +67,18 @@ type projectPlanResponse struct {
 }
 
 type projectFeatureWorkspaceResponse struct {
-	WorkspaceID string `json:"workspaceId"`
-	ProjectID   string `json:"projectId"`
-	FeatureSlug string `json:"featureSlug"`
-	State       string `json:"state"`
-	Version     int64  `json:"version"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	WorkspaceID        string `json:"workspaceId"`
+	ProjectID          string `json:"projectId"`
+	FeatureSlug        string `json:"featureSlug"`
+	State              string `json:"state"`
+	Version            int64  `json:"version"`
+	CreatedAt          string `json:"createdAt"`
+	UpdatedAt          string `json:"updatedAt"`
+	ProgressionSummary string `json:"progressionSummary"`
+	ResumeSummary      string `json:"resumeSummary"`
+	Blocked            bool   `json:"blocked"`
+	BlockedReason      string `json:"blockedReason,omitempty"`
+	RecoveryCategory   string `json:"recoveryCategory,omitempty"`
 }
 
 type createProjectRequest struct {
@@ -194,15 +199,7 @@ func (h *WorkflowHandler) ListFeatureWorkspaces(w http.ResponseWriter, r *http.R
 	}
 	items := make([]projectFeatureWorkspaceResponse, 0, len(values))
 	for _, value := range values {
-		items = append(items, projectFeatureWorkspaceResponse{
-			WorkspaceID: value.WorkspaceID,
-			ProjectID:   ownerProjectID,
-			FeatureSlug: value.FeatureSlug,
-			State:       value.State,
-			Version:     value.Version,
-			CreatedAt:   value.CreatedAt,
-			UpdatedAt:   value.UpdatedAt,
-		})
+		items = append(items, projectFeatureWorkspaceDTO(value, ownerProjectID))
 	}
 	shared.JSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
 }
@@ -342,6 +339,16 @@ func (h *WorkflowHandler) DeleteNote(w http.ResponseWriter, r *http.Request) {
 
 func projectID(r *http.Request) string {
 	return strings.TrimSpace(chi.URLParam(r, "projectID"))
+}
+
+func projectFeatureWorkspaceDTO(value workflowprojects.ProjectFeatureWorkspaceSummary, projectID string) projectFeatureWorkspaceResponse {
+	workspace := value.Workspace
+	return projectFeatureWorkspaceResponse{
+		WorkspaceID: workspace.WorkspaceID, ProjectID: projectID, FeatureSlug: workspace.FeatureSlug,
+		State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt,
+		ProgressionSummary: value.ProgressionSummary, ResumeSummary: value.ResumeSummary,
+		Blocked: value.Blocked, BlockedReason: value.BlockedReason, RecoveryCategory: value.RecoveryCategory,
+	}
 }
 
 func projectDTO(value workflowprojects.Project) projectResponse {

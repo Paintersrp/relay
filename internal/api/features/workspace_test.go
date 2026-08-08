@@ -348,7 +348,7 @@ func guidedRouter(wayfinderService WayfinderService, authorityService AuthorityS
 
 func TestGuidedGetProjectsSemanticStateWithExactlyOnePrimaryAndNoArtifactFields(t *testing.T) {
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", State: "open", Version: 8}, Project: workflowstore.Project{ProjectID: "project-guided", Name: "Payments"}}
-	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, Currentness: featureapp.DiscoveryCurrent, Rationale: "ready to close", CurrentRevisionID: "revision-secret"}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent, WorkspaceID: detail.Workspace.WorkspaceID, WorkspaceVersion: detail.Workspace.Version}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, Currentness: featureapp.DiscoveryCurrent, Rationale: "ready to close", CurrentRevisionID: "revision-secret"}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent, WorkspaceID: detail.Workspace.WorkspaceID, WorkspaceVersion: detail.Workspace.Version, Basis: "closure-packet:77/revision:88", HistoricalIdentity: "closure-packet:77/revision:88/authority:99/source:100"}}
 	authority := &fakeAuthority{revisions: []featureapp.AuthorityRevisionDetail{{Revision: workflowstore.FeatureWorkspaceAuthorityRevision{ID: 41, RevisionNumber: 2}, Layers: []workflowstore.FeatureWorkspaceAuthorityLayer{{LayerKind: "requirements", ArtifactRowID: sql.NullInt64{Int64: 99, Valid: true}}}}}}
 	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, FeatureSlug: detail.Workspace.FeatureSlug, Version: detail.Workspace.Version}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}}
 	response := httptest.NewRecorder()
@@ -376,7 +376,7 @@ func TestGuidedGetProjectsSemanticStateWithExactlyOnePrimaryAndNoArtifactFields(
 	if primaryCount != 1 || body.Guided.PrimaryAction != "close_discovery" {
 		t.Fatalf("guided actions=%s", response.Body.String())
 	}
-	for _, forbidden := range []string{"artifactRowId", "artifactSha256", "approvalRowId", "revision-secret"} {
+	for _, forbidden := range []string{"artifactRowId", "artifactSha256", "approvalRowId", "revision-secret", "closure-packet:77/revision:88", "authority:99", "source:100"} {
 		if strings.Contains(response.Body.String(), forbidden) {
 			t.Fatalf("guided response exposed %q: %s", forbidden, response.Body.String())
 		}
@@ -478,5 +478,30 @@ func TestGuidedCompletionReturnsRefreshedRecordedState(t *testing.T) {
 	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":9,"action":"complete_feature","confirmation":true}`)))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"recorded":true`) || !strings.Contains(response.Body.String(), `"version":10`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+type richFakeGuided struct {
+	fakeGuided
+	projection featureapp.GuidedFeatureProjection
+	result     featureapp.GuidedActionResult
+	input      featureapp.GuidedActionInput
+}
+
+func (f *richFakeGuided) ReadGuidedProjection(context.Context, string) (featureapp.GuidedFeatureProjection, error) {
+	return f.projection, nil
+}
+func (f *richFakeGuided) ExecuteGuidedAction(_ context.Context, input featureapp.GuidedActionInput) (featureapp.GuidedActionResult, error) {
+	f.input = input
+	return f.result, nil
+}
+
+func TestGuidedRichHandoffDelegatesInsteadOfNoOp(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", Version: 8}}
+	guided := &richFakeGuided{projection: featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionAuthorRequirements, Primary: true, Enabled: true}, Handoff: &featureapp.GuidedHandoff{Role: "author_requirements", ResumeRoute: "/feature-workspaces/{workspaceID}/guided", Summary: "review"}}, result: featureapp.GuidedActionResult{Projection: featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionAuthorRequirements, Primary: true, Enabled: true}, Handoff: &featureapp.GuidedHandoff{Role: "author_requirements", ResumeRoute: "/feature-workspaces/{workspaceID}/guided", Summary: "review"}}}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"author_requirements"}`)))
+	if response.Code != http.StatusOK || guided.input.Action != "author_requirements" || !strings.Contains(response.Body.String(), `"resumeRoute":"/feature-workspaces/{workspaceID}/guided"`) || !strings.Contains(response.Body.String(), `"handoff"`) {
+		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
 	}
 }

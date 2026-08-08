@@ -18,7 +18,7 @@ type fakeProjectService struct {
 	detail     workflowprojects.ProjectDetail
 	note       workflowstore.ProjectNote
 	repo       workflowstore.ProjectRepositoryTarget
-	workspaces []workflowstore.FeatureWorkspace
+	workspaces []workflowprojects.ProjectFeatureWorkspaceSummary
 	err        error
 }
 
@@ -68,7 +68,7 @@ func (f *fakeProjectService) DeleteNote(context.Context, string, string) error {
 	return f.err
 }
 
-func (f *fakeProjectService) ListFeatureWorkspaces(context.Context, workflowprojects.ListFeatureWorkspacesInput) ([]workflowstore.FeatureWorkspace, error) {
+func (f *fakeProjectService) ListFeatureWorkspaces(context.Context, workflowprojects.ListFeatureWorkspacesInput) ([]workflowprojects.ProjectFeatureWorkspaceSummary, error) {
 	return f.workspaces, f.err
 }
 
@@ -150,9 +150,9 @@ func TestProjectRoutesExposeSimplifiedModel(t *testing.T) {
 
 func TestProjectFeatureWorkspacesRouteReturnsPublicDTOWithoutInternalRowIDs(t *testing.T) {
 	service := &fakeProjectService{
-		workspaces: []workflowstore.FeatureWorkspace{
-			{WorkspaceID: "workspace-b", FeatureSlug: "wayfinder-bootstrap", State: "open", Version: 2, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-02T00:00:00Z"},
-			{WorkspaceID: "workspace-a", FeatureSlug: "earlier-feature", State: "closed", Version: 5, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"},
+		workspaces: []workflowprojects.ProjectFeatureWorkspaceSummary{
+			{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-b", FeatureSlug: "wayfinder-bootstrap", State: "open", Version: 2, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-02T00:00:00Z"}, ProgressionSummary: "Discovery is in progress.", ResumeSummary: "Continue discovery."},
+			{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-a", FeatureSlug: "earlier-feature", State: "closed", Version: 5, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"}, ProgressionSummary: "Closed.", ResumeSummary: "Resume downstream delivery."},
 		},
 	}
 	handler := projectRouter(service)
@@ -170,6 +170,8 @@ func TestProjectFeatureWorkspacesRouteReturnsPublicDTOWithoutInternalRowIDs(t *t
 		`"state":"open"`,
 		`"version":2`,
 		`"count":2`,
+		`"progressionSummary":"Discovery is in progress."`,
+		`"resumeSummary":"Continue discovery."`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("response missing %s: %s", expected, body)

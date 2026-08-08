@@ -193,3 +193,38 @@ func openProjectTestStore(t *testing.T) *workflowstore.Store {
 	t.Helper()
 	return workflowfixture.Open(t, workflowstore.Open)
 }
+
+func TestProjectFeatureWorkspaceSummaryProvidesServerOwnedResumeGuidance(t *testing.T) {
+	ctx := context.Background()
+	store := openProjectTestStore(t)
+	service, err := NewServiceWithIDs(store, &projectTestIDs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := service.CreateProject(ctx, CreateProjectInput{Name: "Resume"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateFeatureWorkspace(ctx, workflowstore.CreateFeatureWorkspaceParams{
+			WorkspaceID: "workspace-resume", ProjectRowID: project.ID, FeatureSlug: "payments",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := service.ListFeatureWorkspaces(ctx, ListFeatureWorkspacesInput{ProjectID: project.ProjectID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %+v", summaries)
+	}
+	got := summaries[0]
+	if got.ProgressionSummary == "" || got.ResumeSummary == "" || !got.Blocked || got.RecoveryCategory == "" {
+		t.Fatalf("summary lacks server-owned resume/recovery guidance: %+v", got)
+	}
+	if got.Workspace.ID == 0 {
+		t.Fatal("workspace row should remain available to the application owner")
+	}
+}

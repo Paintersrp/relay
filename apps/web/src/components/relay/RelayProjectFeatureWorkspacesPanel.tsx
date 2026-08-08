@@ -73,17 +73,21 @@ export function RelayProjectFeatureWorkspacesPanel({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-foreground">{workspace.featureSlug}</span>
-                  <Badge variant={workspace.state === "open" ? "running" : "outline"}>
-                    {workspace.state}
+                  <Badge variant={workspace.blocked ? "destructive" : workspace.state === "open" ? "running" : "outline"}>
+                    {workspace.blocked ? "Needs recovery" : workspace.state}
                   </Badge>
                   <span className="text-xs text-muted-foreground">Version {workspace.version}</span>
                 </div>
+                <p className="mt-1 text-sm text-foreground/90">{workspace.progressionSummary}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {workspace.resumeSummary}{workspace.blockedReason ? ` ${workspace.blockedReason}` : ""}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Updated {formatPlanDate(workspace.updatedAt)}
                 </p>
               </div>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                {workspace.state === "open" ? "Resume" : "Open"} {workspace.featureSlug}
+                {workspace.blocked ? "Review recovery" : workspace.resumeSummary}
                 <ArrowRight className="size-3.5" />
               </span>
             </Link>

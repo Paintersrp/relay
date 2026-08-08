@@ -29,9 +29,14 @@ const base: GuidedFeatureDetail = {
   authority: { currentRevisionNumber: 1, revisions: [{ revisionNumber: 1, layers: ["requirements", "design"], historical: false }] },
   planning: { readiness: "current", status: "ready", recoveryCategory: "" },
   completion: { gates: [{ name: "authority", ready: true }, { name: "audit", ready: false }], ready: false, recorded: false },
+  ticketFrontier: { status: "blocked", summary: "Resolve the remaining discovery frontier.", blockers: ["missing evidence"], downstream: [] },
+  downstream: { status: "delivery", summary: "Continue after discovery closure." },
+  prototypeQA: { status: "role-owned", summary: "Return after prototype and QA.", requiredEvidence: ["approval"] },
+  recovery: { blocked: false, summary: "No recovery required.", category: "", actions: ["collect evidence"] },
+  handoff: { available: false, instruction: "", returnGuidance: "Return to this workspace." },
   diagnostics: {
-    history: { discoveryCurrentness: "current", historicalIdentity: "none" },
-    stale: { readiness: "current", owner: "", blockedOperation: "", effect: "", recoveryCategory: "", basis: "" },
+    history: { discoveryCurrentness: "current", status: "current_basis" },
+    stale: { readiness: "current", owner: "", blockedOperation: "", effect: "", recoveryCategory: "" },
     discovery: { blockers: ["missing evidence"], restorationActions: ["collect evidence"], pendingIntegrations: [], activeOperations: [], routeMaterialOpen: false, requiredEvidence: ["approval"] },
   },
   availableActions: [{ action: "continue_discovery", primary: true, enabled: true, requiresConfirmation: true }],
@@ -51,10 +56,13 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(screen.getByRole("heading", { name: "Discovery" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Authority" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Planning and currentness" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Completion" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ticket frontier and downstream" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Prototype and QA" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Blockers and recovery" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Handoff and return" })).toBeInTheDocument();
     expect(screen.getByText("Clarify the supported payment path.")).toBeInTheDocument();
     expect(screen.getByText("Diagnostics")).toBeInTheDocument();
-    expect(screen.getByText("missing evidence")).toBeInTheDocument();
+    expect(screen.getAllByText("missing evidence").length).toBeGreaterThan(0);
   });
 
   it("renders exactly one primary action and no raw workspace input controls", () => {

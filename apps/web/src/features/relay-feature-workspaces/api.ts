@@ -25,17 +25,38 @@ function guidedStringArray(value: unknown, method: WorkflowHttpMethod, path: str
   return value as string[];
 }
 
+function guidedArrayOrEmpty(value: unknown, method: WorkflowHttpMethod, path: string, context: string): unknown[] {
+  return value === undefined || value === null ? [] : requiredWorkflowArray({ value }, "value", method, path, context);
+}
+
+function guidedStringArrayOrEmpty(value: unknown, method: WorkflowHttpMethod, path: string, context: string): string[] {
+  return value === undefined || value === null ? [] : guidedStringArray(value, method, path, context);
+}
+
+function guidedOptionalString(value: WorkflowJsonRecord, field: string): string {
+  return typeof value[field] === "string" ? value[field] as string : "";
+}
+
 function guided(value: unknown, method: WorkflowHttpMethod, path: string): GuidedFeatureDetail {
   const item = record(value, method, path, "guided feature workspace");
   const discovery = record(item.discovery, method, path, "guided discovery");
-  const authorityValue = record(item.authority, method, path, "guided authority");
+  const authorityValue = item.authority === undefined ? {} : record(item.authority, method, path, "guided authority");
   const planning = record(item.planning, method, path, "guided planning");
   const completion = record(item.completion, method, path, "guided completion");
-  const diagnostics = record(item.diagnostics, method, path, "guided diagnostics");
-  const history = record(diagnostics.history, method, path, "guided history diagnostics");
-  const stale = record(diagnostics.stale, method, path, "guided stale diagnostics");
-  const discoveryDiagnostics = record(diagnostics.discovery, method, path, "guided discovery diagnostics");
-  const revisions = requiredWorkflowArray(authorityValue, "revisions", method, path, "guided authority").map((revision) => {
+  const diagnostics = item.diagnostics === undefined ? {} : record(item.diagnostics, method, path, "guided diagnostics");
+  const history = diagnostics.history === undefined || Array.isArray(diagnostics.history) ? {} : record(diagnostics.history, method, path, "guided history diagnostics");
+  const stale = diagnostics.stale === undefined || Array.isArray(diagnostics.stale) ? {} : record(diagnostics.stale, method, path, "guided stale diagnostics");
+  const discoveryDiagnostics = diagnostics.discovery === undefined || Array.isArray(diagnostics.discovery) ? {} : record(diagnostics.discovery, method, path, "guided discovery diagnostics");
+  const currentness = item.currentness === undefined ? {} : record(item.currentness, method, path, "guided currentness");
+  const delivery = item.delivery === undefined ? {} : record(item.delivery, method, path, "guided delivery");
+  const prototype = item.prototype === undefined ? {} : record(item.prototype, method, path, "guided prototype");
+  const recoveryProjection = item.recovery === undefined ? {} : record(item.recovery, method, path, "guided recovery projection");
+  const ticketFrontier = item.ticketFrontier === undefined ? {} : record(item.ticketFrontier, method, path, "guided ticket frontier");
+  const downstream = item.downstream === undefined ? {} : record(item.downstream, method, path, "guided downstream");
+  const prototypeQA = item.prototypeQA === undefined ? {} : record(item.prototypeQA, method, path, "guided prototype QA");
+  const recovery = item.recovery === undefined ? {} : record(item.recovery, method, path, "guided recovery");
+  const handoff = item.handoff === undefined || item.handoff === null ? {} : record(item.handoff, method, path, "guided handoff");
+  const revisions = guidedArrayOrEmpty(authorityValue.revisions, method, path, "guided authority").map((revision) => {
     const value = record(revision, method, path, "guided authority revision");
     return {
       revisionNumber: requiredWorkflowInteger(value, "revisionNumber", method, path, "guided authority revision", 0),
@@ -63,18 +84,25 @@ function guided(value: unknown, method: WorkflowHttpMethod, path: string): Guide
     project: workspaceProject(item.project, method, path),
     discovery: {
       state: requiredWorkflowString(discovery, "state", method, path, "guided discovery"),
-      destination: requiredWorkflowString(discovery, "destination", method, path, "guided discovery", true),
+      destination: guidedOptionalString(discovery, "destination"),
       rationale: requiredWorkflowString(discovery, "rationale", method, path, "guided discovery", true),
-      continuation: requiredWorkflowString(discovery, "continuation", method, path, "guided discovery", true),
-      currentness: requiredWorkflowString(discovery, "currentness", method, path, "guided discovery", true),
+      continuation: guidedOptionalString(discovery, "continuation"),
+      currentness: item.currentness === undefined ? guidedOptionalString(discovery, "currentness") : guidedOptionalString(currentness, "readiness"),
     },
-    authority: { currentRevisionNumber: requiredWorkflowInteger(authorityValue, "currentRevisionNumber", method, path, "guided authority", 0), revisions },
-    planning: { readiness: requiredWorkflowString(planning, "readiness", method, path, "guided planning", true), status: requiredWorkflowString(planning, "status", method, path, "guided planning", true), recoveryCategory: requiredWorkflowString(planning, "recoveryCategory", method, path, "guided planning", true) },
+    authority: { currentRevisionNumber: typeof authorityValue.currentRevisionNumber === "number" ? authorityValue.currentRevisionNumber : 0, revisions },
+    planning: { readiness: guidedOptionalString(planning, "readiness") || guidedOptionalString(currentness, "readiness"), status: requiredWorkflowString(planning, "status", method, path, "guided planning", true), recoveryCategory: guidedOptionalString(planning, "recoveryCategory") || guidedOptionalString(currentness, "recoveryCategory"), candidateState: typeof planning.candidateState === "string" ? planning.candidateState : undefined, reviewState: typeof planning.reviewState === "string" ? planning.reviewState : undefined, approvalState: typeof planning.approvalState === "string" ? planning.approvalState : undefined, promotionState: typeof planning.promotionState === "string" ? planning.promotionState : undefined, candidateCount: typeof planning.candidateCount === "number" ? planning.candidateCount : undefined, awaitingReview: typeof planning.awaitingReview === "number" ? planning.awaitingReview : undefined, awaitingApproval: typeof planning.awaitingApproval === "number" ? planning.awaitingApproval : undefined, awaitingPromotion: typeof planning.awaitingPromotion === "number" ? planning.awaitingPromotion : undefined, promoted: typeof planning.promoted === "number" ? planning.promoted : undefined, historicalCount: typeof planning.historicalCount === "number" ? planning.historicalCount : undefined },
+    delivery: item.delivery === undefined ? undefined : { frontierCount: typeof delivery.frontierCount === "number" ? delivery.frontierCount : 0, selectionState: requiredWorkflowString(delivery, "selectionState", method, path, "guided delivery", true), packageState: requiredWorkflowString(delivery, "packageState", method, path, "guided delivery", true), runState: requiredWorkflowString(delivery, "runState", method, path, "guided delivery", true), auditState: requiredWorkflowString(delivery, "auditState", method, path, "guided delivery", true), remediationState: requiredWorkflowString(delivery, "remediationState", method, path, "guided delivery", true) },
+    prototype: item.prototype === undefined ? undefined : { runState: requiredWorkflowString(prototype, "runState", method, path, "guided prototype", true), cleanupState: requiredWorkflowString(prototype, "cleanupState", method, path, "guided prototype", true), qaState: requiredWorkflowString(prototype, "qaState", method, path, "guided prototype", true), evidenceState: requiredWorkflowString(prototype, "evidenceState", method, path, "guided prototype", true) },
     completion: { gates, ready: typeof completion.ready === "boolean" ? completion.ready : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided completion.ready must be a boolean`, 502, path, method); })(), recorded: typeof completion.recorded === "boolean" ? completion.recorded : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided completion.recorded must be a boolean`, 502, path, method); })() },
+    ticketFrontier: { status: guidedOptionalString(ticketFrontier, "status") || (item.delivery === undefined ? "" : `${delivery.frontierCount} available`), summary: guidedOptionalString(ticketFrontier, "summary") || "The server-owned delivery frontier is shown below.", blockers: guidedStringArrayOrEmpty(ticketFrontier.blockers ?? discoveryDiagnostics.blockers, method, path, "guided ticket frontier.blockers"), downstream: guidedStringArrayOrEmpty(ticketFrontier.downstream ?? discoveryDiagnostics.pendingIntegrations, method, path, "guided ticket frontier.downstream") },
+    downstream: { status: guidedOptionalString(downstream, "status") || guidedOptionalString(discovery, "destination"), summary: guidedOptionalString(downstream, "summary") || guidedOptionalString(discovery, "continuation") },
+    prototypeQA: { status: guidedOptionalString(prototypeQA, "status") || guidedOptionalString(prototype, "qaState"), summary: guidedOptionalString(prototypeQA, "summary") || "Prototype and QA remain bounded downstream operations.", requiredEvidence: guidedStringArrayOrEmpty(prototypeQA.requiredEvidence ?? discoveryDiagnostics.requiredEvidence, method, path, "guided prototype QA.requiredEvidence") },
+    recovery: { blocked: typeof recovery.blocked === "boolean" ? recovery.blocked : recoveryProjection.state === "required", summary: guidedOptionalString(recovery, "summary") || guidedOptionalString(currentness, "effect"), category: guidedOptionalString(recovery, "category") || guidedOptionalString(recoveryProjection, "category") || guidedOptionalString(currentness, "recoveryCategory"), actions: guidedStringArrayOrEmpty(recovery.actions ?? recoveryProjection.available, method, path, "guided recovery.actions") },
+    handoff: { available: typeof handoff.available === "boolean" ? handoff.available : item.handoff !== undefined && item.handoff !== null, instruction: guidedOptionalString(handoff, "instruction") || guidedOptionalString(handoff, "summary"), returnGuidance: guidedOptionalString(handoff, "returnGuidance") || guidedOptionalString(handoff, "resumeRoute") },
     diagnostics: {
-      history: { discoveryCurrentness: requiredWorkflowString(history, "discoveryCurrentness", method, path, "guided history diagnostics", true), historicalIdentity: requiredWorkflowString(history, "historicalIdentity", method, path, "guided history diagnostics", true) },
-      stale: { readiness: requiredWorkflowString(stale, "readiness", method, path, "guided stale diagnostics", true), owner: requiredWorkflowString(stale, "owner", method, path, "guided stale diagnostics", true), blockedOperation: requiredWorkflowString(stale, "blockedOperation", method, path, "guided stale diagnostics", true), effect: requiredWorkflowString(stale, "effect", method, path, "guided stale diagnostics", true), recoveryCategory: requiredWorkflowString(stale, "recoveryCategory", method, path, "guided stale diagnostics", true), basis: requiredWorkflowString(stale, "basis", method, path, "guided stale diagnostics", true) },
-      discovery: { blockers: guidedStringArray(discoveryDiagnostics.blockers, method, path, "guided discovery diagnostics.blockers"), restorationActions: guidedStringArray(discoveryDiagnostics.restorationActions, method, path, "guided discovery diagnostics.restorationActions"), pendingIntegrations: guidedStringArray(discoveryDiagnostics.pendingIntegrations, method, path, "guided discovery diagnostics.pendingIntegrations"), activeOperations: guidedStringArray(discoveryDiagnostics.activeOperations, method, path, "guided discovery diagnostics.activeOperations"), routeMaterialOpen: typeof discoveryDiagnostics.routeMaterialOpen === "boolean" ? discoveryDiagnostics.routeMaterialOpen : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: guided discovery diagnostics.routeMaterialOpen must be a boolean`, 502, path, method); })(), requiredEvidence: guidedStringArray(discoveryDiagnostics.requiredEvidence, method, path, "guided discovery diagnostics.requiredEvidence") },
+      history: { discoveryCurrentness: guidedOptionalString(history, "discoveryCurrentness"), status: guidedOptionalString(history, "status") },
+      stale: { readiness: guidedOptionalString(stale, "readiness"), owner: guidedOptionalString(stale, "owner"), blockedOperation: guidedOptionalString(stale, "blockedOperation"), effect: guidedOptionalString(stale, "effect"), recoveryCategory: guidedOptionalString(stale, "recoveryCategory") },
+      discovery: { blockers: guidedStringArrayOrEmpty(discoveryDiagnostics.blockers, method, path, "guided discovery diagnostics.blockers"), restorationActions: guidedStringArrayOrEmpty(discoveryDiagnostics.restorationActions, method, path, "guided discovery diagnostics.restorationActions"), pendingIntegrations: guidedStringArrayOrEmpty(discoveryDiagnostics.pendingIntegrations, method, path, "guided discovery diagnostics.pendingIntegrations"), activeOperations: guidedStringArrayOrEmpty(discoveryDiagnostics.activeOperations, method, path, "guided discovery diagnostics.activeOperations"), routeMaterialOpen: typeof discoveryDiagnostics.routeMaterialOpen === "boolean" ? discoveryDiagnostics.routeMaterialOpen : false, requiredEvidence: guidedStringArrayOrEmpty(discoveryDiagnostics.requiredEvidence, method, path, "guided discovery diagnostics.requiredEvidence") },
     },
     availableActions,
     primaryAction: guidedAction(item.primaryAction, method, path, "guided feature workspace"),
@@ -114,6 +142,11 @@ function projectFeatureWorkspaceSummary(value: unknown, method: WorkflowHttpMeth
     version: requiredWorkflowInteger(item, "version", method, path, context, 1),
     createdAt: requiredWorkflowString(item, "createdAt", method, path, context, true),
     updatedAt: requiredWorkflowString(item, "updatedAt", method, path, context, true),
+    progressionSummary: requiredWorkflowString(item, "progressionSummary", method, path, context, true),
+    resumeSummary: requiredWorkflowString(item, "resumeSummary", method, path, context, true),
+    blocked: typeof item.blocked === "boolean" ? item.blocked : (() => { throw new RelayApiError(`Malformed JSON response from ${method} ${path}: ${context}.blocked must be a boolean`, 502, path, method); })(),
+    blockedReason: typeof item.blockedReason === "string" ? item.blockedReason : undefined,
+    recoveryCategory: typeof item.recoveryCategory === "string" ? item.recoveryCategory : undefined,
   };
 }
 

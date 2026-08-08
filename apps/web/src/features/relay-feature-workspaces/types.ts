@@ -106,6 +106,11 @@ export interface ProjectFeatureWorkspaceSummary {
   version: number;
   createdAt: string;
   updatedAt: string;
+  progressionSummary: string;
+  resumeSummary: string;
+  blocked: boolean;
+  blockedReason?: string;
+  recoveryCategory?: string;
 }
 
 export interface ProjectFeatureWorkspaceListResponse {
@@ -129,11 +134,19 @@ export interface GuidedFeatureDetail {
     currentRevisionNumber: number;
     revisions: Array<{ revisionNumber: number; layers: string[]; historical: boolean }>;
   };
-  planning: { readiness: string; status: string; recoveryCategory: string };
+  currentness?: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string };
+  planning: { readiness: string; status: string; recoveryCategory: string; candidateState?: string; reviewState?: string; approvalState?: string; promotionState?: string; candidateCount?: number; awaitingReview?: number; awaitingApproval?: number; awaitingPromotion?: number; promoted?: number; historicalCount?: number };
+  delivery?: { frontierCount: number; selectionState: string; packageState: string; runState: string; auditState: string; remediationState: string };
+  prototype?: { runState: string; cleanupState: string; qaState: string; evidenceState: string };
   completion: { gates: Array<{ name: string; ready: boolean }>; ready: boolean; recorded: boolean };
+  ticketFrontier: { status: string; summary: string; blockers: string[]; downstream: string[] };
+  downstream: { status: string; summary: string };
+  prototypeQA: { status: string; summary: string; requiredEvidence: string[] };
+  recovery: { blocked: boolean; summary: string; category: string; actions: string[] };
+  handoff: { available: boolean; instruction: string; returnGuidance: string };
   diagnostics: {
-    history: { discoveryCurrentness: string; historicalIdentity: string };
-    stale: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string; basis: string };
+    history: { discoveryCurrentness: string; status: string };
+    stale: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string };
     discovery: {
       blockers: string[];
       restorationActions: string[];

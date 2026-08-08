@@ -53,6 +53,18 @@ type ListFeatureWorkspacesInput struct {
 	Limit     int
 }
 
+// ProjectFeatureWorkspaceSummary is the public, project-context resume
+// projection. It intentionally contains semantic progress only; durable row
+// identifiers, artifact identities, and digests remain inside their owners.
+type ProjectFeatureWorkspaceSummary struct {
+	Workspace          workflowstore.FeatureWorkspace
+	ProgressionSummary string
+	ResumeSummary      string
+	Blocked            bool
+	BlockedReason      string
+	RecoveryCategory   string
+}
+
 type CreateProjectInput struct {
 	Name        string
 	Description string
@@ -143,11 +155,11 @@ func (s *Service) GetProject(ctx context.Context, input GetProjectInput) (Projec
 	}, nil
 }
 
-// ListFeatureWorkspaces returns the feature workspaces owned by the given
-// project, most recently updated first. It resolves the durable project row
-// relationship (rather than trusting a caller-supplied row ID) so a workspace
-// belonging to a different project can never leak into the result.
-func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWorkspacesInput) ([]workflowstore.FeatureWorkspace, error) {
+// ListFeatureWorkspaces returns a server-owned resume projection for each
+// feature workspace owned by the given project. Eligibility is not inferred
+// by the web client: these summaries are derived from the durable workspace
+// pointers and expose only semantic recovery guidance.
+func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWorkspacesInput) ([]ProjectFeatureWorkspaceSummary, error) {
 	projectID := strings.TrimSpace(input.ProjectID)
 	if projectID == "" {
 		return nil, fmt.Errorf("%w: Project ID is required", ErrInvalidProjectRequest)
@@ -156,7 +168,53 @@ func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWo
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListFeatureWorkspacesByProject(ctx, project.ID, input.Limit)
+	workspaces, err := s.store.ListFeatureWorkspacesByProject(ctx, project.ID, input.Limit)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]ProjectFeatureWorkspaceSummary, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		summaries = append(summaries, projectFeatureWorkspaceSummary(workspace))
+	}
+	return summaries, nil
+}
+
+func projectFeatureWorkspaceSummary(workspace workflowstore.FeatureWorkspace) ProjectFeatureWorkspaceSummary {
+	summary := ProjectFeatureWorkspaceSummary{Workspace: workspace}
+	if workspace.State == "closed" {
+		summary.ProgressionSummary = "Feature workspace is closed; downstream work can resume from its established route."
+		summary.ResumeSummary = "Resume downstream delivery."
+		if !workspace.CurrentAuthorityRevisionRowID.Valid {
+			summary.Blocked = true
+			summary.BlockedReason = "Current authority is not published yet."
+			summary.RecoveryCategory = "publish_current_authority"
+		}
+		return summary
+	}
+	if !workspace.CurrentDiscoveryRevisionRowID.Valid {
+		summary.ProgressionSummary = "Discovery has not started for this feature workspace."
+		summary.ResumeSummary = "Start discovery."
+		summary.Blocked = true
+		summary.BlockedReason = "A current discovery revision is required before progression."
+		summary.RecoveryCategory = "start_discovery"
+		return summary
+	}
+	if !workspace.CurrentDiscoveryClosurePacketRowID.Valid {
+		summary.ProgressionSummary = "Discovery is in progress and can be resumed from its current revision."
+		summary.ResumeSummary = "Continue discovery."
+		return summary
+	}
+	if !workspace.CurrentAuthorityRevisionRowID.Valid {
+		summary.ProgressionSummary = "Discovery is current; authority work is the next progression frontier."
+		summary.ResumeSummary = "Resume authority handoff."
+		summary.Blocked = true
+		summary.BlockedReason = "Current authority is required before downstream progression."
+		summary.RecoveryCategory = "publish_current_authority"
+		return summary
+	}
+	summary.ProgressionSummary = "Current discovery and authority are available for downstream progression."
+	summary.ResumeSummary = "Resume downstream progression."
+	return summary
 }
 
 func (s *Service) CreateProject(ctx context.Context, input CreateProjectInput) (workflowstore.Project, error) {

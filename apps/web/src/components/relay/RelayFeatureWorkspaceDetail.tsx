@@ -67,7 +67,6 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     },
   });
   const actionEnabled = primary.enabled;
-  const isRoleHandoff = !primary.requiresConfirmation && Boolean(primary.handoff);
   const actionDisabledReason = primary.enabled ? "Confirm this action before continuing." : (primary.blockedReason || "This action is blocked by the current guided workspace state.");
 
   return <div className="space-y-6">
@@ -100,6 +99,32 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       <div className="mt-4 rounded border p-3 text-sm"><span className="font-medium">Rationale: </span>{detail.discovery.rationale || "No rationale recorded."}</div>
     </section>
 
+    <section aria-labelledby="guided-ticket-frontier" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-ticket-frontier" className="font-semibold">Ticket frontier and downstream</h2>
+      <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Frontier</dt><dd className="mt-1 text-sm">{detail.ticketFrontier.status || "Not available"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Destination</dt><dd className="mt-1 text-sm">{detail.downstream.status || "Not selected"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Downstream</dt><dd className="mt-1 text-sm">{detail.downstream.summary || "No downstream guidance recorded."}</dd></div>
+      </dl>
+      <p className="mt-3 text-sm text-muted-foreground">{detail.ticketFrontier.summary || "No ticket frontier guidance recorded."}</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Blockers</h3><ProjectionList items={detail.ticketFrontier.blockers} /></div><div><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending downstream</h3><ProjectionList items={detail.ticketFrontier.downstream} /></div></div>
+    </section>
+
+    <section aria-labelledby="guided-prototype-qa" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-prototype-qa" className="font-semibold">Prototype and QA</h2>
+      <p className="mt-1 text-sm"><span className="font-medium">Status: </span>{detail.prototypeQA.status || "Not available"}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{detail.prototypeQA.summary || "No prototype or QA guidance recorded."}</p>
+      <div className="mt-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Required evidence</h3><ProjectionList items={detail.prototypeQA.requiredEvidence} /></div>
+    </section>
+
+    <section aria-labelledby="guided-recovery" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-recovery" className="font-semibold">Blockers and recovery</h2>
+      <p className="mt-1 text-sm">{detail.recovery.blocked ? "Progression is blocked." : "No currentness recovery is required."}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{detail.recovery.summary || "No recovery guidance recorded."}</p>
+      {detail.recovery.category ? <p className="mt-2 text-xs text-muted-foreground">Recovery category: {detail.recovery.category}</p> : null}
+      <div className="mt-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recovery actions</h3><ProjectionList items={detail.recovery.actions} /></div>
+    </section>
+
     <section aria-labelledby="guided-authority" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <h2 id="guided-authority" className="font-semibold">Authority</h2>
       <p className="mt-1 text-sm text-muted-foreground">Current revision: {detail.authority.currentRevisionNumber || "None"}</p>
@@ -121,19 +146,26 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       <div className="mt-3 grid gap-2 sm:grid-cols-2">{detail.completion.gates.map((gate) => <div key={gate.name} className="rounded border p-3 text-sm"><span className="font-medium">{gate.name}</span><span className={gate.ready ? "ml-2 text-success" : "ml-2 text-destructive"}>{gate.ready ? "ready" : "blocked"}</span></div>)}</div>
     </section>
 
+    <section aria-labelledby="guided-handoff" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-handoff" className="font-semibold">Handoff and return</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{detail.handoff.available ? detail.handoff.instruction : "No role handoff is currently selected."}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{detail.handoff.returnGuidance || "Return here after bounded role work."}</p>
+      <Link to="/projects/$projectId" params={{ projectId: detail.project.projectId }} className="mt-3 inline-flex text-sm font-medium underline-offset-2 hover:underline">Return to {detail.project.name || "Project"}</Link>
+    </section>
+
     <section aria-labelledby="guided-action" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <h2 id="guided-action" className="font-semibold">Next guided action</h2>
       <p className="mt-1 text-sm text-muted-foreground">The server selected one primary action for this workspace.</p>
       {primary.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(primary.action)}” against this displayed workspace state.</span></label> : null}
-      {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} This page has not performed that role operation; return here after the bounded role work is complete.</p> : null}
+      {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} Use the primary action to acknowledge this handoff, then return here after the bounded role work is complete.</p> : null}
       {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
-      {!isRoleHandoff ? <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button> : null}
+      <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button>
     </section>
 
     <details className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <summary className="cursor-pointer font-semibold">Diagnostics</summary>
       <div className="mt-4 space-y-5 text-sm">
-        <div><h3 className="font-medium">History</h3><p className="mt-1 text-muted-foreground">Currentness: {detail.diagnostics.history.discoveryCurrentness || "None"}</p><p className="text-muted-foreground">Historical identity: {detail.diagnostics.history.historicalIdentity || "None"}</p></div>
+        <div><h3 className="font-medium">History</h3><p className="mt-1 text-muted-foreground">Currentness: {detail.diagnostics.history.discoveryCurrentness || "None"}</p><p className="text-muted-foreground">Status: {detail.diagnostics.history.status || "None"}</p></div>
         <div><h3 className="font-medium">Stale state</h3><dl className="mt-2 grid gap-2 sm:grid-cols-2">{Object.entries(detail.diagnostics.stale).map(([name, value]) => <div key={name}><dt className="text-xs uppercase tracking-wide text-muted-foreground">{name}</dt><dd>{value || "None"}</dd></div>)}</dl></div>
         <div><h3 className="font-medium">Discovery diagnostics</h3><p className="mt-1 text-muted-foreground">Route material open: {detail.diagnostics.discovery.routeMaterialOpen ? "yes" : "no"}</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Blockers</h4><ProjectionList items={detail.diagnostics.discovery.blockers} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Restoration actions</h4><ProjectionList items={detail.diagnostics.discovery.restorationActions} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending integrations</h4><ProjectionList items={detail.diagnostics.discovery.pendingIntegrations} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Active operations</h4><ProjectionList items={detail.diagnostics.discovery.activeOperations} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Required evidence</h4><ProjectionList items={detail.diagnostics.discovery.requiredEvidence} /></div></div></div>
       </div>

@@ -76,6 +76,9 @@ describe("RelayProjectFeatureWorkspacesPanel", () => {
           version: 3,
           createdAt: "2026-07-01T00:00:00Z",
           updatedAt: "2026-07-02T00:00:00Z",
+          progressionSummary: "Discovery is in progress and can be resumed.",
+          resumeSummary: "Continue discovery.",
+          blocked: false,
         },
       ],
     } satisfies ProjectFeatureWorkspaceListResponse);
@@ -83,7 +86,7 @@ describe("RelayProjectFeatureWorkspacesPanel", () => {
 
     const link = await screen.findByRole("link", { name: /wayfinder-bootstrap/ });
     expect(link).toHaveAttribute("data-workspace-id", "workspace-ccd47919");
-    expect(link).toHaveTextContent("Resume wayfinder-bootstrap");
+    expect(link).toHaveTextContent("Continue discovery.");
     expect(screen.getByText("open")).toBeInTheDocument();
     expect(screen.getByText("Version 3")).toBeInTheDocument();
   });
