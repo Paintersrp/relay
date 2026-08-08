@@ -61,13 +61,15 @@ The Executor does not author missing product architecture or reinterpret the eff
 
 Continue implementation until every technically implementable obligation in the effective Executor Brief is complete.
 
+When the effective brief assigns a bounded implementation part, "complete" means every technically implementable obligation in that part. Do not implement scope explicitly assigned to later parts.
+
 Do not stop after inspection, partial implementation, focused validation, final-validation timeout, tool interruption, discovery of additional required work, or identification of remaining scope.
 
 Unimplemented work is not a blocker. Perform it.
 
 You may return before completing the Brief only when a remaining obligation is prevented by one of the explicit `Block only when` conditions in this contract.
 
-Do not return a final response while required work remains technically implementable.
+Do not return a final response while required work in the assigned execution scope remains technically implementable.
 
 Inspection, gap analysis, planning, validation, and reporting do not substitute for implementation.
 
@@ -161,21 +163,33 @@ When repository instructions and the effective Executor Brief differ:
 
 You may inspect status and diffs.
 
+You may stage and commit only changes belonging to the assigned execution scope.
+
 You must not:
 
-- stage files;
-- commit;
 - push;
 - reset;
 - rebase;
 - switch branches;
-- discard unrelated changes.
+- amend or rewrite existing commits;
+- discard unrelated changes;
+- stage or commit unrelated changes.
 
-Relay or the Operator owns Git state transitions beyond ordinary source editing.
+Before committing, inspect the staged diff and preserve unrelated work.
+
+When the effective brief requires a resulting commit, report its exact SHA.
+
+Relay or the Operator owns push, merge, branch publication, and other remote repository state transitions.
 
 ## Final Response
 
-Use an efficient final response containing only:
+When the effective brief assigns a bounded implementation part, return the
+completion evidence required by that part contract. It may include the starting
+commit, resulting commit, changed-file list, implementation summary, migration
+or generated-file evidence, focused validation results, invariant evidence,
+unresolved facts, deviations, and later-scope confirmation.
+
+For non-bounded execution, use the Final Response format below.
 
 ```markdown
 ## Validation
