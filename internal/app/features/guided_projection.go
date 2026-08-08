@@ -363,17 +363,14 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		return GuidedActionResult{}, ErrVersionConflict
 	}
 	requested := GuidedFeatureAction(input.Action)
-	var availability *GuidedFeatureActionAvailability
-	for i := range before.AvailableActions {
-		if before.AvailableActions[i].Action == requested {
-			availability = &before.AvailableActions[i]
-			break
-		}
-	}
-	if availability == nil || !availability.Enabled {
+	// The guided boundary executes exactly the presently enabled primary
+	// action. Remaining advertised actions are display surface for the
+	// operator; attempting them is rejected so the journey cannot advance out
+	// of sequence.
+	if before.PrimaryAction.Action != requested || !before.PrimaryAction.Enabled {
 		return GuidedActionResult{}, ErrGuidedActionBlocked
 	}
-	if availability.RequiresConfirmation && !input.Confirmation {
+	if before.PrimaryAction.RequiresConfirmation && !input.Confirmation {
 		return GuidedActionResult{}, ErrFeatureCompletionConfirmation
 	}
 	switch requested {
@@ -394,6 +391,8 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		_, _, err = s.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, ExpectedRevisionID: assessment.Revision.DiscoveryRevisionID, Destination: destination, CreatedIdentity: "guided-operator"})
 	case GuidedActionCompleteFeature:
 		_, err = s.Complete(ctx, CompletionInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorConfirmed: input.Confirmation})
+	case GuidedActionLegacyRecovery:
+		_, _, err = s.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorIdentity: "guided-operator"})
 	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryTicket, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate:
 		handoff, handoffErr := s.guidedHandoff(ctx, input.WorkspaceID, requested, before)
 		if handoffErr != nil {
@@ -416,7 +415,7 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 }
 
 func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action GuidedFeatureAction, projection GuidedFeatureProjection) (GuidedHandoff, error) {
-	handoff := GuidedHandoff{Role: string(action), ResumeRoute: "/feature-workspaces/{workspaceID}/guided", Context: map[string]string{"destination": projection.Discovery.Destination, "currentness": projection.Currentness.Readiness}}
+	handoff := GuidedHandoff{Role: string(action), ResumeRoute: "/feature-workspaces/" + workspaceID + "/guided", Context: map[string]string{"destination": projection.Discovery.Destination, "currentness": projection.Currentness.Readiness}}
 	switch action {
 	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign:
 		// Compose the existing planner authoring and auditor review envelopes with

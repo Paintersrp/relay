@@ -89,7 +89,14 @@ func DecideGuidedFeatureAction(state GuidedJourneyState, currentness FeatureCurr
 		} else {
 			reason = "This workspace basis is stale. Follow the displayed recovery guidance before any progression."
 		}
-		available = append(available, GuidedFeatureActionAvailability{Action: GuidedActionContinueDiscovery, Primary: true, Enabled: false, RequiresConfirmation: false, BlockedReason: reason})
+		if currentness.Readiness == FeatureLegacy {
+			// Adoption is an existing discovery-owner mutation.  It is safe at the
+			// guided boundary because the owner resolves the workspace and verifies
+			// that no production work makes adoption unsafe.
+			available = append(available, GuidedFeatureActionAvailability{Action: GuidedActionLegacyRecovery, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Adopt the existing discovery lifecycle before guided progression can resume."})
+		} else {
+			available = append(available, GuidedFeatureActionAvailability{Action: GuidedActionContinueDiscovery, Primary: true, Enabled: false, RequiresConfirmation: false, BlockedReason: reason})
+		}
 	} else if state.State == DiscoveryStateClosed {
 		available = guidedClosedDestinationAvailability(state, completion)
 	} else if state.HasCurrentRevision && state.Destination != "" && state.State == DiscoveryStateActive && len(state.Blockers) == 0 && len(state.PendingIntegrations) == 0 && len(state.ActiveOperations) == 0 && len(state.RouteMaterialOpen) == 0 && len(state.RequiredEvidence) == 0 {
@@ -201,10 +208,7 @@ func guidedPlanningStep(family GuidedPlanningFamilySection, authorAction GuidedF
 		}}
 	}
 	if family.AwaitingReview > 0 {
-		return []GuidedFeatureActionAvailability{
-			{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current " + familyName + " planning candidate through the auditor review surface, then explicitly approve and promote it."},
-			{Action: GuidedActionApprovePlanningCandidate, Primary: false, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the current " + familyName + " planning candidate server-side after its read-only review."},
-		}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current " + familyName + " planning candidate through the auditor review surface. After the owner records review and approval, refresh this workspace to promote it."}}
 	}
 	return []GuidedFeatureActionAvailability{{Action: authorAction, Primary: true, Enabled: true, Handoff: authorHandoff}}
 }

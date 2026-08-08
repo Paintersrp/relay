@@ -194,9 +194,17 @@ func projectFeatureWorkspaceSummary(workspace workflowstore.FeatureWorkspace, gu
 	if resume == "" {
 		resume = "Review guided feature state."
 	}
+	// Recovery still blocks ordinary progression on the Project list even when
+	// the Feature screen can execute its single recovery operation.  This keeps
+	// the resume row honest: adoption is a prerequisite, not ready delivery work.
+	recoveryRequired := guided.Recovery.State == "required"
+	blockedReason := primary.BlockedReason
+	if recoveryRequired && blockedReason == "" {
+		blockedReason = "Recovery is required before normal guided progression can resume."
+	}
 	return ProjectFeatureWorkspaceSummary{
 		Workspace: workspace, ProgressionSummary: "Current guided action: " + resume + ".", ResumeSummary: resume,
-		Blocked: !primary.Enabled, BlockedReason: primary.BlockedReason, RecoveryCategory: guided.Recovery.Category,
+		Blocked: !primary.Enabled || recoveryRequired, BlockedReason: blockedReason, RecoveryCategory: guided.Recovery.Category,
 	}
 }
 

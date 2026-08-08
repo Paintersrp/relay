@@ -102,4 +102,24 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/blocked by the current guided workspace state/);
     expect(screen.getByRole("button", { name: "Continue discovery" })).toBeDisabled();
   });
+
+  it("hides non-primary action selectors and posts the primary action only", async () => {
+    const user = userEvent.setup();
+    const multi = {
+      ...base,
+      availableActions: [
+        { action: "author_requirements" as const, primary: true, enabled: true, requiresConfirmation: true },
+        { action: "continue_discovery" as const, primary: false, enabled: true, requiresConfirmation: false },
+      ],
+      primaryAction: "author_requirements" as const,
+    };
+    mocks.action.mockResolvedValueOnce(multi);
+    render(<RelayFeatureWorkspaceDetail detail={multi} />, { wrapper });
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Author Requirements" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue discovery" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Author Requirements" }));
+    expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "author_requirements", confirmation: true, destination: "delivery" });
+  });
 });

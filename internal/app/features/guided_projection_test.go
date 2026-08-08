@@ -166,11 +166,12 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 	}
 	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "guided-actions-repo", strings.Repeat("a", 40))
 	bytes := []byte("# guided server-side candidate\n")
-	if _, err = service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+	admitted, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
 		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
 		Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "guided-actions-repo",
 		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,7 +179,7 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.PrimaryAction.Action != GuidedActionReviewPlanningCandidate || !before.PrimaryAction.Enabled || guidedAvailableAction(before.AvailableActions, GuidedActionApprovePlanningCandidate) == nil {
+	if before.PrimaryAction.Action != GuidedActionReviewPlanningCandidate || !before.PrimaryAction.Enabled || len(before.AvailableActions) != 1 {
 		t.Fatalf("admitted projection primary=%+v available=%+v", before.PrimaryAction, before.AvailableActions)
 	}
 
@@ -199,17 +200,38 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 		t.Fatalf("review mutated state: primary=%+v version=%d", stillAdmitted.PrimaryAction, stillAdmitted.Workspace.Version)
 	}
 
-	// Approval requires operator confirmation and is dispatched server-side with
-	// no client-supplied candidate identity.
-	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: stillAdmitted.Workspace.Version}); !errors.Is(err, ErrFeatureCompletionConfirmation) {
-		t.Fatalf("approve without confirmation error=%v", err)
+	// The execution gate permits exactly the present enabled primary action:
+	// while review is primary, approval execution is rejected even when the
+	// operator supplies confirmation.
+	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: stillAdmitted.Workspace.Version}); !errors.Is(err, ErrGuidedActionBlocked) {
+		t.Fatalf("non-primary approve without confirmation error=%v", err)
 	}
-	approved, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: stillAdmitted.Workspace.Version, Confirmation: true})
+	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: stillAdmitted.Workspace.Version, Confirmation: true}); !errors.Is(err, ErrGuidedActionBlocked) {
+		t.Fatalf("non-primary approve with confirmation error=%v", err)
+	}
+	unchanged, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approved.Projection.PrimaryAction.Action != GuidedActionPromotePlanningCandidate || !approved.Projection.PrimaryAction.Enabled {
-		t.Fatalf("approved projection primary=%+v", approved.Projection.PrimaryAction)
+	if unchanged.PrimaryAction.Action != GuidedActionReviewPlanningCandidate || unchanged.Workspace.Version != stillAdmitted.Workspace.Version {
+		t.Fatalf("blocked approval mutated state: primary=%+v version=%d", unchanged.PrimaryAction, unchanged.Workspace.Version)
+	}
+
+	// Approval remains a server-side owner operation with no client-supplied
+	// candidate identity; it advances the guided primary action to promotion.
+	if _, err = service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+		CandidateID: admitted.Candidate.CandidateID, ExpectedSHA256: admitted.Candidate.ArtifactSha256, ExpectedSizeBytes: admitted.Candidate.ArtifactSizeBytes,
+		Bytes: bytes, ExpectedVersion: unchanged.Workspace.Version, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID,
+		ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID, OperatorConfirmationEvidence: "reviewed", CreatedIdentity: "auditor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	awaitingPromotion, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awaitingPromotion.PrimaryAction.Action != GuidedActionPromotePlanningCandidate || !awaitingPromotion.PrimaryAction.Enabled {
+		t.Fatalf("approved projection primary=%+v", awaitingPromotion.PrimaryAction)
 	}
 	if candidate, candidateErr := service.guidedCurrentPlanningCandidate(ctx, workspace.WorkspaceID, DiscoveryDestinationRequirements, false); !errors.Is(candidateErr, ErrGuidedActionBlocked) {
 		t.Fatalf("approved candidate still resolvable as admitted: %+v err=%v", candidate, candidateErr)
@@ -217,7 +239,7 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 
 	// Promotion publishes the approved candidate as workspace authority and
 	// advances the journey to the Delivery Ticket frontier.
-	promoted, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionPromotePlanningCandidate), ExpectedVersion: approved.Projection.Workspace.Version})
+	promoted, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionPromotePlanningCandidate), ExpectedVersion: awaitingPromotion.Workspace.Version})
 	if err != nil {
 		t.Fatal(err)
 	}

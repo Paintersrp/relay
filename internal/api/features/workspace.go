@@ -547,7 +547,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature":
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
@@ -559,6 +559,13 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		shared.JSON(w, http.StatusOK, map[string]any{"guided": guidedFeatureProjectionDTO(result.Projection)})
+		return
+	}
+	// The compatibility interface predates discovery-lifecycle adoption and
+	// cannot perform that mutation.  Reject rather than acknowledge a no-op;
+	// production uses the richer GuidedActionService above.
+	if action == "legacy_recovery" {
+		writeWorkspaceError(w, errGuidedActionBlocked)
 		return
 	}
 

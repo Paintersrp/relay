@@ -19,7 +19,7 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "approve_planning_candidate": return "Approve planning candidate";
     case "promote_planning_candidate": return "Promote planning candidate";
     case "continue_established_route": return "Continue established route";
-    case "legacy_recovery": return "Legacy recovery";
+    case "legacy_recovery": return "Adopt discovery lifecycle";
     case "completion_recorded": return "Completion recorded";
   }
 }
@@ -50,13 +50,11 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     enabled: false,
     requiresConfirmation: true,
   };
-  const [requestedAction, setRequestedAction] = React.useState<GuidedFeatureAction>(primary.action);
-  React.useEffect(() => { setRequestedAction(primary.action); setConfirmed(false); }, [primary.action]);
-  const requested = detail.availableActions.find((action) => action.action === requestedAction) ?? primary;
+  React.useEffect(() => { setConfirmed(false); }, [primary.action]);
   const mutation = useMutation({
     mutationFn: () => actOnGuidedFeatureWorkspace(workspaceId, {
       expectedVersion: detail.workspace.version,
-      action: requested.action,
+      action: primary.action,
       confirmation: confirmed,
       destination: detail.discovery.destination || undefined,
     }),
@@ -72,8 +70,8 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       }
     },
   });
-  const actionEnabled = requested.enabled;
-  const actionDisabledReason = requested.enabled ? "Confirm this action before continuing." : (requested.blockedReason || "This action is blocked by the current guided workspace state.");
+  const actionEnabled = primary.enabled;
+  const actionDisabledReason = primary.enabled ? "Confirm this action before continuing." : (primary.blockedReason || "This action is blocked by the current guided workspace state.");
 
   return <div className="space-y-6">
     <div className="flex items-center gap-2">
@@ -113,6 +111,13 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Downstream</dt><dd className="mt-1 text-sm">{detail.downstream.summary || "No downstream guidance recorded."}</dd></div>
       </dl>
       <p className="mt-3 text-sm text-muted-foreground">{detail.ticketFrontier.summary || "No ticket frontier guidance recorded."}</p>
+      {detail.delivery ? <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selection</dt><dd className="mt-1 text-sm">{detail.delivery.selectionState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package</dt><dd className="mt-1 text-sm">{detail.delivery.packageState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Run</dt><dd className="mt-1 text-sm">{detail.delivery.runState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Audit</dt><dd className="mt-1 text-sm">{detail.delivery.auditState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Remediation</dt><dd className="mt-1 text-sm">{detail.delivery.remediationState || "none"}</dd></div>
+      </dl> : null}
       <div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Blockers</h3><ProjectionList items={detail.ticketFrontier.blockers} /></div><div><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending downstream</h3><ProjectionList items={detail.ticketFrontier.downstream} /></div></div>
     </section>
 
@@ -120,6 +125,12 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       <h2 id="guided-prototype-qa" className="font-semibold">Prototype and QA</h2>
       <p className="mt-1 text-sm"><span className="font-medium">Status: </span>{detail.prototypeQA.status || "Not available"}</p>
       <p className="mt-2 text-sm text-muted-foreground">{detail.prototypeQA.summary || "No prototype or QA guidance recorded."}</p>
+      {detail.prototype ? <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Execution</dt><dd className="mt-1 text-sm">{detail.prototype.runState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cleanup</dt><dd className="mt-1 text-sm">{detail.prototype.cleanupState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">QA packet</dt><dd className="mt-1 text-sm">{detail.prototype.qaState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">QA evidence</dt><dd className="mt-1 text-sm">{detail.prototype.evidenceState || "none"}</dd></div>
+      </dl> : null}
       <div className="mt-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Required evidence</h3><ProjectionList items={detail.prototypeQA.requiredEvidence} /></div>
     </section>
 
@@ -162,11 +173,10 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     <section aria-labelledby="guided-action" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <h2 id="guided-action" className="font-semibold">Next guided action</h2>
       <p className="mt-1 text-sm text-muted-foreground">The server selected one primary action for this workspace.</p>
-       {requested.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(requested.action)}” against this displayed workspace state.</span></label> : null}
+       {primary.requiresConfirmation ? <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm guided action" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm that I want to invoke “{actionLabel(primary.action)}” against this displayed workspace state.</span></label> : null}
        {primary.handoff ? <p role="status" className="mt-3 rounded border p-3 text-sm text-muted-foreground">{primary.handoff} Use the primary action to acknowledge this handoff, then return here after the bounded role work is complete.</p> : null}
-       {detail.availableActions.filter((action) => !action.primary && action.enabled).map((action) => <Button key={action.action} className="mt-3" type="button" variant="outline" disabled={mutation.isPending} onClick={() => { setRequestedAction(action.action); setConfirmed(false); }}>{requested.action === action.action ? `Selected: ${actionLabel(action.action)}` : actionLabel(action.action)}</Button>)}
        {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
-       <Button className="mt-4" type="button" disabled={!actionEnabled || (requested.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(requested.action)}</Button>
+       <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button>
     </section>
 
     <details className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
