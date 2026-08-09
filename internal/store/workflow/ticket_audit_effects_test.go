@@ -247,8 +247,8 @@ func TestFeatureWorkspaceCompletionIsExplicitAndReopensOnCurrentReplacement(t *t
 		completion, err = workflowgenerated.New(tx.tx).CreateFeatureWorkspaceCompletionDecision(ctx, workflowgenerated.CreateFeatureWorkspaceCompletionDecisionParams{
 			CompletionDecisionID:   "completion-package-1",
 			WorkspaceRowID:         record.inputs.workspace.ID,
-			AuthorityRevisionRowID: record.inputs.authority.ID,
-			SourceClosureRowID:     record.inputs.closure.ID,
+			AuthorityRevisionRowID: sql.NullInt64{Int64: record.inputs.authority.ID, Valid: true},
+			SourceClosureRowID:     sql.NullInt64{Int64: record.inputs.closure.ID, Valid: true},
 			Decision:               "completed",
 		})
 		return err
@@ -282,8 +282,8 @@ func TestFeatureWorkspaceCompletionIsExplicitAndReopensOnCurrentReplacement(t *t
 		_, err := workflowgenerated.New(tx.tx).CreateFeatureWorkspaceCompletionDecision(ctx, workflowgenerated.CreateFeatureWorkspaceCompletionDecisionParams{
 			CompletionDecisionID:   "completion-package-2",
 			WorkspaceRowID:         record.inputs.workspace.ID,
-			AuthorityRevisionRowID: record.inputs.authority.ID,
-			SourceClosureRowID:     record.inputs.closure.ID,
+			AuthorityRevisionRowID: sql.NullInt64{Int64: record.inputs.authority.ID, Valid: true},
+			SourceClosureRowID:     sql.NullInt64{Int64: record.inputs.closure.ID, Valid: true},
 			Decision:               "completed",
 		})
 		return err

@@ -478,9 +478,14 @@ func (s *Service) ReopenFeatureDiscovery(ctx context.Context, input ReopenFeatur
 		}
 		if completion, completionErr := tx.GetCurrentFeatureWorkspaceCompletionDecision(ctx, current.ID); completionErr == nil {
 			if !current.CurrentAuthorityRevisionRowID.Valid {
-				return ErrFeatureCompletionNotReady
-			}
-			if _, completionErr = tx.CreateFeatureWorkspaceCompletionReopening(ctx, workflowstore.CreateFeatureWorkspaceCompletionReopeningParams{CompletionDecisionRowID: completion.ID, ReopeningKind: "authority_revision", ReopeningAuthorityRevisionRowID: current.CurrentAuthorityRevisionRowID}); completionErr != nil {
+				// A historical no-delivery closing decision has no planning
+				// authority to link: the reopen records the discovery-change
+				// basis, which the guard trigger binds to the exact reopened
+				// closure packet of the no-delivery decision.
+				if _, completionErr = tx.CreateFeatureWorkspaceCompletionReopening(ctx, workflowstore.CreateFeatureWorkspaceCompletionReopeningParams{CompletionDecisionRowID: completion.ID, ReopeningKind: "discovery_reopen"}); completionErr != nil {
+					return completionErr
+				}
+			} else if _, completionErr = tx.CreateFeatureWorkspaceCompletionReopening(ctx, workflowstore.CreateFeatureWorkspaceCompletionReopeningParams{CompletionDecisionRowID: completion.ID, ReopeningKind: "authority_revision", ReopeningAuthorityRevisionRowID: current.CurrentAuthorityRevisionRowID}); completionErr != nil {
 				return completionErr
 			}
 		} else if !errors.Is(completionErr, sql.ErrNoRows) {

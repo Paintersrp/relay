@@ -126,10 +126,10 @@ func TestWorkspaceCompletionShowsBlockersAndForwardsDirectCompletion(t *testing.
 	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{
 		Workspace:       appoperations.FeatureCompletionWorkspace{WorkspaceID: "workspace-api", FeatureSlug: "payments", State: "open", Version: 3},
 		Gates:           []appoperations.FeatureCompletionGate{{Name: "authority", Ready: true}, {Name: "audit", Ready: false}},
-		CurrentDecision: &appoperations.FeatureCompletionDecision{CompletionDecisionID: "current-completion-api", AuthorityRevisionRowID: 2, SourceClosureRowID: 3, Decision: "completed"},
+		CurrentDecision: &appoperations.FeatureCompletionDecision{CompletionDecisionID: "current-completion-api", AuthorityRevisionRowID: sql.NullInt64{Int64: 2, Valid: true}, SourceClosureRowID: sql.NullInt64{Int64: 3, Valid: true}, Decision: "completed"},
 	}, result: appoperations.FeatureCompletionResult{
 		Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: "workspace-api", FeatureSlug: "payments", State: "open", Version: 4},
-		Decision:  appoperations.FeatureCompletionDecision{CompletionDecisionID: "completion-api", AuthorityRevisionRowID: 3, SourceClosureRowID: 4, Decision: "completed"},
+		Decision:  appoperations.FeatureCompletionDecision{CompletionDecisionID: "completion-api", AuthorityRevisionRowID: sql.NullInt64{Int64: 3, Valid: true}, SourceClosureRowID: sql.NullInt64{Int64: 4, Valid: true}, Decision: "completed"},
 	}}
 	router := workspaceRouter(&fakeWayfinder{}, &fakeAuthority{}, completion)
 	status := httptest.NewRecorder()
@@ -628,8 +628,8 @@ func TestPlanningCandidateReviewCompletionIsReadOnlyAndReturnsReadyDisposition(t
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
 	guided := &reviewCompletionFakeGuided{}
 	response := httptest.NewRecorder()
-	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
-	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.ReviewerIdentity != "auditor" || guided.input.Disposition != featureapp.PlanningCandidateReviewReadyForApproval || string(guided.input.ReviewedBytes) != "# Requirements\n" {
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"candidateId":"candidate-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
+	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.CandidateID != "candidate-api-1" || guided.input.ReviewerIdentity != "auditor" || guided.input.Disposition != featureapp.PlanningCandidateReviewReadyForApproval || string(guided.input.ReviewedBytes) != "# Requirements\n" {
 		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
 	}
 	// The review endpoint never approves: the response carries the ready
@@ -661,12 +661,19 @@ func TestPlanningCandidateExplicitApprovalEndpointConsumesWorkspaceContinuation(
 	}
 }
 
-func TestPlanningCandidateReviewCompletionRouteRejectsClientCandidateIdentityAndInvalidDisposition(t *testing.T) {
+func TestPlanningCandidateReviewCompletionRouteAcceptsIdentityAndRejectsInvalidRequests(t *testing.T) {
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
+	accepted := &reviewCompletionFakeGuided{}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, accepted).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"candidateId":"candidate-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
+	if response.Code != http.StatusCreated || accepted.input.CandidateID != "candidate-api-1" {
+		t.Fatalf("accepted identity status=%d input=%#v body=%s", response.Code, accepted.input, response.Body.String())
+	}
 	for _, body := range []string{
-		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","candidateId":"other-candidate"}`,
-		`{"reviewerIdentity":"auditor","disposition":"findings_attached"}`,
-		`{"reviewerIdentity":"auditor"}`,
+		`{"reviewerIdentity":"auditor","disposition":"findings_attached","candidateId":"candidate-1"}`,
+		`{"reviewerIdentity":"auditor","candidateId":"candidate-1"}`,
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`,
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","candidateId":"candidate-1"}`,
 	} {
 		guided := &reviewCompletionFakeGuided{err: featureapp.ErrCandidateReview}
 		response := httptest.NewRecorder()
@@ -710,7 +717,7 @@ func TestPlanningCandidateReviewCompletionRouteMapsStaleReviewedBytesRejection(t
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
 	guided := &reviewCompletionFakeGuided{err: featureapp.ErrCandidateBytesMismatch}
 	response := httptest.NewRecorder()
-	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"candidateId":"candidate-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
 	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "planning candidate bytes or digest mismatch") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}

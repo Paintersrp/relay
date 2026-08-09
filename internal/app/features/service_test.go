@@ -198,6 +198,10 @@ RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&
 	if err = os.WriteFile(memberPath, []byte("corrupt member\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	status, err = service.EvaluateCompletion(ctx, workspace.WorkspaceID)
+	if err != nil || completionGateReady(status, "closure") || completionGateReady(status, "currentness") {
+		t.Fatalf("corrupt member completion projection = %+v, err=%v", status, err)
+	}
 	if _, err = service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) {
 		t.Fatalf("corrupt member completion = %v", err)
 	}

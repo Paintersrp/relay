@@ -71,13 +71,17 @@ const (
 )
 
 // CompleteBriefReviewInput records the bounded disposition of the read-only
-// auditor review of the current brief. ReviewedBytes identifies the exact
-// bytes the auditor reviewed; the owner recalculates their SHA-256 and
-// requires them to match the verified current admissible brief bytes and
-// digest before either disposition is accepted. No findings or prose are
-// accepted or persisted.
+// auditor review of an exact immutable Brief attempt. BriefID names the
+// immutable attempt the auditor reviewed; the owner verifies the identity
+// belongs to the workspace's active selection, is bound to the current selected
+// Ticket revision, and is still the selection's current brief pointer before
+// accepting either disposition. ReviewedBytes identifies the exact bytes the
+// auditor reviewed; the owner recalculates their SHA-256 and requires them to
+// match the verified stored brief bytes, digest, and size before either
+// disposition is accepted. No findings or prose are accepted or persisted.
 type CompleteBriefReviewInput struct {
 	WorkspaceID      string
+	BriefID          string
 	ReviewerIdentity string
 	Disposition      TicketDesignBriefReviewDisposition
 	ReviewedBytes    []byte
@@ -368,15 +372,18 @@ func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesi
 	return result, nil
 }
 
-// CompleteTicketDesignBriefReview validates that the reviewed bytes identify
-// the exact current Brief and returns a transient result. The server recalculates
-// the SHA-256 of the supplied reviewed bytes and requires byte-for-byte and
-// digest equality with the verified current admissible artifact before accepting
-// either disposition, so a review composed against a replaced or stale brief is
-// rejected and no result ever attaches to a replacement. It never writes review
+// CompleteTicketDesignBriefReview validates that the reviewed bytes and the
+// supplied brief identity identify the exact immutable current Brief, then
+// returns a transient result. The server recalculates the SHA-256 of the
+// supplied reviewed bytes and requires byte-for-byte and digest equality with
+// the verified stored artifact of the identified attempt, which must belong to
+// the workspace's active selection, be bound to the current selected Ticket
+// revision, and still be the selection's current brief pointer. A replaced or
+// stale attempt is rejected and no result ever attaches to the replacement,
+// even when the replacement bytes are identical. It never writes review
 // material or lifecycle state.
 func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input CompleteBriefReviewInput) (TicketDesignBriefReviewResult, error) {
-	if !nonBlank(input.WorkspaceID) || !nonBlank(input.ReviewerIdentity) || len(input.ReviewedBytes) == 0 ||
+	if !nonBlank(input.WorkspaceID) || !nonBlank(input.BriefID) || !nonBlank(input.ReviewerIdentity) || len(input.ReviewedBytes) == 0 ||
 		(input.Disposition != TicketDesignBriefReviewReadyForApproval && input.Disposition != TicketDesignBriefReviewNeedsRevision) {
 		return TicketDesignBriefReviewResult{}, ErrTicketDesignBriefReview
 	}
@@ -390,15 +397,29 @@ func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input Com
 		if err != nil {
 			return err
 		}
-		brief, err := tx.GetCurrentTicketDesignBriefBySelectionRowID(ctx, selection.ID)
+		brief, err := tx.GetTicketDesignBriefByBriefID(ctx, strings.TrimSpace(input.BriefID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: the active selection has no authored brief", ErrTicketDesignBriefNotFound)
+			return fmt.Errorf("%w: no such ticket design brief in this workspace", ErrTicketDesignBriefReview)
 		}
 		if err != nil {
 			return err
 		}
-		if brief.RevisionRowID != revision.ID {
-			return ErrTicketDesignBriefBytesMismatch
+		// The reviewed identity must belong to the workspace's active selection:
+		// a brief from another workspace or selection can never receive a
+		// review result here.
+		if brief.WorkspaceRowID != workspace.ID {
+			return fmt.Errorf("%w: ticket design brief does not belong to this workspace", ErrTicketDesignBriefReview)
+		}
+		if brief.SelectionRowID != selection.ID || brief.RevisionRowID != revision.ID {
+			return fmt.Errorf("%w: ticket design brief is not bound to the current selected revision", ErrTicketDesignBriefReview)
+		}
+		// The identified immutable attempt must still be the selection's current
+		// brief pointer. A same-selection replacement makes every earlier
+		// attempt historical, so a review of an older attempt is rejected even
+		// when its bytes are byte-for-byte identical to the replacement: no
+		// result, continuation, or refresh can attach to the replacement.
+		if !selection.CurrentTicketDesignBriefRowID.Valid || selection.CurrentTicketDesignBriefRowID.Int64 != brief.ID {
+			return fmt.Errorf("%w: ticket design brief is no longer the current attempt", ErrTicketDesignBriefBytesMismatch)
 		}
 		if _, err := tx.GetTicketDesignBriefApprovalByBriefRowID(ctx, brief.ID); err == nil {
 			return fmt.Errorf("%w: the current brief is already approved", ErrTicketDesignBriefConflict)

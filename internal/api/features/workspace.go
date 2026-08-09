@@ -370,13 +370,15 @@ type guidedActionRequest struct {
 	Continuation    string `json:"continuation"`
 }
 
-// candidateReviewCompletionRequest carries the bounded review disposition and
-// the exact reviewed bytes the auditor reviewed (base64). The current planning
-// candidate is resolved server-side, which recalculates their SHA-256 and
-// compares them against the verified current admissible artifact before either
-// disposition is accepted; no findings, prose, approval evidence, or internal
-// identities are accepted.
+// candidateReviewCompletionRequest carries the bounded review disposition, the
+// exact immutable candidate identity the auditor reviewed, and the exact
+// reviewed bytes (base64). The owner verifies the candidate belongs to the
+// workspace and is still the newest admissible candidate on the current basis,
+// recalculating the SHA-256 of the reviewed bytes and comparing them against
+// the verified stored artifact before either disposition is accepted; no
+// findings, prose, approval evidence, or digest are accepted.
 type candidateReviewCompletionRequest struct {
+	CandidateID         string `json:"candidateId"`
 	ReviewerIdentity    string `json:"reviewerIdentity"`
 	Disposition         string `json:"disposition"`
 	ReviewedBytesBase64 string `json:"bytesBase64"`
@@ -718,11 +720,13 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 
 // CompletePlanningCandidateReview is the bounded completion entry the external
 // auditor uses after performing the read-only planning candidate review. The
-// request must carry the exact bytes the auditor reviewed (base64); the owner
-// recalculates their SHA-256 and rejects the completion unless they match the
-// verified current admissible candidate, so a stale or replaced candidate can
-// never receive a result. It records only the bounded disposition over the
-// server-resolved candidate and never performs or fabricates approval: a ready
+// request must carry the exact immutable candidate identity the auditor
+// reviewed and the exact bytes (base64); the owner recalculates their SHA-256
+// and rejects the completion unless the identified candidate belongs to the
+// workspace, is still the newest admissible candidate on the current basis,
+// and matches the verified stored artifact, so a stale or replaced candidate
+// can never receive a result. It records only the bounded disposition over the
+// identified candidate and never performs or fabricates approval: a ready
 // disposition returns ready without any approval, and a needs-revision
 // disposition returns the exact planner refresh input.
 func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter, r *http.Request) {
@@ -745,6 +749,10 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		badRequest(w, "Invalid planning candidate review disposition")
 		return
 	}
+	if strings.TrimSpace(request.CandidateID) == "" {
+		badRequest(w, "Planning candidate review requires the exact candidate identity")
+		return
+	}
 	if strings.TrimSpace(request.ReviewerIdentity) == "" {
 		badRequest(w, "Planning candidate review requires a reviewer identity")
 		return
@@ -755,8 +763,9 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		return
 	}
 	result, err := completion.CompletePlanningCandidateReview(r.Context(), featureapp.CompleteCandidateReviewInput{
-		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
-		Disposition: disposition, ReviewedBytes: reviewedBytes,
+		WorkspaceID: workspaceID(r), CandidateID: strings.TrimSpace(request.CandidateID),
+		ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
+		Disposition:      disposition, ReviewedBytes: reviewedBytes,
 	})
 	if err != nil {
 		writeWorkspaceError(w, err)
@@ -1304,8 +1313,8 @@ func completionStatusDTO(value appoperations.FeatureCompletionStatus) map[string
 }
 func completionDecisionDTO(value appoperations.FeatureCompletionDecision) map[string]any {
 	return map[string]any{
-		"completionDecisionId": value.CompletionDecisionID, "authorityRevisionRowId": value.AuthorityRevisionRowID,
-		"sourceClosureRowId": value.SourceClosureRowID, "decision": value.Decision, "createdAt": value.CreatedAt,
+		"completionDecisionId": value.CompletionDecisionID, "authorityRevisionRowId": nullableIntDTO(value.AuthorityRevisionRowID),
+		"sourceClosureRowId": nullableIntDTO(value.SourceClosureRowID), "decision": value.Decision, "createdAt": value.CreatedAt,
 	}
 }
 func workspaceDetailDTO(detail wayfinder.WorkspaceDetail, authority []featureapp.AuthorityRevisionDetail) map[string]any {

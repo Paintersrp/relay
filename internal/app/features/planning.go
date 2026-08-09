@@ -99,13 +99,17 @@ const (
 )
 
 // CompleteCandidateReviewInput records the bounded disposition of a read-only
-// auditor review of the current planning candidate. ReviewedBytes identifies
-// the exact bytes the auditor reviewed; the owner recalculates their SHA-256
-// and requires them to match the verified current admissible candidate bytes
-// and digest before either disposition is accepted. No findings or prose are
-// accepted or persisted.
+// auditor review of an exact immutable planning candidate. CandidateID names
+// the immutable candidate the auditor reviewed; the owner verifies the identity
+// belongs to the workspace and is still the newest admissible candidate on the
+// current closure and authority basis before accepting either disposition.
+// ReviewedBytes identifies the exact bytes the auditor reviewed; the owner
+// recalculates their SHA-256 and requires them to match the verified stored
+// candidate bytes, digest, and size before either disposition is accepted. No
+// findings or prose are accepted or persisted.
 type CompleteCandidateReviewInput struct {
 	WorkspaceID      string
+	CandidateID      string
 	ReviewerIdentity string
 	Disposition      PlanningCandidateReviewDisposition
 	ReviewedBytes    []byte
@@ -529,18 +533,21 @@ func equalBytes(a, b []byte) bool {
 	return true
 }
 
-// CompletePlanningCandidateReview validates that the reviewed bytes identify
-// the exact current candidate, then returns a transient review result. The
-// server recalculates the SHA-256 of the supplied reviewed bytes and requires
-// byte-for-byte and digest equality with the verified current admissible
-// artifact before accepting either disposition, so a review composed against a
-// replaced, stale-basis, or otherwise changed candidate is rejected and no
-// result ever attaches to the replacement. It writes no durable review state: a
-// ready review stores only the exact process-local continuation on the Service
-// for the distinct workspace-only approval transition, and a needs-revision
-// review clears any continuation and returns the exact planner refresh handoff.
+// CompletePlanningCandidateReview validates that the reviewed bytes and the
+// supplied candidate identity identify the exact immutable current candidate,
+// then returns a transient review result. The server recalculates the SHA-256
+// of the supplied reviewed bytes and requires byte-for-byte and digest
+// equality with the verified stored artifact of the identified candidate, which
+// must belong to the workspace, match the current closure and authority basis,
+// and still be the newest admissible candidate. A replaced, stale-basis, or
+// otherwise changed candidate is rejected and no result ever attaches to the
+// replacement, even when the replacement bytes are identical. It writes no
+// durable review state: a ready review stores only the exact process-local
+// continuation on the Service for the distinct workspace-only approval
+// transition, and a needs-revision review clears any continuation and returns
+// the exact planner refresh handoff.
 func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input CompleteCandidateReviewInput) (CompleteCandidateReviewResult, error) {
-	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" || len(input.ReviewedBytes) == 0 ||
+	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.CandidateID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" || len(input.ReviewedBytes) == 0 ||
 		(input.Disposition != PlanningCandidateReviewReadyForApproval && input.Disposition != PlanningCandidateReviewNeedsRevision) {
 		return CompleteCandidateReviewResult{}, ErrCandidateReview
 	}
@@ -560,48 +567,62 @@ func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input Com
 		if err != nil || packet.WorkspaceRowID != workspace.ID || packet.ClosingRevisionRowID != workspace.CurrentDiscoveryRevisionRowID.Int64 {
 			return ErrStaleCandidateBasis
 		}
-		candidates, err := tx.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
+		candidate, err := tx.GetPlanningCandidateByCandidateID(ctx, strings.TrimSpace(input.CandidateID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: no such planning candidate in this workspace", ErrCandidateReview)
+		}
 		if err != nil {
 			return err
 		}
-		// Resolve the current in-flight candidate for the family priority of
-		// the workspace's closed destination. Newer immutable candidates replace
-		// older in-flight candidates on the same basis, so a review cannot bind
-		// an older artifact when the current artifact has been replaced.
-		for _, family := range guidedCandidateFamiliesForDestination(DiscoveryDestination(packet.Destination)) {
-			for index := len(candidates) - 1; index >= 0; index-- {
-				candidate := candidates[index]
-				if candidate.Family != family || candidate.DiscoveryClosurePacketRowID != workspace.CurrentDiscoveryClosurePacketRowID.Int64 || !sameNullableInt64(candidate.AuthorityRevisionRowID, workspace.CurrentAuthorityRevisionRowID) {
-					continue
-				}
-				approvals, err := tx.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
-				if err != nil {
-					return err
-				}
-				if len(approvals) > 0 {
-					return fmt.Errorf("%w: the current candidate is already approved", ErrCandidateReview)
-				}
-				bytes, err := tx.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, int(candidate.ArtifactSizeBytes))
-				if err != nil || digest(bytes) != candidate.ArtifactSha256 || int64(len(bytes)) != candidate.ArtifactSizeBytes {
-					return ErrCandidateBytesMismatch
-				}
-				if digest(input.ReviewedBytes) != candidate.ArtifactSha256 || !equalBytes(input.ReviewedBytes, bytes) {
-					return ErrCandidateBytesMismatch
-				}
-				result = CompleteCandidateReviewResult{Candidate: candidate, Disposition: input.Disposition, Review: PlanningCandidateReviewCompletion{ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition)}}
-				if input.Disposition == PlanningCandidateReviewReadyForApproval {
-					s.storePlanningReviewContinuation(workspace.WorkspaceID, &planningReviewContinuation{workspaceID: workspace.WorkspaceID, candidateID: candidate.CandidateID, sha256: candidate.ArtifactSha256, sizeBytes: candidate.ArtifactSizeBytes, closure: workspace.CurrentDiscoveryClosurePacketRowID, authority: workspace.CurrentAuthorityRevisionRowID, bytes: append([]byte(nil), input.ReviewedBytes...)})
-				} else {
-					// A needs-revision review clears any prior ready continuation
-					// so it can never be approved, and preserves the exact
-					// planner refresh handoff for a replacement candidate.
-					s.storePlanningReviewContinuation(workspace.WorkspaceID, nil)
-					result.Refresh = &PlanningReviewRefresh{OperationID: planningRefreshOperation(candidate.Family), AuditorReviewResult: string(input.Disposition), ReviewedCandidate: append([]byte(nil), input.ReviewedBytes...)}
-				}
-				return nil
-			}
+		// The reviewed identity must belong to the workspace: a candidate from
+		// another workspace can never receive a review result here.
+		if candidate.WorkspaceRowID != workspace.ID {
+			return fmt.Errorf("%w: planning candidate does not belong to this workspace", ErrCandidateReview)
 		}
-		return fmt.Errorf("%w: no current-basis planning candidate to review", ErrCandidateReview)
+		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) {
+			return ErrInvalidCandidateFamily
+		}
+		// The immutable candidate must carry the family and destination the
+		// closed discovery authorizes and must be bound to the workspace's
+		// current closure and authority basis.
+		if candidate.Destination != packet.Destination || !oneOf(candidate.Family, guidedCandidateFamiliesForDestination(DiscoveryDestination(packet.Destination))...) {
+			return fmt.Errorf("%w: planning candidate is not reviewable for this destination", ErrCandidateReview)
+		}
+		if candidate.DiscoveryClosurePacketRowID != workspace.CurrentDiscoveryClosurePacketRowID.Int64 || !sameNullableInt64(candidate.AuthorityRevisionRowID, workspace.CurrentAuthorityRevisionRowID) {
+			return ErrStaleCandidateBasis
+		}
+		// A newer immutable candidate on the same basis replaces the reviewed
+		// one: a review of the older artifact is rejected even when the bytes
+		// are byte-for-byte identical, so no result, continuation, or refresh
+		// can attach to the replacement.
+		if err := currentExactPlanningCandidate(ctx, tx, candidate, workspace); err != nil {
+			return err
+		}
+		approvals, err := tx.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
+		if err != nil {
+			return err
+		}
+		if len(approvals) > 0 {
+			return fmt.Errorf("%w: the current candidate is already approved", ErrCandidateReview)
+		}
+		bytes, err := tx.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, int(candidate.ArtifactSizeBytes))
+		if err != nil || digest(bytes) != candidate.ArtifactSha256 || int64(len(bytes)) != candidate.ArtifactSizeBytes {
+			return ErrCandidateBytesMismatch
+		}
+		if digest(input.ReviewedBytes) != candidate.ArtifactSha256 || !equalBytes(input.ReviewedBytes, bytes) {
+			return ErrCandidateBytesMismatch
+		}
+		result = CompleteCandidateReviewResult{Candidate: candidate, Disposition: input.Disposition, Review: PlanningCandidateReviewCompletion{ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition)}}
+		if input.Disposition == PlanningCandidateReviewReadyForApproval {
+			s.storePlanningReviewContinuation(workspace.WorkspaceID, &planningReviewContinuation{workspaceID: workspace.WorkspaceID, candidateID: candidate.CandidateID, sha256: candidate.ArtifactSha256, sizeBytes: candidate.ArtifactSizeBytes, closure: workspace.CurrentDiscoveryClosurePacketRowID, authority: workspace.CurrentAuthorityRevisionRowID, bytes: append([]byte(nil), input.ReviewedBytes...)})
+		} else {
+			// A needs-revision review clears any prior ready continuation
+			// so it can never be approved, and preserves the exact
+			// planner refresh handoff for a replacement candidate.
+			s.storePlanningReviewContinuation(workspace.WorkspaceID, nil)
+			result.Refresh = &PlanningReviewRefresh{OperationID: planningRefreshOperation(candidate.Family), AuditorReviewResult: string(input.Disposition), ReviewedCandidate: append([]byte(nil), input.ReviewedBytes...)}
+		}
+		return nil
 	})
 	return result, err
 }

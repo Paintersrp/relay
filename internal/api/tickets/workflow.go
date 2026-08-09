@@ -191,13 +191,15 @@ type ticketDesignBriefAdmissionRequest struct {
 	CreatedIdentity string `json:"createdIdentity"`
 }
 
-// reviewCompletionRequest carries the bounded disposition and the exact
-// reviewed bytes the auditor reviewed (base64). The current brief is resolved
-// server-side, which recalculates their SHA-256 and compares them against the
-// verified current admissible artifact before either disposition is accepted;
-// no findings, prose, approval evidence, or identity beyond the reviewer are
-// accepted.
+// reviewCompletionRequest carries the bounded disposition, the exact immutable
+// Brief attempt identity the auditor reviewed, and the exact reviewed bytes the
+// auditor reviewed (base64). The owner verifies the brief belongs to the
+// workspace's active selection and is still the current brief pointer,
+// recalculating their SHA-256 and comparing them against the verified stored
+// artifact before either disposition is accepted; no findings, prose, approval
+// evidence, or digest are accepted.
 type reviewCompletionRequest struct {
+	BriefID             string `json:"briefId"`
 	ReviewerIdentity    string `json:"reviewerIdentity"`
 	Disposition         string `json:"disposition"`
 	ReviewedBytesBase64 string `json:"bytesBase64"`
@@ -379,12 +381,14 @@ func (h *WorkflowHandler) AdmitTicketDesignBrief(w http.ResponseWriter, r *http.
 
 // CompleteTicketDesignBriefReview is the bounded completion entry the external
 // auditor uses after performing the read-only review. The request must carry
-// the exact bytes the auditor reviewed (base64); the owner recalculates their
-// SHA-256 and rejects the completion unless they match the verified current
-// admissible brief, so a stale or replaced brief can never receive a result. It
-// records only the bounded disposition over the server-resolved brief and never
-// performs or records approval; ready approval is a distinct transition on the
-// separate approval route.
+// the exact immutable Brief attempt identity the auditor reviewed and the
+// exact bytes the auditor reviewed (base64); the owner recalculates their
+// SHA-256 and rejects the completion unless the identified attempt belongs to
+// the workspace's active selection and is still the current brief pointer, so a
+// stale or replaced brief can never receive a result. It records only the
+// bounded disposition over the identified brief and never performs or records
+// approval; ready approval is a distinct transition on the separate approval
+// route.
 func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter, r *http.Request) {
 	var request reviewCompletionRequest
 	if !decodeStrict(r, &request) {
@@ -396,13 +400,18 @@ func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter,
 		badRequest(w, "Invalid Ticket Design Brief review disposition")
 		return
 	}
+	if strings.TrimSpace(request.BriefID) == "" {
+		badRequest(w, "Ticket Design Brief review requires the exact brief identity")
+		return
+	}
 	reviewedBytes, err := base64.StdEncoding.DecodeString(request.ReviewedBytesBase64)
 	if err != nil || len(reviewedBytes) == 0 {
 		badRequest(w, "Ticket Design Brief review requires the exact reviewed bytes")
 		return
 	}
 	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), apptickets.CompleteBriefReviewInput{
-		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity), Disposition: disposition, ReviewedBytes: reviewedBytes,
+		WorkspaceID: workspaceID(r), BriefID: strings.TrimSpace(request.BriefID),
+		ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity), Disposition: disposition, ReviewedBytes: reviewedBytes,
 	})
 	if err != nil {
 		writeTicketError(w, err)

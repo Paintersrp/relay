@@ -448,7 +448,7 @@ func createCompletionDecision(t *testing.T, ctx context.Context, store *workflow
 		t.Fatal(err)
 	}
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		_, err := tx.CreateFeatureWorkspaceCompletionDecision(ctx, workflowstore.CreateFeatureWorkspaceCompletionDecisionParams{CompletionDecisionID: "completion-" + workspaceID, WorkspaceRowID: workspace.ID, AuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID.Int64, SourceClosureRowID: closureID, Decision: "completed"})
+		_, err := tx.CreateFeatureWorkspaceCompletionDecision(ctx, workflowstore.CreateFeatureWorkspaceCompletionDecisionParams{CompletionDecisionID: "completion-" + workspaceID, WorkspaceRowID: workspace.ID, AuthorityRevisionRowID: sql.NullInt64{Int64: workspace.CurrentAuthorityRevisionRowID.Int64, Valid: true}, SourceClosureRowID: sql.NullInt64{Int64: closureID, Valid: true}, Decision: "completed"})
 		return err
 	}); err != nil {
 		t.Fatal(err)

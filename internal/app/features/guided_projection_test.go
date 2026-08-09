@@ -101,7 +101,7 @@ func TestGuidedPlanningTracksImmediateApprovalPromotionAndHistoricalBasis(t *tes
 	if err != nil || planning.AwaitingReview != 1 || planning.AwaitingPromotion != 0 || planning.Requirements.State != "admitted" {
 		t.Fatalf("admitted planning=%+v err=%v", planning, err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: candidate.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
 		t.Fatal(err)
 	}
 	// A ready review arms the distinct explicit approval: the family is
@@ -110,7 +110,7 @@ func TestGuidedPlanningTracksImmediateApprovalPromotionAndHistoricalBasis(t *tes
 	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingApproval != 1 || planning.AwaitingPromotion != 0 || planning.Requirements.State != "reviewed" {
 		t.Fatalf("reviewed planning=%+v err=%v", planning, err)
 	}
-	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "guided exact approval", bytes)
+	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "guided exact approval", bytes)
 	planning, err = service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
 	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingPromotion != 1 || planning.Requirements.State != "approved" {
 		t.Fatalf("approved planning=%+v err=%v", planning, err)
@@ -182,7 +182,7 @@ func TestGuidedPlanningReviewCompletionResumesAtExplicitApprovalThenPromotion(t 
 	if err != nil || before.PrimaryAction.Action != GuidedActionReviewPlanningCandidate {
 		t.Fatalf("admitted projection=%+v err=%v", before, err)
 	}
-	ready, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes})
+	ready, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: admitted.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes})
 	if err != nil || ready.Disposition != PlanningCandidateReviewReadyForApproval || ready.Candidate.CandidateID != admitted.Candidate.CandidateID {
 		t.Fatalf("ready review=%+v err=%v", ready, err)
 	}

@@ -2,6 +2,7 @@ package operations
 
 import (
 	"context"
+	"database/sql"
 
 	featureapp "relay/internal/app/features"
 	workflowstore "relay/internal/store/workflow"
@@ -31,8 +32,8 @@ type FeatureCompletionGate struct {
 
 type FeatureCompletionDecision struct {
 	CompletionDecisionID   string
-	AuthorityRevisionRowID int64
-	SourceClosureRowID     int64
+	AuthorityRevisionRowID sql.NullInt64
+	SourceClosureRowID     sql.NullInt64
 	Decision               string
 	CreatedAt              string
 }

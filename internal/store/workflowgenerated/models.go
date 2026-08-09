@@ -333,11 +333,11 @@ type FeatureWorkspaceCompletionDecision struct {
 	ID                          int64         `json:"id"`
 	CompletionDecisionID        string        `json:"completion_decision_id"`
 	WorkspaceRowID              int64         `json:"workspace_row_id"`
-	AuthorityRevisionRowID      int64         `json:"authority_revision_row_id"`
-	SourceClosureRowID          int64         `json:"source_closure_row_id"`
+	AuthorityRevisionRowID      sql.NullInt64 `json:"authority_revision_row_id"`
+	SourceClosureRowID          sql.NullInt64 `json:"source_closure_row_id"`
+	DiscoveryClosurePacketRowID sql.NullInt64 `json:"discovery_closure_packet_row_id"`
 	Decision                    string        `json:"decision"`
 	CreatedAt                   string        `json:"created_at"`
-	DiscoveryClosurePacketRowID sql.NullInt64 `json:"discovery_closure_packet_row_id"`
 }
 
 type FeatureWorkspaceCompletionReopening struct {

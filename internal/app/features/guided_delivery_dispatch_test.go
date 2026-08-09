@@ -35,7 +35,7 @@ func guidedDeliveryTicketFixture(t *testing.T) (context.Context, *Service, workf
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: candidateBytes}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: candidate.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: candidateBytes}); err != nil {
 		t.Fatal(err)
 	}
 	candidateApproval, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{
@@ -147,7 +147,7 @@ func TestGuidedDeliveryTicketCandidateLifecycleUsesReviewExplicitApprovalAndTick
 		}
 		return result
 	}
-	admit()
+	first := admit()
 	admitted, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestGuidedDeliveryTicketCandidateLifecycleUsesReviewExplicitApprovalAndTick
 	if review.Handoff == nil || review.Handoff.Context["owner"] != "auditor_review" || review.Handoff.Context["operationId"] != auditorDeliveryTicketReviewOperation {
 		t.Fatalf("delivery candidate review handoff=%+v", review.Handoff)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: bytes}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: bytes}); err != nil {
 		t.Fatal(err)
 	}
 	needsRevision, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
@@ -178,8 +178,8 @@ func TestGuidedDeliveryTicketCandidateLifecycleUsesReviewExplicitApprovalAndTick
 		t.Fatalf("needs-revision candidate approval error=%v", err)
 	}
 
-	admit()
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
+	second := admit()
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: second.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
 		t.Fatal(err)
 	}
 	// A ready review arms the distinct explicit approval action and must not
@@ -222,16 +222,17 @@ func TestGuidedDeliveryTicketCandidateLifecycleUsesReviewExplicitApprovalAndTick
 func guidedApprovedBriefFixture(t *testing.T, service *Service, workspace workflowstore.FeatureWorkspace, ticketService *workflowtickets.Service) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{
+	admitted, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{
 		WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := service.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ticketService.CompleteAndApproveTicketDesignBrief(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}, workflowtickets.TicketDesignBriefApprovalInput{
+	workspace, err = service.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ticketService.CompleteAndApproveTicketDesignBrief(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}, workflowtickets.TicketDesignBriefApprovalInput{
 		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version,
 		OperatorConfirmationEvidence: "reviewed and approved", CreatedIdentity: "auditor",
 	}); err != nil {
@@ -265,9 +266,10 @@ func TestGuidedTicketDesignBriefHandoffsTransferSelectedTicketAndExactOperations
 
 	// Admit the authored brief through the delivery owner, then the journey
 	// advances to the read-only auditor review handoff.
-	if _, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{
+	admitted, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{
 		WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	reviewable, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
@@ -300,7 +302,7 @@ func TestGuidedTicketDesignBriefHandoffsTransferSelectedTicketAndExactOperations
 	// process-local continuation: the guided decision then emits the distinct
 	// confirmed explicit approval, and only that confirmed mutation advances
 	// the durable brief state to approved.
-	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	reviewed, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
@@ -330,10 +332,11 @@ func TestGuidedNeedsRevisionBriefReturnsPlannerRefreshAndRequiresReplacement(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	admitted, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	needsRevision, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
@@ -373,7 +376,8 @@ func TestGuidedTicketDesignBriefExplicitApprovalIsDistinctConfirmedPrimaryAction
 	if selected.Projection.PrimaryAction.Action != GuidedActionAuthorTicketDesignBrief {
 		t.Fatalf("after selection primary=%+v", selected.Projection.PrimaryAction)
 	}
-	if _, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	admitted, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Before any review the journey presents the read-only auditor review
@@ -388,7 +392,7 @@ func TestGuidedTicketDesignBriefExplicitApprovalIsDistinctConfirmedPrimaryAction
 	// A ready review records only the process-local continuation on the bound
 	// owner; the guided decision then emits exactly one confirmed explicit
 	// approval between review and package preparation.
-	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	reviewed, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
@@ -413,7 +417,7 @@ func TestGuidedTicketDesignBriefExplicitApprovalIsDistinctConfirmedPrimaryAction
 	}
 	// The continuation was consumed exactly once: re-reviewing the now-approved
 	// brief is rejected by the owner and cannot arm a second approval.
-	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); !errors.Is(err, workflowtickets.ErrTicketDesignBriefConflict) {
+	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, workflowtickets.CompleteBriefReviewInput{WorkspaceID: workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: workflowtickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); !errors.Is(err, workflowtickets.ErrTicketDesignBriefConflict) {
 		t.Fatalf("re-review of approved brief error = %v, want ErrTicketDesignBriefConflict", err)
 	}
 }

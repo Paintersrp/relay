@@ -64,7 +64,7 @@ func TestTicketDesignBriefAdmissionApprovalAndReadback(t *testing.T) {
 
 	// The narrow review-completion fact records its bounded disposition, never
 	// findings or prose.
-	reviewed, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
+	reviewed, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestTicketDesignBriefNeedsRevisionAndReplacementCannotAuthorizeApproval(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
+	review, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
 	if err != nil || review.Review.Disposition != string(TicketDesignBriefReviewNeedsRevision) {
 		t.Fatalf("needs-revision review = %#v, %v", review, err)
 	}
@@ -177,7 +177,7 @@ func TestTicketDesignBriefNeedsRevisionAndReplacementCannotAuthorizeApproval(t *
 	if _, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "replacement cannot inherit review", CreatedIdentity: "operator"}); !errors.Is(err, ErrBriefReviewIncomplete) {
 		t.Fatalf("replacement inherited review error = %v, want ErrBriefReviewIncomplete", err)
 	}
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: replacementBytes}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: second.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: replacementBytes}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "ready replacement approved", CreatedIdentity: "operator"})
@@ -262,7 +262,8 @@ func TestTicketDesignBriefRowsAreImmutableHistory(t *testing.T) {
 	if _, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: "P4-BR4", RevisionRowID: published.Revision.ID, Rationale: "select for immutability"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	admitted, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().ExecContext(ctx, `UPDATE ticket_design_briefs SET filename = 'mutated.md' WHERE selection_row_id = ?`, selectionRowIDForTicket(t, ctx, store, "P4-BR4")); err == nil {
@@ -275,7 +276,7 @@ func TestTicketDesignBriefRowsAreImmutableHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{
@@ -314,7 +315,8 @@ func TestApproveCurrentTicketDesignBriefResolvesBriefServerSide(t *testing.T) {
 	if _, err := service.ApproveCurrentTicketDesignBrief(ctx, ApproveCurrentBriefInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, Evidence: "guided-operator-approval"}); !errors.Is(err, ErrTicketDesignBriefNotFound) {
 		t.Fatalf("approve current without brief error = %v, want ErrTicketDesignBriefNotFound", err)
 	}
-	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	admitted, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Review completion is a mandatory separate fact before approval.
@@ -324,7 +326,7 @@ func TestApproveCurrentTicketDesignBriefResolvesBriefServerSide(t *testing.T) {
 	// The guided approve resolves the current brief identity server-side; no
 	// brief ID or digest is supplied by the caller and the fresh
 	// process-local ready-review continuation is consumed exactly once.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "guided-operator-approval", CreatedIdentity: "guided-operator"})
@@ -361,7 +363,7 @@ func TestReadyReviewCreatesNoApprovalUntilDistinctExplicitApproval(t *testing.T)
 	}
 	// Ready review completion alone must not create any approval or planner
 	// refresh; it records only the process-local continuation.
-	reviewed, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
+	reviewed, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,11 +411,11 @@ func TestNeedsRevisionClearsReadyContinuationAndReturnsExactPlannerRefresh(t *te
 		t.Fatal(err)
 	}
 	// A ready review records a process-local continuation first.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	// needs_revision clears it and returns the exact ordinary planner refresh.
-	rejected, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
+	rejected, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +455,7 @@ func TestReplacementBriefInvalidatesReadyContinuationOnSameActiveSelection(t *te
 		t.Fatal(err)
 	}
 	// A ready review stores the private continuation for the current brief.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	// The replacement is a new immutable attempt on the same active selection
@@ -478,7 +480,7 @@ func TestReplacementBriefInvalidatesReadyContinuationOnSameActiveSelection(t *te
 		t.Fatalf("replacement state = %+v, %v", state, err)
 	}
 	// A fresh ready review on the replacement enables the distinct approval.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: replacementBytes}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: second.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: replacementBytes}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "fresh replacement approval", CreatedIdentity: "operator"})
@@ -516,15 +518,15 @@ func TestTicketDesignBriefReviewBindingRejectsStaleAttemptAfterReplacement(t *te
 	if second.Brief.SelectionRowID != selection.Selection.ID || first.Brief.AttemptNumber != 1 || second.Brief.AttemptNumber != 2 {
 		t.Fatalf("replacement did not create attempt 2: first=%#v second=%#v", first.Brief, second.Brief)
 	}
-	// A stale ready completion carrying attempt-1's reviewed bytes is rejected;
-	// no result, continuation, or refresh attaches to attempt 2.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: firstBytes}); !errors.Is(err, ErrTicketDesignBriefBytesMismatch) {
+	// A stale ready completion naming attempt-1's exact identity is rejected
+	// because attempt 2 is now the current brief pointer; no result,
+	// continuation, or refresh attaches to attempt 2.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: firstBytes}); !errors.Is(err, ErrTicketDesignBriefBytesMismatch) {
 		t.Fatalf("stale ready review error = %v, want ErrTicketDesignBriefBytesMismatch", err)
 	}
-	// A stale needs-revision completion carrying attempt-1's reviewed bytes is
-	// also rejected, so the stale result cannot drive a planner refresh
-	// replacement.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: firstBytes}); !errors.Is(err, ErrTicketDesignBriefBytesMismatch) {
+	// A stale needs-revision completion naming attempt 1 is also rejected, so
+	// the stale result cannot drive a planner refresh replacement.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: firstBytes}); !errors.Is(err, ErrTicketDesignBriefBytesMismatch) {
 		t.Fatalf("stale needs-revision review error = %v, want ErrTicketDesignBriefBytesMismatch", err)
 	}
 	// Neither stale review armed a continuation, so approval of attempt 2 still
@@ -538,7 +540,7 @@ func TestTicketDesignBriefReviewBindingRejectsStaleAttemptAfterReplacement(t *te
 	}
 	// A fresh ready review of attempt 2's exact bytes arms its continuation and
 	// the distinct explicit approval attaches to attempt 2 alone.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: replacementBytes}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: second.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: replacementBytes}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "fresh attempt 2 review approval", CreatedIdentity: "operator"})
@@ -563,7 +565,8 @@ func TestHasPendingCurrentBriefApprovalIsTransientAndExact(t *testing.T) {
 	if err != nil || pending {
 		t.Fatalf("pending before admission = %v, %v", pending, err)
 	}
-	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	admitted, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Admission clears any continuation; no review has run yet.
@@ -572,7 +575,7 @@ func TestHasPendingCurrentBriefApprovalIsTransientAndExact(t *testing.T) {
 		t.Fatalf("pending before review = %v, %v", pending, err)
 	}
 	// A ready review stores the process-local continuation for the exact brief.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	pending, err = service.HasPendingCurrentBriefApproval(ctx, workspaceID)
@@ -580,7 +583,7 @@ func TestHasPendingCurrentBriefApprovalIsTransientAndExact(t *testing.T) {
 		t.Fatalf("pending after ready review = %v, %v", pending, err)
 	}
 	// needs_revision clears the continuation so it can never authorize approval.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	pending, err = service.HasPendingCurrentBriefApproval(ctx, workspaceID)
@@ -588,7 +591,7 @@ func TestHasPendingCurrentBriefApprovalIsTransientAndExact(t *testing.T) {
 		t.Fatalf("pending after needs revision = %v, %v", pending, err)
 	}
 	// A fresh ready review arms it again, and the distinct approval consumes it.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
@@ -627,18 +630,20 @@ func TestReadyReviewsInIndependentWorkspacesRemainIndependent(t *testing.T) {
 	if _, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceBID, TicketID: "P4-BR-B", RevisionRowID: second.Revision.ID, Rationale: "select B for independent briefs"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceAID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	briefA, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceAID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceBID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	briefB, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceBID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Both workspaces receive ready reviews; B's review must not displace A's
 	// private continuation even though neither workspace's selection changed.
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceAID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceAID, BriefID: briefA.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceBID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceBID, BriefID: briefB.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
 		t.Fatal(err)
 	}
 	for _, workspaceID := range []string{workspaceAID, workspaceBID} {
@@ -675,6 +680,136 @@ func TestReadyReviewsInIndependentWorkspacesRemainIndependent(t *testing.T) {
 		if err != nil || pending {
 			t.Fatalf("pending for %s after its approval = %v, %v", workspaceID, pending, err)
 		}
+	}
+}
+
+func TestTicketDesignBriefReviewRejectsSameByteNewerAttempt(t *testing.T) {
+	ctx := context.Background()
+	store, workspaceID, closure, authorityID := ticketFixture(t)
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-BR-SAME", 63, 0, "brief same bytes")
+	selection, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: "P4-BR-SAME", RevisionRowID: published.Revision.ID, Rationale: "select for same-byte review binding"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes := []byte(testfixtures.TicketDesignBrief)
+	admit := func() TicketDesignBriefAdmissionResult {
+		result, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: bytes, CreatedIdentity: "planner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	first := admit()
+	second := admit()
+	// A same-byte replacement is still a distinct immutable attempt on the same
+	// active selection: the identity, not the bytes, is the exact review
+	// binding.
+	if first.Brief.BriefID == second.Brief.BriefID || first.Brief.AttemptNumber != 1 || second.Brief.AttemptNumber != 2 || first.Brief.SelectionRowID != second.Brief.SelectionRowID || first.Brief.SelectionRowID != selection.Selection.ID || first.Brief.ArtifactSha256 != second.Brief.ArtifactSha256 {
+		t.Fatalf("same-byte replacement did not create a distinct immutable attempt: first=%#v second=%#v", first.Brief, second.Brief)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A review naming the replaced attempt 1 is rejected for both dispositions
+	// even though attempt 2's bytes are identical: no result, continuation, or
+	// refresh can attach to attempt 2.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: bytes}); !errors.Is(err, ErrTicketDesignBriefBytesMismatch) {
+		t.Fatalf("same-byte stale ready review error = %v, want ErrTicketDesignBriefBytesMismatch", err)
+	}
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision, ReviewedBytes: bytes}); !errors.Is(err, ErrTicketDesignBriefBytesMismatch) {
+		t.Fatalf("same-byte stale needs-revision review error = %v, want ErrTicketDesignBriefBytesMismatch", err)
+	}
+	// Neither rejected review armed a continuation, so approval of attempt 2
+	// still requires a fresh ready review.
+	if _, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "no continuation from rejected reviews", CreatedIdentity: "operator"}); !errors.Is(err, ErrBriefReviewIncomplete) {
+		t.Fatalf("approval after same-byte stale reviews error = %v, want ErrBriefReviewIncomplete", err)
+	}
+	// A fresh ready review naming attempt 2 arms its continuation and the
+	// distinct explicit approval attaches to attempt 2 alone. The historical
+	// attempt 1 remains preserved on the same active selection.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, BriefID: second.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "fresh attempt 2 approval", CreatedIdentity: "operator"})
+	if err != nil || approved.Brief.ID != second.Brief.ID {
+		t.Fatalf("fresh attempt 2 approval=%#v err=%v", approved, err)
+	}
+	lineage, err := service.ReadWorkspaceBriefIntegrity(ctx, workspaceID)
+	if err != nil || len(lineage.Briefs) != 2 || len(lineage.Diagnostics) != 0 {
+		t.Fatalf("same-byte lineage = %+v, %v", lineage, err)
+	}
+	lineageByBriefID := make(map[string]TicketDesignBriefIntegrity, len(lineage.Briefs))
+	for _, entry := range lineage.Briefs {
+		lineageByBriefID[entry.BriefID] = entry
+	}
+	if old := lineageByBriefID[first.Brief.BriefID]; !old.Historical || old.AttemptNumber != 1 {
+		t.Fatalf("preserved historical attempt = %+v", old)
+	}
+	if current := lineageByBriefID[second.Brief.BriefID]; current.Historical || current.AttemptNumber != 2 || current.ApprovalID != approved.Approval.ApprovalID {
+		t.Fatalf("current approved attempt = %+v", current)
+	}
+}
+
+func TestTicketDesignBriefReviewRejectsCrossWorkspaceAndUnknownIdentity(t *testing.T) {
+	ctx := context.Background()
+	store, workspaceAID, closure, authorityAID := ticketFixture(t)
+	// A second independent workspace bound to the same ready source-backed
+	// closure.
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-ticket-b', (SELECT id FROM projects WHERE project_id = 'project-ticket'), 'ticket-b')`); err != nil {
+		t.Fatal(err)
+	}
+	const workspaceBID = "workspace-ticket-b"
+	authorityBID := setCurrentAuthority(t, ctx, store, workspaceBID, closure.ID, "authority-ticket-b-2")
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := publishApprovedTicket(t, ctx, service, workspaceAID, closure, authorityAID, "P4-BR-CROSS-A", 64, 0, "brief cross A")
+	if _, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceAID, TicketID: "P4-BR-CROSS-A", RevisionRowID: first.Revision.ID, Rationale: "select A for cross-workspace review"}); err != nil {
+		t.Fatal(err)
+	}
+	second := publishApprovedTicket(t, ctx, service, workspaceBID, closure, authorityBID, "P4-BR-CROSS-B", 65, 0, "brief cross B")
+	if _, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceBID, TicketID: "P4-BR-CROSS-B", RevisionRowID: second.Revision.ID, Rationale: "select B for cross-workspace review"}); err != nil {
+		t.Fatal(err)
+	}
+	briefA, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceAID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceBID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+		t.Fatal(err)
+	}
+	// Reviewing workspace A's brief through workspace B's endpoint is rejected:
+	// the reviewed identity must belong to the workspace's active selection.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceBID, BriefID: briefA.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); !errors.Is(err, ErrTicketDesignBriefReview) {
+		t.Fatalf("cross-workspace brief review error = %v, want ErrTicketDesignBriefReview", err)
+	}
+	// An unknown brief identity is rejected as an invalid review.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceAID, BriefID: "missing-brief", ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); !errors.Is(err, ErrTicketDesignBriefReview) {
+		t.Fatalf("unknown brief review error = %v, want ErrTicketDesignBriefReview", err)
+	}
+	// No continuation was armed by any rejected review: A still requires a
+	// fresh ready review before its explicit approval.
+	workspaceA, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceAID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceAID, ExpectedVersion: workspaceA.Version, OperatorConfirmationEvidence: "no continuation from rejected reviews", CreatedIdentity: "operator"}); !errors.Is(err, ErrBriefReviewIncomplete) {
+		t.Fatalf("approval after rejected brief reviews error = %v, want ErrBriefReviewIncomplete", err)
+	}
+	// A fresh ready review of A's exact brief arms A's continuation and the
+	// distinct explicit approval attaches to A alone.
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceAID, BriefID: briefA.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceAID, ExpectedVersion: workspaceA.Version, OperatorConfirmationEvidence: "fresh A review approval", CreatedIdentity: "operator"})
+	if err != nil || approved.Approval.BriefRowID != briefA.Brief.ID {
+		t.Fatalf("fresh A brief approval=%#v err=%v", approved, err)
 	}
 }
 

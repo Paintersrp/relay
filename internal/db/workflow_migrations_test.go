@@ -772,3 +772,260 @@ func createLegacyPlanningArtifactReviewSchema(t *testing.T, db *sql.DB) {
 		}
 	}
 }
+
+// seedAuthorityClosingBasis creates the source-backed explicit authority basis
+// used by the authority route of the completion decision guard.
+func seedAuthorityClosingBasis(t *testing.T, db *sql.DB) (workspaceID, authorityID, closureID int64) {
+	t.Helper()
+	var projectID int64
+	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-authority-closing', 'Authority Closing') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-authority-closing', ?, 'authority') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('relay', 'C:/relay', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	var vaultID int64
+	if err := db.QueryRow(`INSERT INTO source_vaults (vault_id, repo_target, relative_path) VALUES ('vault-authority-closing', 'relay', 'vaults/features') RETURNING id`).Scan(&vaultID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO source_vault_closures (closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name, state, import_started_at, verified_at) VALUES ('closure-authority-closing', ?, ?, ?, 1, 'refs/relay/closures/authority-closing', 'ready', '2026-08-05T00:00:00.000000000Z', '2026-08-05T00:00:01.000000000Z') RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&closureID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_authority_revisions (authority_revision_id, workspace_row_id, revision_number, source_closure_row_id) VALUES ('authority-closing', ?, 1, ?) RETURNING id`, workspaceID, closureID).Scan(&authorityID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_authority_revision_row_id = ?, version = version + 1 WHERE id = ?`, authorityID, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	return workspaceID, authorityID, closureID
+}
+
+// seedNoDeliveryClosure creates the adopted closed no-delivery discovery state
+// the no-delivery closing route records: current integrated revision, current
+// closure packet with its manifest and member artifacts, and adoption.
+func seedNoDeliveryClosure(t *testing.T, db *sql.DB, destination string) (workspaceID, packetID int64) {
+	t.Helper()
+	var projectID int64
+	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-no-delivery-closure', 'No Delivery') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-no-delivery-closure', ?, 'no-delivery') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_discovery_adoptions (workspace_row_id, adoption_id, operator_identity, adopted_workspace_version) VALUES (?, 'discovery-adoption-no-delivery', 'operator', 1)`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	var revisionArtifact, revision, manifestArtifact int64
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-no-delivery-revision', ?, 'feature-discovery/workspace-no-delivery-closure/revision-a/revision.md', ?, 'text/markdown', 4) RETURNING id`, workspaceID, strings.Repeat("a", 64)).Scan(&revisionArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, created_identity, settled_destination) VALUES ('discovery-revision-no-delivery', ?, 1, ?, 'operator', 'no_delivery_work') RETURNING id`, workspaceID, revisionArtifact).Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-no-delivery-manifest', ?, 'feature-discovery/workspace-no-delivery-closure/closure-b/closure.json', ?, 'application/vnd.relay.feature-discovery-closure+json', 4) RETURNING id`, workspaceID, strings.Repeat("b", 64)).Scan(&manifestArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_closure_packets (closure_packet_id, workspace_row_id, closing_revision_row_id, destination, manifest_artifact_row_id, manifest_sha256, manifest_size_bytes, manifest_media_type) VALUES ('discovery-packet-no-delivery', ?, ?, ?, ?, ?, 4, 'application/vnd.relay.feature-discovery-closure+json') RETURNING id`, workspaceID, revision, destination, manifestArtifact, strings.Repeat("b", 64)).Scan(&packetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_discovery_revision_row_id = ?, current_discovery_closure_packet_row_id = ?, version = version + 1 WHERE id = ?`, revision, packetID, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	return workspaceID, packetID
+}
+
+func insertNoDeliveryDecision(t *testing.T, db *sql.DB, workspaceID, packetID int64, decisionID string) int64 {
+	t.Helper()
+	var rowID int64
+	if err := db.QueryRow(`INSERT INTO feature_workspace_completion_decisions (completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, discovery_closure_packet_row_id, decision) VALUES (?, ?, NULL, NULL, ?, 'completed') RETURNING id`, decisionID, workspaceID, packetID).Scan(&rowID); err != nil {
+		t.Fatal(err)
+	}
+	return rowID
+}
+
+// seedUnsatisfiedDeliveryTicket creates a current Delivery Ticket revision
+// without any audit satisfaction so the delivery guard of the completion
+// decision trigger must reject a no-delivery closing basis.
+func seedUnsatisfiedDeliveryTicket(t *testing.T, db *sql.DB, workspaceID int64) {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('relay', 'C:/relay', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	var vaultID, closureID int64
+	if err := db.QueryRow(`INSERT INTO source_vaults (vault_id, repo_target, relative_path) VALUES ('vault-no-delivery-guard', 'relay', 'vaults/features') RETURNING id`).Scan(&vaultID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO source_vault_closures (closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name, state, import_started_at, verified_at) VALUES ('closure-no-delivery-guard', ?, ?, ?, 1, 'refs/relay/closures/no-delivery-guard', 'ready', '2026-07-18T00:00:00.000000000Z', '2026-07-18T00:00:01.000000000Z') RETURNING id`, vaultID, strings.Repeat("d", 40), strings.Repeat("e", 40)).Scan(&closureID); err != nil {
+		t.Fatal(err)
+	}
+	var ticketID int64
+	if err := db.QueryRow(`INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P-NO-DELIVERY-GUARD', ?, 1) RETURNING id`, workspaceID).Scan(&ticketID); err != nil {
+		t.Fatal(err)
+	}
+	var revisionID int64
+	if err := db.QueryRow(`INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, 'tickets/P-NO-DELIVERY-GUARD.delivery-ticket.json', 'goal', 'context', 'not_required') RETURNING id`, ticketID, strings.Repeat("d", 40), closureID).Scan(&revisionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, revisionID, ticketID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedDiscoveryReopenEvent creates the discovery reopen event that records the
+// later valid discovery change replacing the no-delivery packet.
+func seedDiscoveryReopenEvent(t *testing.T, db *sql.DB, workspaceID, packetID int64) {
+	t.Helper()
+	var revisionArtifact, replacementRevision, causeArtifact int64
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-no-delivery-replacement', ?, 'feature-discovery/workspace-no-delivery-closure/revision-c/replacement.md', ?, 'text/markdown', 4) RETURNING id`, workspaceID, strings.Repeat("c", 64)).Scan(&revisionArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, predecessor_revision_row_id, created_identity, settled_destination) VALUES ('discovery-revision-no-delivery-replacement', ?, 2, ?, (SELECT id FROM feature_workspace_integrated_discovery_revisions WHERE workspace_row_id = ? AND revision_number = 1), 'operator', 'no_delivery_work') RETURNING id`, workspaceID, revisionArtifact, workspaceID).Scan(&replacementRevision); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-no-delivery-cause', ?, 'feature-discovery/workspace-no-delivery-closure/cause-d/cause.txt', ?, 'text/plain', 4) RETURNING id`, workspaceID, strings.Repeat("d", 64)).Scan(&causeArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO feature_workspace_discovery_reopen_events (reopen_event_id, workspace_row_id, closure_packet_row_id, replacement_revision_row_id, cause_text, confirmed_operator_identity, cause_artifact_row_id) VALUES ('discovery-reopen-no-delivery', ?, ?, ?, 'later discovery change', 'operator', ?)`, workspaceID, packetID, replacementRevision, causeArtifact); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestNoDeliveryFeatureClosingMigrationPreservesHistoryAndGuards covers the
+// 00049 forward migration: existing authority-based decisions survive with
+// nullable authority columns, the no-delivery closing basis is admitted only
+// on the exact current no-delivery packet with no delivery work, and the
+// immutability and discovery-reopen protections are retained.
+func TestNoDeliveryFeatureClosingMigrationPreservesHistoryAndGuards(t *testing.T) {
+	t.Run("upgrade preserves authority decisions and nullable columns", func(t *testing.T) {
+		db := openMigrationTestDB(t, "no-delivery-closure-upgrade")
+		defer db.Close()
+		goose.SetBaseFS(WorkflowMigrationsFS)
+		if err := goose.SetDialect("sqlite3"); err != nil {
+			t.Fatal(err)
+		}
+		if err := goose.UpTo(db, "workflow_migrations", 48); err != nil {
+			t.Fatal(err)
+		}
+		workspaceID, authorityID, closureID := seedAuthorityClosingBasis(t, db)
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_decisions (completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, decision) VALUES ('completion-legacy-authority', ?, ?, ?, 'completed')`, workspaceID, authorityID, closureID); err != nil {
+			t.Fatal(err)
+		}
+		if err := AutoMigrateWorkflow(db); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM feature_workspace_completion_decisions WHERE completion_decision_id = 'completion-legacy-authority'`).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("preserved authority decision count=%d err=%v", count, err)
+		}
+		notNull := map[string]bool{}
+		rows, err := db.Query(`SELECT name, "notnull" FROM pragma_table_info('feature_workspace_completion_decisions')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var name string
+			var flag int
+			if err := rows.Scan(&name, &flag); err != nil {
+				t.Fatal(err)
+			}
+			notNull[name] = flag == 1
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if notNull["authority_revision_row_id"] || notNull["source_closure_row_id"] {
+			t.Fatalf("authority columns are still NOT NULL: %v", notNull)
+		}
+		// The authority route remains guarded: this workspace carries an
+		// explicit authority, so a decision without that authority and without
+		// a no-delivery packet cannot be inserted.
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_decisions (completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, decision) VALUES ('completion-forged-no-authority', ?, NULL, NULL, 'completed')`, workspaceID); err == nil {
+			t.Fatal("decision without a current authority or no-delivery packet was accepted")
+		}
+		var foreignKeyErrors int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyErrors); err != nil {
+			t.Fatal(err)
+		}
+		if foreignKeyErrors != 0 {
+			t.Fatalf("foreign key errors = %d", foreignKeyErrors)
+		}
+	})
+	t.Run("no-delivery decision allowed on the exact current packet", func(t *testing.T) {
+		db := openMigrationTestDB(t, "no-delivery-closure-guard")
+		defer db.Close()
+		if err := AutoMigrateWorkflow(db); err != nil {
+			t.Fatal(err)
+		}
+		workspaceID, packetID := seedNoDeliveryClosure(t, db, "no_delivery_work")
+		decisionID := insertNoDeliveryDecision(t, db, workspaceID, packetID, "completion-no-delivery-ok")
+		if decisionID == 0 {
+			t.Fatal("no-delivery decision row ID was not assigned")
+		}
+		if _, err := db.Exec(`UPDATE feature_workspace_completion_decisions SET decision = 'abandoned' WHERE id = ?`, decisionID); err == nil {
+			t.Fatal("no-delivery decision was mutable")
+		}
+		if _, err := db.Exec(`DELETE FROM feature_workspace_completion_decisions WHERE id = ?`, decisionID); err == nil {
+			t.Fatal("no-delivery decision was deletable")
+		}
+	})
+	t.Run("no-delivery decision rejected without a packet basis", func(t *testing.T) {
+		db := openMigrationTestDB(t, "no-delivery-closure-no-packet")
+		defer db.Close()
+		if err := AutoMigrateWorkflow(db); err != nil {
+			t.Fatal(err)
+		}
+		workspaceID, _ := seedNoDeliveryClosure(t, db, "no_delivery_work")
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_decisions (completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, decision) VALUES ('completion-no-delivery-no-packet', ?, NULL, NULL, 'completed')`, workspaceID); err == nil {
+			t.Fatal("no-delivery decision without a packet basis was accepted")
+		}
+	})
+	t.Run("non-no-delivery packet cannot close without authority", func(t *testing.T) {
+		db := openMigrationTestDB(t, "no-delivery-closure-wrong-packet")
+		defer db.Close()
+		if err := AutoMigrateWorkflow(db); err != nil {
+			t.Fatal(err)
+		}
+		workspaceID, packetID := seedNoDeliveryClosure(t, db, "requirements")
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_decisions (completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, discovery_closure_packet_row_id, decision) VALUES ('completion-wrong-route', ?, NULL, NULL, ?, 'completed')`, workspaceID, packetID); err == nil {
+			t.Fatal("non-no-delivery packet was accepted as a no-delivery closing basis")
+		}
+	})
+	t.Run("unsatisfied delivery work blocks no-delivery decision", func(t *testing.T) {
+		db := openMigrationTestDB(t, "no-delivery-closure-delivery-guard")
+		defer db.Close()
+		if err := AutoMigrateWorkflow(db); err != nil {
+			t.Fatal(err)
+		}
+		workspaceID, packetID := seedNoDeliveryClosure(t, db, "no_delivery_work")
+		seedUnsatisfiedDeliveryTicket(t, db, workspaceID)
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_decisions (completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, discovery_closure_packet_row_id, decision) VALUES ('completion-delivery-guard', ?, NULL, NULL, ?, 'completed')`, workspaceID, packetID); err == nil {
+			t.Fatal("no-delivery decision accepted with unsatisfied delivery work")
+		}
+	})
+	t.Run("discovery reopen guard", func(t *testing.T) {
+		db := openMigrationTestDB(t, "no-delivery-closure-reopen-guard")
+		defer db.Close()
+		if err := AutoMigrateWorkflow(db); err != nil {
+			t.Fatal(err)
+		}
+		workspaceID, packetID := seedNoDeliveryClosure(t, db, "no_delivery_work")
+		decisionID := insertNoDeliveryDecision(t, db, workspaceID, packetID, "completion-reopen-guard")
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_reopenings (completion_decision_row_id, reopening_kind) VALUES (?, 'discovery_reopen')`, decisionID); err == nil {
+			t.Fatal("discovery_reopen reopening accepted without a reopen event")
+		}
+		seedDiscoveryReopenEvent(t, db, workspaceID, packetID)
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_reopenings (completion_decision_row_id, reopening_kind) VALUES (?, 'discovery_reopen')`, decisionID); err != nil {
+			t.Fatalf("discovery_reopen reopening rejected with the reopen event: %v", err)
+		}
+		var current int
+		if err := db.QueryRow(`SELECT count(*) FROM feature_workspace_completion_decisions AS completion WHERE completion.workspace_row_id = ? AND NOT EXISTS (SELECT 1 FROM feature_workspace_completion_reopenings AS reopening WHERE reopening.completion_decision_row_id = completion.id)`, workspaceID).Scan(&current); err != nil || current != 0 {
+			t.Fatalf("current decision count = %d, err=%v", current, err)
+		}
+		if _, err := db.Exec(`INSERT INTO feature_workspace_completion_reopenings (completion_decision_row_id, reopening_kind) VALUES (?, 'discovery_reopen')`, decisionID); err == nil {
+			t.Fatal("duplicate completion reopening was accepted")
+		}
+	})
+}

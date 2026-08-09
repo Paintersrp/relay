@@ -101,10 +101,11 @@ func TestPlanningCandidateReviewRefreshPreservesPlannerOperations(t *testing.T) 
 			}
 			insertReadyPlanningSourceClosure(t, ctx, store, workspace, repoTarget, strings.Repeat("a", 40))
 			bytes := []byte("# refresh " + tc.family + "\n")
-			if _, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: tc.family, Filename: filename, Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: repoTarget, Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: destination, CreatedIdentity: "planner"}); err != nil {
+			admitted, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: tc.family, Filename: filename, Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: repoTarget, Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: destination, CreatedIdentity: "planner"})
+			if err != nil {
 				t.Fatal(err)
 			}
-			rejected, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: bytes})
+			rejected, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: admitted.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: bytes})
 			if err != nil || rejected.Refresh == nil || rejected.Refresh.OperationID != tc.operation || rejected.Refresh.AuditorReviewResult != string(PlanningCandidateReviewNeedsRevision) || string(rejected.Refresh.ReviewedCandidate) != string(bytes) {
 				t.Fatalf("refresh=%+v err=%v", rejected, err)
 			}
@@ -132,13 +133,13 @@ func TestPlanningCandidateApprovalRejectsReplacedCandidateAndNeedsFreshReview(t 
 		return result
 	}
 	first := admit("# first\n")
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# first\n")}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# first\n")}); err != nil {
 		t.Fatal(err)
 	}
 	// A newer immutable candidate replaces the reviewed one on the same basis.
 	// The stored continuation no longer matches the current exact candidate, so
 	// approval is rejected and the journey demands a fresh review.
-	admit("# replacement\n")
+	second := admit("# replacement\n")
 	if _, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "replaced candidate", CreatedIdentity: "operator"}); !errors.Is(err, ErrStaleCandidateBasis) {
 		t.Fatalf("replaced candidate approval error=%v", err)
 	}
@@ -148,7 +149,7 @@ func TestPlanningCandidateApprovalRejectsReplacedCandidateAndNeedsFreshReview(t 
 	}
 	// A fresh ready review of the current replacement candidate arms its own
 	// continuation and approval succeeds on the current exact candidate.
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# replacement\n")}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: second.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# replacement\n")}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "fresh review approval", CreatedIdentity: "operator"})
@@ -177,7 +178,7 @@ func TestPlanningCandidateReviewUsesImmediateContinuationOrRefresh(t *testing.T)
 		return result
 	}
 	first := admit("# first\n")
-	rejected, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: []byte("# first\n")})
+	rejected, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: []byte("# first\n")})
 	if err != nil || rejected.Refresh == nil || rejected.Refresh.OperationID != "planner.requirements" || string(rejected.Refresh.ReviewedCandidate) != "# first\n" {
 		t.Fatalf("rejected=%+v err=%v", rejected, err)
 	}
@@ -187,7 +188,7 @@ func TestPlanningCandidateReviewUsesImmediateContinuationOrRefresh(t *testing.T)
 		t.Fatalf("approval after needs-revision error=%v", err)
 	}
 	second := admit("# replacement\n")
-	ready, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# replacement\n")})
+	ready, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: second.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# replacement\n")})
 	if err != nil || ready.Disposition != PlanningCandidateReviewReadyForApproval {
 		t.Fatalf("ready=%+v err=%v", ready, err)
 	}
@@ -233,15 +234,16 @@ func TestPlanningCandidateReviewBindingRejectsStaleCompositionAfterReplacement(t
 	if first.Candidate.CandidateID == second.Candidate.CandidateID {
 		t.Fatal("replacement did not create a distinct candidate")
 	}
-	// A stale ready completion carrying A's reviewed bytes is rejected; no
-	// result, continuation, or refresh attaches to B.
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: composed.CandidateBytes}); !errors.Is(err, ErrCandidateBytesMismatch) {
-		t.Fatalf("stale ready review error = %v, want ErrCandidateBytesMismatch", err)
+	// A stale ready completion naming A's exact identity is rejected because B
+	// is now the newest admissible candidate on the same basis; no result,
+	// continuation, or refresh attaches to B.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: composed.CandidateBytes}); !errors.Is(err, ErrStaleCandidateBasis) {
+		t.Fatalf("stale ready review error = %v, want ErrStaleCandidateBasis", err)
 	}
-	// A stale needs-revision completion carrying A's reviewed bytes is also
-	// rejected, so the stale result cannot drive a planner refresh replacement.
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: composed.CandidateBytes}); !errors.Is(err, ErrCandidateBytesMismatch) {
-		t.Fatalf("stale needs-revision review error = %v, want ErrCandidateBytesMismatch", err)
+	// A stale needs-revision completion naming A is also rejected, so the stale
+	// result cannot drive a planner refresh replacement.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: composed.CandidateBytes}); !errors.Is(err, ErrStaleCandidateBasis) {
+		t.Fatalf("stale needs-revision review error = %v, want ErrStaleCandidateBasis", err)
 	}
 	// Neither stale review armed a continuation, so approval of B still
 	// requires a fresh ready review of B's exact bytes.
@@ -250,12 +252,116 @@ func TestPlanningCandidateReviewBindingRejectsStaleCompositionAfterReplacement(t
 	}
 	// A fresh ready review of B's exact bytes arms B's continuation and the
 	// distinct explicit approval attaches to B alone.
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# candidate B\n")}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: second.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: []byte("# candidate B\n")}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "fresh B review approval", CreatedIdentity: "operator"})
 	if err != nil || approved.Candidate.CandidateID != second.Candidate.CandidateID {
 		t.Fatalf("fresh B approval=%+v err=%v", approved, err)
+	}
+}
+
+func TestPlanningCandidateReviewRejectsSameByteNewerImmutableCandidate(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	if _, closed, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	} else {
+		workspace = closed
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-same-bytes', 'C:/planning-same-bytes', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-same-bytes", strings.Repeat("a", 40))
+	bytes := []byte("# identical requirements bytes\n")
+	admit := func() CandidateAdmissionResult {
+		result, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-same-bytes", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	first := admit()
+	second := admit()
+	// A same-byte replacement is still a distinct immutable candidate: the
+	// identity, not the bytes, is the exact review binding.
+	if first.Candidate.CandidateID == second.Candidate.CandidateID {
+		t.Fatal("same-byte replacement did not create a distinct immutable candidate")
+	}
+	if first.Candidate.ArtifactSha256 != second.Candidate.ArtifactSha256 || first.Candidate.ArtifactSizeBytes != second.Candidate.ArtifactSizeBytes {
+		t.Fatalf("same-byte candidates diverged: first=%#v second=%#v", first.Candidate, second.Candidate)
+	}
+	// A review naming the replaced candidate A is rejected for both
+	// dispositions even though B's bytes are identical: no result,
+	// continuation, or refresh can attach to B.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); !errors.Is(err, ErrStaleCandidateBasis) {
+		t.Fatalf("same-byte stale ready review error = %v, want ErrStaleCandidateBasis", err)
+	}
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision, ReviewedBytes: bytes}); !errors.Is(err, ErrStaleCandidateBasis) {
+		t.Fatalf("same-byte stale needs-revision review error = %v, want ErrStaleCandidateBasis", err)
+	}
+	// Neither rejected review armed a continuation, so approval of B still
+	// requires a fresh ready review of B.
+	if _, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "no continuation from rejected reviews", CreatedIdentity: "operator"}); !errors.Is(err, ErrCandidateReviewIncomplete) {
+		t.Fatalf("approval after same-byte stale reviews error = %v, want ErrCandidateReviewIncomplete", err)
+	}
+	// A fresh ready review naming B arms B's continuation and the distinct
+	// explicit approval attaches to B alone.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: second.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "fresh B review approval", CreatedIdentity: "operator"})
+	if err != nil || approved.Candidate.CandidateID != second.Candidate.CandidateID {
+		t.Fatalf("fresh B approval=%+v err=%v", approved, err)
+	}
+}
+
+func TestPlanningCandidateReviewRejectsCrossWorkspaceAndUnknownIdentity(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	_, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-cross', 'C:/planning-cross', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	bytes := []byte("# cross workspace candidate\n")
+	first, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-cross", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second independent workspace with its own closed discovery.
+	other, err := createFeatureWorkspace(ctx, store, "workspace-review-cross", "review-cross")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err = service.SetIntegratedDiscoveryCapability(ctx, other.WorkspaceID, other.Version, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, other, err = service.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, OperatorIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	otherContent := []byte("# other workspace discovery\n")
+	started, other, err := service.StartIntegratedDiscovery(ctx, StartIntegratedDiscoveryInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, Markdown: otherContent, SHA256: discoveryTestDigest(otherContent), CreatedIdentity: "operator", Destination: DiscoveryDestinationRequirements})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, other, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: other.WorkspaceID, ExpectedVersion: other.Version, ExpectedRevisionID: started.Revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reviewing workspace A's candidate through workspace B's endpoint is
+	// rejected: the reviewed identity must belong to the workspace.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: other.WorkspaceID, CandidateID: first.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); !errors.Is(err, ErrCandidateReview) {
+		t.Fatalf("cross-workspace review error = %v, want ErrCandidateReview", err)
+	}
+	// An unknown candidate identity is rejected as an invalid review.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: "missing-candidate", ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); !errors.Is(err, ErrCandidateReview) {
+		t.Fatalf("unknown candidate review error = %v, want ErrCandidateReview", err)
+	}
+	// No continuation was armed by any rejected review.
+	if _, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "no continuation from rejected reviews", CreatedIdentity: "operator"}); !errors.Is(err, ErrCandidateReviewIncomplete) {
+		t.Fatalf("approval after rejected reviews error = %v, want ErrCandidateReviewIncomplete", err)
 	}
 }
 
@@ -320,7 +426,7 @@ func TestPlanningCandidateRequirementsAndSharedDesignPromotionSequences(t *testi
 				if err != nil {
 					t.Fatal(err)
 				}
-				approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "approved exact candidate", bytes)
+				approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "approved exact candidate", bytes)
 				if approval.Candidate.CandidateID != candidate.Candidate.CandidateID {
 					t.Fatalf("approved candidate = %q, want %q", approval.Candidate.CandidateID, candidate.Candidate.CandidateID)
 				}
@@ -417,10 +523,11 @@ func TestPlanningCandidatePromotionConflictAndRollbackAreAtomic(t *testing.T) {
 	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-atomic", strings.Repeat("a", 40))
 	admitAndApprove := func(text string) CandidateApprovalResult {
 		bytes := []byte(text)
-		if _, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilySharedDesign, Filename: workspace.FeatureSlug + ".design.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-atomic", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationSharedDesign, CreatedIdentity: "planner"}); err != nil {
+		admitted, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilySharedDesign, Filename: workspace.FeatureSlug + ".design.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-atomic", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationSharedDesign, CreatedIdentity: "planner"})
+		if err != nil {
 			t.Fatal(err)
 		}
-		return approveCurrentPlanningCandidate(t, ctx, service, workspace, "approved", bytes)
+		return approveCurrentPlanningCandidate(t, ctx, service, workspace, admitted.Candidate.CandidateID, "approved", bytes)
 	}
 	first := admitAndApprove("# first\n")
 	promoted, err := service.PromoteApprovedPlanningCandidate(ctx, CandidatePromotionInput{CandidateID: first.Candidate.CandidateID, ApprovalID: first.Approval.ApprovalID, ExpectedVersion: workspace.Version, CreatedIdentity: "planner"})
@@ -470,7 +577,7 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirementsApproval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "requirements exact approval", requirementsBytes)
+	requirementsApproval := approveCurrentPlanningCandidate(t, ctx, service, workspace, requirements.Candidate.CandidateID, "requirements exact approval", requirementsBytes)
 	promotedRequirements, err := service.PromoteApprovedPlanningCandidate(ctx, CandidatePromotionInput{CandidateID: requirements.Candidate.CandidateID, ApprovalID: requirementsApproval.Approval.ApprovalID, ExpectedVersion: workspace.Version, CreatedIdentity: "planner"})
 	if err != nil {
 		t.Fatal(err)
@@ -490,7 +597,7 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	designApproval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "shared design exact approval", designBytes)
+	designApproval := approveCurrentPlanningCandidate(t, ctx, service, workspace, design.Candidate.CandidateID, "shared design exact approval", designBytes)
 	promoted, err := service.PromoteApprovedPlanningCandidate(ctx, CandidatePromotionInput{CandidateID: design.Candidate.CandidateID, ApprovalID: designApproval.Approval.ApprovalID, ExpectedVersion: workspace.Version, CreatedIdentity: "planner"})
 	if err != nil {
 		t.Fatal(err)
@@ -541,7 +648,7 @@ func TestPlanningCandidatePromotionRejectsUnavailableSourceClosure(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "source closure must remain ready", bytes)
+	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "source closure must remain ready", bytes)
 	if _, err := store.DB().ExecContext(ctx, `UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'source_commit_missing', verified_at = NULL WHERE id = ?`, closure.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -550,9 +657,9 @@ func TestPlanningCandidatePromotionRejectsUnavailableSourceClosure(t *testing.T)
 	}
 }
 
-func approveCurrentPlanningCandidate(t *testing.T, ctx context.Context, service *Service, workspace workflowstore.FeatureWorkspace, evidence string, reviewedBytes []byte) CandidateApprovalResult {
+func approveCurrentPlanningCandidate(t *testing.T, ctx context.Context, service *Service, workspace workflowstore.FeatureWorkspace, candidateID, evidence string, reviewedBytes []byte) CandidateApprovalResult {
 	t.Helper()
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: reviewedBytes}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: candidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: reviewedBytes}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: evidence, CreatedIdentity: "operator"})

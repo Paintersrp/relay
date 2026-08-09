@@ -30,7 +30,7 @@ func TestDeliveryTicketCandidateReadyReviewImmediatelyApprovesBeforeProduction(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, CandidateID: candidate.Candidate.CandidateID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
 		t.Fatal(err)
 	}
 	approval, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved exact candidate", CreatedIdentity: "operator"})
@@ -75,7 +75,7 @@ func TestApprovedDeliveryTicketCandidateProductionUsesCompilerIdentitiesAndAppro
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "exact delivery candidate", bytes)
+	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "exact delivery candidate", bytes)
 	if _, err := store.DB().ExecContext(ctx, `CREATE TRIGGER candidate_production_requires_approval BEFORE UPDATE OF current_revision_row_id ON delivery_tickets WHEN NEW.current_revision_row_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM delivery_ticket_revision_approvals WHERE revision_row_id = NEW.current_revision_row_id AND approval_kind = 'delivery' AND approval_state = 'approved') BEGIN SELECT RAISE(ABORT, 'produced approval must precede current pointer'); END`); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestApprovedDeliveryTicketCandidateProductionRollsBackAllStateOnBatchFailur
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "rollback candidate", bytes)
+	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "rollback candidate", bytes)
 	failErr := errors.New("forced candidate production batch failure")
 	restoreHook := store.SetArtifactBatchPrepareCommitHookForTest(func() error { return failErr })
 	defer restoreHook()
@@ -141,10 +141,11 @@ func TestDeliveryTicketCandidateProductionRejectsSupersededCurrentBasis(t *testi
 	ctx, store, service, workspace, _ := deliveryTicketCandidateFixture(t, DiscoveryDestinationDirectDeliveryTicket)
 	bytes := deliveryTicketCandidateBytes("P3-T-SUPERSEDED", workspace.FeatureSlug, "candidate-production", strings.Repeat("a", 40))
 	admitAndApprove := func() CandidateApprovalResult {
-		if _, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyDeliveryTicket, Filename: "discovery-proof.ticket-P3-T-SUPERSEDED.r1.delivery-ticket.json", Bytes: bytes, SHA256: digestForPlanningTest(bytes), RepoTarget: "candidate-production", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationDirectDeliveryTicket, CreatedIdentity: "planner"}); err != nil {
+		admitted, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyDeliveryTicket, Filename: "discovery-proof.ticket-P3-T-SUPERSEDED.r1.delivery-ticket.json", Bytes: bytes, SHA256: digestForPlanningTest(bytes), RepoTarget: "candidate-production", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationDirectDeliveryTicket, CreatedIdentity: "planner"})
+		if err != nil {
 			t.Fatal(err)
 		}
-		return approveCurrentPlanningCandidate(t, ctx, service, workspace, "ready", bytes)
+		return approveCurrentPlanningCandidate(t, ctx, service, workspace, admitted.Candidate.CandidateID, "ready", bytes)
 	}
 	first := admitAndApprove()
 	_ = admitAndApprove()
@@ -178,7 +179,7 @@ func TestDirectDeliveryCandidateUsesNullAuthorityOnlyWhileAuthorityIsAbsent(t *t
 	if err != nil || candidate.Candidate.AuthorityRevisionRowID.Valid {
 		t.Fatalf("direct candidate = %#v, %v", candidate, err)
 	}
-	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "approve direct candidate", bytes)
+	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "approve direct candidate", bytes)
 	owner, err := workflowtickets.NewService(store)
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +232,7 @@ func TestApprovedDeliveryTicketCandidateRejectsCompilerErrorsBeforePublication(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "invalid compiler input is still exact candidate bytes", bytes)
+	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, candidate.Candidate.CandidateID, "invalid compiler input is still exact candidate bytes", bytes)
 	owner, err := workflowtickets.NewService(store)
 	if err != nil {
 		t.Fatal(err)

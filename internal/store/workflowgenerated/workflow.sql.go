@@ -1250,14 +1250,14 @@ INSERT INTO feature_workspace_completion_decisions (
     decision
 )
 VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, decision, created_at, discovery_closure_packet_row_id
+RETURNING id, completion_decision_id, workspace_row_id, authority_revision_row_id, source_closure_row_id, discovery_closure_packet_row_id, decision, created_at
 `
 
 type CreateFeatureWorkspaceCompletionDecisionParams struct {
 	CompletionDecisionID        string        `json:"completion_decision_id"`
 	WorkspaceRowID              int64         `json:"workspace_row_id"`
-	AuthorityRevisionRowID      int64         `json:"authority_revision_row_id"`
-	SourceClosureRowID          int64         `json:"source_closure_row_id"`
+	AuthorityRevisionRowID      sql.NullInt64 `json:"authority_revision_row_id"`
+	SourceClosureRowID          sql.NullInt64 `json:"source_closure_row_id"`
 	DiscoveryClosurePacketRowID sql.NullInt64 `json:"discovery_closure_packet_row_id"`
 	Decision                    string        `json:"decision"`
 }
@@ -1278,9 +1278,9 @@ func (q *Queries) CreateFeatureWorkspaceCompletionDecision(ctx context.Context, 
 		&i.WorkspaceRowID,
 		&i.AuthorityRevisionRowID,
 		&i.SourceClosureRowID,
+		&i.DiscoveryClosurePacketRowID,
 		&i.Decision,
 		&i.CreatedAt,
-		&i.DiscoveryClosurePacketRowID,
 	)
 	return i, err
 }
@@ -2293,7 +2293,7 @@ func (q *Queries) GetAuditRemediationSeedReopening(ctx context.Context, remediat
 }
 
 const getCurrentFeatureWorkspaceCompletionDecision = `-- name: GetCurrentFeatureWorkspaceCompletionDecision :one
-SELECT completion.id, completion.completion_decision_id, completion.workspace_row_id, completion.authority_revision_row_id, completion.source_closure_row_id, completion.decision, completion.created_at, completion.discovery_closure_packet_row_id
+SELECT completion.id, completion.completion_decision_id, completion.workspace_row_id, completion.authority_revision_row_id, completion.source_closure_row_id, completion.discovery_closure_packet_row_id, completion.decision, completion.created_at
 FROM feature_workspace_completion_decisions AS completion
 WHERE completion.workspace_row_id = ?
   AND NOT EXISTS (
@@ -2314,9 +2314,9 @@ func (q *Queries) GetCurrentFeatureWorkspaceCompletionDecision(ctx context.Conte
 		&i.WorkspaceRowID,
 		&i.AuthorityRevisionRowID,
 		&i.SourceClosureRowID,
+		&i.DiscoveryClosurePacketRowID,
 		&i.Decision,
 		&i.CreatedAt,
-		&i.DiscoveryClosurePacketRowID,
 	)
 	return i, err
 }

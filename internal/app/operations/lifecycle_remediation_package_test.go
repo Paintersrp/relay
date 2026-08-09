@@ -215,10 +215,11 @@ func approveRemediationCurrentBrief(t *testing.T, fixture remediationLifecycleFi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.AdmitTicketDesignBrief(fixture.ctx, apptickets.TicketDesignBriefAdmissionInput{WorkspaceID: fixture.workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+	admitted, err := owner.AdmitTicketDesignBrief(fixture.ctx, apptickets.TicketDesignBriefAdmissionInput{WorkspaceID: fixture.workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	review, err := owner.CompleteTicketDesignBriefReview(fixture.ctx, apptickets.CompleteBriefReviewInput{WorkspaceID: fixture.workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: apptickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
+	review, err := owner.CompleteTicketDesignBriefReview(fixture.ctx, apptickets.CompleteBriefReviewInput{WorkspaceID: fixture.workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: apptickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
 	if err != nil {
 		t.Fatal(err)
 	}

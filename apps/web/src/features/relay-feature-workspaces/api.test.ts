@@ -225,6 +225,12 @@ describe("feature workspace transport", () => {
     expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toEqual({ expectedVersion: 2, operatorConfirmed: true });
   });
 
+  it("parses a no-delivery completion decision with a null authority basis", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ workspace: { ...workspace, version: 4 }, decision: { completionDecisionId: "completion-no-delivery", authorityRevisionRowId: null, sourceClosureRowId: null, decision: "abandoned", createdAt: "" } })));
+    const result = await completeFeatureWorkspace("workspace-1", { expectedVersion: 3, operatorConfirmed: true });
+    expect(result.currentDecision).toEqual({ completionDecisionId: "completion-no-delivery", authorityRevisionRowId: null, sourceClosureRowId: null, decision: "abandoned", createdAt: "" });
+  });
+
   it("records an approval and returns typed fields", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ approval: { approvalId: "ga-approval-1", workspaceRowId: 1, artifactRowId: 10, retainedArtifactRowId: null, family: "requirements", artifactSha256: "a".repeat(64), operatorConfirmationEvidence: "operator confirmed", invalidatedByApprovalRowId: null, supersededByApprovalRowId: null, createdAt: "" }, workspace: { ...workspace, version: 3 } })));
     const approval = await recordFeatureAuthorityApproval("workspace-1", { family: "requirements", artifactRowId: 10, artifactSha256: "a".repeat(64), operatorConfirmationEvidence: "operator confirmed" });

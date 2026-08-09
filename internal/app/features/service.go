@@ -384,7 +384,7 @@ func (s *Service) EvaluateCompletion(ctx context.Context, workspaceID string) (C
 	if err != nil {
 		return CompletionStatus{}, err
 	}
-	gates, err := featureCompletionGates(ctx, s.store, workspace)
+	gates, err := s.featureCompletionGates(ctx, s.store, workspace)
 	if err != nil {
 		return CompletionStatus{}, err
 	}
@@ -437,7 +437,7 @@ func (s *Service) recordCompletionDecision(ctx context.Context, input Completion
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		gates, err := featureCompletionGates(ctx, tx, workspace)
+		gates, err := s.featureCompletionGates(ctx, tx, workspace)
 		if err != nil {
 			return err
 		}
@@ -445,6 +445,8 @@ func (s *Service) recordCompletionDecision(ctx context.Context, input Completion
 			return ErrFeatureCompletionNotReady
 		}
 		packetAssociation := sql.NullInt64{}
+		authorityAssociation := sql.NullInt64{}
+		sourceClosureAssociation := sql.NullInt64{}
 		if _, err := tx.GetDiscoveryLifecycleAdoption(ctx, workspace.ID); err == nil {
 			if !workspace.CurrentDiscoveryClosurePacketRowID.Valid {
 				return ErrFeatureCompletionNotReady
@@ -481,22 +483,37 @@ func (s *Service) recordCompletionDecision(ctx context.Context, input Completion
 				return ErrFeatureCompletionNotReady
 			}
 			assessment, err := s.assessDiscovery(ctx, tx, workspace)
-			if err != nil || assessment.State != DiscoveryStateClosed || len(assessment.Blockers) > 0 || len(assessment.PendingIntegrations) > 0 || len(assessment.ActiveOperations) > 0 {
+			if err != nil || assessment.State != DiscoveryStateClosed || len(assessment.Blockers) > 0 || len(assessment.PendingIntegrations) > 0 || len(assessment.ActiveOperations) > 0 || len(assessment.RouteMaterialOpen) > 0 || len(assessment.RequiredEvidence) > 0 {
+				return ErrFeatureCompletionNotReady
+			}
+			// A workspace with no planning authority may only close on the
+			// no-delivery route: the exact current closed packet must itself
+			// declare no_delivery_work. Any other packet requires the explicit
+			// authority basis below.
+			if !workspace.CurrentAuthorityRevisionRowID.Valid && packet.Destination != string(DiscoveryDestinationNoDeliveryWork) {
 				return ErrFeatureCompletionNotReady
 			}
 			packetAssociation = sql.NullInt64{Int64: packet.ID, Valid: true}
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
-		if err != nil || !authority.SourceClosureRowID.Valid {
+		if workspace.CurrentAuthorityRevisionRowID.Valid {
+			authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+			if err != nil || !authority.SourceClosureRowID.Valid {
+				return ErrFeatureCompletionNotReady
+			}
+			authorityAssociation = sql.NullInt64{Int64: authority.ID, Valid: true}
+			sourceClosureAssociation = authority.SourceClosureRowID
+		} else if !packetAssociation.Valid {
+			// Without an authority revision and without the current closed
+			// discovery packet basis there is no closing basis to record.
 			return ErrFeatureCompletionNotReady
 		}
 		decision, err := tx.CreateFeatureWorkspaceCompletionDecision(ctx, workflowstore.CreateFeatureWorkspaceCompletionDecisionParams{
 			CompletionDecisionID:        s.ids.CompletionDecisionID(),
 			WorkspaceRowID:              workspace.ID,
-			AuthorityRevisionRowID:      authority.ID,
-			SourceClosureRowID:          authority.SourceClosureRowID.Int64,
+			AuthorityRevisionRowID:      authorityAssociation,
+			SourceClosureRowID:          sourceClosureAssociation,
 			DiscoveryClosurePacketRowID: packetAssociation,
 			Decision:                    decision,
 		})
@@ -516,6 +533,14 @@ func (s *Service) recordCompletionDecision(ctx context.Context, input Completion
 type featureCompletionReader interface {
 	GetDiscoveryLifecycleAdoption(context.Context, int64) (workflowstore.DiscoveryLifecycleAdoption, error)
 	GetDiscoveryClosurePacketByRowID(context.Context, int64) (workflowstore.DiscoveryClosurePacket, error)
+	GetCurrentIntegratedDiscoveryRevision(context.Context, string) (workflowstore.IntegratedDiscoveryRevision, error)
+	GetDiscoveryArtifactByRowID(context.Context, int64) (workflowstore.DiscoveryArtifact, error)
+	ListDiscoveryWorkItemMetadata(context.Context, int64) ([]workflowstore.DiscoveryWorkItemMetadata, error)
+	ListDiscoveryIntegrationConsequences(context.Context, int64) ([]workflowstore.DiscoveryIntegrationConsequence, error)
+	ListFeatureWorkspaceDiscoveryTickets(context.Context, int64) ([]workflowstore.FeatureWorkspaceDiscoveryTicket, error)
+	ListFeatureWorkspaceTicketResolutions(context.Context, int64) ([]workflowstore.FeatureWorkspaceTicketResolution, error)
+	ListFeatureWorkspaceTicketDependencies(context.Context, int64) ([]workflowstore.FeatureWorkspaceTicketDependency, error)
+	ListFeatureWorkspaceRouteStates(context.Context, int64) ([]workflowstore.FeatureWorkspaceRouteState, error)
 	GetFeatureWorkspaceAuthorityRevisionByRowID(context.Context, int64) (workflowstore.FeatureWorkspaceAuthorityRevision, error)
 	GetSourceVaultClosureByRowID(context.Context, int64) (workflowstore.SourceVaultClosure, error)
 	ListFeatureWorkspaceAuthorityLayers(context.Context, int64) ([]workflowstore.FeatureWorkspaceAuthorityLayer, error)
@@ -528,14 +553,32 @@ type featureCompletionReader interface {
 	GetAuditRemediationSeedReopening(context.Context, int64) (workflowstore.AuditRemediationSeedReopening, error)
 }
 
-func featureCompletionGates(ctx context.Context, reader featureCompletionReader, workspace workflowstore.FeatureWorkspace) ([]CompletionGate, error) {
+func (s *Service) featureCompletionGates(ctx context.Context, reader featureCompletionReader, workspace workflowstore.FeatureWorkspace) ([]CompletionGate, error) {
 	closureReady := true
+	noDeliveryPacket := false
 	if _, err := reader.GetDiscoveryLifecycleAdoption(ctx, workspace.ID); err == nil {
 		closureReady = workspace.CurrentDiscoveryRevisionRowID.Valid && workspace.CurrentDiscoveryClosurePacketRowID.Valid
 		if closureReady {
 			packet, packetErr := reader.GetDiscoveryClosurePacketByRowID(ctx, workspace.CurrentDiscoveryClosurePacketRowID.Int64)
 			closureReady = packetErr == nil && packet.WorkspaceRowID == workspace.ID && packet.ClosingRevisionRowID == workspace.CurrentDiscoveryRevisionRowID.Int64
+			noDeliveryPacket = closureReady && packet.Destination == string(DiscoveryDestinationNoDeliveryWork)
 		}
+		// The projection must use the same current closed discovery facts as the
+		// mutation owner. Otherwise a stale blocker or unresolved route material
+		// could advertise a closing action that Complete/Abandon must reject.
+		assessment, assessmentErr := s.assessDiscovery(ctx, reader, workspace)
+		if assessmentErr != nil {
+			// Assessment integrity failures are a closed-basis failure, not an
+			// alternate successful projection. The mutating owner likewise
+			// reports not-ready for an unverifiable discovery basis.
+			closureReady = false
+		} else {
+			closureReady = closureReady && assessment.State == DiscoveryStateClosed &&
+				len(assessment.Blockers) == 0 && len(assessment.PendingIntegrations) == 0 &&
+				len(assessment.ActiveOperations) == 0 && len(assessment.RouteMaterialOpen) == 0 &&
+				len(assessment.RequiredEvidence) == 0
+		}
+		noDeliveryPacket = noDeliveryPacket && closureReady
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -653,6 +696,14 @@ func featureCompletionGates(ctx context.Context, reader featureCompletionReader,
 			packageReady = false
 			break
 		}
+	}
+	if !authorityReady && noDeliveryPacket && len(tickets) == 0 && len(packages) == 0 && len(seeds) == 0 && integrationReady {
+		// No-delivery route: the exact current closed no-delivery discovery
+		// packet is the complete closing basis, so the planning authority gate
+		// does not apply. The waiver requires that no planning authority and
+		// no delivery work of any kind exist; delivery-bearing routes keep
+		// requiring their explicit authority and evidence.
+		authorityReady = true
 	}
 	currentnessReady := closureReady && authorityReady && packageReady
 	return []CompletionGate{

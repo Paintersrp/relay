@@ -229,14 +229,15 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := briefService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{WorkspaceID: "workspace-package", Bytes: briefBytes, CreatedIdentity: "planner"}); err != nil {
+	admitted, err := briefService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{WorkspaceID: "workspace-package", Bytes: briefBytes, CreatedIdentity: "planner"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := briefService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: briefBytes}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approve fixture brief", CreatedIdentity: "operator"}); err != nil {
+	if _, err := briefService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: briefBytes}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approve fixture brief", CreatedIdentity: "operator"}); err != nil {
 		t.Fatal(err)
 	}
 

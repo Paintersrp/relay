@@ -91,7 +91,7 @@ export interface RecordAuthorityApprovalRequest { family: AuthorityLayerKind; ar
 export interface FeatureCompletionStatus {
   workspace: FeatureWorkspace;
   gates: Array<{ name: "authority" | "tickets" | "integration" | "transitions" | "remediation" | "audit"; ready: boolean }>;
-  currentDecision?: { completionDecisionId: string; authorityRevisionRowId: number; sourceClosureRowId: number; decision: string; createdAt: string };
+  currentDecision?: { completionDecisionId: string; authorityRevisionRowId: number | null; sourceClosureRowId: number | null; decision: string; createdAt: string };
 }
 export interface CompleteFeatureWorkspaceRequest {
   expectedVersion: number;
