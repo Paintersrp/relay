@@ -1033,6 +1033,28 @@ FROM planning_candidate_approvals
 WHERE candidate_row_id = ?
 ORDER BY created_at, id;
 
+-- name: CreatePlanningCandidateReview :one
+INSERT INTO planning_candidate_reviews (
+    review_id, candidate_row_id, reviewer_identity, completed_at
+)
+VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+RETURNING *;
+
+-- name: GetPlanningCandidateReviewByReviewID :one
+SELECT *
+FROM planning_candidate_reviews
+WHERE review_id = ?;
+
+-- name: GetPlanningCandidateReviewByRowID :one
+SELECT *
+FROM planning_candidate_reviews
+WHERE id = ?;
+
+-- name: GetPlanningCandidateReviewByCandidateRowID :one
+SELECT *
+FROM planning_candidate_reviews
+WHERE candidate_row_id = ?;
+
 -- name: CreateDeliveryTicketProductionLink :one
 INSERT INTO delivery_ticket_production_links (
     production_link_id, delivery_ticket_row_id, candidate_row_id,
@@ -1065,3 +1087,79 @@ SELECT *
 FROM delivery_ticket_production_links
 WHERE candidate_row_id = ?
 ORDER BY created_at, id;
+
+-- name: CreateTicketDesignBrief :one
+INSERT INTO ticket_design_briefs (
+    brief_id, workspace_row_id, selection_row_id, revision_row_id,
+    filename, artifact_row_id, artifact_sha256, artifact_size_bytes,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetTicketDesignBriefByBriefID :one
+SELECT *
+FROM ticket_design_briefs
+WHERE brief_id = ?;
+
+-- name: GetTicketDesignBriefByRowID :one
+SELECT *
+FROM ticket_design_briefs
+WHERE id = ?;
+
+-- name: GetTicketDesignBriefBySelectionRowID :one
+SELECT *
+FROM ticket_design_briefs
+WHERE selection_row_id = ?;
+
+-- name: ListTicketDesignBriefsByWorkspace :many
+SELECT *
+FROM ticket_design_briefs
+WHERE workspace_row_id = ?
+ORDER BY created_at, id;
+
+-- name: CreateTicketDesignBriefApproval :one
+INSERT INTO ticket_design_brief_approvals (
+    approval_id, brief_row_id, brief_artifact_row_id,
+    brief_sha256, brief_size_bytes, operator_confirmation_evidence,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetTicketDesignBriefApprovalByApprovalID :one
+SELECT *
+FROM ticket_design_brief_approvals
+WHERE approval_id = ?;
+
+-- name: GetTicketDesignBriefApprovalByRowID :one
+SELECT *
+FROM ticket_design_brief_approvals
+WHERE id = ?;
+
+-- name: GetTicketDesignBriefApprovalByBriefRowID :one
+SELECT *
+FROM ticket_design_brief_approvals
+WHERE brief_row_id = ?;
+
+-- name: CreateTicketDesignBriefReview :one
+INSERT INTO ticket_design_brief_reviews (
+    review_id, brief_row_id, reviewer_identity, completed_at
+)
+VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+RETURNING *;
+
+-- name: GetTicketDesignBriefReviewByReviewID :one
+SELECT *
+FROM ticket_design_brief_reviews
+WHERE review_id = ?;
+
+-- name: GetTicketDesignBriefReviewByRowID :one
+SELECT *
+FROM ticket_design_brief_reviews
+WHERE id = ?;
+
+-- name: GetTicketDesignBriefReviewByBriefRowID :one
+SELECT *
+FROM ticket_design_brief_reviews
+WHERE brief_row_id = ?;

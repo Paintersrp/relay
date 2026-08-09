@@ -88,6 +88,7 @@ func NewFeatureWorkspaceDiscoveryArtifactID() string {
 
 func NewPlanningCandidateID() string            { return "candidate-" + uuid.NewString() }
 func NewPlanningCandidateApprovalID() string    { return "candidate-approval-" + uuid.NewString() }
+func NewPlanningCandidateReviewID() string      { return "candidate-review-" + uuid.NewString() }
 func NewDeliveryTicketProductionLinkID() string { return "production-link-" + uuid.NewString() }
 
 func NewFeatureWorkspaceDiscoveryRevisionID() string {
@@ -149,6 +150,10 @@ func NewExecutionPackageApprovalID() string {
 func NewGoverningArtifactApprovalID() string {
 	return "ga-approval-" + uuid.NewString()
 }
+
+func NewTicketDesignBriefID() string            { return "brief-" + uuid.NewString() }
+func NewTicketDesignBriefApprovalID() string    { return "brief-approval-" + uuid.NewString() }
+func NewTicketDesignBriefReviewID() string      { return "brief-review-" + uuid.NewString() }
 
 func NewPrototypeProposalID() string          { return "prototype-proposal-" + uuid.NewString() }
 func NewPrototypeAuthorizationID() string     { return "prototype-authorization-" + uuid.NewString() }

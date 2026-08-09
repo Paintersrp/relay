@@ -118,7 +118,7 @@ export interface ProjectFeatureWorkspaceListResponse {
   items: ProjectFeatureWorkspaceSummary[];
 }
 
-export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "author_ticket_design_brief" | "review_ticket_design_brief" | "approve_ticket_design_brief" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
 
 export interface GuidedFrontierEntry {
   ticketId: string;
@@ -185,6 +185,108 @@ export interface GuidedOperationTransfer {
   prototype?: GuidedPrototypeTransfer;
 }
 
+export interface GuidedIntegrityClosurePacket {
+  closurePacketId: string;
+  sha256: string;
+}
+
+export interface GuidedIntegrityDiscoveryRevision {
+  revisionId: string;
+  revisionNumber: number;
+  closurePacketId: string;
+  packetSha256: string;
+  predecessorId: string;
+  historical: boolean;
+}
+
+export interface GuidedIntegrityReopenEvent {
+  reopenEventId: string;
+  reopenedPacketId: string;
+  replacementRevisionId: string;
+}
+
+export interface GuidedIntegrityAuthorityLayer {
+  kind: string;
+  artifactId: string;
+  sha256: string;
+  sourceClosureId: string;
+}
+
+export interface GuidedIntegrityAuthorityRevision {
+  authorityRevisionId: string;
+  revisionNumber: number;
+  historical: boolean;
+  layers: GuidedIntegrityAuthorityLayer[];
+}
+
+export interface GuidedIntegrityPlanningCandidate {
+  candidateId: string;
+  family: string;
+  artifactId: string;
+  sha256: string;
+  sizeBytes: number;
+  historical: boolean;
+  promoted: boolean;
+  approvals: string[];
+}
+
+export interface GuidedIntegrityTicket {
+  ticketId: string;
+  revisionNumber: number;
+}
+
+export interface GuidedIntegrityPrototypeEvidence {
+  qaEvidenceId: string;
+  semanticRole: string;
+  sha256: string;
+  sizeBytes: number;
+  mediaType: string;
+}
+
+export interface GuidedIntegrityPrototypeQAPacket {
+  qaPacketId: string;
+  status: string;
+  admissionId: string;
+  evidence: GuidedIntegrityPrototypeEvidence[];
+}
+
+export interface GuidedIntegrityPrototypeCleanup {
+  cleanupObligationId: string;
+  kind: string;
+  status: string;
+}
+
+export interface GuidedIntegrityPrototype {
+  runId: string;
+  runState: string;
+  proposalId: string;
+  authorizationId: string;
+  approvalId: string;
+  discoveryRevisionId: string;
+  cleanup: GuidedIntegrityPrototypeCleanup[];
+  qaPackets: GuidedIntegrityPrototypeQAPacket[];
+}
+
+export interface GuidedIntegrity {
+  discovery: {
+    currentRevisionId: string;
+    currentPacket: GuidedIntegrityClosurePacket | null;
+    history: GuidedIntegrityDiscoveryRevision[];
+    reopenEvents: GuidedIntegrityReopenEvent[];
+  };
+  authority: GuidedIntegrityAuthorityRevision[];
+  planning: GuidedIntegrityPlanningCandidate[];
+  delivery: {
+    frontier: GuidedIntegrityTicket[];
+    selection: { selectionId: string } | null;
+    package: { packageId: string; sha256: string; approvalId: string } | null;
+    run: { runId: string; packageId: string; repoTarget: string; branch: string; baseCommit: string } | null;
+    audit: { auditPacketId: string; auditDecisionId: string; auditedCommit: string } | null;
+    remediation: { seedIds: string[] } | null;
+  };
+  prototype: GuidedIntegrityPrototype | null;
+}
+
 export interface GuidedFeatureDetail {
   workspace: FeatureWorkspace;
   project: FeatureWorkspaceProject;
@@ -226,7 +328,7 @@ export interface GuidedFeatureDetail {
     };
     delivery: string[];
     prototype: string[];
-    integrity: { discovery: string[]; authority: string[]; planning: string[]; delivery: string[]; prototype: string[] };
+    integrity: GuidedIntegrity;
   };
   availableActions: Array<{ action: GuidedFeatureAction; primary: boolean; enabled: boolean; requiresConfirmation: boolean; blockedReason?: string; handoff?: string }>;
   primaryAction: GuidedFeatureAction;

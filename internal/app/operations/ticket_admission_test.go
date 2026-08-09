@@ -48,6 +48,14 @@ func (f *fakeTicketWorkflowOwner) Select(_ context.Context, _ tickets.SelectInpu
 	f.calls = append(f.calls, "select")
 	return tickets.SelectionResult{}, nil
 }
+func (f *fakeTicketWorkflowOwner) AdmitTicketDesignBrief(_ context.Context, _ tickets.TicketDesignBriefAdmissionInput) (tickets.TicketDesignBriefAdmissionResult, error) {
+	f.calls = append(f.calls, "admit-brief")
+	return tickets.TicketDesignBriefAdmissionResult{}, nil
+}
+func (f *fakeTicketWorkflowOwner) CompleteTicketDesignBriefReview(_ context.Context, _ tickets.CompleteBriefReviewInput) (tickets.TicketDesignBriefReviewResult, error) {
+	f.calls = append(f.calls, "complete-brief-review")
+	return tickets.TicketDesignBriefReviewResult{}, nil
+}
 
 func TestTicketWorkflowMutationsDelegateDirectly(t *testing.T) {
 	owner := &fakeTicketWorkflowOwner{}

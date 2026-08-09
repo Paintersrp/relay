@@ -218,6 +218,96 @@ func TestPlanningCandidatePersistenceExactReadAndProductionLink(t *testing.T) {
 	}
 }
 
+func TestPlanningCandidateReviewPersistenceIsNarrowImmutableFact(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	workspaceID, _, _ := seedPlanningCandidateBasis(t, ctx, store)
+	batch, err := store.ArtifactStore().Begin("feature-discovery/workspace-candidate/candidate-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes := []byte("# Reviewable candidate\n")
+	artifact, err := batch.Stage("planning_candidate_requirements", "requirements.md", "text/markdown", bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestArtifact, err := batch.Stage("discovery_closure_manifest", "closure.json", "application/vnd.relay.feature-discovery-closure+json", []byte("{}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var candidate PlanningCandidate
+	if err := store.CommitArtifactBatch(ctx, batch, func(tx *Tx) error {
+		artifactRow, err := tx.CreateFeatureWorkspaceDiscoveryArtifact(ctx, CreateFeatureWorkspaceDiscoveryArtifactParams{
+			DiscoveryArtifactID: NewFeatureWorkspaceDiscoveryArtifactID(), WorkspaceRowID: workspaceID,
+			RelativePath: artifact.RelativePath, Sha256: artifact.SHA256, MediaType: artifact.MediaType, SizeBytes: artifact.SizeBytes,
+		})
+		if err != nil {
+			return err
+		}
+		manifestArtifactRow, err := tx.CreateFeatureWorkspaceDiscoveryArtifact(ctx, CreateFeatureWorkspaceDiscoveryArtifactParams{
+			DiscoveryArtifactID: NewFeatureWorkspaceDiscoveryArtifactID(), WorkspaceRowID: workspaceID,
+			RelativePath: manifestArtifact.RelativePath, Sha256: manifestArtifact.SHA256, MediaType: manifestArtifact.MediaType, SizeBytes: manifestArtifact.SizeBytes,
+		})
+		if err != nil {
+			return err
+		}
+		var revisionID int64
+		if err := tx.tx.QueryRowContext(ctx, `INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, created_identity) VALUES (?, ?, 1, ?, 'candidate-test') RETURNING id`, NewFeatureWorkspaceDiscoveryRevisionID(), workspaceID, manifestArtifactRow.ID).Scan(&revisionID); err != nil {
+			return err
+		}
+		var packetID int64
+		if err := tx.tx.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_closure_packets (closure_packet_id, workspace_row_id, closing_revision_row_id, destination, manifest_artifact_row_id, manifest_sha256, manifest_size_bytes, manifest_media_type) VALUES (?, ?, ?, 'requirements', ?, ?, ?, ?) RETURNING id`, NewFeatureWorkspaceDiscoveryClosurePacketID(), workspaceID, revisionID, manifestArtifactRow.ID, manifestArtifact.SHA256, manifestArtifact.SizeBytes, manifestArtifact.MediaType).Scan(&packetID); err != nil {
+			return err
+		}
+		if _, err := tx.tx.ExecContext(ctx, `UPDATE feature_workspaces SET current_discovery_revision_row_id = ?, current_discovery_closure_packet_row_id = ?, version = version + 1 WHERE id = ?`, revisionID, packetID, workspaceID); err != nil {
+			return err
+		}
+		candidate, err = tx.CreatePlanningCandidate(ctx, CreatePlanningCandidateParams{
+			CandidateID: NewPlanningCandidateID(), WorkspaceRowID: workspaceID, Family: "requirements", Filename: "requirements.md",
+			ArtifactRowID: artifactRow.ID, ArtifactSha256: artifact.SHA256, ArtifactSizeBytes: artifact.SizeBytes,
+			DiscoveryClosurePacketRowID: packetID, RepoTarget: "candidate-repo", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: "requirements", CreatedIdentity: "candidate-test",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var review PlanningCandidateReview
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		var err error
+		review, err = tx.CreatePlanningCandidateReview(ctx, CreatePlanningCandidateReviewParams{
+			ReviewID: NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID, ReviewerIdentity: "auditor",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if review.CandidateRowID != candidate.ID || review.ReviewerIdentity != "auditor" || review.CompletedAt == "" {
+		t.Fatalf("created review = %#v", review)
+	}
+	if read, err := store.GetPlanningCandidateReviewByReviewID(ctx, review.ReviewID); err != nil || read.ID != review.ID {
+		t.Fatalf("review readback = %#v, %v", read, err)
+	}
+	if read, err := store.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.ID); err != nil || read.ReviewID != review.ReviewID {
+		t.Fatalf("candidate review readback = %#v, %v", read, err)
+	}
+	// A review binds at most one candidate, mirrors the exact candidate, and is
+	// retained immutable history with no outcome or verdict columns.
+	if err := store.WithTx(ctx, func(tx *Tx) error {
+		_, err := tx.CreatePlanningCandidateReview(ctx, CreatePlanningCandidateReviewParams{
+			ReviewID: NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID, ReviewerIdentity: "second",
+		})
+		return err
+	}); err == nil {
+		t.Fatal("second review for the same candidate was accepted")
+	}
+	if _, err := store.DB().Exec(`UPDATE planning_candidate_reviews SET reviewer_identity='changed' WHERE id=?`, review.ID); err == nil {
+		t.Fatal("candidate review was mutable")
+	}
+	if _, err := store.DB().Exec(`DELETE FROM planning_candidate_reviews WHERE id=?`, review.ID); err == nil {
+		t.Fatal("candidate review was deletable")
+	}
+}
+
 func seedPlanningCandidateBasis(t *testing.T, ctx context.Context, store *Store) (int64, string, int64) {
 	t.Helper()
 	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('candidate-repo', 'C:/candidate-repo', 'refs/heads/main', 1)`); err != nil {

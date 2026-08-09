@@ -2,6 +2,7 @@ package tickets
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,12 +27,16 @@ type fakeWorkflow struct {
 	priorityExternalPriority   int64
 	frontierWorkspaceID        string
 	selectionInput             apptickets.SelectInput
+	briefAdmissionInput        apptickets.TicketDesignBriefAdmissionInput
+	reviewCompletionInput      apptickets.CompleteBriefReviewInput
 	publishCalled              bool
 	replacementCalled          bool
 	approvalCalled             bool
 	priorityCalled             bool
 	frontierCalled             bool
 	selectionCalled            bool
+	briefAdmissionCalled       bool
+	reviewCompletionCalled     bool
 }
 
 func (f *fakeWorkflow) Publish(_ context.Context, input apptickets.PublishInput, reference *appoperations.RemediationAuthoringReference) (apptickets.PublishedRevision, error) {
@@ -78,8 +83,26 @@ func (f *fakeWorkflow) Select(_ context.Context, input apptickets.SelectInput) (
 	return apptickets.SelectionResult{}, f.err
 }
 
+func (f *fakeWorkflow) AdmitTicketDesignBrief(_ context.Context, input apptickets.TicketDesignBriefAdmissionInput) (apptickets.TicketDesignBriefAdmissionResult, error) {
+	f.briefAdmissionCalled = true
+	f.briefAdmissionInput = input
+	return apptickets.TicketDesignBriefAdmissionResult{
+		Brief: workflowstore.TicketDesignBrief{BriefID: "brief-api-1", ArtifactSha256: strings.Repeat("a", 64), ArtifactSizeBytes: int64(len(input.Bytes))},
+		Filename: "checkout.ticket-P1-T1.r1.design-brief.md",
+	}, f.err
+}
+
+func (f *fakeWorkflow) CompleteTicketDesignBriefReview(_ context.Context, input apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error) {
+	f.reviewCompletionCalled = true
+	f.reviewCompletionInput = input
+	return apptickets.TicketDesignBriefReviewResult{
+		Brief:  workflowstore.TicketDesignBrief{BriefID: "brief-api-1"},
+		Review: workflowstore.TicketDesignBriefReview{ReviewID: "brief-review-api-1", ReviewerIdentity: input.ReviewerIdentity, CompletedAt: "2026-08-08T00:00:00.000000000Z"},
+	}, f.err
+}
+
 func (f *fakeWorkflow) called() bool {
-	return f.publishCalled || f.replacementCalled || f.approvalCalled || f.priorityCalled || f.frontierCalled || f.selectionCalled
+	return f.publishCalled || f.replacementCalled || f.approvalCalled || f.priorityCalled || f.frontierCalled || f.selectionCalled || f.briefAdmissionCalled || f.reviewCompletionCalled
 }
 
 func publishedRevision(input apptickets.PublishInput) apptickets.PublishedRevision {
@@ -246,6 +269,49 @@ func TestSelectionRouteMapsAtomicConflict(t *testing.T) {
 	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/selection", strings.NewReader(selectionRequestJSON(""))))
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"CONFLICT"`) || service.selectionInput.TicketID != "ticket-1" || service.selectionInput.RevisionRowID != 9 {
 		t.Fatalf("response = %d %s selection = %#v", response.Code, response.Body.String(), service.selectionInput)
+	}
+}
+
+func TestTicketDesignBriefAdmissionRouteDelegatesServerResolvedBasis(t *testing.T) {
+	service := &fakeWorkflow{}
+	response := httptest.NewRecorder()
+	body := `{"bytesBase64":"` + base64.StdEncoding.EncodeToString([]byte("# Ticket Design Brief\n")) + `","createdIdentity":"planner"}`
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs", strings.NewReader(body)))
+	if response.Code != http.StatusCreated || !service.briefAdmissionCalled || service.briefAdmissionInput.WorkspaceID != "workspace-api" || service.briefAdmissionInput.CreatedIdentity != "planner" || string(service.briefAdmissionInput.Bytes) != "# Ticket Design Brief\n" {
+		t.Fatalf("response = %d %s admission = %#v", response.Code, response.Body.String(), service.briefAdmissionInput)
+	}
+	if !strings.Contains(response.Body.String(), `"briefId":"brief-api-1"`) || !strings.Contains(response.Body.String(), `"filename":"checkout.ticket-P1-T1.r1.design-brief.md"`) {
+		t.Fatalf("admission response body = %s", response.Body.String())
+	}
+}
+
+func TestTicketDesignBriefAdmissionRouteRejectsInvalidBytes(t *testing.T) {
+	service := &fakeWorkflow{}
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs", strings.NewReader(`{"bytesBase64":"not-base64","createdIdentity":"planner"}`)))
+	if response.Code != http.StatusBadRequest || service.briefAdmissionCalled {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestReviewCompletionRouteRecordsNarrowFactWithoutOutcome(t *testing.T) {
+	service := &fakeWorkflow{}
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor"}`)))
+	if response.Code != http.StatusCreated || !service.reviewCompletionCalled || service.reviewCompletionInput.WorkspaceID != "workspace-api" || service.reviewCompletionInput.ReviewerIdentity != "auditor" {
+		t.Fatalf("response = %d %s completion = %#v", response.Code, response.Body.String(), service.reviewCompletionInput)
+	}
+	if !strings.Contains(response.Body.String(), `"reviewId":"brief-review-api-1"`) || !strings.Contains(response.Body.String(), `"reviewerIdentity":"auditor"`) {
+		t.Fatalf("completion response body = %s", response.Body.String())
+	}
+}
+
+func TestReviewCompletionRouteRejectsMissingIdentity(t *testing.T) {
+	service := &fakeWorkflow{err: apptickets.ErrTicketDesignBriefReview}
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{}`)))
+	if response.Code != http.StatusBadRequest || !service.reviewCompletionCalled || strings.TrimSpace(service.reviewCompletionInput.ReviewerIdentity) != "" {
+		t.Fatalf("response = %d %s completion = %#v", response.Code, response.Body.String(), service.reviewCompletionInput)
 	}
 }
 

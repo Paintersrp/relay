@@ -1162,7 +1162,7 @@ INSERT INTO feature_workspace_authority_layers (
     retained_artifact_row_id, artifact_sha256, source_closure_row_id, approval_row_id
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id
+RETURNING id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, candidate_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id
 `
 
 type CreateFeatureWorkspaceAuthorityLayerParams struct {
@@ -1195,6 +1195,7 @@ func (q *Queries) CreateFeatureWorkspaceAuthorityLayer(ctx context.Context, arg 
 		&i.Sequence,
 		&i.ArtifactRowID,
 		&i.RetainedArtifactRowID,
+		&i.CandidateArtifactRowID,
 		&i.ArtifactSha256,
 		&i.SourceClosureRowID,
 		&i.CreatedAt,
@@ -2058,6 +2059,130 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.CompletedAt,
 		&i.ExecutionPackageRowID,
 		&i.PackageApprovalRowID,
+	)
+	return i, err
+}
+
+const createTicketDesignBrief = `-- name: CreateTicketDesignBrief :one
+INSERT INTO ticket_design_briefs (
+    brief_id, workspace_row_id, selection_row_id, revision_row_id,
+    filename, artifact_row_id, artifact_sha256, artifact_size_bytes,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity, created_at
+`
+
+type CreateTicketDesignBriefParams struct {
+	BriefID           string `json:"brief_id"`
+	WorkspaceRowID    int64  `json:"workspace_row_id"`
+	SelectionRowID    int64  `json:"selection_row_id"`
+	RevisionRowID     int64  `json:"revision_row_id"`
+	Filename          string `json:"filename"`
+	ArtifactRowID     int64  `json:"artifact_row_id"`
+	ArtifactSha256    string `json:"artifact_sha256"`
+	ArtifactSizeBytes int64  `json:"artifact_size_bytes"`
+	CreatedIdentity   string `json:"created_identity"`
+}
+
+func (q *Queries) CreateTicketDesignBrief(ctx context.Context, arg CreateTicketDesignBriefParams) (TicketDesignBrief, error) {
+	row := q.db.QueryRowContext(ctx, createTicketDesignBrief,
+		arg.BriefID,
+		arg.WorkspaceRowID,
+		arg.SelectionRowID,
+		arg.RevisionRowID,
+		arg.Filename,
+		arg.ArtifactRowID,
+		arg.ArtifactSha256,
+		arg.ArtifactSizeBytes,
+		arg.CreatedIdentity,
+	)
+	var i TicketDesignBrief
+	err := row.Scan(
+		&i.ID,
+		&i.BriefID,
+		&i.WorkspaceRowID,
+		&i.SelectionRowID,
+		&i.RevisionRowID,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createTicketDesignBriefApproval = `-- name: CreateTicketDesignBriefApproval :one
+INSERT INTO ticket_design_brief_approvals (
+    approval_id, brief_row_id, brief_artifact_row_id,
+    brief_sha256, brief_size_bytes, operator_confirmation_evidence,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, approval_id, brief_row_id, brief_artifact_row_id, brief_sha256, brief_size_bytes, operator_confirmation_evidence, created_identity, created_at
+`
+
+type CreateTicketDesignBriefApprovalParams struct {
+	ApprovalID                   string `json:"approval_id"`
+	BriefRowID                   int64  `json:"brief_row_id"`
+	BriefArtifactRowID           int64  `json:"brief_artifact_row_id"`
+	BriefSha256                  string `json:"brief_sha256"`
+	BriefSizeBytes               int64  `json:"brief_size_bytes"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+	CreatedIdentity              string `json:"created_identity"`
+}
+
+func (q *Queries) CreateTicketDesignBriefApproval(ctx context.Context, arg CreateTicketDesignBriefApprovalParams) (TicketDesignBriefApproval, error) {
+	row := q.db.QueryRowContext(ctx, createTicketDesignBriefApproval,
+		arg.ApprovalID,
+		arg.BriefRowID,
+		arg.BriefArtifactRowID,
+		arg.BriefSha256,
+		arg.BriefSizeBytes,
+		arg.OperatorConfirmationEvidence,
+		arg.CreatedIdentity,
+	)
+	var i TicketDesignBriefApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.BriefRowID,
+		&i.BriefArtifactRowID,
+		&i.BriefSha256,
+		&i.BriefSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createTicketDesignBriefReview = `-- name: CreateTicketDesignBriefReview :one
+INSERT INTO ticket_design_brief_reviews (
+    review_id, brief_row_id, reviewer_identity, completed_at
+)
+VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+RETURNING id, review_id, brief_row_id, reviewer_identity, completed_at, created_at
+`
+
+type CreateTicketDesignBriefReviewParams struct {
+	ReviewID         string `json:"review_id"`
+	BriefRowID       int64  `json:"brief_row_id"`
+	ReviewerIdentity string `json:"reviewer_identity"`
+}
+
+func (q *Queries) CreateTicketDesignBriefReview(ctx context.Context, arg CreateTicketDesignBriefReviewParams) (TicketDesignBriefReview, error) {
+	row := q.db.QueryRowContext(ctx, createTicketDesignBriefReview, arg.ReviewID, arg.BriefRowID, arg.ReviewerIdentity)
+	var i TicketDesignBriefReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.BriefRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -3163,6 +3288,210 @@ func (q *Queries) GetRunExecutionPackageApproval(ctx context.Context, id int64) 
 	return i, err
 }
 
+const getTicketDesignBriefApprovalByApprovalID = `-- name: GetTicketDesignBriefApprovalByApprovalID :one
+SELECT id, approval_id, brief_row_id, brief_artifact_row_id, brief_sha256, brief_size_bytes, operator_confirmation_evidence, created_identity, created_at
+FROM ticket_design_brief_approvals
+WHERE approval_id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefApprovalByApprovalID(ctx context.Context, approvalID string) (TicketDesignBriefApproval, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefApprovalByApprovalID, approvalID)
+	var i TicketDesignBriefApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.BriefRowID,
+		&i.BriefArtifactRowID,
+		&i.BriefSha256,
+		&i.BriefSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefApprovalByBriefRowID = `-- name: GetTicketDesignBriefApprovalByBriefRowID :one
+SELECT id, approval_id, brief_row_id, brief_artifact_row_id, brief_sha256, brief_size_bytes, operator_confirmation_evidence, created_identity, created_at
+FROM ticket_design_brief_approvals
+WHERE brief_row_id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefApprovalByBriefRowID(ctx context.Context, briefRowID int64) (TicketDesignBriefApproval, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefApprovalByBriefRowID, briefRowID)
+	var i TicketDesignBriefApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.BriefRowID,
+		&i.BriefArtifactRowID,
+		&i.BriefSha256,
+		&i.BriefSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefApprovalByRowID = `-- name: GetTicketDesignBriefApprovalByRowID :one
+SELECT id, approval_id, brief_row_id, brief_artifact_row_id, brief_sha256, brief_size_bytes, operator_confirmation_evidence, created_identity, created_at
+FROM ticket_design_brief_approvals
+WHERE id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefApprovalByRowID(ctx context.Context, id int64) (TicketDesignBriefApproval, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefApprovalByRowID, id)
+	var i TicketDesignBriefApproval
+	err := row.Scan(
+		&i.ID,
+		&i.ApprovalID,
+		&i.BriefRowID,
+		&i.BriefArtifactRowID,
+		&i.BriefSha256,
+		&i.BriefSizeBytes,
+		&i.OperatorConfirmationEvidence,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefByBriefID = `-- name: GetTicketDesignBriefByBriefID :one
+SELECT id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity, created_at
+FROM ticket_design_briefs
+WHERE brief_id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefByBriefID(ctx context.Context, briefID string) (TicketDesignBrief, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefByBriefID, briefID)
+	var i TicketDesignBrief
+	err := row.Scan(
+		&i.ID,
+		&i.BriefID,
+		&i.WorkspaceRowID,
+		&i.SelectionRowID,
+		&i.RevisionRowID,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefByRowID = `-- name: GetTicketDesignBriefByRowID :one
+SELECT id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity, created_at
+FROM ticket_design_briefs
+WHERE id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefByRowID(ctx context.Context, id int64) (TicketDesignBrief, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefByRowID, id)
+	var i TicketDesignBrief
+	err := row.Scan(
+		&i.ID,
+		&i.BriefID,
+		&i.WorkspaceRowID,
+		&i.SelectionRowID,
+		&i.RevisionRowID,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefBySelectionRowID = `-- name: GetTicketDesignBriefBySelectionRowID :one
+SELECT id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity, created_at
+FROM ticket_design_briefs
+WHERE selection_row_id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefBySelectionRowID(ctx context.Context, selectionRowID int64) (TicketDesignBrief, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefBySelectionRowID, selectionRowID)
+	var i TicketDesignBrief
+	err := row.Scan(
+		&i.ID,
+		&i.BriefID,
+		&i.WorkspaceRowID,
+		&i.SelectionRowID,
+		&i.RevisionRowID,
+		&i.Filename,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefReviewByBriefRowID = `-- name: GetTicketDesignBriefReviewByBriefRowID :one
+SELECT id, review_id, brief_row_id, reviewer_identity, completed_at, created_at
+FROM ticket_design_brief_reviews
+WHERE brief_row_id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefReviewByBriefRowID(ctx context.Context, briefRowID int64) (TicketDesignBriefReview, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefReviewByBriefRowID, briefRowID)
+	var i TicketDesignBriefReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.BriefRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefReviewByReviewID = `-- name: GetTicketDesignBriefReviewByReviewID :one
+SELECT id, review_id, brief_row_id, reviewer_identity, completed_at, created_at
+FROM ticket_design_brief_reviews
+WHERE review_id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefReviewByReviewID(ctx context.Context, reviewID string) (TicketDesignBriefReview, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefReviewByReviewID, reviewID)
+	var i TicketDesignBriefReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.BriefRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTicketDesignBriefReviewByRowID = `-- name: GetTicketDesignBriefReviewByRowID :one
+SELECT id, review_id, brief_row_id, reviewer_identity, completed_at, created_at
+FROM ticket_design_brief_reviews
+WHERE id = ?
+`
+
+func (q *Queries) GetTicketDesignBriefReviewByRowID(ctx context.Context, id int64) (TicketDesignBriefReview, error) {
+	row := q.db.QueryRowContext(ctx, getTicketDesignBriefReviewByRowID, id)
+	var i TicketDesignBriefReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.BriefRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getValidGoverningArtifactApproval = `-- name: GetValidGoverningArtifactApproval :one
 SELECT id, approval_id, workspace_row_id, artifact_row_id, retained_artifact_row_id, family, artifact_sha256, operator_confirmation_evidence, invalidated_by_approval_row_id, superseded_by_approval_row_id, created_at
 FROM governing_artifact_approvals
@@ -4113,7 +4442,7 @@ func (q *Queries) ListFeatureWorkspaceAdmittedInputs(ctx context.Context, worksp
 }
 
 const listFeatureWorkspaceAuthorityLayers = `-- name: ListFeatureWorkspaceAuthorityLayers :many
-SELECT id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id
+SELECT id, authority_revision_row_id, layer_kind, sequence, artifact_row_id, retained_artifact_row_id, candidate_artifact_row_id, artifact_sha256, source_closure_row_id, created_at, approval_row_id
 FROM feature_workspace_authority_layers
 WHERE authority_revision_row_id = ?
 ORDER BY sequence, id
@@ -4135,6 +4464,7 @@ func (q *Queries) ListFeatureWorkspaceAuthorityLayers(ctx context.Context, autho
 			&i.Sequence,
 			&i.ArtifactRowID,
 			&i.RetainedArtifactRowID,
+			&i.CandidateArtifactRowID,
 			&i.ArtifactSha256,
 			&i.SourceClosureRowID,
 			&i.CreatedAt,
@@ -4813,6 +5143,94 @@ func (q *Queries) ListPlanningCandidateApprovalsByCandidate(ctx context.Context,
 	return items, nil
 }
 
+const createPlanningCandidateReview = `-- name: CreatePlanningCandidateReview :one
+INSERT INTO planning_candidate_reviews (
+    review_id, candidate_row_id, reviewer_identity, completed_at
+)
+VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+RETURNING id, review_id, candidate_row_id, reviewer_identity, completed_at, created_at
+`
+
+type CreatePlanningCandidateReviewParams struct {
+	ReviewID         string `json:"review_id"`
+	CandidateRowID   int64  `json:"candidate_row_id"`
+	ReviewerIdentity string `json:"reviewer_identity"`
+}
+
+func (q *Queries) CreatePlanningCandidateReview(ctx context.Context, arg CreatePlanningCandidateReviewParams) (PlanningCandidateReview, error) {
+	row := q.db.QueryRowContext(ctx, createPlanningCandidateReview, arg.ReviewID, arg.CandidateRowID, arg.ReviewerIdentity)
+	var i PlanningCandidateReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.CandidateRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateReviewByCandidateRowID = `-- name: GetPlanningCandidateReviewByCandidateRowID :one
+SELECT id, review_id, candidate_row_id, reviewer_identity, completed_at, created_at
+FROM planning_candidate_reviews
+WHERE candidate_row_id = ?
+`
+
+func (q *Queries) GetPlanningCandidateReviewByCandidateRowID(ctx context.Context, candidateRowID int64) (PlanningCandidateReview, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateReviewByCandidateRowID, candidateRowID)
+	var i PlanningCandidateReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.CandidateRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateReviewByReviewID = `-- name: GetPlanningCandidateReviewByReviewID :one
+SELECT id, review_id, candidate_row_id, reviewer_identity, completed_at, created_at
+FROM planning_candidate_reviews
+WHERE review_id = ?
+`
+
+func (q *Queries) GetPlanningCandidateReviewByReviewID(ctx context.Context, reviewID string) (PlanningCandidateReview, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateReviewByReviewID, reviewID)
+	var i PlanningCandidateReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.CandidateRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanningCandidateReviewByRowID = `-- name: GetPlanningCandidateReviewByRowID :one
+SELECT id, review_id, candidate_row_id, reviewer_identity, completed_at, created_at
+FROM planning_candidate_reviews
+WHERE id = ?
+`
+
+func (q *Queries) GetPlanningCandidateReviewByRowID(ctx context.Context, id int64) (PlanningCandidateReview, error) {
+	row := q.db.QueryRowContext(ctx, getPlanningCandidateReviewByRowID, id)
+	var i PlanningCandidateReview
+	err := row.Scan(
+		&i.ID,
+		&i.ReviewID,
+		&i.CandidateRowID,
+		&i.ReviewerIdentity,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listPlanningCandidatesByWorkspace = `-- name: ListPlanningCandidatesByWorkspace :many
 SELECT id, candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, authority_revision_row_id, repo_target, branch, base_commit, destination, created_identity, created_at
 FROM planning_candidates
@@ -4983,6 +5401,48 @@ func (q *Queries) ListRunsByPlanPass(ctx context.Context, planPassRowID sql.Null
 			&i.CompletedAt,
 			&i.ExecutionPackageRowID,
 			&i.PackageApprovalRowID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTicketDesignBriefsByWorkspace = `-- name: ListTicketDesignBriefsByWorkspace :many
+SELECT id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity, created_at
+FROM ticket_design_briefs
+WHERE workspace_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListTicketDesignBriefsByWorkspace(ctx context.Context, workspaceRowID int64) ([]TicketDesignBrief, error) {
+	rows, err := q.db.QueryContext(ctx, listTicketDesignBriefsByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TicketDesignBrief{}
+	for rows.Next() {
+		var i TicketDesignBrief
+		if err := rows.Scan(
+			&i.ID,
+			&i.BriefID,
+			&i.WorkspaceRowID,
+			&i.SelectionRowID,
+			&i.RevisionRowID,
+			&i.Filename,
+			&i.ArtifactRowID,
+			&i.ArtifactSha256,
+			&i.ArtifactSizeBytes,
+			&i.CreatedIdentity,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

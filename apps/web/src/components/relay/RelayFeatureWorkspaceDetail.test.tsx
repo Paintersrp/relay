@@ -44,7 +44,34 @@ const base: GuidedFeatureDetail = {
     discovery: { blockers: ["missing evidence"], restorationActions: ["collect evidence"], pendingIntegrations: [], activeOperations: [], routeMaterialOpen: false, requiredEvidence: ["approval"] },
     delivery: ["remediation_open"],
     prototype: ["cleanup_pending"],
-    integrity: { discovery: ["discovery-1", "closure-1"], authority: ["current:authority-1"], planning: [], delivery: ["P5-T1@2"], prototype: [] },
+    integrity: {
+      discovery: {
+        currentRevisionId: "discovery-1",
+        currentPacket: { closurePacketId: "closure-1", sha256: "sha-closure-1" },
+        history: [{ revisionId: "discovery-1", revisionNumber: 1, closurePacketId: "closure-1", packetSha256: "sha-closure-1", predecessorId: "", historical: false }],
+        reopenEvents: [],
+      },
+      authority: [{ authorityRevisionId: "authority-1", revisionNumber: 1, historical: false, layers: [{ kind: "requirements", artifactId: "artifact-1", sha256: "sha-layer-1", sourceClosureId: "closure-source-1" }] }],
+      planning: [{ candidateId: "candidate-1", family: "requirements", artifactId: "artifact-candidate-1", sha256: "sha-candidate-1", sizeBytes: 12, historical: false, promoted: true, approvals: ["candidate-approval-1"] }],
+      delivery: {
+        frontier: [{ ticketId: "P5-T1", revisionNumber: 2 }],
+        selection: { selectionId: "selection-1" },
+        package: { packageId: "package-1", sha256: "sha-package-1", approvalId: "pkg-approval-1" },
+        run: { runId: "run-1", packageId: "package-1", repoTarget: "relay", branch: "main", baseCommit: "base-1" },
+        audit: { auditPacketId: "packet-audit-1", auditDecisionId: "audit-1", auditedCommit: "commit-1" },
+        remediation: { seedIds: ["remediation-1"] },
+      },
+      prototype: {
+        runId: "prototype-run-1",
+        runState: "approved",
+        proposalId: "prototype-proposal-1",
+        authorizationId: "prototype-authorization-1",
+        approvalId: "prototype-approval-1",
+        discoveryRevisionId: "discovery-1",
+        cleanup: [{ cleanupObligationId: "prototype-cleanup-1", kind: "worktree", status: "complete" }],
+        qaPackets: [{ qaPacketId: "prototype-qa-packet-1", status: "admitted", admissionId: "prototype-qa-admission-1", evidence: [{ qaEvidenceId: "prototype-qa-evidence-1", semanticRole: "result-envelope", sha256: "sha-evidence-1", sizeBytes: 4, mediaType: "application/json" }] }],
+      },
+    },
   },
   availableActions: [{ action: "continue_discovery", primary: true, enabled: true, requiresConfirmation: true }],
   primaryAction: "continue_discovery",
@@ -160,6 +187,26 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "author_requirements", confirmation: true });
   });
 
+  it("structurally renders the typed integrity identities under Diagnostics", () => {
+    render(<RelayFeatureWorkspaceDetail detail={base} />, { wrapper });
+    expect(screen.getByText("Integrity identities")).toBeInTheDocument();
+    expect(screen.getByText("Integrity discovery")).toBeInTheDocument();
+    expect(screen.getAllByText("discovery-1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("closure-1").length).toBeGreaterThan(0);
+    expect(screen.getByText("authority-1")).toBeInTheDocument();
+    expect(screen.getByText("artifact-1")).toBeInTheDocument();
+    expect(screen.getByText("candidate-1")).toBeInTheDocument();
+    expect(screen.getByText("package-1 (sha-package-1)")).toBeInTheDocument();
+    expect(screen.getByText("pkg-approval-1")).toBeInTheDocument();
+    expect(screen.getByText(/packet packet-audit-1; decision audit-1/)).toBeInTheDocument();
+    expect(screen.getByText("prototype-run-1")).toBeInTheDocument();
+    expect(screen.getByText(/admission prototype-qa-admission-1/)).toBeInTheDocument();
+    // Labels and values render as separate structural fields, not one opaque
+    // concatenated integrity string.
+    expect(screen.queryByText("current:authority-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("P5-T1@2")).not.toBeInTheDocument();
+  });
+
   it("composes the replacement revision for a confirmed guided reopen without a client digest", async () => {
     const user = userEvent.setup();
     mocks.action.mockClear();
@@ -179,5 +226,22 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(button).toBeEnabled();
     await user.click(button);
     expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "reopen_discovery", confirmation: true, cause: "new exact evidence", markdown: "# Reopened discovery\n" });
+  });
+
+  it("sends only semantic fields and never an integrity identity in the action payload", async () => {
+    const user = userEvent.setup();
+    mocks.action.mockClear();
+    mocks.action.mockResolvedValueOnce(base);
+    render(<RelayFeatureWorkspaceDetail detail={base} />, { wrapper });
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Continue discovery" }));
+    // The payload is exactly the semantic fields: expected version, action,
+    // and confirmation. No candidate, package, run, audit, digest, or artifact
+    // identity from the integrity surface is accepted by the boundary.
+    expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "continue_discovery", confirmation: true });
+    const payload = JSON.stringify(mocks.action.mock.calls[0]);
+    for (const identity of ["candidate-1", "package-1", "run-1", "packet-audit-1", "audit-1", "sha-package-1", "remediation-1", "closure-1", "sha-candidate-1"]) {
+      expect(payload).not.toContain(identity);
+    }
   });
 });

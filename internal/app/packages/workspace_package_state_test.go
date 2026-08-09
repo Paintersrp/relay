@@ -30,6 +30,12 @@ func TestReadWorkspacePackageStateTracksNonePreparedAndApproved(t *testing.T) {
 	if err != nil || approved.State != "approved" || approved.PackageID != prepared.Package.PackageID || approved.RunID == "" || approved.RunStatus == "" || approved.RunBaseCommit != fixture.baseCommit {
 		t.Fatalf("package state after approve = %+v, %v", approved, err)
 	}
+	// The approved state carries the packages-owner approval identity so the
+	// guided integrity surface never reconstructs it from rows.
+	approval, approvalErr := fixture.store.GetExecutionPackageApprovalByPackageRowID(ctx, prepared.Package.ID)
+	if approvalErr != nil || approved.PackageApprovalID != approval.ApprovalID {
+		t.Fatalf("package approval identity = %q, %v; want %q", approved.PackageApprovalID, approvalErr, approval.ApprovalID)
+	}
 	selection, err := fixture.store.GetDeliveryTicketSelectionBySelectionID(ctx, fixture.selectionID)
 	if err != nil || selection.State != "consumed" {
 		t.Fatalf("selection after guided approve = %+v, %v", selection, err)

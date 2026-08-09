@@ -15,6 +15,29 @@ type (
 	DiscoveryReopenEvent           = workflowgenerated.FeatureWorkspaceDiscoveryReopenEvent
 )
 
+// ListDiscoveryClosurePackets wraps the sqlc list surface so owner reads can
+// enumerate the closure packet history without ad-hoc SQL.
+func (s *Store) ListDiscoveryClosurePackets(ctx context.Context, workspaceRowID int64) ([]DiscoveryClosurePacket, error) {
+	return workflowgenerated.New(s.db).ListFeatureWorkspaceDiscoveryClosurePackets(ctx, workspaceRowID)
+}
+
+// ListIntegratedDiscoveryRevisions wraps the sqlc revision-history list into
+// the application-owned revision type so owner reads never depend on generated
+// persistence models.
+func (s *Store) ListIntegratedDiscoveryRevisions(ctx context.Context, workspaceRowID int64) ([]IntegratedDiscoveryRevision, error) {
+	values, err := workflowgenerated.New(s.db).ListFeatureWorkspaceIntegratedDiscoveryRevisions(ctx, workspaceRowID)
+	result := make([]IntegratedDiscoveryRevision, len(values))
+	for index, value := range values {
+		result[index] = IntegratedDiscoveryRevision{
+			ID: value.ID, DiscoveryRevisionID: value.DiscoveryRevisionID, WorkspaceRowID: value.WorkspaceRowID,
+			RevisionNumber: value.RevisionNumber, ArtifactRowID: value.ArtifactRowID,
+			PredecessorRevisionRowID: value.PredecessorRevisionRowID, CreatedIdentity: value.CreatedIdentity,
+			CreatedAt: value.CreatedAt, SettledDestination: value.SettledDestination, ContinuationJSON: value.ContinuationJson,
+		}
+	}
+	return result, err
+}
+
 func (s *Store) GetDiscoveryLifecycleAdoption(ctx context.Context, workspaceRowID int64) (DiscoveryLifecycleAdoption, error) {
 	return workflowgenerated.New(s.db).GetFeatureWorkspaceDiscoveryAdoption(ctx, workspaceRowID)
 }

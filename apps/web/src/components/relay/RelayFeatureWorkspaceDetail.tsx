@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { RelayApiError } from "@/features/workflow-api";
-import { actOnGuidedFeatureWorkspace, featureWorkspaceKeys, type GuidedFeatureAction, type GuidedFeatureDetail, type GuidedOperationTransfer } from "@/features/relay-feature-workspaces";
+import { actOnGuidedFeatureWorkspace, featureWorkspaceKeys, type GuidedFeatureAction, type GuidedFeatureDetail, type GuidedIntegrity, type GuidedOperationTransfer } from "@/features/relay-feature-workspaces";
 
 function actionLabel(action: GuidedFeatureAction): string {
   switch (action) {
@@ -22,6 +22,9 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "continue_established_route": return "Continue established route";
     case "legacy_recovery": return "Adopt discovery lifecycle";
     case "select_delivery_ticket": return "Select delivery ticket";
+    case "author_ticket_design_brief": return "Author Ticket Design Brief";
+    case "review_ticket_design_brief": return "Review Ticket Design Brief";
+    case "approve_ticket_design_brief": return "Approve Ticket Design Brief";
     case "prepare_package": return "Prepare package";
     case "approve_package": return "Approve package";
     case "launch_run": return "Launch run";
@@ -49,6 +52,119 @@ function errorMessage(error: unknown): string {
 
 function ProjectionList({ items, empty = "None recorded." }: { items: string[]; empty?: string }) {
   return items.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">{empty}</p>;
+}
+
+function IntegrityValue({ value }: { value: React.ReactNode }) {
+  return <dd className="mt-1 text-sm">{value || "None recorded."}</dd>;
+}
+
+function IntegrityField({ label, value }: { label: string; value: React.ReactNode }) {
+  return <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt><IntegrityValue value={value} /></div>;
+}
+
+function IntegritySubHeading({ children }: { children: React.ReactNode }) {
+  return <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h4>;
+}
+
+function IntegrityRecord({ name, detail, children }: { name: string; detail: React.ReactNode; children?: React.ReactNode }) {
+  return <div className="rounded border p-3 text-sm"><p className="font-medium">{name}</p>{detail ? <p className="mt-1 text-muted-foreground">{detail}</p> : null}{children}</div>;
+}
+
+function IntegritySection({ title, records }: { title: string; records: React.ReactNode[] }) {
+  if (!records.length) return null;
+  return <div><IntegritySubHeading>{title}</IntegritySubHeading><div className="mt-2 space-y-3">{records}</div></div>;
+}
+
+function IntegrityDiscoverySection({ discovery }: { discovery: GuidedIntegrity["discovery"] }) {
+  const records: React.ReactNode[] = [];
+  records.push(
+    <IntegrityRecord key="current" name="Current basis" detail={`${discovery.currentRevisionId || "No revision recorded."}${discovery.currentPacket ? `; packet ${discovery.currentPacket.closurePacketId} (${discovery.currentPacket.sha256})` : ""}`}>
+      {discovery.currentPacket ? <dl className="mt-2 grid gap-2 sm:grid-cols-2"><IntegrityField label="Closure packet" value={discovery.currentPacket.closurePacketId} /><IntegrityField label="Packet digest" value={discovery.currentPacket.sha256} /></dl> : null}
+    </IntegrityRecord>,
+  );
+  if (discovery.history.length) {
+    records.push(
+      <div key="history">
+        <IntegritySubHeading>Revision history</IntegritySubHeading>
+        <div className="mt-2 space-y-2">{discovery.history.map((entry) => <IntegrityRecord key={entry.revisionId} name={`${entry.revisionId} (revision ${entry.revisionNumber})`} detail={entry.historical ? "historical" : "current"}>
+          <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+            <IntegrityField label="Closure packet" value={entry.closurePacketId || "None"} />
+            <IntegrityField label="Packet digest" value={entry.packetSha256 || "None"} />
+            <IntegrityField label="Predecessor revision" value={entry.predecessorId || "None"} />
+          </dl>
+        </IntegrityRecord>)}</div>
+      </div>,
+    );
+  }
+  if (discovery.reopenEvents.length) {
+    records.push(
+      <div key="reopens">
+        <IntegritySubHeading>Reopen and replacement linkage</IntegritySubHeading>
+        <div className="mt-2 space-y-2">{discovery.reopenEvents.map((event) => <IntegrityRecord key={event.reopenEventId} name={event.reopenEventId} detail={`Reopened ${event.reopenedPacketId || "packet"}; replacement ${event.replacementRevisionId || "revision"}`} />)}</div>
+      </div>,
+    );
+  }
+  return <IntegritySection title="Integrity discovery" records={records} />;
+}
+
+function IntegrityAuthoritySection({ authority }: { authority: GuidedIntegrity["authority"] }) {
+  const records = authority.map((revision) => <IntegrityRecord key={revision.authorityRevisionId} name={revision.authorityRevisionId} detail={`Revision ${revision.revisionNumber}; ${revision.historical ? "historical" : "current"}`}>
+    {revision.layers.length ? <dl className="mt-2 space-y-3">{revision.layers.map((layer, index) => <div key={`${revision.authorityRevisionId}-${layer.kind}-${index}`}><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{layer.kind}</dt><dd className="mt-1 text-sm">
+      <dl className="grid gap-2 sm:grid-cols-2"><IntegrityField label="Artifact" value={layer.artifactId || "None"} /><IntegrityField label="Digest" value={layer.sha256 || "None"} /><IntegrityField label="Source closure" value={layer.sourceClosureId || "None"} /></dl>
+    </dd></div>)}</dl> : null}
+  </IntegrityRecord>);
+  return <IntegritySection title="Integrity authority" records={records} />;
+}
+
+function IntegrityPlanningSection({ planning }: { planning: GuidedIntegrity["planning"] }) {
+  const records = planning.map((candidate) => <IntegrityRecord key={candidate.candidateId} name={candidate.candidateId} detail={`${candidate.family}; ${candidate.historical ? "historical" : "current"}; ${candidate.promoted ? "promoted into current authority" : "not promoted into current authority"}`}>
+    <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+      <IntegrityField label="Artifact" value={candidate.artifactId || "None"} />
+      <IntegrityField label="Digest" value={candidate.sha256 || "None"} />
+      <IntegrityField label="Size (bytes)" value={candidate.sizeBytes} />
+      <IntegrityField label="Approvals" value={candidate.approvals.length ? candidate.approvals.join(", ") : "None"} />
+    </dl>
+  </IntegrityRecord>);
+  return <IntegritySection title="Integrity planning" records={records} />;
+}
+
+function IntegrityDeliverySection({ delivery }: { delivery: GuidedIntegrity["delivery"] }) {
+  const records: React.ReactNode[] = [];
+  if (delivery.frontier.length) {
+    records.push(<div key="frontier"><IntegritySubHeading>Delivery Ticket frontier</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">{delivery.frontier.map((entry) => <IntegrityField key={entry.ticketId} label={entry.ticketId} value={`Revision ${entry.revisionNumber}`} />)}</dl></div>);
+  }
+  const basis: Array<[string, React.ReactNode]> = [];
+  if (delivery.selection) basis.push(["Selection", delivery.selection.selectionId]);
+  if (delivery.package) basis.push(["Package", `${delivery.package.packageId} (${delivery.package.sha256})`]);
+  if (delivery.package?.approvalId) basis.push(["Package approval", delivery.package.approvalId]);
+  if (delivery.run) basis.push(["Run", `${delivery.run.runId} (package ${delivery.run.packageId}; ${delivery.run.repoTarget || "no repo"} @ ${delivery.run.branch || "no branch"}, base ${delivery.run.baseCommit || "none"})`]);
+  if (delivery.audit) basis.push(["Audit", `packet ${delivery.audit.auditPacketId}; decision ${delivery.audit.auditDecisionId || "none"}; audited ${delivery.audit.auditedCommit || "none"}`]);
+  if (delivery.remediation) basis.push(["Remediation", delivery.remediation.seedIds.join(", ")]);
+  records.push(<div key="basis"><IntegritySubHeading>Delivery identities</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">{basis.map(([label, value]) => <IntegrityField key={label} label={label} value={value} />)}</dl></div>);
+  return <IntegritySection title="Integrity delivery" records={records} />;
+}
+
+function IntegrityPrototypeSection({ prototype }: { prototype: GuidedIntegrity["prototype"] }) {
+  if (!prototype) return null;
+  const records: React.ReactNode[] = [
+    <div key="basis"><IntegritySubHeading>Prototype execution</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">
+      <IntegrityField label="Run" value={prototype.runId} />
+      <IntegrityField label="Run state" value={prototype.runState} />
+      <IntegrityField label="Proposal" value={prototype.proposalId || "None"} />
+      <IntegrityField label="Authorization" value={prototype.authorizationId || "None"} />
+      <IntegrityField label="Approval" value={prototype.approvalId || "None"} />
+      <IntegrityField label="Discovery basis" value={prototype.discoveryRevisionId || "None"} />
+    </dl></div>,
+  ];
+  if (prototype.cleanup.length) {
+    records.push(<div key="cleanup"><IntegritySubHeading>Cleanup obligations</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">{prototype.cleanup.map((item) => <IntegrityField key={item.cleanupObligationId} label={`${item.kind} (${item.status})`} value={item.cleanupObligationId} />)}</dl></div>);
+  }
+  if (prototype.qaPackets.length) {
+    records.push(<div key="qa"><IntegritySubHeading>QA packets</IntegritySubHeading><div className="mt-2 space-y-2">{prototype.qaPackets.map((packet) => <IntegrityRecord key={packet.qaPacketId} name={packet.qaPacketId} detail={`${packet.status}${packet.admissionId ? `; admission ${packet.admissionId}` : ""}`}>
+      {packet.evidence.length ? <dl className="mt-2 grid gap-2 sm:grid-cols-2">{packet.evidence.map((item) => <IntegrityField key={item.qaEvidenceId} label={item.semanticRole} value={`${item.qaEvidenceId} (${item.sha256}, ${item.sizeBytes} bytes, ${item.mediaType})`} />)}</dl> : null}
+    </IntegrityRecord>)}</div></div>);
+  }
+  return <IntegritySection title="Integrity prototype" records={records} />;
 }
 
 function OperationTransfer({ transfer }: { transfer: GuidedOperationTransfer }) {
@@ -258,7 +374,13 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
         <div><h3 className="font-medium">Discovery diagnostics</h3><p className="mt-1 text-muted-foreground">Route material open: {detail.diagnostics.discovery.routeMaterialOpen ? "yes" : "no"}</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Blockers</h4><ProjectionList items={detail.diagnostics.discovery.blockers} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Restoration actions</h4><ProjectionList items={detail.diagnostics.discovery.restorationActions} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending integrations</h4><ProjectionList items={detail.diagnostics.discovery.pendingIntegrations} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Active operations</h4><ProjectionList items={detail.diagnostics.discovery.activeOperations} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Required evidence</h4><ProjectionList items={detail.diagnostics.discovery.requiredEvidence} /></div></div></div>
         <div><h3 className="font-medium">Delivery diagnostics</h3><ProjectionList items={detail.diagnostics.delivery} empty="No delivery diagnostics recorded." /></div>
         <div><h3 className="font-medium">Prototype diagnostics</h3><ProjectionList items={detail.diagnostics.prototype} empty="No prototype diagnostics recorded." /></div>
-        <div><h3 className="font-medium">Integrity identities</h3><p className="mt-1 text-sm text-muted-foreground">Read-only source identities for inspection; they are never action inputs.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrity discovery</h4><ProjectionList items={detail.diagnostics.integrity.discovery} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrity authority</h4><ProjectionList items={detail.diagnostics.integrity.authority} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrity planning</h4><ProjectionList items={detail.diagnostics.integrity.planning} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrity delivery</h4><ProjectionList items={detail.diagnostics.integrity.delivery} /></div><div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrity prototype</h4><ProjectionList items={detail.diagnostics.integrity.prototype} /></div></div></div>
+        <div><h3 className="font-medium">Integrity identities</h3><p className="mt-1 text-sm text-muted-foreground">Read-only source identities for inspection; they are never action inputs.</p><div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <IntegrityDiscoverySection discovery={detail.diagnostics.integrity.discovery} />
+          <IntegrityAuthoritySection authority={detail.diagnostics.integrity.authority} />
+          <IntegrityPlanningSection planning={detail.diagnostics.integrity.planning} />
+          <IntegrityDeliverySection delivery={detail.diagnostics.integrity.delivery} />
+          <IntegrityPrototypeSection prototype={detail.diagnostics.integrity.prototype} />
+        </div></div>
       </div>
     </details>
   </div>;

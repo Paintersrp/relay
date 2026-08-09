@@ -1011,6 +1011,15 @@ type PlanningCandidateApproval struct {
 	CreatedAt                    string `json:"created_at"`
 }
 
+type PlanningCandidateReview struct {
+	ID               int64  `json:"id"`
+	ReviewID         string `json:"review_id"`
+	CandidateRowID   int64  `json:"candidate_row_id"`
+	ReviewerIdentity string `json:"reviewer_identity"`
+	CompletedAt      string `json:"completed_at"`
+	CreatedAt        string `json:"created_at"`
+}
+
 type Project struct {
 	ID          int64  `json:"id"`
 	ProjectID   string `json:"project_id"`
@@ -1167,4 +1176,39 @@ type SourceVaultRetention struct {
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at"`
 	ReleasedAt    sql.NullString `json:"released_at"`
+}
+
+type TicketDesignBrief struct {
+	ID                int64  `json:"id"`
+	BriefID           string `json:"brief_id"`
+	WorkspaceRowID    int64  `json:"workspace_row_id"`
+	SelectionRowID    int64  `json:"selection_row_id"`
+	RevisionRowID     int64  `json:"revision_row_id"`
+	Filename          string `json:"filename"`
+	ArtifactRowID     int64  `json:"artifact_row_id"`
+	ArtifactSha256    string `json:"artifact_sha256"`
+	ArtifactSizeBytes int64  `json:"artifact_size_bytes"`
+	CreatedIdentity   string `json:"created_identity"`
+	CreatedAt         string `json:"created_at"`
+}
+
+type TicketDesignBriefApproval struct {
+	ID                           int64  `json:"id"`
+	ApprovalID                   string `json:"approval_id"`
+	BriefRowID                   int64  `json:"brief_row_id"`
+	BriefArtifactRowID           int64  `json:"brief_artifact_row_id"`
+	BriefSha256                  string `json:"brief_sha256"`
+	BriefSizeBytes               int64  `json:"brief_size_bytes"`
+	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
+	CreatedIdentity              string `json:"created_identity"`
+	CreatedAt                    string `json:"created_at"`
+}
+
+type TicketDesignBriefReview struct {
+	ID               int64  `json:"id"`
+	ReviewID         string `json:"review_id"`
+	BriefRowID       int64  `json:"brief_row_id"`
+	ReviewerIdentity string `json:"reviewer_identity"`
+	CompletedAt      string `json:"completed_at"`
+	CreatedAt        string `json:"created_at"`
 }

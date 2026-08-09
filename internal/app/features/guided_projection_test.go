@@ -53,11 +53,14 @@ func TestGuidedHandoffIsDistinctAndCarriesOwnerPreparationContext(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if handoff.ResumeRoute == "" || handoff.Summary == "" || handoff.Context["owner"] != "ticket_design_brief_authoring" || handoff.Context["operationId"] != "planner.ticket_design_brief" {
+	if handoff.ResumeRoute == "" || handoff.Summary == "" || handoff.Context["owner"] != "delivery_ticket_authoring" || handoff.Context["operationId"] != plannerDeliveryTicketOperation {
 		t.Fatalf("handoff=%+v", handoff)
 	}
-	if handoff.Transfer == nil || handoff.Transfer.Ticket == nil || handoff.Transfer.Ticket.OperationID != "planner.ticket_design_brief" {
-		t.Fatalf("delivery handoff does not transfer the authoring owner surface: %+v", handoff.Transfer)
+	if handoff.Transfer == nil || handoff.Transfer.Ticket == nil || handoff.Transfer.Ticket.OperationID != plannerDeliveryTicketOperation {
+		t.Fatalf("delivery handoff does not transfer the exact planner.delivery_ticket owner surface: %+v", handoff.Transfer)
+	}
+	if strings.Contains(handoff.Summary, plannerTicketDesignBriefOperation) || strings.Contains(handoff.Summary, "ticket design brief") {
+		t.Fatalf("delivery ticket authoring handoff substitutes the ticket-design-brief operation: %q", handoff.Summary)
 	}
 	for _, forbidden := range []string{"frontier_identified", "route_identified", "not_performed", "frontierCount", "routeState"} {
 		for key, value := range handoff.Context {
@@ -101,8 +104,25 @@ func TestGuidedPlanningDistinguishesReviewApprovalPromotionAndHistoricalBasis(t 
 		t.Fatal(err)
 	}
 	planning, err := service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
-	if err != nil || planning.CandidateCount != 1 || planning.AwaitingReview != 1 || planning.AwaitingPromotion != 0 || planning.CandidateState != "admitted" || planning.ReviewState != "awaiting_review" || planning.ApprovalState != "none" || planning.PromotionState != "none" {
+	if err != nil || planning.CandidateCount != 1 || planning.AwaitingReview != 1 || planning.AwaitingApproval != 0 || planning.AwaitingPromotion != 0 || planning.CandidateState != "admitted" || planning.ReviewState != "awaiting_review" || planning.ApprovalState != "none" || planning.PromotionState != "none" {
 		t.Fatalf("admitted planning=%+v err=%v", planning, err)
+	}
+	// The external auditor records only the narrow completion fact of the
+	// read-only review; the projection then distinguishes reviewed/unapproved
+	// and emits the explicit approval as the next primary step.
+	reviewed, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviewed.Review.CandidateRowID != admitted.Candidate.ID || reviewed.Review.ReviewerIdentity != "auditor" {
+		t.Fatalf("completed review=%+v", reviewed.Review)
+	}
+	planning, err = service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
+	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingApproval != 1 || planning.AwaitingPromotion != 0 || planning.CandidateState != "reviewed" || planning.ReviewState != "reviewed" || planning.ApprovalState != "none" || planning.PromotionState != "none" {
+		t.Fatalf("reviewed planning=%+v err=%v", planning, err)
+	}
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrCandidateReview) {
+		t.Fatalf("duplicate review completion error = %v, want ErrCandidateReview", err)
 	}
 	approved, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 		CandidateID: admitted.Candidate.CandidateID, ExpectedSHA256: admitted.Candidate.ArtifactSha256, ExpectedSizeBytes: admitted.Candidate.ArtifactSizeBytes,
@@ -113,7 +133,7 @@ func TestGuidedPlanningDistinguishesReviewApprovalPromotionAndHistoricalBasis(t 
 		t.Fatal(err)
 	}
 	planning, err = service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
-	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingPromotion != 1 || planning.CandidateState != "reviewed" || planning.ReviewState != "reviewed" || planning.ApprovalState != "approved" || planning.PromotionState != "awaiting_promotion" {
+	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingApproval != 0 || planning.AwaitingPromotion != 1 || planning.CandidateState != "reviewed" || planning.ReviewState != "reviewed" || planning.ApprovalState != "approved" || planning.PromotionState != "awaiting_promotion" {
 		t.Fatalf("approved planning=%+v err=%v", planning, err)
 	}
 	promoted, err := service.PromoteApprovedPlanningCandidate(ctx, CandidatePromotionInput{CandidateID: approved.Candidate.CandidateID, ApprovalID: approved.Approval.ApprovalID, ExpectedVersion: workspace.Version, CreatedIdentity: "planner"})
@@ -186,12 +206,11 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 	}
 	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "guided-actions-repo", strings.Repeat("a", 40))
 	bytes := []byte("# guided server-side candidate\n")
-	admitted, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+	if _, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
 		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
 		Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "guided-actions-repo",
 		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -240,13 +259,41 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 		t.Fatalf("blocked approval mutated state: primary=%+v version=%d", unchanged.PrimaryAction, unchanged.Workspace.Version)
 	}
 
-	// Approval remains a server-side owner operation with no client-supplied
-	// candidate identity; it advances the guided primary action to promotion.
-	if _, err = service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
-		CandidateID: admitted.Candidate.CandidateID, ExpectedSHA256: admitted.Candidate.ArtifactSha256, ExpectedSizeBytes: admitted.Candidate.ArtifactSizeBytes,
-		Bytes: bytes, ExpectedVersion: unchanged.Workspace.Version, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID,
-		ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID, OperatorConfirmationEvidence: "reviewed", CreatedIdentity: "auditor",
-	}); err != nil {
+	// The external auditor records only the narrow completion fact of the
+	// read-only review through the bounded owner entry; no review outcome is
+	// accepted. The successive projection then distinguishes reviewed/unapproved
+	// and emits the explicit confirmed approval as the primary action.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); err != nil {
+		t.Fatal(err)
+	}
+	awaitingApproval, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if awaitingApproval.PrimaryAction.Action != GuidedActionApprovePlanningCandidate || !awaitingApproval.PrimaryAction.Enabled || !awaitingApproval.PrimaryAction.RequiresConfirmation || awaitingApproval.Planning.AwaitingApproval != 1 {
+		t.Fatalf("reviewed projection primary=%+v planning=%+v", awaitingApproval.PrimaryAction, awaitingApproval.Planning)
+	}
+	if candidate, candidateErr := service.guidedCurrentPlanningCandidate(ctx, workspace.WorkspaceID, DiscoveryDestinationRequirements, true); !errors.Is(candidateErr, ErrGuidedActionBlocked) {
+		t.Fatalf("reviewed candidate still resolvable as approved: %+v err=%v", candidate, candidateErr)
+	}
+	reviewCandidate, candidateErr := service.guidedCurrentPlanningCandidate(ctx, workspace.WorkspaceID, DiscoveryDestinationRequirements, false)
+	if candidateErr != nil {
+		t.Fatalf("reviewed candidate not resolvable for approval: err=%v", candidateErr)
+	}
+	if reviewCandidate.Family != CandidateFamilyRequirements {
+		t.Fatalf("resolved approval candidate family = %q", reviewCandidate.Family)
+	}
+	if _, reviewErr := service.store.GetPlanningCandidateReviewByCandidateRowID(ctx, reviewCandidate.ID); reviewErr != nil {
+		t.Fatalf("approval candidate has no completed review: %v", reviewErr)
+	}
+
+	// Approval is an explicit confirmed guided mutation that resolves the
+	// reviewed candidate server-side; without confirmation it is rejected
+	// before any mutation.
+	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: awaitingApproval.Workspace.Version}); !errors.Is(err, ErrFeatureCompletionConfirmation) {
+		t.Fatalf("approve without confirmation error=%v", err)
+	}
+	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: awaitingApproval.Workspace.Version, Confirmation: true}); err != nil {
 		t.Fatal(err)
 	}
 	awaitingPromotion, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
@@ -257,7 +304,7 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 		t.Fatalf("approved projection primary=%+v", awaitingPromotion.PrimaryAction)
 	}
 	if candidate, candidateErr := service.guidedCurrentPlanningCandidate(ctx, workspace.WorkspaceID, DiscoveryDestinationRequirements, false); !errors.Is(candidateErr, ErrGuidedActionBlocked) {
-		t.Fatalf("approved candidate still resolvable as admitted: %+v err=%v", candidate, candidateErr)
+		t.Fatalf("approved candidate still resolvable as reviewed: %+v err=%v", candidate, candidateErr)
 	}
 
 	// Promotion publishes the approved candidate as workspace authority and

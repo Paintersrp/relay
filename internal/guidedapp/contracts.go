@@ -9,16 +9,19 @@ import "context"
 // PackageState is the packages-owner semantic read of the current execution
 // package for one workspace: none | prepared | approved. The approved state
 // carries the linked Run's public identity and status so downstream owners can
-// be composed without row re-derivation.
+// be composed without row re-derivation. PackageApprovalID is the packages
+// owner's public package-approval identity resolved server-side; consumers
+// never reconstruct it from rows.
 type PackageState struct {
-	State         string
-	PackageID     string
-	PackageSHA256 string
-	RunID         string
-	RunStatus     string
-	RunRepoTarget string
-	RunBranch     string
-	RunBaseCommit string
+	State             string
+	PackageID         string
+	PackageSHA256     string
+	PackageApprovalID string
+	RunID             string
+	RunStatus         string
+	RunRepoTarget     string
+	RunBranch         string
+	RunBaseCommit     string
 }
 
 // ApprovePackageInput carries only workspace-level guided inputs; the package
@@ -28,22 +31,39 @@ type ApprovePackageInput struct {
 	Evidence    string
 }
 
+// PreparePackageInput carries only workspace-level guided inputs; the active
+// selection and the current approved Ticket Design Brief are resolved
+// server-side by the package owner.
+type PreparePackageInput struct {
+	WorkspaceID string
+}
+
+// PreparePackageResult carries only the prepared package identity resolved
+// server-side by the package owner.
+type PreparePackageResult struct {
+	PackageID string
+	State     string
+}
+
 // PackageOwner is the package-owner surface required by the guided journey.
 type PackageOwner interface {
 	ReadWorkspacePackageState(context.Context, string) (PackageState, error)
 	ApproveCurrentPackage(context.Context, ApprovePackageInput) error
+	PrepareCurrentSelection(context.Context, PreparePackageInput) (PreparePackageResult, error)
 }
 
 // RunAuditState is the audits-owner semantic read of one package Run's audit
 // progression: none | awaiting_audit | packet_recorded | decision_recorded.
-// It carries only public audit identities resolved by the audit owner.
+// It carries only public audit identities resolved by the audit owner,
+// including the recorded audit decision identity when a decision exists.
 type RunAuditState struct {
-	RunID         string
-	RunStatus     string
-	State         string
-	AuditPacketID string
-	AuditedCommit string
-	Diagnostics   []string
+	RunID           string
+	RunStatus       string
+	State           string
+	AuditPacketID   string
+	AuditDecisionID string
+	AuditedCommit   string
+	Diagnostics     []string
 }
 
 // RemediationState is the audits-owner semantic read of audit remediation

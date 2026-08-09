@@ -2,8 +2,8 @@ package features
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"strconv"
 	"strings"
 
 	apptickets "relay/internal/app/tickets"
@@ -15,6 +15,15 @@ var (
 	ErrGuidedActionBlocked           = errors.New("guided action is not the presently enabled primary action")
 	ErrGuidedPackageOwnerUnavailable = errors.New("guided package owner is unavailable")
 	ErrGuidedAuditOwnerUnavailable   = errors.New("guided audit owner is unavailable")
+)
+
+// Guided operation identities transferred by the journey. These are the exact
+// established operation IDs; the journey never substitutes a ticket canonical
+// JSON artifact or a generic planner envelope for the named operation surface.
+const (
+	plannerDeliveryTicketOperation          = "planner.delivery_ticket"
+	plannerTicketDesignBriefOperation       = "planner.ticket_design_brief"
+	auditorTicketDesignBriefReviewOperation = "auditor.ticket_design_brief_review"
 )
 
 // GuidedFeatureProjection is the application-owned semantic journey. It is
@@ -70,8 +79,8 @@ type GuidedPlanningSection struct {
 // family so the guided decision can sequence author -> review -> approval ->
 // promotion -> next family or ticket without relying on authority presence.
 type GuidedPlanningFamilySection struct {
-	Count, AwaitingReview, AwaitingPromotion, Promoted int
-	State                                              string // none | admitted | approved | promoted
+	Count, AwaitingReview, AwaitingApproval, AwaitingPromotion, Promoted int
+	State                                                                string // none | admitted | reviewed | approved | promoted
 }
 
 // GuidedFrontierEntry is the delivery-owner semantic frontier identity. It
@@ -92,6 +101,7 @@ type GuidedFrontierEntry struct {
 type GuidedDeliverySection struct {
 	Frontier         []GuidedFrontierEntry
 	SelectionState   string // none | active | consumed | superseded
+	BriefState       string // none | authored | approved
 	PackageState     string // none | prepared | approved
 	PackageID        string
 	RunState         string // none | created | setup_ready | executing | validating | audit_ready | needs_revision | completed | ...
@@ -122,9 +132,159 @@ type GuidedDiagnosticsSection struct {
 
 // GuidedIntegritySection is a read-only, owner-derived identity inspection
 // surface. It is intentionally separate from progression state and is never
-// accepted by GuidedActionInput.
+// accepted by GuidedActionInput. Historical evidence is inspectable here but
+// is never progression authority.
 type GuidedIntegritySection struct {
-	Discovery, Authority, Planning, Delivery, Prototype []string
+	Discovery GuidedIntegrityDiscoverySection
+	Authority []GuidedIntegrityAuthorityRevision
+	Planning  []GuidedIntegrityPlanningCandidate
+	Delivery  GuidedIntegrityDeliverySection
+	Prototype *GuidedIntegrityPrototypeSection
+}
+
+// GuidedIntegrityDiscoverySection carries the current discovery revision and
+// closure packet plus the full revision history and reopen replacement
+// linkage.
+type GuidedIntegrityDiscoverySection struct {
+	CurrentRevisionID string                        // AC10 current discovery revision ID
+	CurrentPacket     *GuidedIntegrityClosurePacket // AC11 current closure packet ID+digest
+	History           []GuidedIntegrityDiscoveryRevision
+	ReopenEvents      []GuidedIntegrityReopenEvent
+}
+
+// GuidedIntegrityClosurePacket is the public closure packet identity and its
+// manifest digest.
+type GuidedIntegrityClosurePacket struct {
+	ClosurePacketID string // AC11
+	SHA256          string // AC11 manifest digest
+}
+
+// GuidedIntegrityDiscoveryRevision is one integrated discovery revision with
+// its closure packet binding, predecessor linkage, and explicit
+// current-vs-historical marker.
+type GuidedIntegrityDiscoveryRevision struct {
+	RevisionID      string // AC12
+	RevisionNumber  int64  // AC12
+	ClosurePacketID string // AC12 closure packet ID
+	PacketSHA256    string // AC12 closure packet digest
+	PredecessorID   string // AC12 predecessor revision ID
+	Historical      bool   // AC25
+}
+
+// GuidedIntegrityReopenEvent links a reopened closure packet to its
+// replacement integrated revision.
+type GuidedIntegrityReopenEvent struct {
+	ReopenEventID         string // AC12
+	ReopenedPacketID      string // AC12 reopened closure packet
+	ReplacementRevisionID string // AC12 replacement revision
+}
+
+// GuidedIntegrityAuthorityRevision is one authority revision with its layers.
+type GuidedIntegrityAuthorityRevision struct {
+	AuthorityRevisionID string                          // AC13
+	RevisionNumber      int64                           // AC13
+	Historical          bool                            // AC13/AC25 explicit current/historical
+	Layers              []GuidedIntegrityAuthorityLayer // AC14
+}
+
+// GuidedIntegrityAuthorityLayer carries the layer kind, the exact stable
+// artifact identity (the public discovery-artifact domain ID, never the row
+// ID), the artifact digest, and the source closure identity.
+type GuidedIntegrityAuthorityLayer struct {
+	Kind            string // AC14
+	ArtifactID      string // AC14 stable artifact identity
+	SHA256          string // AC14 digest
+	SourceClosureID string // AC14 source closure identity
+}
+
+// GuidedIntegrityPlanningCandidate is one planning candidate with its stable
+// artifact identity, digest, size, explicit current-vs-historical basis,
+// promotion linkage, and approval identities.
+type GuidedIntegrityPlanningCandidate struct {
+	CandidateID string   // AC15
+	Family      string   // AC15
+	ArtifactID  string   // AC15 stable artifact identity
+	SHA256      string   // AC15 digest
+	SizeBytes   int64    // AC15 size
+	Historical  bool     // AC25 current-vs-historical
+	Promoted    bool     // AC15 promotion linkage
+	Approvals   []string // AC16 approval IDs
+}
+
+// GuidedIntegrityDeliverySection carries the delivery-owner identities: the
+// Delivery Ticket frontier, current selection, execution package and its
+// approval, the linked Run, the workflow audit, and audit remediation seeds.
+type GuidedIntegrityDeliverySection struct {
+	Frontier    []GuidedIntegrityTicket     // AC17
+	Selection   *GuidedIntegritySelection   // AC18
+	Package     *GuidedIntegrityPackage     // AC19/AC20
+	Run         *GuidedIntegrityRun         // AC21
+	Audit       *GuidedIntegrityAudit       // AC22
+	Remediation *GuidedIntegrityRemediation // AC23
+}
+
+type GuidedIntegrityTicket struct {
+	TicketID       string // AC17
+	RevisionNumber int64  // AC17
+}
+type GuidedIntegritySelection struct {
+	SelectionID string // AC18
+}
+type GuidedIntegrityPackage struct {
+	PackageID  string // AC19
+	SHA256     string // AC19
+	ApprovalID string // AC20
+}
+type GuidedIntegrityRun struct {
+	RunID      string // AC21
+	PackageID  string // AC21 package basis
+	RepoTarget string // AC21 current basis
+	Branch     string // AC21 current basis
+	BaseCommit string // AC21 current basis
+}
+type GuidedIntegrityAudit struct {
+	AuditPacketID   string // AC22
+	AuditDecisionID string // AC22
+	AuditedCommit   string // AC22
+}
+type GuidedIntegrityRemediation struct {
+	SeedIDs []string // AC23
+}
+
+// GuidedIntegrityPrototypeSection carries the prototype Run's authorization,
+// proposal, and approval identities, its discovery basis binding, the exact
+// cleanup obligation semantic keys, and the QA packets with their admission
+// and evidence identities and digests.
+type GuidedIntegrityPrototypeSection struct {
+	RunID               string // AC24
+	RunState            string // AC24
+	ProposalID          string // AC24
+	AuthorizationID     string // AC24
+	ApprovalID          string // AC24
+	DiscoveryRevisionID string // AC24 discovery basis binding
+	Cleanup             []GuidedIntegrityPrototypeCleanup
+	QAPackets           []GuidedIntegrityPrototypeQAPacket
+}
+
+type GuidedIntegrityPrototypeCleanup struct {
+	CleanupObligationID string // AC24 exact semantic key
+	Kind                string
+	Status              string
+}
+
+type GuidedIntegrityPrototypeQAPacket struct {
+	QAPacketID  string                               // AC24
+	Status      string                               // AC24
+	AdmissionID string                               // AC24 admission ID
+	Evidence    []GuidedIntegrityPrototypeQAEvidence // AC24 evidence identities/digests
+}
+
+type GuidedIntegrityPrototypeQAEvidence struct {
+	QaEvidenceID string // AC24
+	SemanticRole string
+	SHA256       string // AC24 digest
+	SizeBytes    int64
+	MediaType    string
 }
 
 // GuidedHandoff transfers the actual owner-composed operation surface for the
@@ -244,41 +404,220 @@ func (s *Service) ReadGuidedProjection(ctx context.Context, workspaceID string) 
 		return GuidedFeatureProjection{}, err
 	}
 	projection := composeGuidedFeatureProjection(workspace, project, assessment, currentness, authority, completion, planning, delivery, prototype)
-	projection.Diagnostics.Integrity = guidedIntegrity(ctx, s, workspace, assessment, authority, planning, delivery, prototype)
+	projection.Diagnostics.Integrity = guidedIntegrity(ctx, s, workspace, assessment, authority, delivery, prototype)
 	return projection, nil
 }
 
-func guidedIntegrity(ctx context.Context, s *Service, workspace workflowstore.FeatureWorkspace, assessment DiscoveryAssessment, authority []AuthorityRevisionDetail, planning GuidedPlanningSection, delivery GuidedDeliverySection, prototype GuidedPrototypeSection) GuidedIntegritySection {
-	result := GuidedIntegritySection{}
+func guidedIntegrity(ctx context.Context, s *Service, workspace workflowstore.FeatureWorkspace, assessment DiscoveryAssessment, authority []AuthorityRevisionDetail, delivery GuidedDeliverySection, prototype GuidedPrototypeSection) GuidedIntegritySection {
+	result := GuidedIntegritySection{Delivery: GuidedIntegrityDeliverySection{}}
+
+	// Discovery (AC10-AC12): the current integrated revision and closure
+	// packet, then the full revision history with its closure packet bindings,
+	// predecessor linkage, and reopen replacement events.
+	revisions, revisionErr := s.store.ListIntegratedDiscoveryRevisions(ctx, workspace.ID)
+	packets, _ := s.store.ListDiscoveryClosurePackets(ctx, workspace.ID)
+	reopenEvents, reopenErr := s.store.ListDiscoveryReopenEvents(ctx, workspace.ID)
+	revisionIDByRow := make(map[int64]string, len(revisions))
+	packetByRow := make(map[int64]workflowstore.DiscoveryClosurePacket, len(packets))
+	packetByClosingRevision := make(map[int64]workflowstore.DiscoveryClosurePacket, len(packets))
+	for _, revision := range revisions {
+		revisionIDByRow[revision.ID] = revision.DiscoveryRevisionID
+	}
+	for _, packet := range packets {
+		packetByRow[packet.ID] = packet
+		packetByClosingRevision[packet.ClosingRevisionRowID] = packet
+	}
 	if assessment.Revision != nil {
-		result.Discovery = append(result.Discovery, assessment.Revision.DiscoveryRevisionID)
+		result.Discovery.CurrentRevisionID = assessment.Revision.DiscoveryRevisionID // AC10
 	}
 	if workspace.CurrentDiscoveryClosurePacketRowID.Valid {
-		if packet, err := s.store.GetDiscoveryClosurePacketByRowID(ctx, workspace.CurrentDiscoveryClosurePacketRowID.Int64); err == nil {
-			result.Discovery = append(result.Discovery, packet.ClosurePacketID)
+		if packet, ok := packetByRow[workspace.CurrentDiscoveryClosurePacketRowID.Int64]; ok {
+			result.Discovery.CurrentPacket = &GuidedIntegrityClosurePacket{ClosurePacketID: packet.ClosurePacketID, SHA256: packet.ManifestSha256} // AC11
 		}
 	}
-	for _, revision := range authority {
-		prefix := "historical:"
-		if !revision.Historical {
-			prefix = "current:"
-		}
-		result.Authority = append(result.Authority, prefix+revision.Revision.AuthorityRevisionID)
-		for _, layer := range revision.Layers {
-			result.Authority = append(result.Authority, prefix+layer.LayerKind)
+	if revisionErr == nil {
+		for _, revision := range revisions {
+			entry := GuidedIntegrityDiscoveryRevision{RevisionID: revision.DiscoveryRevisionID, RevisionNumber: revision.RevisionNumber, Historical: true}
+			if assessment.Revision != nil && revision.ID == assessment.Revision.ID {
+				entry.Historical = false // AC25
+			}
+			if revision.PredecessorRevisionRowID.Valid {
+				entry.PredecessorID = revisionIDByRow[revision.PredecessorRevisionRowID.Int64]
+			}
+			if packet, ok := packetByClosingRevision[revision.ID]; ok {
+				entry.ClosurePacketID = packet.ClosurePacketID
+				entry.PacketSHA256 = packet.ManifestSha256
+			}
+			result.Discovery.History = append(result.Discovery.History, entry)
 		}
 	}
-	if planning.CandidateCount > 0 {
-		result.Planning = append(result.Planning, "candidates:"+strconv.Itoa(planning.CandidateCount))
+	if reopenErr == nil {
+		for _, event := range reopenEvents {
+			link := GuidedIntegrityReopenEvent{ReopenEventID: event.ReopenEventID, ReplacementRevisionID: revisionIDByRow[event.ReplacementRevisionRowID]}
+			if packet, ok := packetByRow[event.ClosurePacketRowID]; ok {
+				link.ReopenedPacketID = packet.ClosurePacketID
+			}
+			result.Discovery.ReopenEvents = append(result.Discovery.ReopenEvents, link)
+		}
 	}
+
+	// Authority (AC13-AC14): every revision with its explicit current or
+	// historical marker, and every layer with its kind, exact stable artifact
+	// identity (the public discovery-artifact domain ID, never the row ID),
+	// artifact digest, and source closure identity.
+	for _, detail := range authority {
+		revision := GuidedIntegrityAuthorityRevision{
+			AuthorityRevisionID: detail.Revision.AuthorityRevisionID,
+			RevisionNumber:      detail.Revision.RevisionNumber,
+			Historical:          detail.Historical, // AC13/AC25
+		}
+		for _, layer := range detail.Layers {
+			entry := GuidedIntegrityAuthorityLayer{Kind: layer.LayerKind, SHA256: layer.ArtifactSha256}
+			if layer.ArtifactRowID.Valid {
+				entry.ArtifactID = discoveryArtifactIdentity(ctx, s, layer.ArtifactRowID.Int64)
+			} else if layer.CandidateArtifactRowID.Valid {
+				entry.ArtifactID = discoveryArtifactIdentity(ctx, s, layer.CandidateArtifactRowID.Int64)
+			}
+			if layer.SourceClosureRowID.Valid {
+				entry.SourceClosureID = sourceClosureIdentity(ctx, s, layer.SourceClosureRowID.Int64)
+			} else if detail.Revision.SourceClosureRowID.Valid {
+				entry.SourceClosureID = sourceClosureIdentity(ctx, s, detail.Revision.SourceClosureRowID.Int64)
+			}
+			revision.Layers = append(revision.Layers, entry)
+		}
+		result.Authority = append(result.Authority, revision)
+	}
+
+	// Planning (AC15-AC16): every candidate with its stable artifact identity,
+	// digest, size, explicit current-vs-historical basis, promotion linkage,
+	// and approval identities. Currentness mirrors the guided planning rule:
+	// a candidate promoted into the current authority on the current closure
+	// packet remains current even when its row predates the authority.
+	if candidates, err := s.store.ListPlanningCandidatesByWorkspace(ctx, workspace.ID); err == nil {
+		for _, candidate := range candidates {
+			promoted := candidatePromotedInCurrentAuthority(candidate, authority) // AC15
+			entry := GuidedIntegrityPlanningCandidate{
+				CandidateID: candidate.CandidateID,
+				Family:      candidate.Family,
+				SHA256:      candidate.ArtifactSha256,
+				SizeBytes:   candidate.ArtifactSizeBytes,
+				Historical:  !guidedPlanningCandidateCurrent(ctx, s, workspace, candidate, promoted), // AC25
+				Promoted:    promoted,
+			}
+			if artifact, artifactErr := s.store.GetFeatureWorkspaceDiscoveryArtifactByRowID(ctx, candidate.ArtifactRowID); artifactErr == nil {
+				entry.ArtifactID = artifact.DiscoveryArtifactID
+			}
+			if approvals, approvalErr := s.store.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID); approvalErr == nil {
+				for _, approval := range approvals {
+					entry.Approvals = append(entry.Approvals, approval.ApprovalID) // AC16
+				}
+			}
+			result.Planning = append(result.Planning, entry)
+		}
+	}
+
+	// Delivery (AC17-AC23): owner-derived ticket, selection, package, Run,
+	// audit, and remediation identities. Owners are optional inspection
+	// sources; their absence leaves the identity surface empty rather than
+	// failing the projection.
 	for _, entry := range delivery.Frontier {
-		result.Delivery = append(result.Delivery, entry.TicketID+"@"+strconv.FormatInt(entry.RevisionNumber, 10))
+		result.Delivery.Frontier = append(result.Delivery.Frontier, GuidedIntegrityTicket{TicketID: entry.TicketID, RevisionNumber: entry.RevisionNumber}) // AC17
 	}
-	result.Delivery = append(result.Delivery, nonEmpty(delivery.PackageID, delivery.RunID, delivery.AuditPacketID)...)
+	if owner, err := apptickets.NewService(s.store); err == nil {
+		if selection, selectionErr := owner.ReadWorkspaceSelection(ctx, workspace.WorkspaceID); selectionErr == nil && selection.SelectionID != "" {
+			result.Delivery.Selection = &GuidedIntegritySelection{SelectionID: selection.SelectionID} // AC18
+		}
+	}
+	if s.guidedPackages != nil {
+		if packageState, packageErr := s.guidedPackages.ReadWorkspacePackageState(ctx, workspace.WorkspaceID); packageErr == nil && packageState.PackageID != "" {
+			result.Delivery.Package = &GuidedIntegrityPackage{PackageID: packageState.PackageID, SHA256: packageState.PackageSHA256, ApprovalID: packageState.PackageApprovalID} // AC19/AC20
+			if packageState.RunID != "" {
+				result.Delivery.Run = &GuidedIntegrityRun{RunID: packageState.RunID, PackageID: packageState.PackageID, RepoTarget: packageState.RunRepoTarget, Branch: packageState.RunBranch, BaseCommit: packageState.RunBaseCommit} // AC21
+			}
+		}
+	}
+	if s.guidedAudit != nil {
+		if result.Delivery.Run != nil {
+			if auditState, auditErr := s.guidedAudit.ReadRunAuditState(ctx, result.Delivery.Run.RunID); auditErr == nil && auditState.AuditPacketID != "" {
+				result.Delivery.Audit = &GuidedIntegrityAudit{AuditPacketID: auditState.AuditPacketID, AuditDecisionID: auditState.AuditDecisionID, AuditedCommit: auditState.AuditedCommit} // AC22
+			}
+		}
+		if remediation, remediationErr := s.guidedAudit.ReadWorkspaceRemediationState(ctx, workspace.WorkspaceID); remediationErr == nil && len(remediation.SeedIDs) > 0 {
+			result.Delivery.Remediation = &GuidedIntegrityRemediation{SeedIDs: append([]string(nil), remediation.SeedIDs...)} // AC23
+		}
+	}
+
+	// Prototype (AC24): the current prototype Run's authorization, proposal,
+	// and approval identities, its discovery basis binding, the exact cleanup
+	// obligation semantic keys, and the QA packets with their admission and
+	// evidence identities and digests.
 	if prototype.RunID != "" {
-		result.Prototype = append(result.Prototype, prototype.RunID)
+		result.Prototype = guidedIntegrityPrototype(ctx, s, workspace, prototype)
 	}
 	return result
+}
+
+// guidedIntegrityPrototype composes the prototype integrity surface from the
+// Feature-owned prototype aggregate and wayfinder reads. It is best-effort:
+// missing identity rows leave individual fields empty without failing the
+// read-only inspection surface.
+func guidedIntegrityPrototype(ctx context.Context, s *Service, workspace workflowstore.FeatureWorkspace, prototype GuidedPrototypeSection) *GuidedIntegrityPrototypeSection {
+	result := &GuidedIntegrityPrototypeSection{RunID: prototype.RunID, RunState: prototype.RunState}
+	aggregate, aggregateErr := s.store.ReadPrototypeExecution(ctx, workspace.WorkspaceID, prototype.RunID)
+	if aggregateErr != nil {
+		return result
+	}
+	result.ProposalID = aggregate.Proposal.ProposalID
+	result.AuthorizationID = aggregate.Authorization.AuthorizationID
+	if aggregate.Approval != nil {
+		result.ApprovalID = aggregate.Approval.ApprovalID
+	}
+	if revisions, err := s.store.ListIntegratedDiscoveryRevisions(ctx, workspace.ID); err == nil {
+		for _, revision := range revisions {
+			if revision.ID == aggregate.Authorization.DiscoveryRevisionRowID {
+				result.DiscoveryRevisionID = revision.DiscoveryRevisionID
+				break
+			}
+		}
+	}
+	view, viewErr := s.ReadPrototypeEvidenceForWayfinder(ctx, workspace.WorkspaceID, prototype.RunID)
+	if viewErr != nil {
+		return result
+	}
+	for _, obligation := range view.Cleanup {
+		result.Cleanup = append(result.Cleanup, GuidedIntegrityPrototypeCleanup{CleanupObligationID: obligation.CleanupObligationID, Kind: obligation.ObligationKind, Status: obligation.Status})
+	}
+	for _, packet := range view.QAPackets {
+		entry := GuidedIntegrityPrototypeQAPacket{QAPacketID: packet.Packet.QAPacketID, Status: packet.Packet.Status}
+		if packet.Admission != nil {
+			entry.AdmissionID = packet.Admission.QAAdmissionID
+		}
+		for _, evidence := range packet.Evidence {
+			entry.Evidence = append(entry.Evidence, GuidedIntegrityPrototypeQAEvidence{QaEvidenceID: evidence.QAEvidenceID, SemanticRole: evidence.SemanticRole, SHA256: evidence.SHA256, SizeBytes: evidence.SizeBytes, MediaType: evidence.MediaType})
+		}
+		result.QAPackets = append(result.QAPackets, entry)
+	}
+	return result
+}
+
+// discoveryArtifactIdentity resolves the public discovery-artifact domain ID
+// for a row ID. Row IDs are never exposed on the integrity surface.
+func discoveryArtifactIdentity(ctx context.Context, s *Service, rowID int64) string {
+	artifact, err := s.store.GetFeatureWorkspaceDiscoveryArtifactByRowID(ctx, rowID)
+	if err != nil {
+		return ""
+	}
+	return artifact.DiscoveryArtifactID
+}
+
+// sourceClosureIdentity resolves the public source-vault closure identity for
+// a row ID.
+func sourceClosureIdentity(ctx context.Context, s *Service, rowID int64) string {
+	closure, err := s.store.GetSourceVaultClosureByRowID(ctx, rowID)
+	if err != nil {
+		return ""
+	}
+	return closure.ClosureID
 }
 
 func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, project workflowstore.Project, assessment DiscoveryAssessment, currentness FeatureCurrentnessDecision, authority []AuthorityRevisionDetail, completion CompletionStatus, planning GuidedPlanningSection, delivery GuidedDeliverySection, prototype GuidedPrototypeSection) GuidedFeatureProjection {
@@ -377,6 +716,18 @@ func candidatePromotedInCurrentAuthorityLayers(candidate workflowstore.PlanningC
 	return false
 }
 
+// guidedPlanningCandidateCurrent mirrors the guidedPlanning current-basis
+// rule: a candidate is current when it is not historical, or when it was
+// promoted into the current authority on the current closure packet (the row
+// predates the authority but remains the current governing basis).
+func guidedPlanningCandidateCurrent(ctx context.Context, s *Service, workspace workflowstore.FeatureWorkspace, candidate workflowstore.PlanningCandidate, promoted bool) bool {
+	historical := s.planningCandidateHistorical(ctx, workspace, candidate)
+	if !historical {
+		return true
+	}
+	return promoted && workspace.CurrentDiscoveryClosurePacketRowID.Valid && candidate.DiscoveryClosurePacketRowID == workspace.CurrentDiscoveryClosurePacketRowID.Int64
+}
+
 func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.FeatureWorkspace, currentness FeatureCurrentnessDecision, authority []AuthorityRevisionDetail) (GuidedPlanningSection, error) {
 	candidates, err := s.store.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
 	if err != nil {
@@ -397,6 +748,11 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 		if approvalErr != nil {
 			return GuidedPlanningSection{}, approvalErr
 		}
+		_, reviewErr := s.store.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.ID)
+		reviewed := reviewErr == nil
+		if reviewErr != nil && !errors.Is(reviewErr, sql.ErrNoRows) {
+			return GuidedPlanningSection{}, reviewErr
+		}
 		var family *GuidedPlanningFamilySection
 		switch candidate.Family {
 		case CandidateFamilyRequirements:
@@ -415,6 +771,11 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 			if family != nil {
 				family.AwaitingPromotion++
 			}
+		case reviewed:
+			result.AwaitingApproval++
+			if family != nil {
+				family.AwaitingApproval++
+			}
 		default:
 			result.AwaitingReview++
 			if family != nil {
@@ -427,12 +788,15 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 	}
 	if result.CandidateCount > 0 {
 		result.Status = "in_progress"
-		if result.Promoted == result.CandidateCount {
+		switch {
+		case result.Promoted == result.CandidateCount:
 			result.Status = "promoted"
 			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "promoted", "reviewed", "approved", "promoted"
-		} else if result.AwaitingPromotion > 0 {
+		case result.AwaitingPromotion > 0:
 			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "reviewed", "reviewed", "approved", "awaiting_promotion"
-		} else if result.AwaitingReview > 0 {
+		case result.AwaitingApproval > 0:
+			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "reviewed", "reviewed", "none", "none"
+		case result.AwaitingReview > 0:
 			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "admitted", "awaiting_review", "none", "none"
 		}
 	}
@@ -452,6 +816,8 @@ func guidedPlanningFamilyState(family GuidedPlanningFamilySection) string {
 		return "promoted"
 	case family.AwaitingPromotion > 0:
 		return "approved"
+	case family.AwaitingApproval > 0:
+		return "reviewed"
 	case family.AwaitingReview > 0:
 		return "admitted"
 	default:
@@ -481,6 +847,13 @@ func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.Fe
 	}
 	result.SelectionState = selection.State
 	if selection.State != "none" {
+		if selection.State == "active" {
+			briefState, err := tickets.ReadWorkspaceBriefState(ctx, workspace.WorkspaceID)
+			if err != nil {
+				return result, err
+			}
+			result.BriefState = briefState.State
+		}
 		if s.guidedPackages == nil {
 			return result, ErrGuidedPackageOwnerUnavailable
 		}
@@ -593,8 +966,9 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		_, _, err = s.guidedReopenDiscovery(ctx, input)
 	case GuidedActionLegacyRecovery:
 		_, _, err = s.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorIdentity: "guided-operator"})
-	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryTicket, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate,
-		GuidedActionPreparePackage, GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun, GuidedActionPrepareAudit, GuidedActionRecordAuditDecision,
+	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate,
+		GuidedActionAuthorDeliveryTicket, GuidedActionAuthorTicketDesignBrief, GuidedActionReviewTicketDesignBrief,
+		GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun, GuidedActionPrepareAudit, GuidedActionRecordAuditDecision,
 		GuidedActionRemediate, GuidedActionPrototypeExecute, GuidedActionPrototypeCleanup, GuidedActionPrototypeQA:
 		handoff, handoffErr := s.guidedHandoff(ctx, input.WorkspaceID, requested, before)
 		if handoffErr != nil {
@@ -608,6 +982,13 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		_, err = s.guidedPromoteCurrentCandidate(ctx, input, DiscoveryDestination(before.Discovery.Destination))
 	case GuidedActionSelectDeliveryTicket:
 		err = s.guidedSelectFrontierTicket(ctx, input)
+	case GuidedActionApproveTicketDesignBrief:
+		_, err = s.guidedApproveCurrentBrief(ctx, input)
+	case GuidedActionPreparePackage:
+		if s.guidedPackages == nil {
+			return GuidedActionResult{}, ErrGuidedPackageOwnerUnavailable
+		}
+		_, err = s.guidedPackages.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: input.WorkspaceID})
 	case GuidedActionApprovePackage:
 		err = s.guidedApproveCurrentPackage(ctx, input)
 	default:
@@ -649,13 +1030,42 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Transfer = &GuidedOperationTransfer{Members: closureMemberRoles(planner.Members), AuthorityLayers: authorityLayerKinds(review.Authority)}
 		handoff.Summary = "Planner authoring and review are prepared through their existing owners. Author the current planning artifact, complete its read-only review, then explicitly approve and promote it before resuming the guided workspace."
 	case GuidedActionAuthorDeliveryTicket:
-		// Delivery Ticket authoring is a distinct planner operation, not a
-		// planning-candidate projection. The ticket-design-brief operation owns
-		// the authority subsequently consumed by package preparation.
+		// Delivery Ticket authoring is the planner.delivery_ticket operation.
+		// The produced Ticket subsequently enters the selection frontier; the
+		// Ticket Design Brief is a separate later operation, never substituted
+		// for the Delivery Ticket authoring surface here.
+		handoff.Context["owner"] = "delivery_ticket_authoring"
+		handoff.Context["operationId"] = plannerDeliveryTicketOperation
+		handoff.Transfer = &GuidedOperationTransfer{Ticket: &GuidedTicketTransfer{OperationID: plannerDeliveryTicketOperation}}
+		handoff.Summary = "Enter the Delivery Ticket authoring operation (planner.delivery_ticket), then return here when the resulting Ticket is ready for selection."
+	case GuidedActionAuthorTicketDesignBrief:
+		// Ticket Design Brief authoring is a distinct planner operation owned
+		// by the selected Delivery Ticket. The active selection and canonical
+		// filename are resolved server-side by the delivery owner on admission;
+		// this handoff transfers only the selected Ticket identity.
+		ticket, err := s.guidedSelectedTicketTransfer(ctx, workspaceID)
+		if err != nil {
+			return GuidedHandoff{}, err
+		}
 		handoff.Context["owner"] = "ticket_design_brief_authoring"
-		handoff.Context["operationId"] = "planner.ticket_design_brief"
-		handoff.Transfer = &GuidedOperationTransfer{Ticket: &GuidedTicketTransfer{OperationID: "planner.ticket_design_brief"}}
-		handoff.Summary = "Enter the existing Delivery Ticket Design Brief authoring operation, then return here when the resulting Ticket is ready for selection."
+		handoff.Context["operationId"] = plannerTicketDesignBriefOperation
+		handoff.Transfer = &GuidedOperationTransfer{Ticket: ticket}
+		handoff.Summary = "Author the Ticket Design Brief for the selected Delivery Ticket through the planner.ticket_design_brief operation and admit it through the delivery owner, then return here to review and explicitly approve it before package preparation."
+	case GuidedActionReviewTicketDesignBrief:
+		// Review is a purely read-only auditor preparation handoff. It never
+		// mutates brief, review, or approval state and never persists any
+		// review outcome or verdict. Completion is recorded separately through
+		// the bounded delivery-owner entry the external auditor uses after the
+		// review; only then does the explicit guided approval become available.
+		ticket, err := s.guidedSelectedTicketTransfer(ctx, workspaceID)
+		if err != nil {
+			return GuidedHandoff{}, err
+		}
+		ticket.OperationID = auditorTicketDesignBriefReviewOperation
+		handoff.Context["owner"] = "auditor_ticket_design_brief_review"
+		handoff.Context["operationId"] = auditorTicketDesignBriefReviewOperation
+		handoff.Transfer = &GuidedOperationTransfer{Ticket: ticket}
+		handoff.Summary = "Review the admissible Ticket Design Brief for the selected Delivery Ticket through the auditor.ticket_design_brief_review surface. The review outcome is read-only and never persisted; after completing the review, record its completion through the delivery owner so the explicit approval becomes available."
 	case GuidedActionReviewPlanningCandidate:
 		// Review is a read-only auditor preparation step. It composes the same
 		// owner envelope the planner review path uses and never writes review or
@@ -676,14 +1086,6 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Context["candidateState"] = candidateState
 		handoff.Transfer = &GuidedOperationTransfer{Members: closureMemberRoles(review.Members), AuthorityLayers: authorityLayerKinds(review.Authority)}
 		handoff.Summary = "The auditor review surface is prepared through its existing owner envelope. Review the current planning candidate, then explicitly approve and promote it before resuming the guided workspace."
-	case GuidedActionPreparePackage:
-		ticket, err := s.guidedSelectedTicketTransfer(ctx, workspaceID)
-		if err != nil {
-			return GuidedHandoff{}, err
-		}
-		handoff.Context["owner"] = "execution_package_preparation"
-		handoff.Transfer = &GuidedOperationTransfer{Ticket: ticket}
-		handoff.Summary = "The selected Delivery Ticket is identified through the delivery owner. Prepare the execution package with the ticket design brief, then return here to approve it server-side."
 	case GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun:
 		if s.guidedPackages == nil {
 			return GuidedHandoff{}, ErrGuidedPackageOwnerUnavailable
@@ -803,6 +1205,8 @@ func (s *Service) guidedReopenDiscovery(ctx context.Context, input GuidedActionI
 
 // guidedSelectedTicketTransfer resolves the currently selected Delivery Ticket
 // through the delivery owner and transfers its public identity and readiness.
+// The OperationID identifies the established planner operation that owns the
+// Ticket Design Brief the transfer prepares.
 func (s *Service) guidedSelectedTicketTransfer(ctx context.Context, workspaceID string) (*GuidedTicketTransfer, error) {
 	owner, err := apptickets.NewService(s.store)
 	if err != nil {
@@ -820,9 +1224,9 @@ func (s *Service) guidedSelectedTicketTransfer(ctx context.Context, workspaceID 
 		return nil, err
 	}
 	// A Delivery Ticket canonical artifact is not the approved Ticket Design
-	// Brief. Package preparation enters the established ticket-design-brief
-	// operation, which resolves and validates that authority itself.
-	transfer := &GuidedTicketTransfer{TicketID: detail.Ticket.TicketID, RevisionNumber: detail.Revision.RevisionNumber, Readiness: append([]string(nil), detail.Readiness.Reasons...), OperationID: "planner.ticket_design_brief"}
+	// Brief. The transfer identifies the established ticket-design-brief
+	// operation that resolves and validates that authority itself.
+	transfer := &GuidedTicketTransfer{TicketID: detail.Ticket.TicketID, RevisionNumber: detail.Revision.RevisionNumber, Readiness: append([]string(nil), detail.Readiness.Reasons...), OperationID: plannerTicketDesignBriefOperation}
 	return transfer, nil
 }
 
@@ -884,6 +1288,20 @@ func (s *Service) guidedApproveCurrentPackage(ctx context.Context, input GuidedA
 	return s.guidedPackages.ApproveCurrentPackage(ctx, guidedapp.ApprovePackageInput{WorkspaceID: input.WorkspaceID, Evidence: guidedApprovalEvidence})
 }
 
+// guidedApproveCurrentBrief delegates the explicit confirmed approval of the
+// current reviewed Ticket Design Brief to the delivery owner. The brief
+// identity, exact bytes, review completion, and basis are all resolved
+// server-side; no brief identity or digest is accepted from the client.
+func (s *Service) guidedApproveCurrentBrief(ctx context.Context, input GuidedActionInput) (apptickets.TicketDesignBriefApprovalResult, error) {
+	owner, err := apptickets.NewService(s.store)
+	if err != nil {
+		return apptickets.TicketDesignBriefApprovalResult{}, err
+	}
+	return owner.ApproveCurrentTicketDesignBrief(ctx, apptickets.ApproveCurrentBriefInput{
+		WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, Evidence: guidedApprovalEvidence,
+	})
+}
+
 // guidedApprovalEvidence is the server-side confirmation evidence recorded when
 // the guided boundary approves the current planning candidate. The operator's
 // confirmation of the guided approval action is enforced by the action gate.
@@ -907,11 +1325,17 @@ func (s *Service) guidedFamilyCandidateState(ctx context.Context, workspace work
 			if approvalErr != nil {
 				return "", approvalErr
 			}
+			_, reviewErr := s.store.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.ID)
+			if reviewErr != nil && !errors.Is(reviewErr, sql.ErrNoRows) {
+				return "", reviewErr
+			}
 			state := "admitted"
 			if promoted {
 				state = "promoted"
 			} else if len(approvals) > 0 {
 				state = "approved_awaiting_promotion"
+			} else if reviewErr == nil {
+				state = "reviewed"
 			}
 			return state, nil
 		}
@@ -922,7 +1346,9 @@ func (s *Service) guidedFamilyCandidateState(ctx context.Context, workspace work
 // guidedCurrentPlanningCandidate resolves, without any client-supplied
 // identity, the current-basis planning candidate for the family the closed
 // destination requires. wantApproved selects approved (awaiting promotion)
-// versus admitted (awaiting review and approval) candidates.
+// versus reviewed-not-approved (awaiting approval) candidates; an admitted
+// candidate without the completed read-only review is never resolvable for
+// approval.
 func (s *Service) guidedCurrentPlanningCandidate(ctx context.Context, workspaceID string, destination DiscoveryDestination, wantApproved bool) (workflowstore.PlanningCandidate, error) {
 	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
 	if err != nil {
@@ -947,6 +1373,14 @@ func (s *Service) guidedCurrentPlanningCandidate(ctx context.Context, workspaceI
 			}
 			if (len(approvals) > 0) != wantApproved {
 				continue
+			}
+			if !wantApproved {
+				if _, reviewErr := s.store.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.ID); reviewErr != nil {
+					if errors.Is(reviewErr, sql.ErrNoRows) {
+						continue
+					}
+					return workflowstore.PlanningCandidate{}, reviewErr
+				}
 			}
 			return candidate, nil
 		}

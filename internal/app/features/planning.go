@@ -25,6 +25,7 @@ var (
 	ErrStaleCandidateBasis         = errors.New("planning candidate basis is stale")
 	ErrCandidateBytesMismatch      = errors.New("planning candidate bytes or digest mismatch")
 	ErrCandidateApprovalInvalid    = errors.New("planning candidate approval is invalid")
+	ErrCandidateReview             = errors.New("planning candidate review is invalid")
 	ErrAuthorityConflict           = errors.New("feature authority layer conflicts with candidate")
 	ErrAuthorityDuplicate          = errors.New("feature authority layer is already present")
 	ErrHistoricalBasis             = errors.New("historical basis cannot authorize progression")
@@ -83,6 +84,19 @@ type CandidatePromotionResult struct {
 	Workspace workflowstore.FeatureWorkspace
 	Candidate workflowstore.PlanningCandidate
 	Approval  workflowstore.PlanningCandidateApproval
+}
+
+// CompleteCandidateReviewInput records only the minimal fact that the
+// read-only auditor review handoff completed for the current planning
+// candidate. No review outcome, verdict, or content is accepted or persisted.
+type CompleteCandidateReviewInput struct {
+	WorkspaceID      string
+	ReviewerIdentity string
+}
+
+type CompleteCandidateReviewResult struct {
+	Candidate workflowstore.PlanningCandidate
+	Review    workflowstore.PlanningCandidateReview
 }
 
 func validBaseCommit(value string) bool {
@@ -394,6 +408,70 @@ func equalBytes(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// CompletePlanningCandidateReview records the narrow authoritative fact that
+// the read-only auditor review handoff completed for the current planning
+// candidate. The candidate identity is resolved server-side from the
+// workspace's current closure basis; the review outcome is never accepted or
+// persisted, and this completion is a separate fact from approval.
+func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input CompleteCandidateReviewInput) (CompleteCandidateReviewResult, error) {
+	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" {
+		return CompleteCandidateReviewResult{}, ErrCandidateReview
+	}
+	result := CompleteCandidateReviewResult{}
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		workspace, err := tx.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(input.WorkspaceID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrWorkspaceNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !workspace.CurrentDiscoveryClosurePacketRowID.Valid || !workspace.CurrentDiscoveryRevisionRowID.Valid {
+			return ErrMissingCurrentClosure
+		}
+		packet, err := tx.GetDiscoveryClosurePacketByRowID(ctx, workspace.CurrentDiscoveryClosurePacketRowID.Int64)
+		if err != nil || packet.WorkspaceRowID != workspace.ID || packet.ClosingRevisionRowID != workspace.CurrentDiscoveryRevisionRowID.Int64 {
+			return ErrStaleCandidateBasis
+		}
+		candidates, err := tx.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
+		if err != nil {
+			return err
+		}
+		// Resolve the current in-flight candidate for the family priority of
+		// the workspace's closed destination, matching the guided decision.
+		for _, family := range guidedCandidateFamiliesForDestination(DiscoveryDestination(packet.Destination)) {
+			for _, candidate := range candidates {
+				if candidate.Family != family || candidate.DiscoveryClosurePacketRowID != workspace.CurrentDiscoveryClosurePacketRowID.Int64 || !sameNullableInt64(candidate.AuthorityRevisionRowID, workspace.CurrentAuthorityRevisionRowID) {
+					continue
+				}
+				if _, err := tx.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.ID); err == nil {
+					return fmt.Errorf("%w: the current candidate review is already completed", ErrCandidateReview)
+				} else if !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				approvals, err := tx.ListPlanningCandidateApprovalsByCandidate(ctx, candidate.ID)
+				if err != nil {
+					return err
+				}
+				if len(approvals) > 0 {
+					return fmt.Errorf("%w: the current candidate is already approved", ErrCandidateReview)
+				}
+				review, err := tx.CreatePlanningCandidateReview(ctx, workflowstore.CreatePlanningCandidateReviewParams{
+					ReviewID: workflowstore.NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID,
+					ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity),
+				})
+				if err != nil {
+					return fmt.Errorf("%w: %v", ErrCandidateReview, err)
+				}
+				result = CompleteCandidateReviewResult{Candidate: candidate, Review: review}
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: no current-basis planning candidate to review", ErrCandidateReview)
+	})
+	return result, err
 }
 
 func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input CandidatePromotionInput) (CandidatePromotionResult, error) {

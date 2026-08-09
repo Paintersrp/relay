@@ -115,6 +115,7 @@ ORDER BY name`)
 		"plan_passes",
 		"plan_repository_targets",
 		"planning_candidate_approvals",
+		"planning_candidate_reviews",
 		"planning_candidates",
 		"plans",
 		"project_notes",
@@ -128,6 +129,9 @@ ORDER BY name`)
 		"source_vault_closures",
 		"source_vault_retentions",
 		"source_vaults",
+		"ticket_design_brief_approvals",
+		"ticket_design_brief_reviews",
+		"ticket_design_briefs",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected fresh workflow tables\ngot:  %v\nwant: %v", got, want)

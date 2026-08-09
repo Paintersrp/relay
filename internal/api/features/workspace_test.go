@@ -521,3 +521,146 @@ func TestGuidedReopenTransportCarriesNoClientDigest(t *testing.T) {
 		t.Fatalf("client digest status=%d body=%s", rejected.Code, rejected.Body.String())
 	}
 }
+
+type reviewCompletionFakeGuided struct {
+	fakeGuided
+	input featureapp.CompleteCandidateReviewInput
+	err   error
+}
+
+func (f *reviewCompletionFakeGuided) CompletePlanningCandidateReview(_ context.Context, input featureapp.CompleteCandidateReviewInput) (featureapp.CompleteCandidateReviewResult, error) {
+	f.input = input
+	if f.err != nil {
+		return featureapp.CompleteCandidateReviewResult{}, f.err
+	}
+	return featureapp.CompleteCandidateReviewResult{
+		Candidate: workflowstore.PlanningCandidate{CandidateID: "candidate-api-1"},
+		Review:    workflowstore.PlanningCandidateReview{ReviewID: "candidate-review-api-1", ReviewerIdentity: input.ReviewerIdentity, CompletedAt: "2026-08-08T00:00:00.000000000Z"},
+	}, nil
+}
+
+func TestPlanningCandidateReviewCompletionRouteRecordsNarrowFactWithoutOutcome(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
+	guided := &reviewCompletionFakeGuided{}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor"}`)))
+	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.ReviewerIdentity != "auditor" {
+		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"reviewId":"candidate-review-api-1"`) || !strings.Contains(response.Body.String(), `"candidateId":"candidate-api-1"`) || !strings.Contains(response.Body.String(), `"reviewerIdentity":"auditor"`) {
+		t.Fatalf("completion response body = %s", response.Body.String())
+	}
+	for _, forbidden := range []string{"outcome", "verdict", "finding"} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("completion response persisted %q: %s", forbidden, response.Body.String())
+		}
+	}
+}
+
+func TestPlanningCandidateReviewCompletionRouteRejectsMissingIdentity(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
+	guided := &reviewCompletionFakeGuided{err: featureapp.ErrCandidateReview}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{}`)))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "planning candidate review") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+// TestGuidedProjectionDTOProjectsTypedIntegrityIdentities asserts the guided
+// API serializes the read-only integrity surface as typed label/value
+// projections with public identities and exact digests and never leaks row
+// identifiers.
+func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
+	projection := featureapp.GuidedFeatureProjection{
+		Diagnostics: featureapp.GuidedDiagnosticsSection{Integrity: featureapp.GuidedIntegritySection{
+			Discovery: featureapp.GuidedIntegrityDiscoverySection{
+				CurrentRevisionID: "discovery-rev-1",
+				CurrentPacket:     &featureapp.GuidedIntegrityClosurePacket{ClosurePacketID: "discovery-packet-1", SHA256: strings.Repeat("a", 64)},
+				History:           []featureapp.GuidedIntegrityDiscoveryRevision{{RevisionID: "discovery-rev-1", RevisionNumber: 1, ClosurePacketID: "discovery-packet-1", PacketSHA256: strings.Repeat("a", 64), Historical: false}, {RevisionID: "discovery-rev-0", RevisionNumber: 0, PredecessorID: "discovery-rev-2", Historical: true}},
+				ReopenEvents:      []featureapp.GuidedIntegrityReopenEvent{{ReopenEventID: "discovery-reopen-1", ReopenedPacketID: "discovery-packet-1", ReplacementRevisionID: "discovery-rev-2"}},
+			},
+			Authority: []featureapp.GuidedIntegrityAuthorityRevision{{AuthorityRevisionID: "authority-1", RevisionNumber: 1, Historical: true, Layers: []featureapp.GuidedIntegrityAuthorityLayer{{Kind: "requirements", ArtifactID: "discovery-artifact-1", SHA256: strings.Repeat("b", 64), SourceClosureID: "closure-1"}}}},
+			Planning:  []featureapp.GuidedIntegrityPlanningCandidate{{CandidateID: "candidate-1", Family: "requirements", ArtifactID: "discovery-artifact-candidate-1", SHA256: strings.Repeat("c", 64), SizeBytes: 4, Historical: false, Promoted: true, Approvals: []string{"candidate-approval-1"}}},
+			Delivery: featureapp.GuidedIntegrityDeliverySection{
+				Frontier:    []featureapp.GuidedIntegrityTicket{{TicketID: "P5-T1", RevisionNumber: 2}},
+				Selection:   &featureapp.GuidedIntegritySelection{SelectionID: "selection-1"},
+				Package:     &featureapp.GuidedIntegrityPackage{PackageID: "package-1", SHA256: strings.Repeat("d", 64), ApprovalID: "pkg-approval-1"},
+				Run:         &featureapp.GuidedIntegrityRun{RunID: "run-1", PackageID: "package-1", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("e", 40)},
+				Audit:       &featureapp.GuidedIntegrityAudit{AuditPacketID: "packet-1", AuditDecisionID: "audit-1", AuditedCommit: strings.Repeat("f", 40)},
+				Remediation: &featureapp.GuidedIntegrityRemediation{SeedIDs: []string{"remediation-1"}},
+			},
+			Prototype: &featureapp.GuidedIntegrityPrototypeSection{
+				RunID: "prototype-run-1", RunState: "approved", ProposalID: "prototype-proposal-1", AuthorizationID: "prototype-authorization-1", ApprovalID: "prototype-approval-1", DiscoveryRevisionID: "discovery-rev-1",
+				Cleanup:   []featureapp.GuidedIntegrityPrototypeCleanup{{CleanupObligationID: "prototype-cleanup-1", Kind: "worktree", Status: "complete"}},
+				QAPackets: []featureapp.GuidedIntegrityPrototypeQAPacket{{QAPacketID: "prototype-qa-packet-1", Status: "admitted", AdmissionID: "prototype-qa-admission-1", Evidence: []featureapp.GuidedIntegrityPrototypeQAEvidence{{QaEvidenceID: "prototype-qa-evidence-1", SemanticRole: "result-envelope", SHA256: strings.Repeat("g", 64), SizeBytes: 4, MediaType: "application/json"}}}},
+			},
+		}},
+	}
+	raw, err := json.Marshal(guidedFeatureProjectionDTO(projection))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for _, wanted := range []string{
+		`"currentRevisionId":"discovery-rev-1"`,
+		`"closurePacketId":"discovery-packet-1"`,
+		`"reopenEventId":"discovery-reopen-1"`,
+		`"replacementRevisionId":"discovery-rev-2"`,
+		`"authorityRevisionId":"authority-1"`,
+		`"artifactId":"discovery-artifact-1"`,
+		`"sourceClosureId":"closure-1"`,
+		`"candidateId":"candidate-1"`,
+		`"promoted":true`,
+		`"approvals":["candidate-approval-1"]`,
+		`"selectionId":"selection-1"`,
+		`"packageId":"package-1"`,
+		`"approvalId":"pkg-approval-1"`,
+		`"runId":"run-1"`,
+		`"auditPacketId":"packet-1"`,
+		`"auditDecisionId":"audit-1"`,
+		`"seedIds":["remediation-1"]`,
+		`"authorizationId":"prototype-authorization-1"`,
+		`"admissionId":"prototype-qa-admission-1"`,
+		`"qaEvidenceId":"prototype-qa-evidence-1"`,
+		`"historical":true`,
+	} {
+		if !strings.Contains(body, wanted) {
+			t.Fatalf("integrity DTO missing %q: %s", wanted, body)
+		}
+	}
+	// Row identifiers are never serialized on the integrity surface; every
+	// artifact is its public domain identity.
+	for _, forbidden := range []string{`"artifactRowId"`, `"approvalRowId"`, `"workspaceRowId"`, `"sourceClosureRowId"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("integrity DTO exposed row identifier %q: %s", forbidden, body)
+		}
+	}
+}
+
+// TestGuidedActionRejectsIntegrityIdentityFields asserts the guided action
+// request boundary accepts only semantic fields: any integrity identity
+// smuggled into the request body is rejected before dispatch.
+func TestGuidedActionRejectsIntegrityIdentityFields(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateActive, Destination: featureapp.DiscoveryDestinationRequirements, CurrentRevisionID: "revision-server-owned"}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{Workspace: appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, Gates: []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}}}}
+	router := guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided)
+	for _, payload := range []string{
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"candidateId":"candidate-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"packageId":"package-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"runId":"run-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"auditPacketId":"packet-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"remediationSeedId":"remediation-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"digest":"` + strings.Repeat("a", 64) + `"}`,
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-guided/guided/actions", strings.NewReader(payload)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("payload %s status=%d body=%s", payload, response.Code, response.Body.String())
+		}
+		if guided.closeInput != (featureapp.CloseFeatureDiscoveryInput{}) {
+			t.Fatalf("payload %s dispatched mutation: %#v", payload, guided.closeInput)
+		}
+	}
+}

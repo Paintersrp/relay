@@ -35,6 +35,7 @@ func (s *WorkflowAuditService) ReadRunAuditState(ctx context.Context, runID stri
 	}
 	if decision, decisionErr := s.store.GetAuditDecisionByRun(ctx, run.ID); decisionErr == nil && decision.AuditDecisionID != "" {
 		result.State = "decision_recorded"
+		result.AuditDecisionID = decision.AuditDecisionID
 	} else if !errors.Is(decisionErr, sql.ErrNoRows) {
 		return guidedapp.RunAuditState{}, decisionErr
 	}

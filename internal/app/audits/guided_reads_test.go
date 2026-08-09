@@ -227,7 +227,7 @@ func TestReadRunAuditStateTracksPacketAndDecision(t *testing.T) {
 	t.Run("decision recorded", func(t *testing.T) {
 		_, service, runID, _ := guidedReadFixture(t, "completed", true, true, false, false)
 		state, err := service.ReadRunAuditState(context.Background(), runID)
-		if err != nil || state.State != "decision_recorded" {
+		if err != nil || state.State != "decision_recorded" || state.AuditDecisionID != "audit-decision-guided-read" || state.AuditPacketID != "packet-guided-read" {
 			t.Fatalf("decision audit state = %+v, %v", state, err)
 		}
 	})

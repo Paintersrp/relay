@@ -518,3 +518,83 @@ func TestPlanningCandidatePromotionRejectsUnavailableSourceClosure(t *testing.T)
 		t.Fatalf("authority revisions after unavailable source = %d, err=%v", authorities, err)
 	}
 }
+
+func TestCompletePlanningCandidateReviewRecordsNarrowFactWithoutOutcome(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	var err error
+	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-repo-review', 'C:/planning-repo-review', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-repo-review", strings.Repeat("a", 40))
+	bytes := []byte("# reviewable requirements\n")
+	admitted, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
+		Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-repo-review",
+		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: ""}); !errors.Is(err, ErrCandidateReview) {
+		t.Fatalf("review completion without identity error = %v, want ErrCandidateReview", err)
+	}
+	completed, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Review.CandidateRowID != admitted.Candidate.ID || completed.Review.ReviewerIdentity != "auditor" {
+		t.Fatalf("completed review = %#v", completed.Review)
+	}
+	read, err := service.store.GetPlanningCandidateReviewByCandidateRowID(ctx, admitted.Candidate.ID)
+	if err != nil || read.ReviewID != completed.Review.ReviewID || read.CompletedAt == "" {
+		t.Fatalf("review readback = %#v, %v", read, err)
+	}
+	// The completion fact is recorded exactly once and cannot overwrite the
+	// review history.
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrCandidateReview) {
+		t.Fatalf("duplicate review completion error = %v, want ErrCandidateReview", err)
+	}
+	// An already-approved candidate cannot record a later review completion.
+	workspace, err = service.store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+		CandidateID: admitted.Candidate.CandidateID, ExpectedSHA256: admitted.Candidate.ArtifactSha256,
+		ExpectedSizeBytes: admitted.Candidate.ArtifactSizeBytes, Bytes: bytes, ExpectedVersion: workspace.Version,
+		ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID,
+		OperatorConfirmationEvidence: "reviewed then approved", CreatedIdentity: "auditor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrCandidateReview) {
+		t.Fatalf("review completion after approval error = %v, want ErrCandidateReview", err)
+	}
+	// No review outcome, verdict, or content is ever persisted: the table only
+	// carries the identity and completion time.
+	var reviewColumns []string
+	rows, err := store.DB().QueryContext(ctx, `PRAGMA table_info(planning_candidate_reviews)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatal(err)
+		}
+		reviewColumns = append(reviewColumns, name)
+	}
+	for _, forbidden := range []string{"outcome", "verdict", "content", "finding"} {
+		for _, column := range reviewColumns {
+			if strings.Contains(column, forbidden) {
+				t.Fatalf("review schema persists forbidden outcome column %q", column)
+			}
+		}
+	}
+}

@@ -502,3 +502,105 @@ func TestPlanningCandidateMigrationFrom40PreservesLegacyWorkspacesWithoutCandida
 		t.Fatalf("legacy candidate migration synthesized state: rows=%d revision=%v packet=%v", candidateTables, currentRevision, currentPacket)
 	}
 }
+
+func TestTicketDesignBriefMigrationFrom41AddsEmptyImmutableHistory(t *testing.T) {
+	db := openMigrationTestDB(t, "ticket-design-brief-upgrade")
+	defer db.Close()
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 41); err != nil {
+		t.Fatal(err)
+	}
+	var projectID, workspaceID int64
+	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-brief-migration', 'Brief Migration') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-brief-migration', ?, 'legacy') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+	var briefTables int
+	for _, table := range []string{"ticket_design_briefs", "ticket_design_brief_approvals", "ticket_design_brief_reviews"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		briefTables += count
+	}
+	if briefTables != 0 {
+		t.Fatalf("brief migration synthesized rows = %d", briefTables)
+	}
+	for _, name := range []string{
+		"ticket_design_brief_basis_guard",
+		"ticket_design_brief_update_immutable",
+		"ticket_design_brief_delete_guard",
+		"ticket_design_brief_approval_binding_guard",
+		"ticket_design_brief_approval_update_immutable",
+		"ticket_design_brief_approval_delete_guard",
+		"ticket_design_brief_review_binding_guard",
+		"ticket_design_brief_review_update_immutable",
+		"ticket_design_brief_review_delete_guard",
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = ?`, name).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("schema object %q count = %d", name, count)
+		}
+	}
+	var foreignKeyErrors int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyErrors); err != nil {
+		t.Fatal(err)
+	}
+	if foreignKeyErrors != 0 {
+		t.Fatalf("foreign key errors = %d", foreignKeyErrors)
+	}
+}
+
+func TestPlanningCandidateReviewMigrationFrom43AddsEmptyImmutableHistory(t *testing.T) {
+	db := openMigrationTestDB(t, "planning-candidate-review-upgrade")
+	defer db.Close()
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpTo(db, "workflow_migrations", 43); err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+	var reviewRows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM planning_candidate_reviews`).Scan(&reviewRows); err != nil {
+		t.Fatal(err)
+	}
+	if reviewRows != 0 {
+		t.Fatalf("candidate review migration synthesized rows = %d", reviewRows)
+	}
+	for _, name := range []string{
+		"planning_candidate_review_binding_guard",
+		"planning_candidate_review_update_immutable",
+		"planning_candidate_review_delete_guard",
+		"idx_planning_candidate_reviews_candidate",
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = ?`, name).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("schema object %q count = %d", name, count)
+		}
+	}
+	var foreignKeyErrors int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyErrors); err != nil {
+		t.Fatal(err)
+	}
+	if foreignKeyErrors != 0 {
+		t.Fatalf("foreign key errors = %d", foreignKeyErrors)
+	}
+}

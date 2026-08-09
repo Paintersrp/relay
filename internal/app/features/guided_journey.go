@@ -20,6 +20,9 @@ const (
 	GuidedActionLegacyRecovery           GuidedFeatureAction = "legacy_recovery"
 	GuidedActionReopenDiscovery          GuidedFeatureAction = "reopen_discovery"
 	GuidedActionSelectDeliveryTicket     GuidedFeatureAction = "select_delivery_ticket"
+	GuidedActionAuthorTicketDesignBrief  GuidedFeatureAction = "author_ticket_design_brief"
+	GuidedActionReviewTicketDesignBrief  GuidedFeatureAction = "review_ticket_design_brief"
+	GuidedActionApproveTicketDesignBrief GuidedFeatureAction = "approve_ticket_design_brief"
 	GuidedActionPreparePackage           GuidedFeatureAction = "prepare_package"
 	GuidedActionApprovePackage           GuidedFeatureAction = "approve_package"
 	GuidedActionLaunchRun                GuidedFeatureAction = "launch_run"
@@ -208,6 +211,13 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorRequirements, Primary: true, Enabled: true, Handoff: "Author Requirements, then explicitly approve and promote it before Shared Design."}}
 	case DiscoveryDestinationExistingRouteContinuation:
+		// A precise continuation resolves through the same source-backed
+		// delivery stage (frontier, selection, brief, package, Run, audit, or
+		// remediation) whenever one is available, instead of generic Planner
+		// authoring for a route that already has delivery work.
+		if guidedDeliveryStageAvailable(state.Delivery) {
+			return guidedDeliveryAvailability(state, completion)
+		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionContinueEstablishedRoute, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: state.Continuation}}
 	default:
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionContinueDiscovery, Primary: true, Enabled: false, RequiresConfirmation: false, BlockedReason: "The closed discovery packet has no supported destination continuation."}}
@@ -233,16 +243,31 @@ func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompl
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Delivery Ticket authoring is the current bounded role operation. Return here when it is complete."}}
 	case "active":
-		switch delivery.PackageState {
+		// The selected Delivery Ticket must first carry a current approved
+		// Ticket Design Brief. Authoring is a distinct planner operation,
+		// review is a read-only auditor handoff whose completion is recorded as
+		// a narrow fact, approval is an explicit confirmed guided mutation,
+		// and only then is the package owner allowed to prepare the execution
+		// package server-side.
+		switch delivery.BriefState {
 		case "", "none":
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the existing package owner using the selected Delivery Ticket design brief, then return here to approve it server-side."}}
-		case "prepared":
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePackage, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the prepared execution package server-side; the approval resolves the exact package identity and digest from the package owner."}}
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Author the Ticket Design Brief for the selected Delivery Ticket through the existing planner operation, admit it through the delivery owner, then return here to review and approve it."}}
+		case "authored":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The admissible Ticket Design Brief is ready for review. Perform the read-only review through the auditor surface; completing it here records review completion and makes the explicit approval available."}}
+		case "reviewed":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionApproveTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the reviewed Ticket Design Brief server-side; the approval resolves the current brief identity, exact bytes, and basis from the delivery owner."}}
+		case "approved":
+			switch delivery.PackageState {
+			case "", "none":
+				return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the package owner using the current approved Ticket Design Brief and active selection, then return here to approve it server-side."}}
+			case "prepared":
+				return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePackage, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the prepared execution package server-side; the approval resolves the exact package identity and digest from the package owner."}}
+			}
 		}
 	}
 	switch delivery.RunState {
 	case "", "none":
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the existing package owner using the selected Delivery Ticket design brief, then return here to approve it server-side."}}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the package owner using the current approved Ticket Design Brief and active selection, then return here to approve it server-side."}}
 	case "created", "setup_ready":
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionLaunchRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run is ready for its initial execution. Launch it through the Run owner, then return here for a fresh currentness check."}}
 	case "executing":
@@ -270,6 +295,22 @@ func guidedCompletionBlockedReason(ready bool) string {
 		return ""
 	}
 	return "Feature completion is blocked by one or more current completion gates."
+}
+
+// guidedDeliveryStageAvailable reports whether the delivery owner already
+// carries a source-backed stage (frontier, selection, brief, package, Run,
+// audit, or remediation) that a continuation should resume instead of generic
+// Planner authoring.
+func guidedDeliveryStageAvailable(delivery GuidedDeliverySection) bool {
+	if len(delivery.Frontier) > 0 {
+		return true
+	}
+	for _, state := range []string{delivery.SelectionState, delivery.BriefState, delivery.PackageState, delivery.RunState, delivery.AuditState, delivery.RemediationState} {
+		if state != "" && state != "none" {
+			return true
+		}
+	}
+	return false
 }
 
 // guidedPrototypeAvailability maps the prototype owner state to the precise
@@ -313,8 +354,14 @@ func guidedPlanningStep(family GuidedPlanningFamilySection, authorAction GuidedF
 			Handoff: "The current " + familyName + " planning candidate is approved. Promote it server-side to publish it as workspace authority before continuing.",
 		}}
 	}
+	if family.AwaitingApproval > 0 {
+		return []GuidedFeatureActionAvailability{{
+			Action: GuidedActionApprovePlanningCandidate, Primary: true, Enabled: true, RequiresConfirmation: true,
+			Handoff: "The current " + familyName + " planning candidate has completed its read-only review. Approve it server-side; the approval resolves the candidate identity, exact bytes, and basis from the workspace.",
+		}}
+	}
 	if family.AwaitingReview > 0 {
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current " + familyName + " planning candidate through the auditor review surface. After the owner records review and approval, refresh this workspace to promote it."}}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current " + familyName + " planning candidate through the auditor review surface. After the owner records the review completion, refresh this workspace to approve it explicitly."}}
 	}
 	return []GuidedFeatureActionAvailability{{Action: authorAction, Primary: true, Enabled: true, Handoff: authorHandoff}}
 }

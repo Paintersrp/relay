@@ -65,6 +65,7 @@ func (s *Service) ReadWorkspacePackageState(ctx context.Context, workspaceID str
 	switch {
 	case approvalErr == nil && runErr == nil && run.PackageApprovalRowID.Valid && run.PackageApprovalRowID.Int64 == approval.ID:
 		result.State = "approved"
+		result.PackageApprovalID = approval.ApprovalID
 		result.RunID = run.RunID
 		result.RunStatus = run.Status
 		result.RunRepoTarget = run.RepoTarget
