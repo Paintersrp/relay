@@ -118,7 +118,7 @@ export interface ProjectFeatureWorkspaceListResponse {
   items: ProjectFeatureWorkspaceSummary[];
 }
 
-export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "author_ticket_design_brief" | "review_ticket_design_brief" | "approve_ticket_design_brief" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "author_ticket_design_brief" | "review_ticket_design_brief" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
 
 export interface GuidedFrontierEntry {
   ticketId: string;
@@ -250,9 +250,6 @@ export interface GuidedIntegrityTicketDesignBrief {
   sha256: string;
   sizeBytes: number;
   status: string;
-  reviewState: string;
-  reviewDisposition: string;
-  reviewId: string;
   approvalId: string;
   historical: boolean;
 }
@@ -329,7 +326,7 @@ export interface GuidedFeatureDetail {
   };
   currentness?: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string };
   planning: { readiness: string; status: string; recoveryCategory: string; candidateState?: string; reviewState?: string; approvalState?: string; promotionState?: string; candidateCount?: number; awaitingReview?: number; awaitingApproval?: number; awaitingPromotion?: number; needsRevision?: number; promoted?: number; historicalCount?: number };
-  delivery?: { frontier: GuidedFrontierEntry[]; selectionState: string; briefState?: string; briefReviewDisposition?: string; packageState: string; runState: string; auditState: string; remediationState: string };
+  delivery?: { frontier: GuidedFrontierEntry[]; selectionState: string; briefState?: string; packageState: string; runState: string; auditState: string; remediationState: string };
   prototype?: { runState: string; cleanupState: string; qaState: string; evidenceState: string; processOutcome: string };
   completion: { gates: Array<{ name: string; ready: boolean }>; ready: boolean; recorded: boolean };
   ticketFrontier: { status: string; summary: string; blockers: string[]; downstream: string[] };

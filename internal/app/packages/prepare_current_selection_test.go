@@ -42,10 +42,7 @@ func TestPrepareCurrentSelectionResolvesApprovedBriefServerSide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ticketsService.CompleteTicketDesignBriefReview(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ticketsService.ApproveTicketDesignBrief(ctx, tickets.TicketDesignBriefApprovalInput{
+	if _, err := ticketsService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}, tickets.TicketDesignBriefApprovalInput{
 		WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version,
 		OperatorConfirmationEvidence: "reviewed and approved", CreatedIdentity: "auditor",
 	}); err != nil {
@@ -107,8 +104,8 @@ func TestPrepareCurrentSelectionDoesNotUseNeedsRevisionBriefAfterReplacement(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if replacement.Brief.SelectionRowID == first.Brief.SelectionRowID {
-		t.Fatalf("replacement brief retained first selection %d", first.Brief.SelectionRowID)
+	if replacement.Brief.SelectionRowID != first.Brief.SelectionRowID || replacement.Brief.AttemptNumber != first.Brief.AttemptNumber+1 {
+		t.Fatalf("replacement brief did not advance the current selection attempt: first=%#v replacement=%#v", first.Brief, replacement.Brief)
 	}
 	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"}); !errors.Is(err, ErrBriefNotApproved) {
 		t.Fatalf("needs-revision brief authorized replacement package: %v", err)

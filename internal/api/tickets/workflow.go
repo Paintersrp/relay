@@ -114,6 +114,9 @@ func (a appWorkflowAdapter) AdmitTicketDesignBrief(ctx context.Context, input ap
 func (a appWorkflowAdapter) CompleteTicketDesignBriefReview(ctx context.Context, input apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error) {
 	return a.service.CompleteTicketDesignBriefReview(ctx, input)
 }
+func (a appWorkflowAdapter) CompleteAndApproveTicketDesignBrief(ctx context.Context, review apptickets.CompleteBriefReviewInput, approval apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
+	return a.service.CompleteAndApproveTicketDesignBrief(ctx, review, approval)
+}
 
 // --- HTTP request types ---
 // Legacy packet-admission fields (packetId, operationId, requiredDependencies)
@@ -190,8 +193,11 @@ type ticketDesignBriefAdmissionRequest struct {
 // reviewCompletionRequest carries the bounded disposition; the current brief
 // is resolved server-side and no findings or prose are accepted.
 type reviewCompletionRequest struct {
-	ReviewerIdentity string `json:"reviewerIdentity"`
-	Disposition      string `json:"disposition"`
+	ReviewerIdentity             string `json:"reviewerIdentity"`
+	Disposition                  string `json:"disposition"`
+	ExpectedVersion              int64  `json:"expectedVersion"`
+	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
+	CreatedIdentity              string `json:"createdIdentity"`
 }
 
 // --- Handlers ---
@@ -372,18 +378,40 @@ func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter,
 		badRequest(w, "Invalid Ticket Design Brief review disposition")
 		return
 	}
-	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), apptickets.CompleteBriefReviewInput{
+	review := apptickets.CompleteBriefReviewInput{
 		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
 		Disposition: disposition,
-	})
+	}
+	if disposition == apptickets.TicketDesignBriefReviewReadyForApproval {
+		if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
+			badRequest(w, "Ready Ticket Design Brief review requires expected version, confirmation evidence, and identity")
+			return
+		}
+		approvalWorkflow, ok := h.workflow.(interface {
+			CompleteAndApproveTicketDesignBrief(context.Context, apptickets.CompleteBriefReviewInput, apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error)
+		})
+		if !ok {
+			writeTicketError(w, apptickets.ErrTicketDesignBriefApproval)
+			return
+		}
+		approved, err := approvalWorkflow.CompleteAndApproveTicketDesignBrief(r.Context(), review, apptickets.TicketDesignBriefApprovalInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity})
+		if err != nil {
+			writeTicketError(w, err)
+			return
+		}
+		shared.JSON(w, http.StatusCreated, map[string]any{"briefId": approved.Brief.BriefID, "approvalId": approved.Approval.ApprovalID})
+		return
+	}
+	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), review)
 	if err != nil {
 		writeTicketError(w, err)
 		return
 	}
-	shared.JSON(w, http.StatusCreated, map[string]any{
-		"reviewId": result.Review.ReviewID, "briefId": result.Brief.BriefID,
-		"reviewerIdentity": result.Review.ReviewerIdentity, "disposition": result.Review.Disposition, "completedAt": result.Review.CompletedAt,
-	})
+	response := map[string]any{"briefId": result.Brief.BriefID, "disposition": result.Disposition}
+	if result.Refresh != nil {
+		response["refresh"] = map[string]any{"operationId": result.Refresh.OperationID, "reviewedBrief": result.Refresh.ReviewedBrief, "auditorReviewResult": result.Refresh.AuditorReviewResult}
+	}
+	shared.JSON(w, http.StatusCreated, response)
 }
 
 func buildPublishInput(externalPriority, expectedRevisionNumber int64, revision revisionRequest, workspaceID, ticketID string) (apptickets.PublishInput, error) {

@@ -476,6 +476,26 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 		}
 		return packageBasis{}, fmt.Errorf("%w: selection %s must be %s, found %s", ErrApprovedAuthorityInvalid, input.SelectionID, expectedSelectionState, selection.State)
 	}
+	currentBrief, briefErr := tx.GetCurrentTicketDesignBriefBySelectionRowID(ctx, selection.ID)
+	if errors.Is(briefErr, sql.ErrNoRows) {
+		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief is missing", ErrPackageBasisChanged)
+	}
+	if briefErr != nil {
+		return packageBasis{}, briefErr
+	}
+	if currentBrief.SelectionRowID != selection.ID || currentBrief.ArtifactSha256 != validated.brief.sha256 || currentBrief.ArtifactSizeBytes != int64(len(validated.brief.input.Bytes)) || currentBrief.Filename != validated.brief.input.DisplayName {
+		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief changed", ErrPackageBasisChanged)
+	}
+	briefApproval, approvalErr := tx.GetTicketDesignBriefApprovalByBriefRowID(ctx, currentBrief.ID)
+	if errors.Is(approvalErr, sql.ErrNoRows) {
+		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief is not approved", ErrPackageBasisChanged)
+	}
+	if approvalErr != nil {
+		return packageBasis{}, approvalErr
+	}
+	if briefApproval.BriefArtifactRowID != currentBrief.ArtifactRowID || briefApproval.BriefSha256 != currentBrief.ArtifactSha256 || briefApproval.BriefSizeBytes != currentBrief.ArtifactSizeBytes {
+		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief approval does not match its exact artifact", ErrPackageBasisChanged)
+	}
 	if !selection.SourceClosureRowID.Valid {
 		return packageBasis{}, fmt.Errorf("%w: selection has no source closure", ErrPackageBasisChanged)
 	}
@@ -513,6 +533,9 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, selectionMember.RevisionRowID)
 	if err != nil {
 		return packageBasis{}, err
+	}
+	if currentBrief.RevisionRowID != revision.ID {
+		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief is not bound to the selected Ticket revision", ErrPackageBasisChanged)
 	}
 	ticket, err := tx.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
 	if err != nil {

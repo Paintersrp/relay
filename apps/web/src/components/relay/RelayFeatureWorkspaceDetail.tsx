@@ -17,14 +17,12 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "author_shared_design": return "Author Shared Design";
     case "author_delivery_ticket": return "Author Delivery Ticket";
     case "review_planning_candidate": return "Review planning candidate";
-    case "approve_planning_candidate": return "Approve planning candidate";
     case "promote_planning_candidate": return "Promote planning candidate";
     case "continue_established_route": return "Continue established route";
     case "legacy_recovery": return "Adopt discovery lifecycle";
     case "select_delivery_ticket": return "Select delivery ticket";
     case "author_ticket_design_brief": return "Author Ticket Design Brief";
     case "review_ticket_design_brief": return "Review Ticket Design Brief";
-    case "approve_ticket_design_brief": return "Approve Ticket Design Brief";
     case "prepare_package": return "Prepare package";
     case "approve_package": return "Approve package";
     case "launch_run": return "Launch run";
@@ -149,9 +147,6 @@ function IntegrityDeliverySection({ delivery }: { delivery: GuidedIntegrity["del
         <IntegrityField label="Canonical filename" value={brief.filename} />
         <IntegrityField label="Digest" value={brief.sha256} />
         <IntegrityField label="Size (bytes)" value={brief.sizeBytes} />
-        <IntegrityField label="Review state" value={brief.reviewState} />
-        <IntegrityField label="Review disposition" value={brief.reviewDisposition} />
-        <IntegrityField label="Review identity" value={brief.reviewId} />
         <IntegrityField label="Approval identity" value={brief.approvalId} />
       </dl>
     </IntegrityRecord>)}</div></div>);
@@ -308,7 +303,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       </div> : null}
       {detail.delivery ? <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selection</dt><dd className="mt-1 text-sm">{detail.delivery.selectionState || "none"}</dd></div>
-        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ticket Design Brief</dt><dd className="mt-1 text-sm">{detail.delivery.briefState || "none"}{detail.delivery.briefReviewDisposition ? ` (${detail.delivery.briefReviewDisposition})` : ""}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ticket Design Brief</dt><dd className="mt-1 text-sm">{detail.delivery.briefState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package</dt><dd className="mt-1 text-sm">{detail.delivery.packageState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Run</dt><dd className="mt-1 text-sm">{detail.delivery.runState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Audit</dt><dd className="mt-1 text-sm">{detail.delivery.auditState || "none"}</dd></div>

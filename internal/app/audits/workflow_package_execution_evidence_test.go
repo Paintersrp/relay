@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	workflowpackages "relay/internal/app/packages"
+	"relay/internal/app/tickets"
 	"relay/internal/executor"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
@@ -222,6 +223,20 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO delivery_ticket_selection_members (selection_row_id, sequence, revision_row_id, approval_row_id) VALUES (?, 1, ?, ?)`, selectionRowID, revisionID, approvalID); err != nil {
+		t.Fatal(err)
+	}
+	briefService, err := tickets.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := briefService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{WorkspaceID: "workspace-package", Bytes: briefBytes, CreatedIdentity: "planner"}); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := briefService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approve fixture brief", CreatedIdentity: "operator"}); err != nil {
 		t.Fatal(err)
 	}
 

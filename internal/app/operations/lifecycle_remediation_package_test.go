@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	appackages "relay/internal/app/packages"
+	apptickets "relay/internal/app/tickets"
 	"relay/internal/executor"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
@@ -47,6 +48,7 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	t.Helper()
 	fixture := newRemediationLifecycleFixture(t)
 	publication := publishRemediationBriefTicket(t, fixture, false)
+	approveRemediationCurrentBrief(t, fixture)
 	brief := []byte(testfixtures.TicketDesignBrief)
 	briefName := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", fixture.workspace.FeatureSlug, publication.result.Ticket.TicketID, publication.result.Revision.RevisionNumber)
 	prepare := appackages.PrepareInput{SelectionID: publication.selection.Selection.SelectionID, TicketDesignBrief: appackages.ArtifactInput{DisplayName: briefName, ExpectedSHA256: lifecycleSHA(brief), Bytes: brief}}
@@ -191,6 +193,7 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 
 func consumeRemediationBriefSelection(t *testing.T, fixture remediationLifecycleFixture, publication remediationBriefPublication) {
 	t.Helper()
+	approveRemediationCurrentBrief(t, fixture)
 	owner, err := appackages.NewService(fixture.store)
 	if err != nil {
 		t.Fatal(err)
@@ -202,6 +205,28 @@ func consumeRemediationBriefSelection(t *testing.T, fixture remediationLifecycle
 		t.Fatal(err)
 	}
 	if _, err := owner.Approve(fixture.ctx, appackages.ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "Consume the exact prior remediation selection."}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func approveRemediationCurrentBrief(t *testing.T, fixture remediationLifecycleFixture) {
+	t.Helper()
+	owner, err := apptickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.AdmitTicketDesignBrief(fixture.ctx, apptickets.TicketDesignBriefAdmissionInput{WorkspaceID: fixture.workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); err != nil {
+		t.Fatal(err)
+	}
+	review, err := owner.CompleteTicketDesignBriefReview(fixture.ctx, apptickets.CompleteBriefReviewInput{WorkspaceID: fixture.workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: apptickets.TicketDesignBriefReviewReadyForApproval})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := fixture.store.GetFeatureWorkspaceByWorkspaceID(fixture.ctx, fixture.workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.ApproveReviewedTicketDesignBrief(fixture.ctx, review, apptickets.TicketDesignBriefApprovalInput{WorkspaceID: fixture.workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "Approve the exact remediation Brief.", CreatedIdentity: "operator"}); err != nil {
 		t.Fatal(err)
 	}
 }

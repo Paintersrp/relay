@@ -12,11 +12,10 @@ import (
 type (
 	TicketDesignBrief         = workflowgenerated.TicketDesignBrief
 	TicketDesignBriefApproval = workflowgenerated.TicketDesignBriefApproval
-	TicketDesignBriefReview   = workflowgenerated.TicketDesignBriefReview
 
 	CreateTicketDesignBriefParams         = workflowgenerated.CreateTicketDesignBriefParams
 	CreateTicketDesignBriefApprovalParams = workflowgenerated.CreateTicketDesignBriefApprovalParams
-	CreateTicketDesignBriefReviewParams   = workflowgenerated.CreateTicketDesignBriefReviewParams
+	SetCurrentTicketDesignBriefParams     = workflowgenerated.SetCurrentTicketDesignBriefParams
 )
 
 func (s *Store) CreateTicketDesignBrief(ctx context.Context, params CreateTicketDesignBriefParams) (TicketDesignBrief, error) {
@@ -31,8 +30,8 @@ func (s *Store) GetTicketDesignBriefByRowID(ctx context.Context, rowID int64) (T
 	return workflowgenerated.New(s.db).GetTicketDesignBriefByRowID(ctx, rowID)
 }
 
-func (s *Store) GetTicketDesignBriefBySelectionRowID(ctx context.Context, selectionRowID int64) (TicketDesignBrief, error) {
-	return workflowgenerated.New(s.db).GetTicketDesignBriefBySelectionRowID(ctx, selectionRowID)
+func (s *Store) GetCurrentTicketDesignBriefBySelectionRowID(ctx context.Context, selectionRowID int64) (TicketDesignBrief, error) {
+	return workflowgenerated.New(s.db).GetCurrentTicketDesignBriefBySelectionRowID(ctx, selectionRowID)
 }
 
 func (s *Store) ListTicketDesignBriefsByWorkspace(ctx context.Context, workspaceRowID int64) ([]TicketDesignBrief, error) {
@@ -51,8 +50,12 @@ func (tx *Tx) GetTicketDesignBriefByRowID(ctx context.Context, rowID int64) (Tic
 	return workflowgenerated.New(tx.tx).GetTicketDesignBriefByRowID(ctx, rowID)
 }
 
-func (tx *Tx) GetTicketDesignBriefBySelectionRowID(ctx context.Context, selectionRowID int64) (TicketDesignBrief, error) {
-	return workflowgenerated.New(tx.tx).GetTicketDesignBriefBySelectionRowID(ctx, selectionRowID)
+func (tx *Tx) GetCurrentTicketDesignBriefBySelectionRowID(ctx context.Context, selectionRowID int64) (TicketDesignBrief, error) {
+	return workflowgenerated.New(tx.tx).GetCurrentTicketDesignBriefBySelectionRowID(ctx, selectionRowID)
+}
+
+func (tx *Tx) SetCurrentTicketDesignBrief(ctx context.Context, params SetCurrentTicketDesignBriefParams) (DeliveryTicketSelection, error) {
+	return workflowgenerated.New(tx.tx).SetCurrentTicketDesignBrief(ctx, params)
 }
 
 func (tx *Tx) ListTicketDesignBriefsByWorkspace(ctx context.Context, workspaceRowID int64) ([]TicketDesignBrief, error) {
@@ -89,38 +92,6 @@ func (tx *Tx) GetTicketDesignBriefApprovalByRowID(ctx context.Context, rowID int
 
 func (tx *Tx) GetTicketDesignBriefApprovalByBriefRowID(ctx context.Context, briefRowID int64) (TicketDesignBriefApproval, error) {
 	return workflowgenerated.New(tx.tx).GetTicketDesignBriefApprovalByBriefRowID(ctx, briefRowID)
-}
-
-func (s *Store) CreateTicketDesignBriefReview(ctx context.Context, params CreateTicketDesignBriefReviewParams) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(s.db).CreateTicketDesignBriefReview(ctx, params)
-}
-
-func (s *Store) GetTicketDesignBriefReviewByReviewID(ctx context.Context, reviewID string) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(s.db).GetTicketDesignBriefReviewByReviewID(ctx, reviewID)
-}
-
-func (s *Store) GetTicketDesignBriefReviewByRowID(ctx context.Context, rowID int64) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(s.db).GetTicketDesignBriefReviewByRowID(ctx, rowID)
-}
-
-func (s *Store) GetTicketDesignBriefReviewByBriefRowID(ctx context.Context, briefRowID int64) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(s.db).GetTicketDesignBriefReviewByBriefRowID(ctx, briefRowID)
-}
-
-func (tx *Tx) CreateTicketDesignBriefReview(ctx context.Context, params CreateTicketDesignBriefReviewParams) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(tx.tx).CreateTicketDesignBriefReview(ctx, params)
-}
-
-func (tx *Tx) GetTicketDesignBriefReviewByReviewID(ctx context.Context, reviewID string) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(tx.tx).GetTicketDesignBriefReviewByReviewID(ctx, reviewID)
-}
-
-func (tx *Tx) GetTicketDesignBriefReviewByRowID(ctx context.Context, rowID int64) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(tx.tx).GetTicketDesignBriefReviewByRowID(ctx, rowID)
-}
-
-func (tx *Tx) GetTicketDesignBriefReviewByBriefRowID(ctx context.Context, briefRowID int64) (TicketDesignBriefReview, error) {
-	return workflowgenerated.New(tx.tx).GetTicketDesignBriefReviewByBriefRowID(ctx, briefRowID)
 }
 
 // ReadTicketDesignBriefBytes verifies the durable artifact path, digest, and

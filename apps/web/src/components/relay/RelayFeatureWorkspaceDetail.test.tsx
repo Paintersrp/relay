@@ -29,7 +29,7 @@ const base: GuidedFeatureDetail = {
   authority: { currentRevisionNumber: 1, revisions: [{ revisionNumber: 1, layers: ["requirements", "design"], historical: false }] },
   planning: { readiness: "current", status: "ready", recoveryCategory: "" },
   completion: { gates: [{ name: "authority", ready: true }, { name: "audit", ready: false }], ready: false, recorded: false },
-  delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "none", briefState: "reviewed", briefReviewDisposition: "needs_revision", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+  delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "none", briefState: "authored", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
   prototype: { runState: "none", cleanupState: "none", qaState: "prepared", evidenceState: "none", processOutcome: "" },
   ticketFrontier: { status: "blocked", summary: "Resolve the remaining discovery frontier.", blockers: ["missing evidence"], downstream: [] },
   downstream: { status: "delivery", summary: "Continue after discovery closure." },
@@ -56,7 +56,7 @@ const base: GuidedFeatureDetail = {
       delivery: {
         frontier: [{ ticketId: "P5-T1", revisionNumber: 2 }],
         selection: { selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 },
-        briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "sha-brief-1", sizeBytes: 24, status: "approved", reviewState: "completed", reviewDisposition: "ready_for_approval", reviewId: "brief-review-1", approvalId: "brief-approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "sha-brief-0", sizeBytes: 12, status: "superseded", reviewState: "completed", reviewDisposition: "needs_revision", reviewId: "brief-review-0", approvalId: "", historical: true }],
+        briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "sha-brief-1", sizeBytes: 24, status: "approved", approvalId: "brief-approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "sha-brief-0", sizeBytes: 12, status: "superseded", approvalId: "", historical: true }],
         package: { packageId: "package-1", sha256: "sha-package-1", approvalId: "pkg-approval-1" },
         run: { runId: "run-1", packageId: "package-1", repoTarget: "relay", branch: "main", baseCommit: "base-1" },
         audit: { auditPacketId: "packet-audit-1", auditDecisionId: "audit-1", auditedCommit: "commit-1" },
@@ -102,7 +102,7 @@ describe("RelayFeatureWorkspaceDetail", () => {
     // Server projection semantics render without client lifecycle derivation.
     expect(screen.getByText("closure packet verified")).toBeInTheDocument();
     expect(screen.getByText("P5-T1 v2 (priority 60, relay @ main)")).toBeInTheDocument();
-    expect(screen.getByText("reviewed (needs_revision)")).toBeInTheDocument();
+    expect(screen.getByText("authored")).toBeInTheDocument();
     expect(screen.getByText("historical_basis_requires_recovery")).toBeInTheDocument();
     expect(screen.getByText("remediation_open")).toBeInTheDocument();
     expect(screen.getByText("cleanup_pending")).toBeInTheDocument();
@@ -212,9 +212,7 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(screen.getByText("brief-1")).toBeInTheDocument();
     expect(screen.getByText("brief-0")).toBeInTheDocument();
     expect(screen.getByText("payments.ticket-P5-T1.r2.design-brief.md")).toBeInTheDocument();
-    expect(screen.getByText("brief-review-1")).toBeInTheDocument();
     expect(screen.getByText("brief-approval-1")).toBeInTheDocument();
-    expect(screen.getByText("ready_for_approval")).toBeInTheDocument();
     expect(screen.getByText(/historical; superseded/)).toBeInTheDocument();
     expect(screen.getByText(/selection-1 \(active; P5-T1 v2\)/)).toBeInTheDocument();
     expect(screen.getByText(/run-1 \(package package-1; relay @ main, base base-1\)/)).toBeInTheDocument();

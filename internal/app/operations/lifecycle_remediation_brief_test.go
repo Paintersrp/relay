@@ -180,6 +180,7 @@ func createCompletedRemediationDependency(t *testing.T, fixture remediationLifec
 	}
 	brief := []byte(testfixtures.TicketDesignBrief)
 	briefName := fmt.Sprintf("%s.ticket-%s.r1.design-brief.md", fixture.workspace.FeatureSlug, published.Ticket.TicketID)
+	approveRemediationCurrentBrief(t, fixture)
 	prepared, err := packageService.Prepare(ctx, appackages.PrepareInput{SelectionID: selection.Selection.SelectionID, TicketDesignBrief: appackages.ArtifactInput{DisplayName: briefName, ExpectedSHA256: lifecycleSHA(brief), Bytes: brief}})
 	if err != nil {
 		t.Fatal(err)

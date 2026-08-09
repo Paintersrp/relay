@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"relay/internal/app/tickets"
 	"relay/internal/sourcevault"
 	"relay/internal/speccompiler"
 	workflow "relay/internal/store/workflow"
@@ -126,6 +127,32 @@ func TestServicePrepareAndGetPackageWithOperations(t *testing.T) {
 	if compoundSHA256(append([]string{"selected-package-v3", "basis"}, selectedPackageOperationsDigestParts(validated.operations)...)...) == compoundSHA256(append([]string{"selected-package-v3", "basis"}, selectedPackageOperationsDigestParts(&changed)...)...) {
 		t.Fatal("changing the operations filename component did not change the digest")
 	}
+}
+
+func TestServiceDirectPrepareAndApproveRequireCurrentApprovedBrief(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageServiceFixture(t)
+	admitApprovedFixtureBrief(t, fixture)
+
+	rejectedBytes := append(append([]byte(nil), fixture.brief.Bytes...), '\n')
+	rejected := insertFixtureBriefAttempt(t, fixture, rejectedBytes, 2, "needs_revision", false)
+	if _, err := fixture.service.Prepare(ctx, PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: rejected}); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("direct prepare accepted historical rejected Brief: %v", err)
+	}
+
+	prepared, err := fixture.service.Prepare(ctx, fixture.input(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentRejected := insertFixtureBriefAttempt(t, fixture, rejectedBytes, 3, "needs_revision", true)
+	if _, err := fixture.service.Prepare(ctx, PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: currentRejected}); err == nil {
+		t.Fatal("direct prepare unexpectedly accepted a second package for the selection")
+	}
+	if _, err := fixture.service.Approve(ctx, ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve stale package"}); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("direct approval accepted package after current Brief changed: %v", err)
+	}
+	assertCount(t, fixture.store.DB(), "execution_package_approvals", 0)
+	assertCount(t, fixture.store.DB(), "runs", 0)
 }
 
 func TestServicePackageReadbackRejectsChangedOrMissingArtifacts(t *testing.T) {
@@ -451,11 +478,70 @@ func (f *packageServiceFixture) input(withOperations bool) PrepareInput {
 
 func preparePackage(t *testing.T, fixture *packageServiceFixture, withOperations bool) PrepareResult {
 	t.Helper()
+	admitApprovedFixtureBrief(t, fixture)
 	prepared, err := fixture.service.Prepare(context.Background(), fixture.input(withOperations))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return prepared
+}
+
+func admitApprovedFixtureBrief(t *testing.T, fixture *packageServiceFixture) {
+	t.Helper()
+	ctx := context.Background()
+	selection, err := fixture.store.GetDeliveryTicketSelectionBySelectionID(ctx, fixture.selectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.CurrentTicketDesignBriefRowID.Valid {
+		return
+	}
+	owner, err := tickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{WorkspaceID: "workspace-package", Bytes: fixture.brief.Bytes, CreatedIdentity: "planner"}); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := fixture.store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved fixture Brief", CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertFixtureBriefAttempt(t *testing.T, fixture *packageServiceFixture, bytes []byte, attempt int64, disposition string, current bool) ArtifactInput {
+	t.Helper()
+	ctx := context.Background()
+	db := fixture.store.DB()
+	selection, err := fixture.store.GetDeliveryTicketSelectionBySelectionID(ctx, fixture.selectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members, err := fixture.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("selection members = %#v, %v", members, err)
+	}
+	sha := sha256Hex(bytes)
+	name := fixture.brief.DisplayName
+	var artifactID, briefID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES (?, (SELECT workspace_row_id FROM delivery_ticket_selections WHERE id = ?), ?, ?, 'text/markdown', ?) RETURNING id`, fmt.Sprintf("discovery-artifact-package-brief-%d", attempt), selection.ID, fmt.Sprintf("feature-discovery/checkout/closure/brief-%d.md", attempt), sha, len(bytes)).Scan(&artifactID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO ticket_design_briefs (brief_id, workspace_row_id, selection_row_id, attempt_number, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity) VALUES (?, (SELECT workspace_row_id FROM delivery_ticket_selections WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, 'planner') RETURNING id`, fmt.Sprintf("brief-package-attempt-%d", attempt), selection.ID, selection.ID, attempt, members[0].RevisionRowID, name, artifactID, sha, len(bytes)).Scan(&briefID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO ticket_design_brief_approvals (approval_id, brief_row_id, brief_artifact_row_id, brief_sha256, brief_size_bytes, operator_confirmation_evidence, created_identity) VALUES (?, ?, ?, ?, ?, 'fixture approval', 'operator')`, fmt.Sprintf("brief-approval-package-attempt-%d", attempt), briefID, artifactID, sha, len(bytes)); err != nil {
+		t.Fatal(err)
+	}
+	if current {
+		if _, err := db.ExecContext(ctx, `UPDATE delivery_ticket_selections SET current_ticket_design_brief_row_id = ? WHERE id = ?`, briefID, selection.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return ArtifactInput{DisplayName: name, Bytes: bytes, ExpectedSHA256: sha}
 }
 
 func assertPackageFile(t *testing.T, fixture *packageServiceFixture, artifact PackageArtifact, want []byte) {

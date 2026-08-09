@@ -13,13 +13,11 @@ type (
 	FeatureWorkspaceDiscoveryArtifact = workflowgenerated.FeatureWorkspaceDiscoveryArtifact
 	PlanningCandidate                 = workflowgenerated.PlanningCandidate
 	PlanningCandidateApproval         = workflowgenerated.PlanningCandidateApproval
-	PlanningCandidateReview           = workflowgenerated.PlanningCandidateReview
 	DeliveryTicketProductionLink      = workflowgenerated.DeliveryTicketProductionLink
 
 	CreateFeatureWorkspaceDiscoveryArtifactParams = workflowgenerated.CreateFeatureWorkspaceDiscoveryArtifactParams
 	CreatePlanningCandidateParams                 = workflowgenerated.CreatePlanningCandidateParams
 	CreatePlanningCandidateApprovalParams         = workflowgenerated.CreatePlanningCandidateApprovalParams
-	CreatePlanningCandidateReviewParams           = workflowgenerated.CreatePlanningCandidateReviewParams
 	CreateDeliveryTicketProductionLinkParams      = workflowgenerated.CreateDeliveryTicketProductionLinkParams
 )
 
@@ -93,38 +91,6 @@ func (tx *Tx) GetPlanningCandidateApprovalByRowID(ctx context.Context, rowID int
 
 func (tx *Tx) ListPlanningCandidateApprovalsByCandidate(ctx context.Context, candidateRowID int64) ([]PlanningCandidateApproval, error) {
 	return workflowgenerated.New(tx.tx).ListPlanningCandidateApprovalsByCandidate(ctx, candidateRowID)
-}
-
-func (s *Store) CreatePlanningCandidateReview(ctx context.Context, params CreatePlanningCandidateReviewParams) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(s.db).CreatePlanningCandidateReview(ctx, params)
-}
-
-func (s *Store) GetPlanningCandidateReviewByReviewID(ctx context.Context, reviewID string) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(s.db).GetPlanningCandidateReviewByReviewID(ctx, reviewID)
-}
-
-func (s *Store) GetPlanningCandidateReviewByRowID(ctx context.Context, rowID int64) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(s.db).GetPlanningCandidateReviewByRowID(ctx, rowID)
-}
-
-func (s *Store) GetPlanningCandidateReviewByCandidateRowID(ctx context.Context, candidateRowID int64) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(s.db).GetPlanningCandidateReviewByCandidateRowID(ctx, candidateRowID)
-}
-
-func (tx *Tx) CreatePlanningCandidateReview(ctx context.Context, params CreatePlanningCandidateReviewParams) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(tx.tx).CreatePlanningCandidateReview(ctx, params)
-}
-
-func (tx *Tx) GetPlanningCandidateReviewByReviewID(ctx context.Context, reviewID string) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(tx.tx).GetPlanningCandidateReviewByReviewID(ctx, reviewID)
-}
-
-func (tx *Tx) GetPlanningCandidateReviewByRowID(ctx context.Context, rowID int64) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(tx.tx).GetPlanningCandidateReviewByRowID(ctx, rowID)
-}
-
-func (tx *Tx) GetPlanningCandidateReviewByCandidateRowID(ctx context.Context, candidateRowID int64) (PlanningCandidateReview, error) {
-	return workflowgenerated.New(tx.tx).GetPlanningCandidateReviewByCandidateRowID(ctx, candidateRowID)
 }
 
 func (s *Store) GetDeliveryTicketProductionLinkByLinkID(ctx context.Context, linkID string) (DeliveryTicketProductionLink, error) {

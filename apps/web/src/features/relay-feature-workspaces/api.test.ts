@@ -111,7 +111,7 @@ describe("feature workspace transport", () => {
             delivery: {
               frontier: [],
               selection: { selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 },
-              briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", reviewState: "completed", reviewDisposition: "ready_for_approval", reviewId: "review-1", approvalId: "approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "a".repeat(64), sizeBytes: 21, status: "superseded", reviewState: "completed", reviewDisposition: "needs_revision", reviewId: "review-0", approvalId: "", historical: true }],
+              briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", approvalId: "approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "a".repeat(64), sizeBytes: 21, status: "superseded", approvalId: "", historical: true }],
               package: { packageId: "package-1", sha256: "p".repeat(64), approvalId: "package-approval-1" },
               run: { runId: "run-1", packageId: "package-1", repoTarget: "relay", branch: "main", baseCommit: "c".repeat(40) },
               audit: null,
@@ -127,7 +127,7 @@ describe("feature workspace transport", () => {
     const detail = await getGuidedFeatureWorkspace("workspace-1");
     expect(detail.diagnostics.integrity.delivery.selection).toEqual({ selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 });
     expect(detail.diagnostics.integrity.delivery.briefs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ briefId: "brief-1", filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", reviewDisposition: "ready_for_approval", reviewId: "review-1", approvalId: "approval-1", historical: false }),
+      expect.objectContaining({ briefId: "brief-1", filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", approvalId: "approval-1", historical: false }),
       expect.objectContaining({ briefId: "brief-0", selectionId: "selection-0", historical: true }),
     ]));
     expect(detail.diagnostics.integrity.delivery.run).toEqual(expect.objectContaining({ runId: "run-1", packageId: "package-1" }));

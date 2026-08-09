@@ -182,6 +182,19 @@ func (s *TicketWorkflowService) CompleteTicketDesignBriefReview(ctx context.Cont
 	return s.owner.CompleteTicketDesignBriefReview(ctx, input)
 }
 
+func (s *TicketWorkflowService) CompleteAndApproveTicketDesignBrief(ctx context.Context, review tickets.CompleteBriefReviewInput, approval tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error) {
+	if s == nil || s.owner == nil {
+		return tickets.TicketDesignBriefApprovalResult{}, ErrTicketAdmission
+	}
+	owner, ok := s.owner.(interface {
+		CompleteAndApproveTicketDesignBrief(context.Context, tickets.CompleteBriefReviewInput, tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error)
+	})
+	if !ok {
+		return tickets.TicketDesignBriefApprovalResult{}, ErrTicketAdmission
+	}
+	return owner.CompleteAndApproveTicketDesignBrief(ctx, review, approval)
+}
+
 func ValidateTicketPublicationInput(input tickets.PublishInput, reference *RemediationAuthoringReference) error {
 	if input.RemediationSeedID == "" {
 		if reference != nil {

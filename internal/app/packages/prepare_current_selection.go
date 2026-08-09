@@ -46,7 +46,7 @@ func (s *Service) PrepareCurrentSelection(ctx context.Context, in guidedapp.Prep
 	if !found {
 		return guidedapp.PreparePackageResult{}, fmt.Errorf("%w: %s", ErrSelectionNotActive, in.WorkspaceID)
 	}
-	brief, err := s.store.GetTicketDesignBriefBySelectionRowID(ctx, selection.ID)
+	brief, err := s.store.GetCurrentTicketDesignBriefBySelectionRowID(ctx, selection.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return guidedapp.PreparePackageResult{}, fmt.Errorf("%w: %s", ErrApprovedBriefMissing, in.WorkspaceID)
 	}

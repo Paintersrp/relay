@@ -190,14 +190,15 @@ type DeliveryTicketRevisionSatisfaction struct {
 }
 
 type DeliveryTicketSelection struct {
-	ID                 int64         `json:"id"`
-	SelectionID        string        `json:"selection_id"`
-	WorkspaceRowID     int64         `json:"workspace_row_id"`
-	State              string        `json:"state"`
-	Rationale          string        `json:"rationale"`
-	SourceClosureRowID sql.NullInt64 `json:"source_closure_row_id"`
-	CreatedAt          string        `json:"created_at"`
-	UpdatedAt          string        `json:"updated_at"`
+	ID                            int64         `json:"id"`
+	SelectionID                   string        `json:"selection_id"`
+	WorkspaceRowID                int64         `json:"workspace_row_id"`
+	State                         string        `json:"state"`
+	Rationale                     string        `json:"rationale"`
+	SourceClosureRowID            sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt                     string        `json:"created_at"`
+	UpdatedAt                     string        `json:"updated_at"`
+	CurrentTicketDesignBriefRowID sql.NullInt64 `json:"current_ticket_design_brief_row_id"`
 }
 
 type DeliveryTicketSelectionMember struct {
@@ -1011,16 +1012,6 @@ type PlanningCandidateApproval struct {
 	CreatedAt                    string `json:"created_at"`
 }
 
-type PlanningCandidateReview struct {
-	ID               int64  `json:"id"`
-	ReviewID         string `json:"review_id"`
-	CandidateRowID   int64  `json:"candidate_row_id"`
-	ReviewerIdentity string `json:"reviewer_identity"`
-	CompletedAt      string `json:"completed_at"`
-	CreatedAt        string `json:"created_at"`
-	Disposition      string `json:"disposition"`
-}
-
 type Project struct {
 	ID          int64  `json:"id"`
 	ProjectID   string `json:"project_id"`
@@ -1184,6 +1175,7 @@ type TicketDesignBrief struct {
 	BriefID           string `json:"brief_id"`
 	WorkspaceRowID    int64  `json:"workspace_row_id"`
 	SelectionRowID    int64  `json:"selection_row_id"`
+	AttemptNumber     int64  `json:"attempt_number"`
 	RevisionRowID     int64  `json:"revision_row_id"`
 	Filename          string `json:"filename"`
 	ArtifactRowID     int64  `json:"artifact_row_id"`
@@ -1203,14 +1195,4 @@ type TicketDesignBriefApproval struct {
 	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
 	CreatedIdentity              string `json:"created_identity"`
 	CreatedAt                    string `json:"created_at"`
-}
-
-type TicketDesignBriefReview struct {
-	ID               int64  `json:"id"`
-	ReviewID         string `json:"review_id"`
-	BriefRowID       int64  `json:"brief_row_id"`
-	ReviewerIdentity string `json:"reviewer_identity"`
-	CompletedAt      string `json:"completed_at"`
-	CreatedAt        string `json:"created_at"`
-	Disposition      string `json:"disposition"`
 }

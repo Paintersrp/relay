@@ -270,6 +270,9 @@ func (a appAuthorityAdapter) ExecuteGuidedAction(ctx context.Context, input feat
 func (a appAuthorityAdapter) CompletePlanningCandidateReview(ctx context.Context, input featureapp.CompleteCandidateReviewInput) (featureapp.CompleteCandidateReviewResult, error) {
 	return a.service.CompletePlanningCandidateReview(ctx, input)
 }
+func (a appAuthorityAdapter) CompleteAndApprovePlanningCandidate(ctx context.Context, review featureapp.CompleteCandidateReviewInput, approval featureapp.CandidateApprovalInput) (featureapp.CandidateApprovalResult, error) {
+	return a.service.CompleteAndApprovePlanningCandidate(ctx, review, approval)
+}
 
 type createWorkspaceRequest struct {
 	ProjectID   string `json:"projectId"`
@@ -362,8 +365,11 @@ type guidedActionRequest struct {
 // current planning candidate is resolved server-side and no findings or prose
 // are accepted.
 type candidateReviewCompletionRequest struct {
-	ReviewerIdentity string `json:"reviewerIdentity"`
-	Disposition      string `json:"disposition"`
+	ReviewerIdentity             string `json:"reviewerIdentity"`
+	Disposition                  string `json:"disposition"`
+	ExpectedVersion              int64  `json:"expectedVersion"`
+	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
+	CreatedIdentity              string `json:"createdIdentity"`
 }
 type cleanupRequest struct {
 	ExpectedRunVersion int64  `json:"expectedRunVersion"`
@@ -568,8 +574,8 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
-		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "approve_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
+		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
@@ -713,18 +719,40 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		badRequest(w, "Invalid planning candidate review disposition")
 		return
 	}
-	result, err := completion.CompletePlanningCandidateReview(r.Context(), featureapp.CompleteCandidateReviewInput{
+	review := featureapp.CompleteCandidateReviewInput{
 		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
 		Disposition: disposition,
-	})
+	}
+	if disposition == featureapp.PlanningCandidateReviewReadyForApproval {
+		if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
+			badRequest(w, "Ready planning candidate review requires expected version, confirmation evidence, and identity")
+			return
+		}
+		approvalCompletion, ok := completion.(interface {
+			CompleteAndApprovePlanningCandidate(context.Context, featureapp.CompleteCandidateReviewInput, featureapp.CandidateApprovalInput) (featureapp.CandidateApprovalResult, error)
+		})
+		if !ok {
+			writeWorkspaceError(w, featureapp.ErrCandidateApprovalInvalid)
+			return
+		}
+		approved, err := approvalCompletion.CompleteAndApprovePlanningCandidate(r.Context(), review, featureapp.CandidateApprovalInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity})
+		if err != nil {
+			writeWorkspaceError(w, err)
+			return
+		}
+		shared.JSON(w, http.StatusCreated, map[string]any{"candidateId": approved.Candidate.CandidateID, "approvalId": approved.Approval.ApprovalID})
+		return
+	}
+	result, err := completion.CompletePlanningCandidateReview(r.Context(), review)
 	if err != nil {
 		writeWorkspaceError(w, err)
 		return
 	}
-	shared.JSON(w, http.StatusCreated, map[string]any{
-		"reviewId": result.Review.ReviewID, "candidateId": result.Candidate.CandidateID,
-		"reviewerIdentity": result.Review.ReviewerIdentity, "disposition": result.Review.Disposition, "completedAt": result.Review.CompletedAt,
-	})
+	response := map[string]any{"candidateId": result.Candidate.CandidateID, "disposition": result.Disposition}
+	if result.Refresh != nil {
+		response["refresh"] = map[string]any{"operationId": result.Refresh.OperationID, "reviewedCandidate": result.Refresh.ReviewedCandidate, "auditorReviewResult": result.Refresh.AuditorReviewResult}
+	}
+	shared.JSON(w, http.StatusCreated, response)
 }
 
 func (h *WorkspaceHandler) guidedProjection(ctx context.Context, workspaceID string) (map[string]any, error) {
@@ -844,7 +872,7 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 		"authority":        map[string]any{"currentRevisionNumber": value.Authority.CurrentRevisionNumber, "layers": value.Authority.Layers},
 		"currentness":      map[string]any{"readiness": value.Currentness.Readiness, "owner": value.Currentness.Owner, "blockedOperation": value.Currentness.BlockedOperation, "effect": value.Currentness.Effect, "recoveryCategory": value.Currentness.RecoveryCategory},
 		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "needsRevision": value.Planning.NeedsRevision, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
-		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "briefState": value.Delivery.BriefState, "briefReviewDisposition": value.Delivery.BriefReviewDisposition, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
+		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "briefState": value.Delivery.BriefState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
 		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
 		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},
@@ -941,8 +969,7 @@ func guidedIntegrityBriefsDTO(values []featureapp.GuidedIntegrityTicketDesignBri
 		result = append(result, map[string]any{
 			"briefId": value.BriefID, "selectionId": value.SelectionID, "selectionState": value.SelectionState,
 			"ticketId": value.TicketID, "revisionNumber": value.RevisionNumber, "filename": value.Filename,
-			"sha256": value.SHA256, "sizeBytes": value.SizeBytes, "status": value.Status,
-			"reviewState": value.ReviewState, "reviewDisposition": value.ReviewDisposition, "reviewId": value.ReviewID, "approvalId": value.ApprovalID,
+			"sha256": value.SHA256, "sizeBytes": value.SizeBytes, "status": value.Status, "approvalId": value.ApprovalID,
 			"historical": value.Historical,
 		})
 	}

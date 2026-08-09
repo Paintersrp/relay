@@ -12,7 +12,6 @@ const (
 	GuidedActionAuthorSharedDesign       GuidedFeatureAction = "author_shared_design"
 	GuidedActionAuthorDeliveryTicket     GuidedFeatureAction = "author_delivery_ticket"
 	GuidedActionReviewPlanningCandidate  GuidedFeatureAction = "review_planning_candidate"
-	GuidedActionApprovePlanningCandidate GuidedFeatureAction = "approve_planning_candidate"
 	GuidedActionPromotePlanningCandidate GuidedFeatureAction = "promote_planning_candidate"
 	GuidedActionContinueEstablishedRoute GuidedFeatureAction = "continue_established_route"
 	GuidedActionCompleteFeature          GuidedFeatureAction = "complete_feature"
@@ -22,7 +21,6 @@ const (
 	GuidedActionSelectDeliveryTicket     GuidedFeatureAction = "select_delivery_ticket"
 	GuidedActionAuthorTicketDesignBrief  GuidedFeatureAction = "author_ticket_design_brief"
 	GuidedActionReviewTicketDesignBrief  GuidedFeatureAction = "review_ticket_design_brief"
-	GuidedActionApproveTicketDesignBrief GuidedFeatureAction = "approve_ticket_design_brief"
 	GuidedActionPreparePackage           GuidedFeatureAction = "prepare_package"
 	GuidedActionApprovePackage           GuidedFeatureAction = "approve_package"
 	GuidedActionLaunchRun                GuidedFeatureAction = "launch_run"
@@ -142,7 +140,7 @@ func DecideGuidedFeatureAction(state GuidedJourneyState, currentness FeatureCurr
 // guidedClosedDestinationAvailability maps a closed discovery packet to the
 // guided actions available to the operator. Planning-family destinations are
 // driven by the semantic planning section so the operator advances through
-// author -> review -> approval -> promotion -> next family or ticket instead
+// author -> review/immediate approval -> promotion -> next family or ticket instead
 // of inferring progression from authority layer presence.
 func guidedClosedDestinationAvailability(state GuidedJourneyState, completion GuidedCompletion) []GuidedFeatureActionAvailability {
 	completionReady := GuidedCompletionReady(completion.Gates)
@@ -166,7 +164,7 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 		return guidedDeliveryAvailability(state, completion)
 	case DiscoveryDestinationRequirements:
 		if guidedPlanningActive(state.Planning) {
-			if steps := guidedPlanningStep(state.Planning.Requirements, GuidedActionAuthorRequirements, "Requirements", "Author Requirements, complete its read-only review, then explicitly approve and promote it before returning."); steps != nil {
+			if steps := guidedPlanningStep(state.Planning.Requirements, GuidedActionAuthorRequirements, "Requirements", "Author Requirements, complete its read-only review and immediate explicit approval, then return to promote it."); steps != nil {
 				return steps
 			}
 			return guidedDeliveryAvailability(state, completion)
@@ -174,10 +172,10 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 		if hasGuidedLayer(state.AuthorityLayers, "requirements") {
 			return guidedDeliveryAvailability(state, completion)
 		}
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorRequirements, Primary: true, Enabled: true, Handoff: "Author Requirements, complete its read-only review, then explicitly approve and promote it before returning."}}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorRequirements, Primary: true, Enabled: true, Handoff: "Author Requirements, complete its read-only review and immediate explicit approval, then return to promote it."}}
 	case DiscoveryDestinationSharedDesign:
 		if guidedPlanningActive(state.Planning) {
-			if steps := guidedPlanningStep(state.Planning.SharedDesign, GuidedActionAuthorSharedDesign, "Shared Design", "Author Shared Design, complete its read-only review, then explicitly approve and promote it before returning."); steps != nil {
+			if steps := guidedPlanningStep(state.Planning.SharedDesign, GuidedActionAuthorSharedDesign, "Shared Design", "Author Shared Design, complete its read-only review and immediate explicit approval, then return to promote it."); steps != nil {
 				return steps
 			}
 			return guidedDeliveryAvailability(state, completion)
@@ -261,14 +259,6 @@ func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompl
 			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Author the Ticket Design Brief for the selected Delivery Ticket through the existing planner operation, admit it through the delivery owner, then return here to review and approve it."}}
 		case "authored":
 			return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The admissible Ticket Design Brief is ready for review. Perform the read-only review through the auditor surface; completing it here records review completion and makes the explicit approval available."}}
-		case "reviewed":
-			switch delivery.BriefReviewDisposition {
-			case "ready_for_approval":
-				return []GuidedFeatureActionAvailability{{Action: GuidedActionApproveTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the reviewed Ticket Design Brief server-side; the approval resolves the current brief identity, exact bytes, and basis from the delivery owner."}}
-			case "needs_revision":
-				return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The current Ticket Design Brief needs revision. Continue planner.ticket_design_brief_remediation, admit its replacement through the delivery owner, then return for a new read-only review."}}
-			}
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The Ticket Design Brief review disposition is unavailable. Return to the auditor review surface before explicit approval can be offered."}}
 		case "approved":
 			switch delivery.PackageState {
 			case "", "none":
@@ -361,26 +351,14 @@ func guidedPlanningStep(family GuidedPlanningFamilySection, authorAction GuidedF
 	if family.Count > 0 && family.Promoted == family.Count {
 		return nil
 	}
-	if family.NeedsRevision > 0 {
-		return []GuidedFeatureActionAvailability{{
-			Action: authorAction, Primary: true, Enabled: true,
-			Handoff: "The current " + familyName + " planning candidate needs revision. Continue its registered planner re-authoring operation before a new read-only review.",
-		}}
-	}
 	if family.AwaitingPromotion > 0 {
 		return []GuidedFeatureActionAvailability{{
 			Action: GuidedActionPromotePlanningCandidate, Primary: true, Enabled: true,
 			Handoff: "The current " + familyName + " planning candidate is approved. Promote it server-side to publish it as workspace authority before continuing.",
 		}}
 	}
-	if family.AwaitingApproval > 0 {
-		return []GuidedFeatureActionAvailability{{
-			Action: GuidedActionApprovePlanningCandidate, Primary: true, Enabled: true, RequiresConfirmation: true,
-			Handoff: "The current " + familyName + " planning candidate has completed its read-only review. Approve it server-side; the approval resolves the candidate identity, exact bytes, and basis from the workspace.",
-		}}
-	}
 	if family.AwaitingReview > 0 {
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current " + familyName + " planning candidate through the auditor review surface. After the owner records the review completion, refresh this workspace to approve it explicitly."}}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current " + familyName + " planning candidate through the auditor review surface. A ready completion explicitly approves it immediately; a needs-revision completion returns the exact planner refresh input for a replacement candidate."}}
 	}
 	return []GuidedFeatureActionAvailability{{Action: authorAction, Primary: true, Enabled: true, Handoff: authorHandoff}}
 }
@@ -393,17 +371,11 @@ func guidedDeliveryTicketCandidateStep(family GuidedPlanningFamilySection) []Gui
 	if family.Count == 0 || family.Produced == family.Count {
 		return nil
 	}
-	if family.NeedsRevision > 0 {
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "The current Delivery Ticket candidate needs revision. Continue planner.delivery_ticket_remediation, then return for the candidate's read-only review."}}
-	}
 	if family.AwaitingPromotion > 0 {
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionPromotePlanningCandidate, Primary: true, Enabled: true, Handoff: "The current Delivery Ticket candidate is explicitly approved. Produce and publish it through the delivery-ticket owner using the server-resolved candidate, approval, and current basis."}}
 	}
-	if family.AwaitingApproval > 0 {
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePlanningCandidate, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "The current Delivery Ticket candidate is ready for approval. Explicitly approve the server-resolved candidate before production."}}
-	}
 	if family.AwaitingReview > 0 {
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current Delivery Ticket candidate through the exact read-only auditor.delivery_ticket_review operation. Record its bounded disposition through the planning candidate owner, then refresh."}}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current Delivery Ticket candidate through the exact read-only auditor.delivery_ticket_review operation. Its ready completion immediately approves it; needs revision returns the exact planner refresh input."}}
 	}
 	return nil
 }

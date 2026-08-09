@@ -29,7 +29,7 @@ type (
 func getDeliveryTicketSelectionByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (DeliveryTicketSelection, error) {
 	var value DeliveryTicketSelection
 	err := queryer.QueryRowContext(ctx, `
-SELECT id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at
+SELECT id, selection_id, workspace_row_id, state, rationale, source_closure_row_id, created_at, updated_at, current_ticket_design_brief_row_id
 FROM delivery_ticket_selections
 WHERE id = ?`, rowID).Scan(
 		&value.ID,
@@ -40,6 +40,7 @@ WHERE id = ?`, rowID).Scan(
 		&value.SourceClosureRowID,
 		&value.CreatedAt,
 		&value.UpdatedAt,
+		&value.CurrentTicketDesignBriefRowID,
 	)
 	return value, err
 }
