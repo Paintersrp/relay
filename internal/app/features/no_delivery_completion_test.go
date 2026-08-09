@@ -114,6 +114,64 @@ func TestNoDeliveryFeatureAbandonmentRecordsImmutableDecisionWithoutAuthority(t 
 	}
 }
 
+// TestNoDeliveryWaiverRequiresAbsentCurrentAuthorityProjection proves the
+// no-delivery waiver applies only when the workspace carries no current
+// authority revision pointer at all. A schema-valid authority revision whose
+// source_closure_row_id is NULL is an invalid present projection: the
+// authority and currentness gates stay closed, the evaluation is not
+// completion-ready, both confirmed closing mutations are rejected with the
+// typed not-ready error, and no decision is persisted.
+func TestNoDeliveryWaiverRequiresAbsentCurrentAuthorityProjection(t *testing.T) {
+	ctx, store, service, workspace, _ := closedNoDeliveryFixture(t)
+	var authority workflowstore.FeatureWorkspaceAuthorityRevision
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		revision, err := tx.CreateFeatureWorkspaceAuthorityRevision(ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{
+			AuthorityRevisionID: "authority-no-delivery-invalid-projection",
+			WorkspaceRowID:      workspace.ID,
+			RevisionNumber:      1,
+			SourceClosureRowID:  sql.NullInt64{},
+		})
+		if err != nil {
+			return err
+		}
+		authority = revision
+		_, err = tx.SetFeatureWorkspaceAuthorityRevision(ctx, revision.ID, workspace.WorkspaceID, workspace.Version)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !workspace.CurrentAuthorityRevisionRowID.Valid || workspace.CurrentAuthorityRevisionRowID.Int64 != authority.ID {
+		t.Fatalf("workspace not pointed at the invalid authority projection: %+v", workspace)
+	}
+	if authority.SourceClosureRowID.Valid {
+		t.Fatalf("invalid authority projection unexpectedly carries a source closure: %+v", authority)
+	}
+	status, err := service.EvaluateCompletion(ctx, workspace.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completionGateReady(status, "authority") {
+		t.Fatalf("authority gate waived for a present invalid projection: %+v", status.Gates)
+	}
+	if completionGateReady(status, "currentness") {
+		t.Fatalf("currentness gate ready with a present invalid projection: %+v", status.Gates)
+	}
+	if completionGatesReady(status.Gates) {
+		t.Fatalf("invalid authority projection evaluated completion-ready: %+v", status.Gates)
+	}
+	if _, err := service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) {
+		t.Fatalf("invalid-projection completion = %v", err)
+	}
+	if _, err := service.Abandon(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) {
+		t.Fatalf("invalid-projection abandonment = %v", err)
+	}
+	assertNoFeatureCompletionDecision(t, ctx, store, workspace.ID)
+}
+
 // insertNoDeliveryTicketClosure creates the source-backed closure the delivery
 // ticket revision guard requires so the delivery-bearing route can be modeled
 // on the no-delivery workspace.

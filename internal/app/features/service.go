@@ -697,12 +697,14 @@ func (s *Service) featureCompletionGates(ctx context.Context, reader featureComp
 			break
 		}
 	}
-	if !authorityReady && noDeliveryPacket && len(tickets) == 0 && len(packages) == 0 && len(seeds) == 0 && integrationReady {
+	if !workspace.CurrentAuthorityRevisionRowID.Valid && !authorityReady && noDeliveryPacket && len(tickets) == 0 && len(packages) == 0 && len(seeds) == 0 && integrationReady {
 		// No-delivery route: the exact current closed no-delivery discovery
 		// packet is the complete closing basis, so the planning authority gate
-		// does not apply. The waiver requires that no planning authority and
-		// no delivery work of any kind exist; delivery-bearing routes keep
-		// requiring their explicit authority and evidence.
+		// does not apply. The waiver requires the workspace to carry no current
+		// authority revision pointer at all and no delivery work of any kind; a
+		// present-but-invalid authority projection stays blocked, and
+		// delivery-bearing routes keep requiring their explicit authority and
+		// evidence.
 		authorityReady = true
 	}
 	currentnessReady := closureReady && authorityReady && packageReady
