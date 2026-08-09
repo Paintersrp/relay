@@ -140,9 +140,9 @@ function guided(value: unknown, method: WorkflowHttpMethod, path: string): Guide
   const diagnostics = item.diagnostics === undefined ? {} : record(item.diagnostics, method, path, "guided diagnostics");
 
   const integrityValue = diagnostics.integrity === undefined ? {} : record(diagnostics.integrity, method, path, "guided integrity diagnostics");
-  const history = diagnostics.history === undefined || Array.isArray(diagnostics.history) ? {} : record(diagnostics.history, method, path, "guided history diagnostics");
-  const stale = diagnostics.stale === undefined || Array.isArray(diagnostics.stale) ? {} : record(diagnostics.stale, method, path, "guided stale diagnostics");
-  const discoveryDiagnostics = diagnostics.discovery === undefined || Array.isArray(diagnostics.discovery) ? {} : record(diagnostics.discovery, method, path, "guided discovery diagnostics");
+  const history = diagnostics.history === undefined || diagnostics.history === null || Array.isArray(diagnostics.history) ? {} : record(diagnostics.history, method, path, "guided history diagnostics");
+  const stale = diagnostics.stale === undefined || diagnostics.stale === null || Array.isArray(diagnostics.stale) ? {} : record(diagnostics.stale, method, path, "guided stale diagnostics");
+  const discoveryDiagnostics = diagnostics.discovery === undefined || diagnostics.discovery === null || Array.isArray(diagnostics.discovery) ? {} : record(diagnostics.discovery, method, path, "guided discovery diagnostics");
   const currentness = item.currentness === undefined ? {} : record(item.currentness, method, path, "guided currentness");
   const delivery = item.delivery === undefined ? {} : record(item.delivery, method, path, "guided delivery");
   const prototype = item.prototype === undefined ? {} : record(item.prototype, method, path, "guided prototype");

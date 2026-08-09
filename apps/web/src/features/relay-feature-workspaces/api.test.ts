@@ -59,14 +59,27 @@ describe("feature workspace transport", () => {
     expect(detail.planning.needsRevision).toBe(2);
   });
 
-  it("normalizes null guided integrity subsections from the transport response", async () => {
+  it("normalizes a live legacy guided diagnostics response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
       guided: {
         ...guidedBody.guided,
-        diagnostics: { ...guidedBody.guided.diagnostics, integrity: { discovery: null, authority: null, planning: null, delivery: null, prototype: null } },
+        diagnostics: {
+          ...guidedBody.guided.diagnostics,
+          history: null,
+          stale: ["legacy_stale"],
+          discovery: null,
+          delivery: null,
+          prototype: null,
+          integrity: { discovery: null, authority: null, planning: null, delivery: null, prototype: null },
+        },
       },
     })));
     const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.diagnostics.history).toEqual({ discoveryCurrentness: "", status: "" });
+    expect(detail.diagnostics.staleItems).toEqual(["legacy_stale"]);
+    expect(detail.diagnostics.discovery).toMatchObject({ blockers: [], restorationActions: [], pendingIntegrations: [], activeOperations: [], routeMaterialOpen: false, requiredEvidence: [] });
+    expect(detail.diagnostics.delivery).toEqual([]);
+    expect(detail.diagnostics.prototype).toEqual([]);
     expect(detail.diagnostics.integrity).toEqual({
       discovery: { currentRevisionId: "", currentPacket: null, history: [], reopenEvents: [] },
       authority: [],
@@ -75,6 +88,14 @@ describe("feature workspace transport", () => {
       prototype: null,
       diagnostics: [],
     });
+  });
+
+  it("rejects a malformed present guided history diagnostics projection", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: { ...guidedBody.guided, diagnostics: { ...guidedBody.guided.diagnostics, history: "malformed" } },
+    })));
+
+    await expect(getGuidedFeatureWorkspace("workspace-1")).rejects.toMatchObject({ status: 502 });
   });
 
   it("normalizes inspectable Ticket Design Brief lineage and typed integrity diagnostics", async () => {
