@@ -62,6 +62,7 @@ type TicketWorkflowOwner interface {
 	Select(context.Context, tickets.SelectInput) (tickets.SelectionResult, error)
 	AdmitTicketDesignBrief(context.Context, tickets.TicketDesignBriefAdmissionInput) (tickets.TicketDesignBriefAdmissionResult, error)
 	CompleteTicketDesignBriefReview(context.Context, tickets.CompleteBriefReviewInput) (tickets.TicketDesignBriefReviewResult, error)
+	ApproveTicketDesignBrief(context.Context, tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error)
 }
 
 // PacketReader is deliberately read-only. It exists solely to verify the
@@ -182,17 +183,15 @@ func (s *TicketWorkflowService) CompleteTicketDesignBriefReview(ctx context.Cont
 	return s.owner.CompleteTicketDesignBriefReview(ctx, input)
 }
 
-func (s *TicketWorkflowService) CompleteAndApproveTicketDesignBrief(ctx context.Context, review tickets.CompleteBriefReviewInput, approval tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error) {
+// ApproveTicketDesignBrief is the distinct explicit approval transition. The
+// owner consumes the process-local ready-review continuation and accepts only
+// the workspace, expected version, confirmation evidence, and identity; no
+// brief ID or digest crosses this boundary.
+func (s *TicketWorkflowService) ApproveTicketDesignBrief(ctx context.Context, input tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error) {
 	if s == nil || s.owner == nil {
 		return tickets.TicketDesignBriefApprovalResult{}, ErrTicketAdmission
 	}
-	owner, ok := s.owner.(interface {
-		CompleteAndApproveTicketDesignBrief(context.Context, tickets.CompleteBriefReviewInput, tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error)
-	})
-	if !ok {
-		return tickets.TicketDesignBriefApprovalResult{}, ErrTicketAdmission
-	}
-	return owner.CompleteAndApproveTicketDesignBrief(ctx, review, approval)
+	return s.owner.ApproveTicketDesignBrief(ctx, input)
 }
 
 func ValidateTicketPublicationInput(input tickets.PublishInput, reference *RemediationAuthoringReference) error {

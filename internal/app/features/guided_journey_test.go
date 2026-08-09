@@ -47,6 +47,14 @@ func TestDecideGuidedFeatureActionSequencesIntermediatePlanningStates(t *testing
 		Status: "in_progress", CandidateCount: 1, AwaitingPromotion: 1, CandidateState: "reviewed", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "awaiting_promotion",
 		Requirements: GuidedPlanningFamilySection{Count: 1, AwaitingPromotion: 1, State: "approved"},
 	}
+	reviewedRequirements := GuidedPlanningSection{
+		Status: "in_progress", CandidateCount: 1, AwaitingApproval: 1, CandidateState: "reviewed", ReviewState: "reviewed", ApprovalState: "awaiting_approval", PromotionState: "none",
+		Requirements: GuidedPlanningFamilySection{Count: 1, AwaitingApproval: 1, State: "reviewed"},
+	}
+	reviewedSharedDesign := GuidedPlanningSection{
+		Status: "in_progress", CandidateCount: 1, AwaitingApproval: 1, CandidateState: "reviewed", ReviewState: "reviewed", ApprovalState: "awaiting_approval", PromotionState: "none",
+		SharedDesign: GuidedPlanningFamilySection{Count: 1, AwaitingApproval: 1, State: "reviewed"},
+	}
 	promotedRequirements := GuidedPlanningSection{
 		Status: "promoted", CandidateCount: 1, Promoted: 1, CandidateState: "promoted", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "promoted",
 		Requirements: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
@@ -66,9 +74,11 @@ func TestDecideGuidedFeatureActionSequencesIntermediatePlanningStates(t *testing
 		wantCount   int
 	}{
 		{"requirements admitted requires review", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirements, HasCurrentRevision: true, Planning: admittedRequirements}, GuidedActionReviewPlanningCandidate, 1},
+		{"requirements reviewed requires explicit approval", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirements, HasCurrentRevision: true, Planning: reviewedRequirements}, GuidedActionApprovePlanningCandidate, 1},
 		{"requirements approved promotes server-side", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirements, HasCurrentRevision: true, Planning: approvedRequirements}, GuidedActionPromotePlanningCandidate, 1},
 		{"requirements promoted advances to delivery ticket", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirements, HasCurrentRevision: true, Planning: promotedRequirements}, GuidedActionAuthorDeliveryTicket, 1},
 		{"shared design admitted requires review", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: admittedSharedDesign}, GuidedActionReviewPlanningCandidate, 1},
+		{"shared design reviewed requires explicit approval", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: reviewedSharedDesign}, GuidedActionApprovePlanningCandidate, 1},
 		{"shared design approved promotes server-side", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: approvedSharedDesign}, GuidedActionPromotePlanningCandidate, 1},
 		{"requirements then design requirements promoted authors design", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirementsThenSharedDesign, HasCurrentRevision: true, Planning: promotedRequirements}, GuidedActionAuthorSharedDesign, 1},
 		{"requirements then design requirements admitted reviews", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirementsThenSharedDesign, HasCurrentRevision: true, Planning: admittedRequirements}, GuidedActionReviewPlanningCandidate, 1},
@@ -209,6 +219,7 @@ func TestGuidedPlanningReviewDispositionNeverTreatsReviewExistenceAsApproval(t *
 		want  GuidedFeatureAction
 	}{
 		{"existing route exposes delivery review", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, DeliveryTicket: GuidedPlanningFamilySection{Count: 1, AwaitingReview: 1, State: "admitted"}}}, GuidedActionReviewPlanningCandidate},
+		{"existing route exposes delivery explicit approval", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, DeliveryTicket: GuidedPlanningFamilySection{Count: 1, AwaitingApproval: 1, State: "reviewed"}}}, GuidedActionApprovePlanningCandidate},
 		{"existing route exposes delivery production", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, DeliveryTicket: GuidedPlanningFamilySection{Count: 1, AwaitingPromotion: 1, State: "approved"}}}, GuidedActionPromotePlanningCandidate},
 	}
 	for _, tc := range cases {

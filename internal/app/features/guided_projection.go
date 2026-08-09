@@ -16,7 +16,26 @@ var (
 	ErrGuidedActionBlocked           = errors.New("guided action is not the presently enabled primary action")
 	ErrGuidedPackageOwnerUnavailable = errors.New("guided package owner is unavailable")
 	ErrGuidedAuditOwnerUnavailable   = errors.New("guided audit owner is unavailable")
+	ErrGuidedTicketOwnerUnavailable  = errors.New("guided ticket owner is unavailable")
 )
+
+// GuidedTicketOwner is the ticket-owner surface the guided Feature journey
+// consumes. It is bound to the exact ticket Service instance the server
+// constructs so guided delivery reads and dispatches observe the same
+// process-local brief review continuation that the external auditor completion
+// records. The Feature owner never constructs a second ticket Service for
+// guided progression work.
+type GuidedTicketOwner interface {
+	ListFrontier(context.Context, string) (apptickets.Frontier, error)
+	ReadWorkspaceSelection(context.Context, string) (apptickets.WorkspaceSelection, error)
+	ReadWorkspaceBriefState(context.Context, string) (apptickets.WorkspaceBriefState, error)
+	ReadWorkspaceBriefIntegrity(context.Context, string) (apptickets.WorkspaceBriefIntegrity, error)
+	Read(context.Context, string) (apptickets.TicketDetail, error)
+	Select(context.Context, apptickets.SelectInput) (apptickets.SelectionResult, error)
+	PromoteApprovedDeliveryTicketCandidate(context.Context, apptickets.CandidateProductionInput) (apptickets.CandidateProductionResult, error)
+	ApproveTicketDesignBrief(context.Context, apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error)
+	HasPendingCurrentBriefApproval(context.Context, string) (bool, error)
+}
 
 // Guided operation identities transferred by the journey. These are the exact
 // established operation IDs; the journey never substitutes a ticket canonical
@@ -109,14 +128,19 @@ type GuidedDeliverySection struct {
 	Frontier         []GuidedFrontierEntry
 	SelectionState   string // none | active | consumed | superseded
 	BriefState       string // none | authored | approved
-	PackageState     string // none | prepared | approved
-	PackageID        string
-	RunState         string // none | created | setup_ready | executing | validating | audit_ready | needs_revision | completed | ...
-	RunID            string
-	AuditState       string // none | awaiting_audit | packet_recorded | decision_recorded
-	AuditPacketID    string
-	RemediationState string // none | open | reopened
-	Diagnostics      []string
+	// BriefApprovalReady is the transient, process-local answer of the ticket
+	// owner: the current exact brief has a pending ready-review continuation
+	// and the distinct explicit approval is the next primary action. It is
+	// never durable and never accepted as an action input.
+	BriefApprovalReady bool
+	PackageState       string // none | prepared | approved
+	PackageID          string
+	RunState           string // none | created | setup_ready | executing | validating | audit_ready | needs_revision | completed | ...
+	RunID              string
+	AuditState         string // none | awaiting_audit | packet_recorded | decision_recorded
+	AuditPacketID      string
+	RemediationState   string // none | open | reopened
+	Diagnostics        []string
 }
 
 type GuidedPrototypeSection struct {
@@ -574,11 +598,21 @@ func guidedIntegrity(ctx context.Context, s *Service, workspace workflowstore.Fe
 	// Delivery (AC17-AC23): owner-derived ticket, selection, package, Run,
 	// audit, and remediation identities. Owners are optional inspection
 	// sources; their absence leaves the identity surface empty rather than
-	// failing the projection.
+	// failing the projection. The bound ticket owner is preferred so integrity
+	// inspection observes the same instance as progression.
 	for _, entry := range delivery.Frontier {
 		result.Delivery.Frontier = append(result.Delivery.Frontier, GuidedIntegrityTicket{TicketID: entry.TicketID, RevisionNumber: entry.RevisionNumber}) // AC17
 	}
-	if owner, err := apptickets.NewService(s.store); err == nil {
+	owner := s.guidedTickets
+	if owner == nil {
+		temporary, temporaryErr := apptickets.NewService(s.store)
+		if temporaryErr != nil {
+			diagnostic("delivery", "unavailable")
+		} else {
+			owner = temporary
+		}
+	}
+	if owner != nil {
 		if selection, selectionErr := owner.ReadWorkspaceSelection(ctx, workspace.WorkspaceID); selectionErr == nil && selection.SelectionID != "" {
 			result.Delivery.Selection = &GuidedIntegritySelection{SelectionID: selection.SelectionID, State: selection.State, TicketID: selection.TicketID, RevisionNumber: selection.RevisionNumber} // AC18
 		} else if selectionErr != nil {
@@ -594,8 +628,6 @@ func guidedIntegrity(ctx context.Context, s *Service, workspace workflowstore.Fe
 		} else {
 			diagnostic("delivery.brief", integrityReadCondition(briefErr))
 		}
-	} else {
-		diagnostic("delivery", "unavailable")
 	}
 	if s.guidedPackages != nil {
 		if packageState, packageErr := s.guidedPackages.ReadWorkspacePackageState(ctx, workspace.WorkspaceID); packageErr == nil && packageState.PackageID != "" {
@@ -883,6 +915,12 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 		case len(approvals) > 0:
 			result.AwaitingPromotion++
 			family.AwaitingPromotion++
+		case s.hasPlanningReviewContinuationFor(workspace.WorkspaceID, candidate.CandidateID):
+			// A process-local ready review exists for this exact current
+			// candidate. Review is complete but approval is still a distinct
+			// explicit action; it is never fabricated from the review itself.
+			result.AwaitingApproval++
+			family.AwaitingApproval++
 		default:
 			result.AwaitingReview++
 			family.AwaitingReview++
@@ -897,6 +935,8 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "promoted", "reviewed", "approved", "promoted"
 		case result.AwaitingPromotion > 0:
 			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "reviewed", "reviewed", "approved", "awaiting_promotion"
+		case result.AwaitingApproval > 0:
+			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "reviewed", "reviewed", "awaiting_approval", "none"
 		case result.AwaitingReview > 0:
 			result.CandidateState, result.ReviewState, result.ApprovalState, result.PromotionState = "admitted", "awaiting_review", "none", "none"
 		}
@@ -921,6 +961,8 @@ func guidedPlanningFamilyState(family GuidedPlanningFamilySection) string {
 		return "promoted"
 	case family.AwaitingPromotion > 0:
 		return "approved"
+	case family.AwaitingApproval > 0:
+		return "reviewed"
 	case family.AwaitingReview > 0:
 		return "admitted"
 	default:
@@ -931,12 +973,15 @@ func guidedPlanningFamilyState(family GuidedPlanningFamilySection) string {
 // guidedDelivery composes the tickets, packages, and audits-owner semantic
 // reads into the delivery projection. The Feature layer resolves identities
 // from the owner reads and never derives lifecycle strings from rows itself.
+// The tickets owner is the bound GuidedTicketOwner so the projection observes
+// the same process-local brief review continuation the external auditor
+// completion records; a fresh owner is never constructed for progression reads.
 func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.FeatureWorkspace) (GuidedDeliverySection, error) {
 	result := GuidedDeliverySection{SelectionState: "none", PackageState: "none", RunState: "none", AuditState: "none", RemediationState: "none"}
-	tickets, err := apptickets.NewService(s.store)
-	if err != nil {
-		return result, err
+	if s.guidedTickets == nil {
+		return result, ErrGuidedTicketOwnerUnavailable
 	}
+	tickets := s.guidedTickets
 	frontier, err := tickets.ListFrontier(ctx, workspace.WorkspaceID)
 	if err != nil {
 		return result, err
@@ -956,6 +1001,16 @@ func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.Fe
 				return result, err
 			}
 			result.BriefState = briefState.State
+			if briefState.State == "authored" {
+				// A ready review stores only a process-local continuation on the
+				// bound owner; the transient read decides between the read-only
+				// review handoff and the distinct confirmed explicit approval.
+				ready, err := tickets.HasPendingCurrentBriefApproval(ctx, workspace.WorkspaceID)
+				if err != nil {
+					return result, err
+				}
+				result.BriefApprovalReady = ready
+			}
 		}
 		if s.guidedPackages == nil {
 			return result, ErrGuidedPackageOwnerUnavailable
@@ -1089,6 +1144,29 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		} else {
 			_, err = s.guidedPromoteCurrentCandidate(ctx, input, DiscoveryDestination(before.Discovery.Destination))
 		}
+	case GuidedActionApprovePlanningCandidate:
+		// Explicit approval consumes the exact process-local continuation
+		// stored by a ready review and revalidates the current candidate
+		// server-side. The guided request carries no candidate identity or
+		// digest; the operator confirmation is enforced by the action gate.
+		_, err = s.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{
+			WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion,
+			OperatorConfirmationEvidence: guidedApprovalEvidence, CreatedIdentity: "guided-operator",
+		})
+	case GuidedActionApproveTicketDesignBrief:
+		// The distinct explicit brief approval is dispatched to the bound
+		// ticket owner with only workspace-level inputs. The current brief
+		// identity, exact bytes, and source-backed basis are resolved
+		// server-side from the process-local ready-review continuation; the
+		// request never carries a brief ID or digest, and the operator
+		// confirmation is enforced by the action gate.
+		if s.guidedTickets == nil {
+			return GuidedActionResult{}, ErrGuidedTicketOwnerUnavailable
+		}
+		_, err = s.guidedTickets.ApproveTicketDesignBrief(ctx, apptickets.TicketDesignBriefApprovalInput{
+			WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion,
+			OperatorConfirmationEvidence: guidedApprovalEvidence, CreatedIdentity: "guided-operator",
+		})
 	case GuidedActionSelectDeliveryTicket:
 		err = s.guidedSelectFrontierTicket(ctx, input)
 	case GuidedActionPreparePackage:
@@ -1234,9 +1312,9 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Context["candidateState"] = candidateState
 		handoff.Transfer = &GuidedOperationTransfer{Members: closureMemberRoles(review.Members), AuthorityLayers: authorityLayerKinds(review.Authority)}
 		if operationID != "" {
-			handoff.Summary = "The current Delivery Ticket candidate is prepared for the exact read-only auditor.delivery_ticket_review handoff. Record its bounded disposition through the planning candidate owner before explicit approval."
+			handoff.Summary = "The current Delivery Ticket candidate is prepared for the exact read-only auditor.delivery_ticket_review handoff. Record its bounded disposition through the planning candidate owner, then explicitly approve the exact reviewed candidate server-side before production."
 		} else {
-			handoff.Summary = "The auditor review surface is prepared through its existing owner envelope. A ready completion performs explicit approval immediately; resume here to promote it."
+			handoff.Summary = "The auditor review surface is prepared through its existing owner envelope. A ready completion arms the distinct explicit approval action; approve the exact reviewed candidate server-side before resuming here to promote it."
 		}
 	case GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun:
 		if s.guidedPackages == nil {
@@ -1395,10 +1473,10 @@ func (s *Service) guidedReopenDiscovery(ctx context.Context, input GuidedActionI
 // The OperationID identifies the established planner operation that owns the
 // Ticket Design Brief the transfer prepares.
 func (s *Service) guidedSelectedTicketTransfer(ctx context.Context, workspaceID string) (*GuidedTicketTransfer, error) {
-	owner, err := apptickets.NewService(s.store)
-	if err != nil {
-		return nil, err
+	if s.guidedTickets == nil {
+		return nil, ErrGuidedTicketOwnerUnavailable
 	}
+	owner := s.guidedTickets
 	selection, err := owner.ReadWorkspaceSelection(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1445,10 +1523,10 @@ func (s *Service) guidedPrototypeTransfer(ctx context.Context, workspaceID, runI
 // delegates the exact selection to the delivery owner. No ticket or revision
 // identity is accepted from the client.
 func (s *Service) guidedSelectFrontierTicket(ctx context.Context, input GuidedActionInput) error {
-	owner, err := apptickets.NewService(s.store)
-	if err != nil {
-		return err
+	if s.guidedTickets == nil {
+		return ErrGuidedTicketOwnerUnavailable
 	}
+	owner := s.guidedTickets
 	frontier, err := owner.ListFrontier(ctx, input.WorkspaceID)
 	if err != nil {
 		return err
@@ -1504,6 +1582,8 @@ func (s *Service) guidedFamilyCandidateState(ctx context.Context, workspace work
 				state = "promoted"
 			} else if len(approvals) > 0 {
 				state = "approved_awaiting_promotion"
+			} else if s.hasPlanningReviewContinuationFor(workspace.WorkspaceID, candidate.CandidateID) {
+				state = "reviewed_awaiting_approval"
 			}
 			return state, nil
 		}
@@ -1605,11 +1685,10 @@ func (s *Service) guidedProduceCurrentDeliveryTicketCandidate(ctx context.Contex
 	if err != nil || len(approvals) == 0 {
 		return ErrGuidedActionBlocked
 	}
-	owner, err := apptickets.NewService(s.store)
-	if err != nil {
-		return err
+	if s.guidedTickets == nil {
+		return ErrGuidedTicketOwnerUnavailable
 	}
-	_, err = owner.PromoteApprovedDeliveryTicketCandidate(ctx, apptickets.CandidateProductionInput{
+	_, err = s.guidedTickets.PromoteApprovedDeliveryTicketCandidate(ctx, apptickets.CandidateProductionInput{
 		CandidateID: candidate.CandidateID, ApprovalID: approvals[len(approvals)-1].ApprovalID,
 		ExpectedVersion: input.ExpectedVersion, ExternalPriority: 0, CreatedIdentity: "guided-operator",
 	})

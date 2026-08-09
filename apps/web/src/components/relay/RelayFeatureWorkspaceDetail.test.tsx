@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { RelayFeatureWorkspaceDetail } from "./RelayFeatureWorkspaceDetail";
@@ -253,13 +253,53 @@ describe("RelayFeatureWorkspaceDetail", () => {
     render(<RelayFeatureWorkspaceDetail detail={reopened} />, { wrapper });
     const button = screen.getByRole("button", { name: "Reopen discovery" });
     expect(button).toBeDisabled();
-    await user.type(screen.getByRole("textbox", { name: "Replacement integrated revision" }), "# Reopened discovery\n");
-    await user.type(screen.getByRole("textbox", { name: "Reopen cause" }), "new exact evidence");
+    fireEvent.change(screen.getByRole("textbox", { name: "Replacement integrated revision" }), { target: { value: "# Reopened discovery\n" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Reopen cause" }), { target: { value: "new exact evidence" } });
     expect(button).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
     expect(button).toBeEnabled();
     await user.click(button);
     expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "reopen_discovery", confirmation: true, cause: "new exact evidence", markdown: "# Reopened discovery\n" });
+  });
+
+  it("renders and confirms the distinct planning candidate approval action", async () => {
+    const user = userEvent.setup();
+    mocks.action.mockClear();
+    mocks.action.mockResolvedValueOnce(base);
+    const approve = {
+      ...base,
+      availableActions: [{ action: "approve_planning_candidate" as const, primary: true, enabled: true, requiresConfirmation: true, handoff: "Explicitly approve the exact reviewed candidate server-side." }],
+      primaryAction: "approve_planning_candidate" as const,
+    };
+    render(<RelayFeatureWorkspaceDetail detail={approve} />, { wrapper });
+    const button = screen.getByRole("button", { name: "Approve planning candidate" });
+    expect(button).toBeDisabled();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    expect(button).toBeEnabled();
+    await user.click(button);
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "approve_planning_candidate", confirmation: true }));
+    expect(JSON.stringify(mocks.action.mock.calls[0])).not.toMatch(/(candidateId|approvalId|reviewId|sha256|digest|rowId)/i);
+  });
+
+  it("renders and confirms the distinct Ticket Design Brief approval action", async () => {
+    const user = userEvent.setup();
+    mocks.action.mockClear();
+    mocks.action.mockResolvedValueOnce(base);
+    const approve = {
+      ...base,
+      availableActions: [{ action: "approve_ticket_design_brief" as const, primary: true, enabled: true, requiresConfirmation: true, handoff: "Explicitly approve the exact reviewed brief server-side." }],
+      primaryAction: "approve_ticket_design_brief" as const,
+    };
+    render(<RelayFeatureWorkspaceDetail detail={approve} />, { wrapper });
+    const button = screen.getByRole("button", { name: "Approve Ticket Design Brief" });
+    expect(button).toBeDisabled();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    expect(button).toBeEnabled();
+    await user.click(button);
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "approve_ticket_design_brief", confirmation: true }));
+    expect(JSON.stringify(mocks.action.mock.calls[0])).not.toMatch(/(briefId|selectionId|approvalId|reviewId|sha256|digest|rowId)/i);
   });
 
   it("sends only semantic fields and never an integrity identity in the action payload", async () => {

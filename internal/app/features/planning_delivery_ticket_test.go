@@ -30,7 +30,10 @@ func TestDeliveryTicketCandidateReadyReviewImmediatelyApprovesBeforeProduction(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval, err := service.CompleteAndApprovePlanningCandidate(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved exact candidate", CreatedIdentity: "operator"})
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
+		t.Fatal(err)
+	}
+	approval, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved exact candidate", CreatedIdentity: "operator"})
 	if err != nil || approval.Candidate.CandidateID != candidate.Candidate.CandidateID || approval.Approval.ApprovalID == "" {
 		t.Fatalf("approval=%+v err=%v", approval, err)
 	}

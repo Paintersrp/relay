@@ -56,6 +56,10 @@ func (f *fakeTicketWorkflowOwner) CompleteTicketDesignBriefReview(_ context.Cont
 	f.calls = append(f.calls, "complete-brief-review")
 	return tickets.TicketDesignBriefReviewResult{}, nil
 }
+func (f *fakeTicketWorkflowOwner) ApproveTicketDesignBrief(_ context.Context, _ tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error) {
+	f.calls = append(f.calls, "approve-brief")
+	return tickets.TicketDesignBriefApprovalResult{}, nil
+}
 
 func TestTicketWorkflowMutationsDelegateDirectly(t *testing.T) {
 	owner := &fakeTicketWorkflowOwner{}
@@ -73,6 +77,29 @@ func TestTicketWorkflowMutationsDelegateDirectly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if owner.calls[1] != "frontier:workspace-1" {
+		t.Fatalf("owner calls = %#v", owner.calls)
+	}
+}
+
+func TestTicketWorkflowDistinctBriefApprovalDelegatesToOwner(t *testing.T) {
+	owner := &fakeTicketWorkflowOwner{}
+	service, err := NewTicketWorkflowService(nil, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApproveTicketDesignBrief(context.Background(), tickets.TicketDesignBriefApprovalInput{
+		WorkspaceID: "workspace-1", ExpectedVersion: 8,
+		OperatorConfirmationEvidence: "distinct approval", CreatedIdentity: "operator",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(owner.calls) != 1 || owner.calls[0] != "approve-brief" {
+		t.Fatalf("owner calls = %#v", owner.calls)
+	}
+	if _, err := service.ApproveTicketDesignBrief(context.Background(), tickets.TicketDesignBriefApprovalInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(owner.calls) != 2 || owner.calls[1] != "approve-brief" {
 		t.Fatalf("owner calls = %#v", owner.calls)
 	}
 }

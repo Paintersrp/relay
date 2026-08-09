@@ -17,12 +17,14 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "author_shared_design": return "Author Shared Design";
     case "author_delivery_ticket": return "Author Delivery Ticket";
     case "review_planning_candidate": return "Review planning candidate";
+    case "approve_planning_candidate": return "Approve planning candidate";
     case "promote_planning_candidate": return "Promote planning candidate";
     case "continue_established_route": return "Continue established route";
     case "legacy_recovery": return "Adopt discovery lifecycle";
     case "select_delivery_ticket": return "Select delivery ticket";
     case "author_ticket_design_brief": return "Author Ticket Design Brief";
     case "review_ticket_design_brief": return "Review Ticket Design Brief";
+    case "approve_ticket_design_brief": return "Approve Ticket Design Brief";
     case "prepare_package": return "Prepare package";
     case "approve_package": return "Approve package";
     case "launch_run": return "Launch run";

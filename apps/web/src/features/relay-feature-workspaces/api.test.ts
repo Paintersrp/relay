@@ -174,6 +174,24 @@ describe("feature workspace transport", () => {
     await expect(getGuidedFeatureWorkspace("workspace-1")).rejects.toMatchObject({ status: 502 });
   });
 
+  it("accepts the explicit planning candidate approval action from the projection", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: { ...guidedBody.guided, availableActions: [{ action: "approve_planning_candidate", primary: true, enabled: true, requiresConfirmation: true }], primaryAction: "approve_planning_candidate" },
+    })));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.primaryAction).toBe("approve_planning_candidate");
+    expect(detail.availableActions[0]).toEqual({ action: "approve_planning_candidate", primary: true, enabled: true, requiresConfirmation: true });
+  });
+
+  it("accepts the explicit Ticket Design Brief approval action from the projection", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: { ...guidedBody.guided, availableActions: [{ action: "approve_ticket_design_brief", primary: true, enabled: true, requiresConfirmation: true }], primaryAction: "approve_ticket_design_brief" },
+    })));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.primaryAction).toBe("approve_ticket_design_brief");
+    expect(detail.availableActions[0]).toEqual({ action: "approve_ticket_design_brief", primary: true, enabled: true, requiresConfirmation: true });
+  });
+
   it("preserves the typed stale-write conflict for workspace controls", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ error: "VERSION_CONFLICT", message: "reload" }, 409)));
     await expect(routeFeatureWorkspace("workspace-1", { expectedVersion: 1, sequence: 1, state: "ready" })).rejects.toMatchObject({ status: 409, errorShape: { error: "VERSION_CONFLICT" } });

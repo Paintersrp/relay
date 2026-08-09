@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/guidedapp"
@@ -50,6 +51,16 @@ type Service struct {
 	prototypeCleaner  prototypeexecution.Cleaner
 	guidedPackages    guidedapp.PackageOwner
 	guidedAudit       guidedapp.AuditOwner
+	guidedTickets     GuidedTicketOwner
+
+	// reviewContinuations holds the process-local, non-durable planning review
+	// continuation per workspace. It is created only after a ready review reads
+	// the exact candidate bytes, is consumed exactly once by the workspace-only
+	// approval transition, and is cleared by a needs-revision review. It is not
+	// a token, receipt, or durable lifecycle record and is never exposed to a
+	// client; every consumption revalidates the exact candidate server-side.
+	reviewContinuations map[string]*planningReviewContinuation
+	reviewMu            sync.Mutex
 }
 
 func (s *Service) SetPrototypeExecutor(v prototypeexecution.Executor) error {
@@ -94,6 +105,21 @@ func (s *Service) SetGuidedAuditOwner(v guidedapp.AuditOwner) error {
 }
 func (s *Service) SetGuidedAuditOwnerForTest(v guidedapp.AuditOwner) { s.guidedAudit = v }
 
+// SetGuidedTicketOwner binds the ticket owner used by the guided delivery
+// projection, selection, production, and explicit Ticket Design Brief approval
+// dispatch. The owner must be the exact ticket Service instance the server
+// constructs so guided reads observe the same process-local brief review
+// continuation that the external auditor completion records; the Feature owner
+// never constructs a second ticket Service for guided work.
+func (s *Service) SetGuidedTicketOwner(v GuidedTicketOwner) error {
+	if v == nil {
+		return fmt.Errorf("guided ticket owner is required")
+	}
+	s.guidedTickets = v
+	return nil
+}
+func (s *Service) SetGuidedTicketOwnerForTest(v GuidedTicketOwner) { s.guidedTickets = v }
+
 func NewService(store *workflowstore.Store) (*Service, error) {
 	return NewServiceWithIDs(store, defaultIDGenerator{})
 }
@@ -101,7 +127,7 @@ func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, e
 	if store == nil || ids == nil {
 		return nil, ErrInvalidAuthorityRequest
 	}
-	return &Service{store: store, ids: ids}, nil
+	return &Service{store: store, ids: ids, reviewContinuations: map[string]*planningReviewContinuation{}}, nil
 }
 
 type AuthorityLayerInput struct {

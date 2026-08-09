@@ -77,6 +77,14 @@ type PlanningReviewCompletionService interface {
 	CompletePlanningCandidateReview(context.Context, featureapp.CompleteCandidateReviewInput) (featureapp.CompleteCandidateReviewResult, error)
 }
 
+// PlanningCandidateApprovalService is the distinct workspace-only explicit
+// approval transition. It consumes the server-held process-local review
+// continuation and revalidates the exact current candidate before approval;
+// the client supplies no candidate identity or digest.
+type PlanningCandidateApprovalService interface {
+	ApproveCurrentPlanningCandidate(context.Context, featureapp.CandidateApprovalInput) (featureapp.CandidateApprovalResult, error)
+}
+
 type GuidedAssessment struct {
 	State               featureapp.DiscoveryState
 	Destination         featureapp.DiscoveryDestination
@@ -270,8 +278,8 @@ func (a appAuthorityAdapter) ExecuteGuidedAction(ctx context.Context, input feat
 func (a appAuthorityAdapter) CompletePlanningCandidateReview(ctx context.Context, input featureapp.CompleteCandidateReviewInput) (featureapp.CompleteCandidateReviewResult, error) {
 	return a.service.CompletePlanningCandidateReview(ctx, input)
 }
-func (a appAuthorityAdapter) CompleteAndApprovePlanningCandidate(ctx context.Context, review featureapp.CompleteCandidateReviewInput, approval featureapp.CandidateApprovalInput) (featureapp.CandidateApprovalResult, error) {
-	return a.service.CompleteAndApprovePlanningCandidate(ctx, review, approval)
+func (a appAuthorityAdapter) ApproveCurrentPlanningCandidate(ctx context.Context, input featureapp.CandidateApprovalInput) (featureapp.CandidateApprovalResult, error) {
+	return a.service.ApproveCurrentPlanningCandidate(ctx, input)
 }
 
 type createWorkspaceRequest struct {
@@ -362,11 +370,18 @@ type guidedActionRequest struct {
 }
 
 // candidateReviewCompletionRequest carries the bounded review disposition; the
-// current planning candidate is resolved server-side and no findings or prose
-// are accepted.
+// current planning candidate is resolved server-side and no findings, prose,
+// approval evidence, or internal identities are accepted.
 type candidateReviewCompletionRequest struct {
-	ReviewerIdentity             string `json:"reviewerIdentity"`
-	Disposition                  string `json:"disposition"`
+	ReviewerIdentity string `json:"reviewerIdentity"`
+	Disposition      string `json:"disposition"`
+}
+
+// candidateApprovalRequest carries only the confirmation evidence and identity
+// for the workspace-only approval transition. The exact reviewed candidate is
+// resolved from the server-held process-local continuation; the client never
+// supplies a candidate identity or digest.
+type candidateApprovalRequest struct {
 	ExpectedVersion              int64  `json:"expectedVersion"`
 	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
 	CreatedIdentity              string `json:"createdIdentity"`
@@ -574,8 +589,8 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
-		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
+		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "approve_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
@@ -698,7 +713,10 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 
 // CompletePlanningCandidateReview is the bounded completion entry the external
 // auditor uses after performing the read-only planning candidate review. It
-// records only the bounded disposition over the server-resolved candidate.
+// records only the bounded disposition over the server-resolved candidate and
+// never performs or fabricates approval: a ready disposition returns ready
+// without any approval, and a needs-revision disposition returns the exact
+// planner refresh input.
 func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter, r *http.Request) {
 	if h.guided == nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Planning review service is unavailable")
@@ -719,31 +737,14 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		badRequest(w, "Invalid planning candidate review disposition")
 		return
 	}
-	review := featureapp.CompleteCandidateReviewInput{
-		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
-		Disposition: disposition,
-	}
-	if disposition == featureapp.PlanningCandidateReviewReadyForApproval {
-		if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
-			badRequest(w, "Ready planning candidate review requires expected version, confirmation evidence, and identity")
-			return
-		}
-		approvalCompletion, ok := completion.(interface {
-			CompleteAndApprovePlanningCandidate(context.Context, featureapp.CompleteCandidateReviewInput, featureapp.CandidateApprovalInput) (featureapp.CandidateApprovalResult, error)
-		})
-		if !ok {
-			writeWorkspaceError(w, featureapp.ErrCandidateApprovalInvalid)
-			return
-		}
-		approved, err := approvalCompletion.CompleteAndApprovePlanningCandidate(r.Context(), review, featureapp.CandidateApprovalInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity})
-		if err != nil {
-			writeWorkspaceError(w, err)
-			return
-		}
-		shared.JSON(w, http.StatusCreated, map[string]any{"candidateId": approved.Candidate.CandidateID, "approvalId": approved.Approval.ApprovalID})
+	if strings.TrimSpace(request.ReviewerIdentity) == "" {
+		badRequest(w, "Planning candidate review requires a reviewer identity")
 		return
 	}
-	result, err := completion.CompletePlanningCandidateReview(r.Context(), review)
+	result, err := completion.CompletePlanningCandidateReview(r.Context(), featureapp.CompleteCandidateReviewInput{
+		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
+		Disposition: disposition,
+	})
 	if err != nil {
 		writeWorkspaceError(w, err)
 		return
@@ -753,6 +754,41 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		response["refresh"] = map[string]any{"operationId": result.Refresh.OperationID, "reviewedCandidate": result.Refresh.ReviewedCandidate, "auditorReviewResult": result.Refresh.AuditorReviewResult}
 	}
 	shared.JSON(w, http.StatusCreated, response)
+}
+
+// ApproveCurrentPlanningCandidate is the distinct workspace-only explicit
+// approval transition. It consumes the server-held process-local continuation
+// stored by a ready review and revalidates the exact current candidate before
+// approval. Only the expected version, confirmation evidence, and identity are
+// accepted; no candidate identity or digest crosses the boundary.
+func (h *WorkspaceHandler) ApproveCurrentPlanningCandidate(w http.ResponseWriter, r *http.Request) {
+	if h.guided == nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Planning approval service is unavailable")
+		return
+	}
+	approval, ok := h.guided.(PlanningCandidateApprovalService)
+	if !ok {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Planning approval service is unavailable")
+		return
+	}
+	var request candidateApprovalRequest
+	if !decodeStrict(r, &request) {
+		badRequest(w, "Invalid planning candidate approval request")
+		return
+	}
+	if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
+		badRequest(w, "Planning candidate approval requires expected version, confirmation evidence, and identity")
+		return
+	}
+	approved, err := approval.ApproveCurrentPlanningCandidate(r.Context(), featureapp.CandidateApprovalInput{
+		WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion,
+		OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity,
+	})
+	if err != nil {
+		writeWorkspaceError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"candidateId": approved.Candidate.CandidateID, "approvalId": approved.Approval.ApprovalID})
 }
 
 func (h *WorkspaceHandler) guidedProjection(ctx context.Context, workspaceID string) (map[string]any, error) {
@@ -1351,6 +1387,7 @@ func MountWorkspaceRoutes(r chi.Router, handler *WorkspaceHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/guided", handler.GuidedAction)
 	r.Post("/feature-workspaces/{workspaceID}/guided/actions", handler.GuidedAction)
 	r.Post("/feature-workspaces/{workspaceID}/planning-candidate-reviews", handler.CompletePlanningCandidateReview)
+	r.Post("/feature-workspaces/{workspaceID}/planning-candidate-approvals", handler.ApproveCurrentPlanningCandidate)
 	r.Post("/feature-workspaces/{workspaceID}/authority-revisions", handler.PublishAuthority)
 	r.Post("/feature-workspaces/{workspaceID}/authority-approvals", handler.RecordApproval)
 	r.Get("/feature-workspaces/{workspaceID}/completion", handler.CompletionStatus)

@@ -108,11 +108,10 @@ type CompleteCandidateReviewInput struct {
 }
 
 type CompleteCandidateReviewResult struct {
-	Candidate    workflowstore.PlanningCandidate
-	Disposition  PlanningCandidateReviewDisposition
-	Review       PlanningCandidateReviewCompletion
-	Refresh      *PlanningReviewRefresh
-	continuation *planningReviewContinuation
+	Candidate   workflowstore.PlanningCandidate
+	Disposition PlanningCandidateReviewDisposition
+	Review      PlanningCandidateReviewCompletion
+	Refresh     *PlanningReviewRefresh
 }
 
 type PlanningCandidateReviewCompletion struct{ ReviewerIdentity, Disposition string }
@@ -125,14 +124,52 @@ type PlanningReviewRefresh struct {
 }
 
 // planningReviewContinuation is deliberately private and process-local. It is
-// created only after the owner reads the exact candidate bytes and is consumed
-// immediately by the distinct approval mutation; it is not a receipt, token,
-// or durable lifecycle record.
+// created only after the owner reads the exact candidate bytes during a ready
+// review, is held only by the Service keyed by workspace, and is consumed
+// exactly once by the distinct workspace-only approval transition. It is not a
+// receipt, token, or durable lifecycle record; every consumption revalidates
+// the exact candidate, basis, currentness, and version before approval.
 type planningReviewContinuation struct {
 	workspaceID, candidateID, sha256 string
 	sizeBytes                        int64
 	closure, authority               sql.NullInt64
 	bytes                            []byte
+}
+
+// storePlanningReviewContinuation records the exact process-local continuation
+// after a ready review, keyed by workspace. A nil continuation clears any prior
+// one, which is what a needs-revision review does so it can never be approved.
+func (s *Service) storePlanningReviewContinuation(workspaceID string, continuation *planningReviewContinuation) {
+	s.reviewMu.Lock()
+	defer s.reviewMu.Unlock()
+	if continuation == nil {
+		delete(s.reviewContinuations, workspaceID)
+		return
+	}
+	s.reviewContinuations[workspaceID] = continuation
+}
+
+// consumePlanningReviewContinuation removes and returns the process-local
+// continuation for the workspace. Consumption is single-use: once an approval
+// transition claims the continuation it is gone, so a later approval attempt
+// requires a fresh ready review.
+func (s *Service) consumePlanningReviewContinuation(workspaceID string) *planningReviewContinuation {
+	s.reviewMu.Lock()
+	defer s.reviewMu.Unlock()
+	continuation := s.reviewContinuations[workspaceID]
+	delete(s.reviewContinuations, workspaceID)
+	return continuation
+}
+
+// hasPlanningReviewContinuationFor reports whether a process-local ready review
+// continuation exists for the workspace and still refers to the exact current
+// candidate. A newer immutable candidate replaces the reviewed one, so the
+// continuation no longer matches and a fresh review is required.
+func (s *Service) hasPlanningReviewContinuationFor(workspaceID, candidateID string) bool {
+	s.reviewMu.Lock()
+	defer s.reviewMu.Unlock()
+	continuation := s.reviewContinuations[workspaceID]
+	return continuation != nil && continuation.candidateID == candidateID
 }
 
 func validBaseCommit(value string) bool {
@@ -460,13 +497,20 @@ func (s *Service) ApprovePlanningCandidate(ctx context.Context, input CandidateA
 	return result, err
 }
 
-// ApproveReviewedPlanningCandidate is the only continuation of a ready review.
-// Callers cannot manufacture its exact-input basis because it remains private.
-func (s *Service) ApproveReviewedPlanningCandidate(ctx context.Context, review CompleteCandidateReviewResult, input CandidateApprovalInput) (CandidateApprovalResult, error) {
-	if review.Disposition != PlanningCandidateReviewReadyForApproval || review.continuation == nil {
+// ApproveCurrentPlanningCandidate is the workspace-only explicit approval
+// transition. It consumes the exact process-local continuation stored by a
+// ready review and reuses the full exact/currentness/version/bytes validation
+// before approval. The client supplies no candidate identity or digest; the
+// continuation is held only by the Service and is revalidated on consume.
+func (s *Service) ApproveCurrentPlanningCandidate(ctx context.Context, input CandidateApprovalInput) (CandidateApprovalResult, error) {
+	if strings.TrimSpace(input.WorkspaceID) == "" {
+		return CandidateApprovalResult{}, ErrCandidateApprovalInvalid
+	}
+	continuation := s.consumePlanningReviewContinuation(strings.TrimSpace(input.WorkspaceID))
+	if continuation == nil {
 		return CandidateApprovalResult{}, ErrCandidateReviewIncomplete
 	}
-	input.continuation = review.continuation
+	input.continuation = continuation
 	return s.ApprovePlanningCandidate(ctx, input)
 }
 func equalBytes(a, b []byte) bool {
@@ -482,7 +526,10 @@ func equalBytes(a, b []byte) bool {
 }
 
 // CompletePlanningCandidateReview reads and validates the current candidate,
-// then returns a transient review result. It writes no review state.
+// then returns a transient review result. It writes no durable review state: a
+// ready review stores only the exact process-local continuation on the Service
+// for the distinct workspace-only approval transition, and a needs-revision
+// review clears any continuation and returns the exact planner refresh handoff.
 func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input CompleteCandidateReviewInput) (CompleteCandidateReviewResult, error) {
 	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" ||
 		(input.Disposition != PlanningCandidateReviewReadyForApproval && input.Disposition != PlanningCandidateReviewNeedsRevision) {
@@ -531,8 +578,12 @@ func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input Com
 				}
 				result = CompleteCandidateReviewResult{Candidate: candidate, Disposition: input.Disposition, Review: PlanningCandidateReviewCompletion{ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition)}}
 				if input.Disposition == PlanningCandidateReviewReadyForApproval {
-					result.continuation = &planningReviewContinuation{workspaceID: workspace.WorkspaceID, candidateID: candidate.CandidateID, sha256: candidate.ArtifactSha256, sizeBytes: candidate.ArtifactSizeBytes, closure: workspace.CurrentDiscoveryClosurePacketRowID, authority: workspace.CurrentAuthorityRevisionRowID, bytes: append([]byte(nil), bytes...)}
+					s.storePlanningReviewContinuation(workspace.WorkspaceID, &planningReviewContinuation{workspaceID: workspace.WorkspaceID, candidateID: candidate.CandidateID, sha256: candidate.ArtifactSha256, sizeBytes: candidate.ArtifactSizeBytes, closure: workspace.CurrentDiscoveryClosurePacketRowID, authority: workspace.CurrentAuthorityRevisionRowID, bytes: append([]byte(nil), bytes...)})
 				} else {
+					// A needs-revision review clears any prior ready continuation
+					// so it can never be approved, and preserves the exact
+					// planner refresh handoff for a replacement candidate.
+					s.storePlanningReviewContinuation(workspace.WorkspaceID, nil)
 					result.Refresh = &PlanningReviewRefresh{OperationID: planningRefreshOperation(candidate.Family), AuditorReviewResult: string(input.Disposition), ReviewedCandidate: append([]byte(nil), bytes...)}
 				}
 				return nil
@@ -554,16 +605,6 @@ func planningRefreshOperation(family string) string {
 	default:
 		return ""
 	}
-}
-
-// CompleteAndApprovePlanningCandidate preserves review as read-only while
-// carrying its ready exact input directly into the separate approval mutation.
-func (s *Service) CompleteAndApprovePlanningCandidate(ctx context.Context, review CompleteCandidateReviewInput, approval CandidateApprovalInput) (CandidateApprovalResult, error) {
-	completed, err := s.CompletePlanningCandidateReview(ctx, review)
-	if err != nil {
-		return CandidateApprovalResult{}, err
-	}
-	return s.ApproveReviewedPlanningCandidate(ctx, completed, approval)
 }
 
 func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input CandidatePromotionInput) (CandidatePromotionResult, error) {

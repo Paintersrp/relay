@@ -1,9 +1,11 @@
 package features
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	workflowtickets "relay/internal/app/tickets"
 	"relay/internal/operations/registry"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -78,6 +80,15 @@ func TestGuidedPlanningTracksImmediateApprovalPromotionAndHistoricalBasis(t *tes
 	if err != nil || planning.AwaitingReview != 1 || planning.AwaitingPromotion != 0 || planning.Requirements.State != "admitted" {
 		t.Fatalf("admitted planning=%+v err=%v", planning, err)
 	}
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
+		t.Fatal(err)
+	}
+	// A ready review arms the distinct explicit approval: the family is
+	// reviewed and awaiting approval, not approved.
+	planning, err = service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
+	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingApproval != 1 || planning.AwaitingPromotion != 0 || planning.Requirements.State != "reviewed" {
+		t.Fatalf("reviewed planning=%+v err=%v", planning, err)
+	}
 	approval := approveCurrentPlanningCandidate(t, ctx, service, workspace, "guided exact approval")
 	planning, err = service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
 	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingPromotion != 1 || planning.Requirements.State != "approved" {
@@ -125,7 +136,7 @@ func TestGuidedPlannerHandoffUsesOwnerCompositionWithoutInternalContext(t *testi
 	}
 }
 
-func TestGuidedPlanningReviewCompletionResumesAtPromotion(t *testing.T) {
+func TestGuidedPlanningReviewCompletionResumesAtExplicitApprovalThenPromotion(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	_, workspace, err := service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"})
 	if err != nil {
@@ -141,17 +152,32 @@ func TestGuidedPlanningReviewCompletionResumesAtPromotion(t *testing.T) {
 		t.Fatalf("admission=%+v err=%v", admitted, err)
 	}
 	service.SetGuidedAuditOwnerForTest(&guidedFakeAuditOwner{})
+	ticketOwner, err := workflowtickets.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetGuidedTicketOwnerForTest(ticketOwner)
 	before, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
 	if err != nil || before.PrimaryAction.Action != GuidedActionReviewPlanningCandidate {
 		t.Fatalf("admitted projection=%+v err=%v", before, err)
 	}
-	approved, err := service.CompleteAndApprovePlanningCandidate(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: before.Workspace.Version, OperatorConfirmationEvidence: "exact candidate approved", CreatedIdentity: "operator"})
-	if err != nil || approved.Candidate.CandidateID != admitted.Candidate.CandidateID || approved.Approval.ApprovalID == "" {
-		t.Fatalf("ready review approval=%+v err=%v", approved, err)
+	ready, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval})
+	if err != nil || ready.Disposition != PlanningCandidateReviewReadyForApproval || ready.Candidate.CandidateID != admitted.Candidate.CandidateID {
+		t.Fatalf("ready review=%+v err=%v", ready, err)
 	}
-	after, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
-	if err != nil || after.PrimaryAction.Action != GuidedActionPromotePlanningCandidate || after.Planning.Requirements.State != "approved" {
-		t.Fatalf("approved projection=%+v err=%v", after, err)
+	// The ready review itself performs no approval: the projection advances to
+	// the distinct explicit approval action, and approval without confirmation
+	// is rejected.
+	reviewed, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+	if err != nil || reviewed.PrimaryAction.Action != GuidedActionApprovePlanningCandidate || !reviewed.PrimaryAction.RequiresConfirmation || reviewed.Planning.Requirements.State != "reviewed" {
+		t.Fatalf("reviewed projection=%+v err=%v", reviewed, err)
+	}
+	if _, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: reviewed.Workspace.Version}); !errors.Is(err, ErrFeatureCompletionConfirmation) {
+		t.Fatalf("approval without confirmation error=%v", err)
+	}
+	approved, err := service.ExecuteGuidedAction(ctx, GuidedActionInput{WorkspaceID: workspace.WorkspaceID, Action: string(GuidedActionApprovePlanningCandidate), ExpectedVersion: reviewed.Workspace.Version, Confirmation: true})
+	if err != nil || approved.Projection.PrimaryAction.Action != GuidedActionPromotePlanningCandidate || approved.Projection.Planning.Requirements.State != "approved" {
+		t.Fatalf("approved projection=%+v err=%v", approved.Projection, err)
 	}
 }
 

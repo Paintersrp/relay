@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	workflowtickets "relay/internal/app/tickets"
 	"relay/internal/guidedapp"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -48,6 +49,11 @@ func TestGuidedIntegrityReportsUnreadableOwnerWithoutInventingIdentity(t *testin
 func TestGuidedIntegrityComposesTypedDiscoveryAuthorityPlanningIdentities(t *testing.T) {
 	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
 	service.SetGuidedAuditOwnerForTest(&guidedFakeAuditOwner{})
+	ticketOwner, err := workflowtickets.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetGuidedTicketOwnerForTest(ticketOwner)
 	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('guided-integrity-repo', 'C:/guided-integrity-repo', 'refs/heads/main', 1)`); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +71,10 @@ func TestGuidedIntegrityComposesTypedDiscoveryAuthorityPlanningIdentities(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := service.CompleteAndApprovePlanningCandidate(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "integrity review", CreatedIdentity: "auditor"})
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "integrity review", CreatedIdentity: "auditor"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +192,7 @@ func TestGuidedIntegrityComposesTypedDiscoveryAuthorityPlanningIdentities(t *tes
 // asserts the typed delivery integrity surface: ticket, selection, package,
 // package approval, Run basis, audit packet/decision, and remediation seeds.
 func TestGuidedIntegrityComposesDeliveryOwnerIdentities(t *testing.T) {
-	ctx, service, workspace := guidedDeliveryTicketFixture(t)
+	ctx, service, workspace, _ := guidedDeliveryTicketFixture(t)
 	fakePackage := &guidedFakePackageOwner{state: guidedapp.PackageState{
 		State: "approved", PackageID: "package-integrity", PackageSHA256: strings.Repeat("c", 64), PackageApprovalID: "pkg-approval-integrity",
 		RunID: "run-integrity", RunStatus: "validating", RunRepoTarget: "relay", RunBranch: "main", RunBaseCommit: strings.Repeat("a", 40),
@@ -248,6 +257,11 @@ func TestGuidedIntegrityComposesDeliveryOwnerIdentities(t *testing.T) {
 func TestGuidedIntegrityComposesPrototypeIdentities(t *testing.T) {
 	ctx, store, service, workspace, _, proposal, authorization, run := preparedPrototype(t)
 	service.SetGuidedAuditOwnerForTest(&guidedFakeAuditOwner{})
+	ticketOwner, err := workflowtickets.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetGuidedTicketOwnerForTest(ticketOwner)
 	approval, _, err := service.ApprovePrototypeExecution(ctx, approvalInput(workspace, proposal, authorization, run))
 	if err != nil {
 		t.Fatal(err)

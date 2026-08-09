@@ -29,7 +29,7 @@ type fakeWorkflow struct {
 	selectionInput             apptickets.SelectInput
 	briefAdmissionInput        apptickets.TicketDesignBriefAdmissionInput
 	reviewCompletionInput      apptickets.CompleteBriefReviewInput
-	reviewApprovalInput        apptickets.TicketDesignBriefApprovalInput
+	approveBriefInput          apptickets.TicketDesignBriefApprovalInput
 	publishCalled              bool
 	replacementCalled          bool
 	approvalCalled             bool
@@ -38,7 +38,7 @@ type fakeWorkflow struct {
 	selectionCalled            bool
 	briefAdmissionCalled       bool
 	reviewCompletionCalled     bool
-	reviewApprovalCalled       bool
+	approveBriefCalled         bool
 }
 
 func (f *fakeWorkflow) Publish(_ context.Context, input apptickets.PublishInput, reference *appoperations.RemediationAuthoringReference) (apptickets.PublishedRevision, error) {
@@ -98,19 +98,19 @@ func (f *fakeWorkflow) CompleteTicketDesignBriefReview(_ context.Context, input 
 	f.reviewCompletionCalled = true
 	f.reviewCompletionInput = input
 	return apptickets.TicketDesignBriefReviewResult{
-		Brief:  workflowstore.TicketDesignBrief{BriefID: "brief-api-1"},
-		Review: apptickets.TicketDesignBriefReviewCompletion{ReviewerIdentity: input.ReviewerIdentity, Disposition: string(input.Disposition)},
+		Brief:       workflowstore.TicketDesignBrief{BriefID: "brief-api-1"},
+		Disposition: input.Disposition,
+		Review:      apptickets.TicketDesignBriefReviewCompletion{ReviewerIdentity: input.ReviewerIdentity, Disposition: string(input.Disposition)},
 	}, f.err
 }
-func (f *fakeWorkflow) CompleteAndApproveTicketDesignBrief(_ context.Context, review apptickets.CompleteBriefReviewInput, approval apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
-	f.reviewApprovalCalled = true
-	f.reviewCompletionInput = review
-	f.reviewApprovalInput = approval
+func (f *fakeWorkflow) ApproveTicketDesignBrief(_ context.Context, input apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
+	f.approveBriefCalled = true
+	f.approveBriefInput = input
 	return apptickets.TicketDesignBriefApprovalResult{Brief: workflowstore.TicketDesignBrief{BriefID: "brief-api-1"}, Approval: workflowstore.TicketDesignBriefApproval{ApprovalID: "brief-approval-api-1"}}, f.err
 }
 
 func (f *fakeWorkflow) called() bool {
-	return f.publishCalled || f.replacementCalled || f.approvalCalled || f.priorityCalled || f.frontierCalled || f.selectionCalled || f.briefAdmissionCalled || f.reviewCompletionCalled
+	return f.publishCalled || f.replacementCalled || f.approvalCalled || f.priorityCalled || f.frontierCalled || f.selectionCalled || f.briefAdmissionCalled || f.reviewCompletionCalled || f.approveBriefCalled
 }
 
 func publishedRevision(input apptickets.PublishInput) apptickets.PublishedRevision {
@@ -315,18 +315,15 @@ func TestTicketDesignBriefAdmissionRouteRejectsInvalidBytes(t *testing.T) {
 	}
 }
 
-func TestReviewCompletionRouteReadyReviewImmediatelyContinuesToExplicitApproval(t *testing.T) {
+func TestReviewCompletionRouteReadyReviewCreatesNoApproval(t *testing.T) {
 	service := &fakeWorkflow{}
 	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","expectedVersion":8,"operatorConfirmationEvidence":"approve exact brief","createdIdentity":"operator"}`)))
-	if response.Code != http.StatusCreated || !service.reviewApprovalCalled || service.reviewCompletionInput.WorkspaceID != "workspace-api" || service.reviewCompletionInput.ReviewerIdentity != "auditor" || service.reviewCompletionInput.Disposition != apptickets.TicketDesignBriefReviewReadyForApproval {
-		t.Fatalf("response = %d %s completion = %#v", response.Code, response.Body.String(), service.reviewCompletionInput)
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`)))
+	if response.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled || service.reviewCompletionInput.WorkspaceID != "workspace-api" || service.reviewCompletionInput.ReviewerIdentity != "auditor" || service.reviewCompletionInput.Disposition != apptickets.TicketDesignBriefReviewReadyForApproval {
+		t.Fatalf("response = %d %s completion = %#v approval called = %t", response.Code, response.Body.String(), service.reviewCompletionInput, service.approveBriefCalled)
 	}
-	if !strings.Contains(response.Body.String(), `"approvalId":"brief-approval-api-1"`) || strings.Contains(response.Body.String(), `"reviewId"`) {
+	if !strings.Contains(response.Body.String(), `"disposition":"ready_for_approval"`) || strings.Contains(response.Body.String(), `"approvalId"`) || strings.Contains(response.Body.String(), `"refresh"`) {
 		t.Fatalf("completion response body = %s", response.Body.String())
-	}
-	if service.reviewApprovalInput.ExpectedVersion != 8 || service.reviewApprovalInput.OperatorConfirmationEvidence != "approve exact brief" || service.reviewApprovalInput.CreatedIdentity != "operator" {
-		t.Fatalf("approval input=%#v", service.reviewApprovalInput)
 	}
 }
 
@@ -339,17 +336,18 @@ func TestReviewCompletionRouteRejectsMissingIdentity(t *testing.T) {
 	}
 }
 
-func TestReadyBriefReviewRequiresApprovalProof(t *testing.T) {
+func TestReviewCompletionRouteRejectsApprovalEvidenceFields(t *testing.T) {
 	for _, body := range []string{
 		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
 		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","expectedVersion":8,"createdIdentity":"operator"}`,
 		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","expectedVersion":8,"operatorConfirmationEvidence":"proof"}`,
+		`{"reviewerIdentity":"auditor","disposition":"needs_revision","expectedVersion":8,"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
 	} {
 		service := &fakeWorkflow{}
 		response := httptest.NewRecorder()
 		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest || service.reviewApprovalCalled {
-			t.Fatalf("body=%s status=%d approval=%t", body, response.Code, service.reviewApprovalCalled)
+		if response.Code != http.StatusBadRequest || service.reviewCompletionCalled || service.approveBriefCalled {
+			t.Fatalf("body=%s status=%d review=%t approval=%t", body, response.Code, service.reviewCompletionCalled, service.approveBriefCalled)
 		}
 	}
 }
@@ -368,6 +366,41 @@ func TestReviewCompletionRouteRejectsClientBriefIdentityAndInvalidDisposition(t 
 		}
 		if service.reviewCompletionCalled {
 			t.Fatalf("invalid review request reached owner: %#v", service.reviewCompletionInput)
+		}
+	}
+}
+
+func TestApprovalRouteConsumesReadyReviewWithExplicitEvidence(t *testing.T) {
+	service := &fakeWorkflow{}
+	router := ticketRouter(service, &fakeRead{})
+	review := httptest.NewRecorder()
+	router.ServeHTTP(review, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`)))
+	if review.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled {
+		t.Fatalf("review response = %d %s approval called = %t", review.Code, review.Body.String(), service.approveBriefCalled)
+	}
+	approval := httptest.NewRecorder()
+	router.ServeHTTP(approval, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/approvals", strings.NewReader(`{"expectedVersion":8,"operatorConfirmationEvidence":"approve exact brief","createdIdentity":"operator"}`)))
+	if approval.Code != http.StatusCreated || !service.approveBriefCalled || service.approveBriefInput.WorkspaceID != "workspace-api" || service.approveBriefInput.ExpectedVersion != 8 || service.approveBriefInput.OperatorConfirmationEvidence != "approve exact brief" || service.approveBriefInput.CreatedIdentity != "operator" {
+		t.Fatalf("approval response = %d %s input = %#v", approval.Code, approval.Body.String(), service.approveBriefInput)
+	}
+	if !strings.Contains(approval.Body.String(), `"approvalId":"brief-approval-api-1"`) {
+		t.Fatalf("approval response body = %s", approval.Body.String())
+	}
+}
+
+func TestApprovalRouteRejectsClientBriefIdentityDigestAndMissingEvidence(t *testing.T) {
+	for _, body := range []string{
+		`{"briefId":"brief-1","expectedVersion":8,"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
+		`{"sha256":"` + strings.Repeat("a", 64) + `","expectedVersion":8,"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
+		`{"expectedVersion":8,"operatorConfirmationEvidence":"proof"}`,
+		`{"expectedVersion":8,"createdIdentity":"operator"}`,
+		`{"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
+	} {
+		service := &fakeWorkflow{}
+		response := httptest.NewRecorder()
+		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/approvals", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest || service.approveBriefCalled {
+			t.Fatalf("body=%s status=%d approval called=%t", body, response.Code, service.approveBriefCalled)
 		}
 	}
 }

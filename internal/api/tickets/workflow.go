@@ -27,6 +27,7 @@ type WorkflowService interface {
 	Select(context.Context, apptickets.SelectInput) (apptickets.SelectionResult, error)
 	AdmitTicketDesignBrief(context.Context, apptickets.TicketDesignBriefAdmissionInput) (apptickets.TicketDesignBriefAdmissionResult, error)
 	CompleteTicketDesignBriefReview(context.Context, apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error)
+	ApproveTicketDesignBrief(context.Context, apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error)
 }
 
 type ReadService interface {
@@ -114,8 +115,8 @@ func (a appWorkflowAdapter) AdmitTicketDesignBrief(ctx context.Context, input ap
 func (a appWorkflowAdapter) CompleteTicketDesignBriefReview(ctx context.Context, input apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error) {
 	return a.service.CompleteTicketDesignBriefReview(ctx, input)
 }
-func (a appWorkflowAdapter) CompleteAndApproveTicketDesignBrief(ctx context.Context, review apptickets.CompleteBriefReviewInput, approval apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
-	return a.service.CompleteAndApproveTicketDesignBrief(ctx, review, approval)
+func (a appWorkflowAdapter) ApproveTicketDesignBrief(ctx context.Context, input apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
+	return a.service.ApproveTicketDesignBrief(ctx, input)
 }
 
 // --- HTTP request types ---
@@ -190,11 +191,19 @@ type ticketDesignBriefAdmissionRequest struct {
 	CreatedIdentity string `json:"createdIdentity"`
 }
 
-// reviewCompletionRequest carries the bounded disposition; the current brief
-// is resolved server-side and no findings or prose are accepted.
+// reviewCompletionRequest carries only the bounded disposition; the current
+// brief is resolved server-side and no findings, prose, approval evidence, or
+// identity beyond the reviewer are accepted.
 type reviewCompletionRequest struct {
-	ReviewerIdentity             string `json:"reviewerIdentity"`
-	Disposition                  string `json:"disposition"`
+	ReviewerIdentity string `json:"reviewerIdentity"`
+	Disposition      string `json:"disposition"`
+}
+
+// ticketDesignBriefApprovalRequest carries only the explicit approval
+// evidence. The workspace is resolved from the route and the current brief
+// identity and digest are resolved server-side from the process-local
+// ready-review continuation; no brief ID or digest is accepted.
+type ticketDesignBriefApprovalRequest struct {
 	ExpectedVersion              int64  `json:"expectedVersion"`
 	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
 	CreatedIdentity              string `json:"createdIdentity"`
@@ -366,7 +375,9 @@ func (h *WorkflowHandler) AdmitTicketDesignBrief(w http.ResponseWriter, r *http.
 
 // CompleteTicketDesignBriefReview is the bounded completion entry the external
 // auditor uses after performing the read-only review. It records only the
-// bounded disposition over the server-resolved brief.
+// bounded disposition over the server-resolved brief and never performs or
+// records approval; ready approval is a distinct transition on the separate
+// approval route.
 func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter, r *http.Request) {
 	var request reviewCompletionRequest
 	if !decodeStrict(r, &request) {
@@ -378,31 +389,9 @@ func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter,
 		badRequest(w, "Invalid Ticket Design Brief review disposition")
 		return
 	}
-	review := apptickets.CompleteBriefReviewInput{
-		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
-		Disposition: disposition,
-	}
-	if disposition == apptickets.TicketDesignBriefReviewReadyForApproval {
-		if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
-			badRequest(w, "Ready Ticket Design Brief review requires expected version, confirmation evidence, and identity")
-			return
-		}
-		approvalWorkflow, ok := h.workflow.(interface {
-			CompleteAndApproveTicketDesignBrief(context.Context, apptickets.CompleteBriefReviewInput, apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error)
-		})
-		if !ok {
-			writeTicketError(w, apptickets.ErrTicketDesignBriefApproval)
-			return
-		}
-		approved, err := approvalWorkflow.CompleteAndApproveTicketDesignBrief(r.Context(), review, apptickets.TicketDesignBriefApprovalInput{WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion, OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity})
-		if err != nil {
-			writeTicketError(w, err)
-			return
-		}
-		shared.JSON(w, http.StatusCreated, map[string]any{"briefId": approved.Brief.BriefID, "approvalId": approved.Approval.ApprovalID})
-		return
-	}
-	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), review)
+	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), apptickets.CompleteBriefReviewInput{
+		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity), Disposition: disposition,
+	})
 	if err != nil {
 		writeTicketError(w, err)
 		return
@@ -412,6 +401,31 @@ func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter,
 		response["refresh"] = map[string]any{"operationId": result.Refresh.OperationID, "reviewedBrief": result.Refresh.ReviewedBrief, "auditorReviewResult": result.Refresh.AuditorReviewResult}
 	}
 	shared.JSON(w, http.StatusCreated, response)
+}
+
+// ApproveTicketDesignBrief is the distinct explicit approval transition. The
+// current brief identity and digest are resolved server-side from the
+// process-local ready-review continuation; the request carries only the
+// expected workspace version, confirmation evidence, and identity.
+func (h *WorkflowHandler) ApproveTicketDesignBrief(w http.ResponseWriter, r *http.Request) {
+	var request ticketDesignBriefApprovalRequest
+	if !decodeStrict(r, &request) {
+		badRequest(w, "Invalid Ticket Design Brief approval request")
+		return
+	}
+	if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
+		badRequest(w, "Ticket Design Brief approval requires expected version, confirmation evidence, and identity")
+		return
+	}
+	approved, err := h.workflow.ApproveTicketDesignBrief(r.Context(), apptickets.TicketDesignBriefApprovalInput{
+		WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion,
+		OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity,
+	})
+	if err != nil {
+		writeTicketError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusCreated, map[string]any{"briefId": approved.Brief.BriefID, "approvalId": approved.Approval.ApprovalID})
 }
 
 func buildPublishInput(externalPriority, expectedRevisionNumber int64, revision revisionRequest, workspaceID, ticketID string) (apptickets.PublishInput, error) {
@@ -543,4 +557,5 @@ func MountWorkflowRoutes(r chi.Router, handler *WorkflowHandler) {
 	r.Post("/feature-workspaces/{workspaceID}/tickets/selection", handler.Select)
 	r.Post("/feature-workspaces/{workspaceID}/ticket-design-briefs", handler.AdmitTicketDesignBrief)
 	r.Post("/feature-workspaces/{workspaceID}/ticket-design-briefs/review-completions", handler.CompleteTicketDesignBriefReview)
+	r.Post("/feature-workspaces/{workspaceID}/ticket-design-briefs/approvals", handler.ApproveTicketDesignBrief)
 }

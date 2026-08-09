@@ -56,7 +56,6 @@ type TicketDesignBriefApprovalInput struct {
 	ExpectedVersion              int64
 	OperatorConfirmationEvidence string
 	CreatedIdentity              string
-	continuation                 *briefReviewContinuation
 }
 
 type TicketDesignBriefApprovalResult struct {
@@ -81,11 +80,10 @@ type CompleteBriefReviewInput struct {
 }
 
 type TicketDesignBriefReviewResult struct {
-	Brief        workflowstore.TicketDesignBrief
-	Disposition  TicketDesignBriefReviewDisposition
-	Review       TicketDesignBriefReviewCompletion
-	Refresh      *TicketDesignBriefReviewRefresh
-	continuation *briefReviewContinuation
+	Brief       workflowstore.TicketDesignBrief
+	Disposition TicketDesignBriefReviewDisposition
+	Review      TicketDesignBriefReviewCompletion
+	Refresh     *TicketDesignBriefReviewRefresh
 }
 
 type TicketDesignBriefReviewCompletion struct{ ReviewerIdentity, Disposition string }
@@ -102,6 +100,46 @@ type briefReviewContinuation struct {
 	sizeBytes                     int64
 	selectionRowID, revisionRowID int64
 	bytes                         []byte
+}
+
+// setReviewContinuation records the private exact ready-review continuation
+// for the workspace. It lives only in process memory and is never durable.
+func (s *Service) setReviewContinuation(workspaceID string, continuation *briefReviewContinuation) {
+	s.reviewMutex.Lock()
+	defer s.reviewMutex.Unlock()
+	s.reviewContinuations[workspaceID] = continuation
+}
+
+// takeReviewContinuation consumes the workspace's process-local continuation
+// so the explicit approval mutation is single-use per workspace.
+func (s *Service) takeReviewContinuation(workspaceID string) *briefReviewContinuation {
+	s.reviewMutex.Lock()
+	defer s.reviewMutex.Unlock()
+	continuation := s.reviewContinuations[workspaceID]
+	delete(s.reviewContinuations, workspaceID)
+	return continuation
+}
+
+// restoreReviewContinuation returns a continuation after a failed approval
+// unless a newer review has replaced it in the meantime.
+func (s *Service) restoreReviewContinuation(workspaceID string, continuation *briefReviewContinuation) {
+	if continuation == nil {
+		return
+	}
+	s.reviewMutex.Lock()
+	defer s.reviewMutex.Unlock()
+	if _, ok := s.reviewContinuations[workspaceID]; !ok {
+		s.reviewContinuations[workspaceID] = continuation
+	}
+}
+
+// clearReviewContinuation invalidates any pending ready-review continuation
+// for the workspace. needs_revision reviews and new brief admissions both
+// clear it.
+func (s *Service) clearReviewContinuation(workspaceID string) {
+	s.reviewMutex.Lock()
+	defer s.reviewMutex.Unlock()
+	delete(s.reviewContinuations, workspaceID)
 }
 
 // ApproveCurrentBriefInput carries only workspace-level guided inputs for the
@@ -216,7 +254,13 @@ func (s *Service) AdmitTicketDesignBrief(ctx context.Context, input TicketDesign
 		result = TicketDesignBriefAdmissionResult{Brief: brief, Workspace: workspace, Filename: filename}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	// A new brief attempt invalidates any pending ready-review continuation:
+	// review can never cross a replacement on the same active selection.
+	s.clearReviewContinuation(workspace.WorkspaceID)
+	return result, nil
 }
 
 // nextTicketDesignBriefAttempt preserves an immutable rejected Brief and its
@@ -251,12 +295,15 @@ func (s *Service) nextTicketDesignBriefAttempt(
 // ApproveTicketDesignBrief is the explicit confirmed owner mutation that
 // approves the current admissible brief. The brief identity, exact bytes, and
 // source-backed basis are resolved server-side; only the operator confirmation
-// evidence and identity are accepted from the caller.
+// evidence and identity are accepted from the caller. It consumes the
+// process-local continuation recorded by the preceding ready review and never
+// accepts a brief ID or digest.
 func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesignBriefApprovalInput) (TicketDesignBriefApprovalResult, error) {
 	evidence := strings.TrimSpace(input.OperatorConfirmationEvidence)
 	if !nonBlank(input.WorkspaceID) || input.ExpectedVersion < 1 || evidence == "" || len(evidence) > 4096 || !nonBlank(input.CreatedIdentity) {
 		return TicketDesignBriefApprovalResult{}, ErrTicketDesignBriefApproval
 	}
+	continuation := s.takeReviewContinuation(strings.TrimSpace(input.WorkspaceID))
 	result := TicketDesignBriefApprovalResult{}
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		workspace, err := tx.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(input.WorkspaceID))
@@ -293,7 +340,6 @@ func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesi
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		continuation := input.continuation
 		if continuation == nil || continuation.workspaceID != workspace.WorkspaceID || continuation.briefID != brief.BriefID || continuation.selectionRowID != selection.ID || continuation.revisionRowID != revision.ID || continuation.sha256 != brief.ArtifactSha256 || continuation.sizeBytes != brief.ArtifactSizeBytes || !equalBytes(continuation.bytes, stored) {
 			return fmt.Errorf("%w: the current brief has no completed review", ErrBriefReviewIncomplete)
 		}
@@ -309,7 +355,13 @@ func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesi
 		result = TicketDesignBriefApprovalResult{Brief: brief, Approval: approval}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		if !errors.Is(err, ErrBriefReviewIncomplete) {
+			s.restoreReviewContinuation(strings.TrimSpace(input.WorkspaceID), continuation)
+		}
+		return result, err
+	}
+	return result, nil
 }
 
 // CompleteTicketDesignBriefReview validates the current Brief and returns a
@@ -350,8 +402,13 @@ func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input Com
 		}
 		result = TicketDesignBriefReviewResult{Brief: brief, Disposition: input.Disposition, Review: TicketDesignBriefReviewCompletion{ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition)}}
 		if input.Disposition == TicketDesignBriefReviewReadyForApproval {
-			result.continuation = &briefReviewContinuation{workspaceID: workspace.WorkspaceID, briefID: brief.BriefID, sha256: brief.ArtifactSha256, sizeBytes: brief.ArtifactSizeBytes, selectionRowID: selection.ID, revisionRowID: revision.ID, bytes: append([]byte(nil), bytes...)}
+			// The private exact continuation is retained only in process
+			// memory for the distinct explicit approval mutation.
+			s.setReviewContinuation(workspace.WorkspaceID, &briefReviewContinuation{workspaceID: workspace.WorkspaceID, briefID: brief.BriefID, sha256: brief.ArtifactSha256, sizeBytes: brief.ArtifactSizeBytes, selectionRowID: selection.ID, revisionRowID: revision.ID, bytes: append([]byte(nil), bytes...)})
 		} else {
+			// A needs_revision review clears any pending ready continuation and
+			// returns only the ordinary planner.ticket_design_brief refresh.
+			s.clearReviewContinuation(workspace.WorkspaceID)
 			result.Refresh = &TicketDesignBriefReviewRefresh{OperationID: "planner.ticket_design_brief", AuditorReviewResult: string(input.Disposition), ReviewedBrief: append([]byte(nil), bytes...)}
 		}
 		return nil
@@ -359,12 +416,15 @@ func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input Com
 	return result, err
 }
 
-// ApproveReviewedTicketDesignBrief is the only continuation of a ready review.
+// ApproveReviewedTicketDesignBrief approves the current brief using the
+// process-local continuation recorded by the preceding ready review. The
+// review argument is retained for owner fixtures that model the two distinct
+// transitions as one convenience call; the external API always uses the
+// separate approval mutation.
 func (s *Service) ApproveReviewedTicketDesignBrief(ctx context.Context, review TicketDesignBriefReviewResult, input TicketDesignBriefApprovalInput) (TicketDesignBriefApprovalResult, error) {
-	if review.Disposition != TicketDesignBriefReviewReadyForApproval || review.continuation == nil {
+	if review.Disposition != TicketDesignBriefReviewReadyForApproval {
 		return TicketDesignBriefApprovalResult{}, ErrBriefReviewIncomplete
 	}
-	input.continuation = review.continuation
 	return s.ApproveTicketDesignBrief(ctx, input)
 }
 
@@ -377,7 +437,9 @@ func (s *Service) CompleteAndApproveTicketDesignBrief(ctx context.Context, revie
 }
 
 // ApproveCurrentTicketDesignBrief cannot manufacture a review continuation.
-// Ready approval is available only through CompleteAndApproveTicketDesignBrief.
+// It is the guided convenience that resolves the current brief server-side;
+// ready approval remains available only after a ready review records its
+// process-local continuation.
 func (s *Service) ApproveCurrentTicketDesignBrief(ctx context.Context, input ApproveCurrentBriefInput) (TicketDesignBriefApprovalResult, error) {
 	evidence := strings.TrimSpace(input.Evidence)
 	if !nonBlank(input.WorkspaceID) || input.ExpectedVersion < 1 || evidence == "" || len(evidence) > 4096 {
@@ -387,6 +449,57 @@ func (s *Service) ApproveCurrentTicketDesignBrief(ctx context.Context, input App
 		WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion,
 		OperatorConfirmationEvidence: evidence, CreatedIdentity: "guided-operator",
 	})
+}
+
+// HasPendingCurrentBriefApproval is the transient owner read consumed by the
+// guided decision. It reports whether the current exact brief on the
+// workspace's active selection carries a pending process-local ready-review
+// continuation and reads only that workspace's own entry, so a ready review in
+// another workspace can never displace it. It first validates the current
+// source-backed selection basis and brief binding through the same read path
+// the approval mutation uses, so the transient answer can never be observed
+// across a replacement brief, a stale selection, or a different workspace. It
+// is not a durable gate and is never exposed as a lifecycle state: the final
+// approval mutation revalidates the exact brief, basis, and bytes before any
+// approval is written.
+func (s *Service) HasPendingCurrentBriefApproval(ctx context.Context, workspaceID string) (bool, error) {
+	if !nonBlank(workspaceID) {
+		return false, ErrInvalidTicket
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+	if err != nil {
+		return false, err
+	}
+	selection, revision, _, err := s.currentActiveSelectionBasis(ctx, s.store, workspace.ID)
+	if err != nil {
+		// A missing or stale basis means no current exact brief can carry a
+		// pending approval; the final approval mutation revalidates the basis
+		// before writing anything, so a false transient read can never
+		// authorize progression.
+		return false, nil
+	}
+	brief, err := s.store.GetCurrentTicketDesignBriefBySelectionRowID(ctx, selection.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if brief.RevisionRowID != revision.ID {
+		return false, nil
+	}
+	s.reviewMutex.Lock()
+	defer s.reviewMutex.Unlock()
+	continuation := s.reviewContinuations[workspace.WorkspaceID]
+	if continuation == nil {
+		return false, nil
+	}
+	return continuation.workspaceID == workspace.WorkspaceID &&
+		continuation.briefID == brief.BriefID &&
+		continuation.selectionRowID == selection.ID &&
+		continuation.revisionRowID == revision.ID &&
+		continuation.sha256 == brief.ArtifactSha256 &&
+		continuation.sizeBytes == brief.ArtifactSizeBytes, nil
 }
 
 // ReadWorkspaceBriefState is the delivery-owner semantic read consumed by the

@@ -106,6 +106,13 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct ticket service: %w", err)
 	}
+	// The guided Feature journey must observe the exact ticket Service instance
+	// the auditor completion uses so its process-local brief review
+	// continuation arms the distinct explicit approval. The Feature owner never
+	// constructs a second ticket Service for guided reads or dispatches.
+	if err := featureAuthorityService.SetGuidedTicketOwner(ticketService); err != nil {
+		return nil, nil, fmt.Errorf("bind guided ticket owner: %w", err)
+	}
 	packetService, err := appoperations.NewService(workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct packet service: %w", err)

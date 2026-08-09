@@ -279,9 +279,10 @@ describe("Project to Feature workspace normal entry journeys", () => {
       guidedWith("select_delivery_ticket", true, { delivery: { frontier: [frontierEntry] } }),
       // The planner admitted the authored Brief through the delivery owner.
       guidedWith("review_ticket_design_brief", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "authored" }, diagnostics: { delivery: ["ticket_design_brief=authored"] } }),
-      // The external ready review completion immediately performs the distinct
-      // approval mutation. Re-entry therefore starts at durable package work.
-      guidedWith("prepare_package", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "approved", packageState: "none" } }),
+      // The external ready review completion armed the distinct explicit
+      // approval; the durable brief state remains authored until the confirmed
+      // approval consumes the process-local continuation.
+      guidedWith("approve_ticket_design_brief", true, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "authored" }, diagnostics: { delivery: ["ticket_design_brief=reviewed_ready"] } }),
       // The Run owner advanced the launched Run; guided re-entry presents the
       // source-backed continuation rather than another launch.
       guidedWith("continue_run", false, { workspace: { version: 4 }, delivery: { selectionState: "consumed", briefState: "approved", packageState: "approved", runState: "executing" } }),
@@ -292,6 +293,9 @@ describe("Project to Feature workspace normal entry journeys", () => {
       { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "none" }, ...primaryAction("author_ticket_design_brief", false) }) },
       { body: guidedWith("author_ticket_design_brief", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "none" }, handoff: handoff("author_ticket_design_brief", { ...emptyTransfer(), ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["brief_required"], operationId: "planner.ticket_design_brief" } }, "Author the selected Ticket Design Brief through its planner operation.") }) },
       { body: guidedWith("review_ticket_design_brief", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "authored" }, handoff: handoff("review_ticket_design_brief", { ...emptyTransfer(), ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["brief_admitted"], operationId: "auditor.ticket_design_brief_review" } }, "Review the admitted Ticket Design Brief through its auditor operation.") }) },
+      // The confirmed explicit approval is the distinct mutation that advances
+      // the durable brief state to approved and unlocks package preparation.
+      { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "approved", packageState: "none" }, ...primaryAction("prepare_package", false) }) },
       // Package preparation is an actual package-owner mutation, not a handoff.
       { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "approved", packageState: "prepared" }, diagnostics: { delivery: ["execution_package_prepared"] }, ...primaryAction("approve_package", true) }) },
       // Confirmed package approval consumes the selection and creates the Run.
@@ -324,9 +328,14 @@ describe("Project to Feature workspace normal entry journeys", () => {
     await user.click(screen.getByRole("button", { name: "Review Ticket Design Brief" }));
     expect(await screen.findByText(/auditor\.ticket_design_brief_review/)).toBeInTheDocument();
 
-    // The external ready completion performs the distinct explicit approval
-    // mutation immediately. Resume only after its durable approved state.
+    // The external ready review completion armed the distinct explicit
+    // approval; resume at the confirmed approve action, never at package work.
     await freshCheckAndResume(user, queryClient);
+    expect(await screen.findByRole("button", { name: "Approve Ticket Design Brief" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Prepare package" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Approve Ticket Design Brief" }));
     expect(await screen.findByRole("button", { name: "Prepare package" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve package" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
@@ -354,6 +363,7 @@ describe("Project to Feature workspace normal entry journeys", () => {
       { expectedVersion: 2, action: "select_delivery_ticket", confirmation: true },
       { expectedVersion: 3, action: "author_ticket_design_brief", confirmation: false },
       { expectedVersion: 3, action: "review_ticket_design_brief", confirmation: false },
+      { expectedVersion: 3, action: "approve_ticket_design_brief", confirmation: true },
       { expectedVersion: 3, action: "prepare_package", confirmation: false },
       { expectedVersion: 3, action: "approve_package", confirmation: true },
       { expectedVersion: 4, action: "launch_run", confirmation: false },
@@ -512,13 +522,16 @@ describe("Project to Feature workspace normal entry journeys", () => {
       // The planner's replacement candidate is admitted through the owner, so
       // the read-only review handoff is now primary.
       guidedWith("review_planning_candidate", false, { ...destination, planning: { status: "in_progress", candidateState: "admitted", reviewState: "awaiting_review", approvalState: "none", promotionState: "none", candidateCount: 1, awaitingReview: 1, awaitingApproval: 0, awaitingPromotion: 0, promoted: 0 } }),
-      // The external ready review completion immediately records explicit
-      // approval, so resume at the durable promotion stage.
-      guidedWith("promote_planning_candidate", false, { ...destination, planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 1, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 1, promoted: 0 } }),
+      // The external ready review completion armed the distinct explicit
+      // approval; re-entry resumes at the confirmed approve action.
+      guidedWith("approve_planning_candidate", true, { ...destination, planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "awaiting_approval", promotionState: "none", candidateCount: 1, awaitingReview: 0, awaitingApproval: 1, awaitingPromotion: 0, promoted: 0 } }),
     ];
     const posts = [
       { body: guidedWith("author_requirements", false, { ...destination, handoff: handoff("author_requirements", { ...emptyTransfer(), members: ["feature_owner", "planner"], authorityLayers: ["requirements"] }, "Planner authoring and review are prepared through their existing owners.") }) },
       { body: guidedWith("review_planning_candidate", false, { ...destination, handoff: handoff("review_planning_candidate", { ...emptyTransfer(), members: ["feature_owner"], authorityLayers: ["requirements"] }, "The auditor review surface is prepared through its existing owner envelope.") }) },
+      // The confirmed explicit approval is the distinct mutation that advances
+      // the reviewed candidate to the durable promotion stage.
+      { body: guidedWith("promote_planning_candidate", false, { ...destination, planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 1, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 1, promoted: 0 } }) },
       // Promotion publishes the Requirements authority server-side; the next
       // stage is the Delivery Ticket authoring surface.
       { body: guidedWith("author_delivery_ticket", false, { ...destination, workspace: { version: 3 }, authority: { currentRevisionNumber: 2, layers: ["requirements"] }, planning: { status: "promoted", candidateState: "promoted", reviewState: "ready_for_approval", approvalState: "approved", promotionState: "promoted", candidateCount: 1, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 0, promoted: 1 } }) },
@@ -540,13 +553,20 @@ describe("Project to Feature workspace normal entry journeys", () => {
     expect(await screen.findByText("Authority layers")).toBeInTheDocument();
     expect(screen.getByText("feature_owner")).toBeInTheDocument();
 
-    // External ready-review completion made the approval durable; re-entry
-    // resumes at promotion without a fabricated guided approval action.
+    // External ready-review completion armed the distinct explicit approval;
+    // re-entry resumes at the confirmed approve action, never at promotion.
     await freshCheckAndResume(user, queryClient);
-    await user.click(await screen.findByRole("button", { name: "Promote planning candidate" }));
+    expect(screen.getByRole("button", { name: "Approve planning candidate" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Promote planning candidate" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Approve planning candidate" }));
+    expect(await screen.findByRole("button", { name: "Promote planning candidate" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Promote planning candidate" }));
     expect(await screen.findByRole("button", { name: "Author Delivery Ticket" })).toBeInTheDocument();
-    expect(mocks.postBodies[2]).toEqual({ expectedVersion: 2, action: "promote_planning_candidate", confirmation: false });
-    expect(JSON.stringify(mocks.postBodies[2])).not.toMatch(/(candidateId|approvalId|reviewId|workspaceId|sha256|rowId)/i);
+    expect(mocks.postBodies[2]).toEqual({ expectedVersion: 2, action: "approve_planning_candidate", confirmation: true });
+    expect(mocks.postBodies[3]).toEqual({ expectedVersion: 2, action: "promote_planning_candidate", confirmation: false });
+    expect(JSON.stringify(mocks.postBodies[3])).not.toMatch(/(candidateId|approvalId|reviewId|workspaceId|sha256|rowId)/i);
 
     // Promotion publishes the Requirements authority; the next stage is the
     // Delivery Ticket authoring surface.
@@ -557,35 +577,43 @@ describe("Project to Feature workspace normal entry journeys", () => {
     // Every server projection retains the closed requirements_then_shared_design
     // destination.
     const destination = { discovery: { destination: "requirements_then_shared_design" } };
-    const requirementsPromoted = { authority: { currentRevisionNumber: 2, layers: ["requirements"] }, planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 1, awaitingReview: 0, awaitingPromotion: 1, promoted: 0 } };
+    const requirementsReviewed = { planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "awaiting_approval", promotionState: "none", candidateCount: 1, awaitingReview: 0, awaitingApproval: 1, awaitingPromotion: 0, promoted: 0 } };
+    const requirementsPromoted = { authority: { currentRevisionNumber: 2, layers: ["requirements"] }, planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 1, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 1, promoted: 0 } };
     const sharedDesignAdmitted = { planning: { status: "in_progress", candidateState: "admitted", reviewState: "awaiting_review", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 2, awaitingReview: 1, awaitingApproval: 0, awaitingPromotion: 0, promoted: 1 } };
-    const sharedDesignApproved = { planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 2, awaitingReview: 0, awaitingPromotion: 1, promoted: 1 } };
-    const bothPromoted = { workspace: { version: 4 }, authority: { currentRevisionNumber: 3, layers: ["requirements", "shared_design"] }, planning: { status: "promoted", candidateState: "promoted", reviewState: "reviewed", approvalState: "approved", promotionState: "promoted", candidateCount: 2, awaitingReview: 0, awaitingPromotion: 0, promoted: 2 } };
+    const sharedDesignReviewed = { planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "awaiting_approval", promotionState: "awaiting_promotion", candidateCount: 2, awaitingReview: 0, awaitingApproval: 1, awaitingPromotion: 0, promoted: 1 } };
+    const sharedDesignApproved = { planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 2, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 1, promoted: 1 } };
+    const bothPromoted = { workspace: { version: 4 }, authority: { currentRevisionNumber: 3, layers: ["requirements", "shared_design"] }, planning: { status: "promoted", candidateState: "promoted", reviewState: "reviewed", approvalState: "approved", promotionState: "promoted", candidateCount: 2, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 0, promoted: 2 } };
 
     const gets = [
       // Requirements authoring precedes all Shared Design work.
       guidedWith("author_requirements", false, { ...destination, planning: { status: "not_started", candidateCount: 0, awaitingReview: 0, awaitingPromotion: 0, promoted: 0 } }),
       guidedWith("review_planning_candidate", false, { ...destination, planning: { status: "in_progress", candidateState: "admitted", reviewState: "awaiting_review", approvalState: "none", promotionState: "none", candidateCount: 1, awaitingReview: 1, awaitingApproval: 0, awaitingPromotion: 0, promoted: 0 } }),
-      guidedWith("promote_planning_candidate", false, { ...destination, ...requirementsPromoted }),
+      // The ready review armed the distinct explicit Requirements approval.
+      guidedWith("approve_planning_candidate", true, { ...destination, ...requirementsReviewed }),
       // Successive projection: the shared design candidate was admitted.
       guidedWith("review_planning_candidate", false, { ...destination, ...sharedDesignAdmitted }),
-      // The external ready completion already recorded approval; resume at promotion.
-      guidedWith("promote_planning_candidate", false, { ...destination, ...sharedDesignApproved }),
+      // The ready review armed the distinct explicit Shared Design approval.
+      guidedWith("approve_planning_candidate", true, { ...destination, ...sharedDesignReviewed }),
+      guidedWith("author_delivery_ticket", false, { ...destination, ...bothPromoted }),
     ];
     const posts = [
       { body: guidedWith("author_requirements", false, { ...destination, handoff: handoff("author_requirements", { ...emptyTransfer(), members: ["feature_owner", "planner"], authorityLayers: ["requirements"] }, "Planner authoring and review are prepared through their existing owners.") }) },
       { body: guidedWith("review_planning_candidate", false, { ...destination, handoff: handoff("review_planning_candidate", { ...emptyTransfer(), members: ["feature_owner"], authorityLayers: ["requirements"] }, "The auditor review surface is prepared through its existing owner envelope.") }) },
+      // The confirmed Requirements approval advances to its promotion.
+      { body: guidedWith("promote_planning_candidate", false, { ...destination, ...requirementsPromoted }) },
       // After Requirements promotion the next stage is Author Shared Design.
       { body: guidedWith("author_shared_design", false, { ...destination, ...requirementsPromoted }) },
       { body: guidedWith("author_shared_design", false, { ...destination, handoff: handoff("author_shared_design", { ...emptyTransfer(), members: ["feature_owner", "planner"], authorityLayers: ["shared_design"] }, "Planner authoring and review are prepared through their existing owners.") }) },
       { body: guidedWith("review_planning_candidate", false, { ...destination, handoff: handoff("review_planning_candidate", { ...emptyTransfer(), members: ["feature_owner"], authorityLayers: ["shared_design"] }, "The auditor review surface is prepared through its existing owner envelope.") }) },
+      // The confirmed Shared Design approval advances to its promotion.
+      { body: guidedWith("promote_planning_candidate", false, { ...destination, ...sharedDesignApproved }) },
       { body: guidedWith("author_delivery_ticket", false, { ...destination, ...bothPromoted }) },
     ];
     installMock(gets, posts);
     const { user, queryClient } = await renderJourney();
 
     // Requirements authoring and review complete before external ready
-    // completion persists approval for the guided promotion resume.
+    // completion arms the distinct explicit approval for the guided resume.
     expect(await screen.findByRole("button", { name: "Author Requirements" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve planning candidate" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Author Requirements" }));
@@ -594,25 +622,163 @@ describe("Project to Feature workspace normal entry journeys", () => {
     await user.click(await screen.findByRole("button", { name: "Review planning candidate" }));
     expect(await screen.findByText("Closure members")).toBeInTheDocument();
     await freshCheckAndResume(user, queryClient);
-    await user.click(await screen.findByRole("button", { name: "Promote planning candidate" }));
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(await screen.findByRole("button", { name: "Approve planning candidate" }));
+    expect(await screen.findByRole("button", { name: "Promote planning candidate" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Promote planning candidate" }));
 
     // Only after Requirements promotion does Shared Design appear.
     expect(await screen.findByRole("button", { name: "Author Shared Design" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Review planning candidate" })).not.toBeInTheDocument();
 
-    // Shared Design: author, admit, review, external approval, promotion.
+    // Shared Design: author, admit, review, explicit approval, promotion.
     await user.click(await screen.findByRole("button", { name: "Author Shared Design" }));
     expect(await screen.findByText("shared_design")).toBeInTheDocument();
     await freshCheckAndResume(user, queryClient);
     await user.click(await screen.findByRole("button", { name: "Review planning candidate" }));
     expect(await screen.findByText("Closure members")).toBeInTheDocument();
     await freshCheckAndResume(user, queryClient);
-    await user.click(await screen.findByRole("button", { name: "Promote planning candidate" }));
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(await screen.findByRole("button", { name: "Approve planning candidate" }));
+    expect(await screen.findByRole("button", { name: "Promote planning candidate" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Promote planning candidate" }));
 
     // Only after both families are promoted does the Delivery-stage action
     // appear; return/resume still reaches the final state.
     expect(await screen.findByRole("button", { name: "Author Delivery Ticket" })).toBeInTheDocument();
     await returnProject(user);
     expect(await screen.findByRole("button", { name: "Author Delivery Ticket" })).toBeInTheDocument();
+  });
+
+  it("covers the AC6 normal-entry journey from Delivery Ticket authoring through both explicit approvals to Run continuation and visible resume", async () => {
+    // Every projection is server-emittable. The frontier appears only after
+    // the owner-backed production transition (promote_planning_candidate)
+    // publishes the produced Ticket; the client never manufactures it.
+    const gets = [
+      // The closed direct-delivery workspace waits for Delivery Ticket authoring.
+      guidedWith("author_delivery_ticket", false, { planning: { status: "not_started", candidateState: "none", reviewState: "none", approvalState: "none", promotionState: "none", candidateCount: 0, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 0, promoted: 0 } }),
+      // The planner admitted the Delivery Ticket candidate through the owner.
+      guidedWith("review_planning_candidate", false, { planning: { status: "in_progress", candidateState: "admitted", reviewState: "awaiting_review", approvalState: "none", promotionState: "none", candidateCount: 1, awaitingReview: 1, awaitingApproval: 0, awaitingPromotion: 0, promoted: 0 } }),
+      // The ready review armed the distinct explicit planning approval.
+      guidedWith("approve_planning_candidate", true, { planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "awaiting_approval", promotionState: "none", candidateCount: 1, awaitingReview: 0, awaitingApproval: 1, awaitingPromotion: 0, promoted: 0 } }),
+      // The planner admitted the authored Brief through the delivery owner.
+      guidedWith("review_ticket_design_brief", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "authored" }, diagnostics: { delivery: ["ticket_design_brief=authored"] } }),
+      // The ready brief review armed the distinct explicit brief approval.
+      guidedWith("approve_ticket_design_brief", true, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "authored" }, diagnostics: { delivery: ["ticket_design_brief=reviewed_ready"] } }),
+      // The Run owner advanced the launched Run to its source-backed continuation.
+      guidedWith("continue_run", false, { workspace: { version: 4 }, delivery: { selectionState: "consumed", briefState: "approved", packageState: "approved", runState: "executing" } }),
+      // Visible Project -> Feature resume presents the same continuation.
+      guidedWith("continue_run", false, { workspace: { version: 4 }, delivery: { selectionState: "consumed", briefState: "approved", packageState: "approved", runState: "executing" } }),
+    ];
+    const posts = [
+      // Authoring transfers the Delivery Ticket to the planner.delivery_ticket operation.
+      { body: guidedWith("author_delivery_ticket", false, { handoff: handoff("author_delivery_ticket", { ...emptyTransfer(), ticket: { ticketId: "", revisionNumber: 0, readiness: [], operationId: "planner.delivery_ticket" } }, "Enter the Delivery Ticket authoring operation (planner.delivery_ticket), then return here when the resulting Ticket is ready for selection.") }) },
+      // The read-only auditor review handoff for the admitted candidate.
+      { body: guidedWith("review_planning_candidate", false, { handoff: handoff("review_planning_candidate", { ...emptyTransfer(), members: ["feature_owner"], authorityLayers: ["delivery_ticket"] }, "The current Delivery Ticket candidate is prepared for the exact read-only auditor.delivery_ticket_review handoff.") }) },
+      // The confirmed planning candidate approval advances to production.
+      { body: guidedWith("promote_planning_candidate", false, { planning: { status: "in_progress", candidateState: "reviewed", reviewState: "reviewed", approvalState: "approved", promotionState: "awaiting_promotion", candidateCount: 1, awaitingReview: 0, awaitingApproval: 0, awaitingPromotion: 1, promoted: 0 } }) },
+      // The owner-backed production publishes the produced Ticket into the frontier.
+      { body: guidedBody({ workspace: { version: 3 }, delivery: { frontier: [frontierEntry], selectionState: "none" }, ...primaryAction("select_delivery_ticket", true) }) },
+      // Selecting the frontier ticket makes Brief authoring the only successor.
+      { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "none" }, ...primaryAction("author_ticket_design_brief", false) }) },
+      { body: guidedWith("author_ticket_design_brief", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "none" }, handoff: handoff("author_ticket_design_brief", { ...emptyTransfer(), ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["brief_required"], operationId: "planner.ticket_design_brief" } }, "Author the selected Ticket Design Brief through its planner operation.") }) },
+      { body: guidedWith("review_ticket_design_brief", false, { workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "authored" }, handoff: handoff("review_ticket_design_brief", { ...emptyTransfer(), ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["brief_admitted"], operationId: "auditor.ticket_design_brief_review" } }, "Review the admissible Ticket Design Brief for the selected Delivery Ticket through the auditor.ticket_design_brief_review surface.") }) },
+      // The confirmed brief approval is the distinct mutation advancing to package preparation.
+      { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "approved", packageState: "none" }, ...primaryAction("prepare_package", false) }) },
+      { body: guidedBody({ workspace: { version: 3 }, delivery: { selectionState: "active", briefState: "approved", packageState: "prepared" }, diagnostics: { delivery: ["execution_package_prepared"] }, ...primaryAction("approve_package", true) }) },
+      { body: guidedBody({ workspace: { version: 4 }, delivery: { selectionState: "consumed", briefState: "approved", packageState: "approved", runState: "setup_ready" }, ...primaryAction("launch_run", false) }) },
+      { body: guidedWith("launch_run", false, { workspace: { version: 4 }, delivery: { selectionState: "consumed", briefState: "approved", packageState: "approved", runState: "setup_ready" }, handoff: handoff("launch_run", { ...emptyTransfer(), run: { runId: "run-1", status: "setup_ready", repoTarget: "relay", branch: "main", baseCommit: "a".repeat(40), packageId: "package-1" } }, "The package Run is identified through its existing owner.") }) },
+      { body: guidedWith("continue_run", false, { workspace: { version: 4 }, delivery: { selectionState: "consumed", briefState: "approved", packageState: "approved", runState: "executing" }, handoff: handoff("continue_run", { ...emptyTransfer(), run: { runId: "run-1", status: "executing", repoTarget: "relay", branch: "main", baseCommit: "a".repeat(40), packageId: "package-1" } }, "The active package Run is identified through its existing owner.") }) },
+    ];
+    const mocks = installMock(gets, posts);
+    const { user, queryClient } = await renderJourney();
+
+    // Author Delivery Ticket hands off to the planner.delivery_ticket operation.
+    expect(await screen.findByRole("button", { name: "Author Delivery Ticket" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve planning candidate" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Author Delivery Ticket" }));
+    expect((await screen.findAllByText(/planner\.delivery_ticket/)).length).toBeGreaterThan(0);
+
+    // The planner admitted the candidate; the read-only auditor review handoff
+    // is primary and no approval is exposed yet.
+    await freshCheckAndResume(user, queryClient);
+    await user.click(await screen.findByRole("button", { name: "Review planning candidate" }));
+    expect(await screen.findByText(/auditor\.delivery_ticket_review/)).toBeInTheDocument();
+
+    // The ready review armed the distinct explicit confirmed planning approval.
+    await freshCheckAndResume(user, queryClient);
+    expect(screen.getByRole("button", { name: "Approve planning candidate" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Promote planning candidate" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Approve planning candidate" }));
+    expect(await screen.findByRole("button", { name: "Promote planning candidate" })).toBeInTheDocument();
+
+    // The owner-backed production publishes the produced Ticket into the
+    // frontier; only this transition makes selection visible.
+    await user.click(screen.getByRole("button", { name: "Promote planning candidate" }));
+    expect(await screen.findByRole("button", { name: "Select delivery ticket" })).toBeInTheDocument();
+    expect(screen.getByText("P5-T1 v2 (priority 60, relay @ main)")).toBeInTheDocument();
+
+    // Select the frontier ticket server-side, then author the Brief.
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Select delivery ticket" }));
+    expect(await screen.findByRole("button", { name: "Author Ticket Design Brief" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Prepare package" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Author Ticket Design Brief" }));
+    expect(await screen.findByText(/planner\.ticket_design_brief/)).toBeInTheDocument();
+
+    // The planner admitted the Brief; the read-only auditor review handoff is
+    // primary and the explicit approval is not exposed yet.
+    await freshCheckAndResume(user, queryClient);
+    await user.click(await screen.findByRole("button", { name: "Review Ticket Design Brief" }));
+    expect((await screen.findAllByText(/auditor\.ticket_design_brief_review/)).length).toBeGreaterThan(0);
+
+    // The ready brief review armed the distinct explicit confirmed approval.
+    await freshCheckAndResume(user, queryClient);
+    expect(screen.getByRole("button", { name: "Approve Ticket Design Brief" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Prepare package" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Approve Ticket Design Brief" }));
+    expect(await screen.findByRole("button", { name: "Prepare package" })).toBeInTheDocument();
+
+    // Prepare the execution package, then approve it explicitly.
+    await user.click(screen.getByRole("button", { name: "Prepare package" }));
+    expect(await screen.findByText("execution_package_prepared")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    await user.click(screen.getByRole("button", { name: "Approve package" }));
+    expect(await screen.findByRole("button", { name: "Launch run" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Launch run" }));
+    expect(await screen.findByText(/run-1/)).toBeInTheDocument();
+
+    // The Run owner advanced the launched Run; continue, not relaunch.
+    await freshCheckAndResume(user, queryClient);
+    expect(await screen.findByRole("button", { name: "Continue run" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Launch run" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue run" }));
+    expect((await screen.findAllByText(/executing/)).length).toBeGreaterThan(0);
+
+    // Return to the Project and resume the Feature through visible navigation.
+    await returnProject(user);
+    expect(await screen.findByRole("button", { name: "Continue run" })).toBeInTheDocument();
+
+    const expectedIntents = [
+      { expectedVersion: 2, action: "author_delivery_ticket", confirmation: false },
+      { expectedVersion: 2, action: "review_planning_candidate", confirmation: false },
+      { expectedVersion: 2, action: "approve_planning_candidate", confirmation: true },
+      { expectedVersion: 2, action: "promote_planning_candidate", confirmation: false },
+      { expectedVersion: 3, action: "select_delivery_ticket", confirmation: true },
+      { expectedVersion: 3, action: "author_ticket_design_brief", confirmation: false },
+      { expectedVersion: 3, action: "review_ticket_design_brief", confirmation: false },
+      { expectedVersion: 3, action: "approve_ticket_design_brief", confirmation: true },
+      { expectedVersion: 3, action: "prepare_package", confirmation: false },
+      { expectedVersion: 3, action: "approve_package", confirmation: true },
+      { expectedVersion: 4, action: "launch_run", confirmation: false },
+      { expectedVersion: 4, action: "continue_run", confirmation: false },
+    ];
+    expect(mocks.postBodies).toHaveLength(expectedIntents.length);
+    mocks.postBodies.forEach((body, index) => expectStableGuidedIntent(body, expectedIntents[index]));
   });
 });
