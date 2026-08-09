@@ -398,6 +398,21 @@ func (s *Service) EvaluateCompletion(ctx context.Context, workspaceID string) (C
 }
 
 func (s *Service) Complete(ctx context.Context, input CompletionInput) (CompletionResult, error) {
+	return s.recordCompletionDecision(ctx, input, "completed")
+}
+
+// Abandon records an immutable abandoned closing decision on the same current
+// basis and packet evidence as completion. Abandonment eligibility is exactly
+// the completion gate matrix: every authoritative validation, exact discovery
+// packet check, and current authority basis check runs before any mutation, and
+// the same typed confirmation, version conflict, recorded, and not-ready errors
+// are returned. An abandoned decision is not a completion: it is reopened by
+// the same source-backed reopen path and never becomes current automatically.
+func (s *Service) Abandon(ctx context.Context, input CompletionInput) (CompletionResult, error) {
+	return s.recordCompletionDecision(ctx, input, "abandoned")
+}
+
+func (s *Service) recordCompletionDecision(ctx context.Context, input CompletionInput, decision string) (CompletionResult, error) {
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	if input.WorkspaceID == "" || input.ExpectedVersion < 1 {
 		return CompletionResult{}, ErrInvalidAuthorityRequest
@@ -483,7 +498,7 @@ func (s *Service) Complete(ctx context.Context, input CompletionInput) (Completi
 			AuthorityRevisionRowID:      authority.ID,
 			SourceClosureRowID:          authority.SourceClosureRowID.Int64,
 			DiscoveryClosurePacketRowID: packetAssociation,
-			Decision:                    "completed",
+			Decision:                    decision,
 		})
 		if err != nil {
 			return err

@@ -71,7 +71,7 @@ func TestGuidedIntegrityComposesTypedDiscoveryAuthorityPlanningIdentities(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval, ReviewedBytes: bytes}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "integrity review", CreatedIdentity: "auditor"})

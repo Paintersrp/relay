@@ -215,6 +215,18 @@ func projectFeatureWorkspaceSummary(workspace workflowstore.FeatureWorkspace, gu
 	if recoveryRequired && blockedReason == "" {
 		blockedReason = "Recovery is required before normal guided progression can resume."
 	}
+	if guided.Completion.Decision == "abandoned" {
+		// The server-projected decision visibly says the workspace was
+		// abandoned; the resume row is the projected reopen route (the guided
+		// primary action after an abandoned closing decision).
+		return ProjectFeatureWorkspaceSummary{
+			Workspace:          workspace,
+			ProgressionSummary: "Feature workspace was abandoned.",
+			ResumeSummary:      resume,
+			Blocked:            false,
+			RecoveryCategory:   guided.Recovery.Category,
+		}
+	}
 	return ProjectFeatureWorkspaceSummary{
 		Workspace: workspace, ProgressionSummary: "Current guided action: " + resume + ".", ResumeSummary: resume,
 		Blocked: !primary.Enabled || recoveryRequired, BlockedReason: blockedReason, RecoveryCategory: guided.Recovery.Category,

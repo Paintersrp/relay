@@ -71,12 +71,16 @@ const (
 )
 
 // CompleteBriefReviewInput records the bounded disposition of the read-only
-// auditor review of the current brief. No findings or prose are accepted or
-// persisted.
+// auditor review of the current brief. ReviewedBytes identifies the exact
+// bytes the auditor reviewed; the owner recalculates their SHA-256 and
+// requires them to match the verified current admissible brief bytes and
+// digest before either disposition is accepted. No findings or prose are
+// accepted or persisted.
 type CompleteBriefReviewInput struct {
 	WorkspaceID      string
 	ReviewerIdentity string
 	Disposition      TicketDesignBriefReviewDisposition
+	ReviewedBytes    []byte
 }
 
 type TicketDesignBriefReviewResult struct {
@@ -364,10 +368,15 @@ func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesi
 	return result, nil
 }
 
-// CompleteTicketDesignBriefReview validates the current Brief and returns a
-// transient result. It never writes review material or lifecycle state.
+// CompleteTicketDesignBriefReview validates that the reviewed bytes identify
+// the exact current Brief and returns a transient result. The server recalculates
+// the SHA-256 of the supplied reviewed bytes and requires byte-for-byte and
+// digest equality with the verified current admissible artifact before accepting
+// either disposition, so a review composed against a replaced or stale brief is
+// rejected and no result ever attaches to a replacement. It never writes review
+// material or lifecycle state.
 func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input CompleteBriefReviewInput) (TicketDesignBriefReviewResult, error) {
-	if !nonBlank(input.WorkspaceID) || !nonBlank(input.ReviewerIdentity) ||
+	if !nonBlank(input.WorkspaceID) || !nonBlank(input.ReviewerIdentity) || len(input.ReviewedBytes) == 0 ||
 		(input.Disposition != TicketDesignBriefReviewReadyForApproval && input.Disposition != TicketDesignBriefReviewNeedsRevision) {
 		return TicketDesignBriefReviewResult{}, ErrTicketDesignBriefReview
 	}
@@ -400,16 +409,19 @@ func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input Com
 		if err != nil || digestCandidate(bytes) != brief.ArtifactSha256 || int64(len(bytes)) != brief.ArtifactSizeBytes {
 			return ErrTicketDesignBriefBytesMismatch
 		}
+		if digestCandidate(input.ReviewedBytes) != brief.ArtifactSha256 || !equalBytes(input.ReviewedBytes, bytes) {
+			return ErrTicketDesignBriefBytesMismatch
+		}
 		result = TicketDesignBriefReviewResult{Brief: brief, Disposition: input.Disposition, Review: TicketDesignBriefReviewCompletion{ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition)}}
 		if input.Disposition == TicketDesignBriefReviewReadyForApproval {
 			// The private exact continuation is retained only in process
 			// memory for the distinct explicit approval mutation.
-			s.setReviewContinuation(workspace.WorkspaceID, &briefReviewContinuation{workspaceID: workspace.WorkspaceID, briefID: brief.BriefID, sha256: brief.ArtifactSha256, sizeBytes: brief.ArtifactSizeBytes, selectionRowID: selection.ID, revisionRowID: revision.ID, bytes: append([]byte(nil), bytes...)})
+			s.setReviewContinuation(workspace.WorkspaceID, &briefReviewContinuation{workspaceID: workspace.WorkspaceID, briefID: brief.BriefID, sha256: brief.ArtifactSha256, sizeBytes: brief.ArtifactSizeBytes, selectionRowID: selection.ID, revisionRowID: revision.ID, bytes: append([]byte(nil), input.ReviewedBytes...)})
 		} else {
 			// A needs_revision review clears any pending ready continuation and
 			// returns only the ordinary planner.ticket_design_brief refresh.
 			s.clearReviewContinuation(workspace.WorkspaceID)
-			result.Refresh = &TicketDesignBriefReviewRefresh{OperationID: "planner.ticket_design_brief", AuditorReviewResult: string(input.Disposition), ReviewedBrief: append([]byte(nil), bytes...)}
+			result.Refresh = &TicketDesignBriefReviewRefresh{OperationID: "planner.ticket_design_brief", AuditorReviewResult: string(input.Disposition), ReviewedBrief: append([]byte(nil), input.ReviewedBytes...)}
 		}
 		return nil
 	})

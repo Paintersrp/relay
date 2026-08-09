@@ -42,7 +42,7 @@ func TestPrepareCurrentSelectionResolvesApprovedBriefServerSide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ticketsService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}, tickets.TicketDesignBriefApprovalInput{
+	if _, err := ticketsService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}, tickets.TicketDesignBriefApprovalInput{
 		WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version,
 		OperatorConfirmationEvidence: "reviewed and approved", CreatedIdentity: "auditor",
 	}); err != nil {
@@ -94,7 +94,7 @@ func TestPrepareCurrentSelectionDoesNotUseNeedsRevisionBriefAfterReplacement(t *
 		t.Fatal(err)
 	}
 	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, tickets.CompleteBriefReviewInput{
-		WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewNeedsRevision,
+		WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief),
 	}); err != nil {
 		t.Fatal(err)
 	}

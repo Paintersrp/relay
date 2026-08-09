@@ -4,6 +4,7 @@ package features
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -369,12 +370,16 @@ type guidedActionRequest struct {
 	Continuation    string `json:"continuation"`
 }
 
-// candidateReviewCompletionRequest carries the bounded review disposition; the
-// current planning candidate is resolved server-side and no findings, prose,
-// approval evidence, or internal identities are accepted.
+// candidateReviewCompletionRequest carries the bounded review disposition and
+// the exact reviewed bytes the auditor reviewed (base64). The current planning
+// candidate is resolved server-side, which recalculates their SHA-256 and
+// compares them against the verified current admissible artifact before either
+// disposition is accepted; no findings, prose, approval evidence, or internal
+// identities are accepted.
 type candidateReviewCompletionRequest struct {
-	ReviewerIdentity string `json:"reviewerIdentity"`
-	Disposition      string `json:"disposition"`
+	ReviewerIdentity    string `json:"reviewerIdentity"`
+	Disposition         string `json:"disposition"`
+	ReviewedBytesBase64 string `json:"bytesBase64"`
 }
 
 // candidateApprovalRequest carries only the confirmation evidence and identity
@@ -589,7 +594,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "abandon_feature", "legacy_recovery",
 		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "approve_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
@@ -712,11 +717,14 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 }
 
 // CompletePlanningCandidateReview is the bounded completion entry the external
-// auditor uses after performing the read-only planning candidate review. It
-// records only the bounded disposition over the server-resolved candidate and
-// never performs or fabricates approval: a ready disposition returns ready
-// without any approval, and a needs-revision disposition returns the exact
-// planner refresh input.
+// auditor uses after performing the read-only planning candidate review. The
+// request must carry the exact bytes the auditor reviewed (base64); the owner
+// recalculates their SHA-256 and rejects the completion unless they match the
+// verified current admissible candidate, so a stale or replaced candidate can
+// never receive a result. It records only the bounded disposition over the
+// server-resolved candidate and never performs or fabricates approval: a ready
+// disposition returns ready without any approval, and a needs-revision
+// disposition returns the exact planner refresh input.
 func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter, r *http.Request) {
 	if h.guided == nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Planning review service is unavailable")
@@ -741,9 +749,14 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		badRequest(w, "Planning candidate review requires a reviewer identity")
 		return
 	}
+	reviewedBytes, err := base64.StdEncoding.DecodeString(request.ReviewedBytesBase64)
+	if err != nil || len(reviewedBytes) == 0 {
+		badRequest(w, "Planning candidate review requires the exact reviewed bytes")
+		return
+	}
 	result, err := completion.CompletePlanningCandidateReview(r.Context(), featureapp.CompleteCandidateReviewInput{
 		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
-		Disposition: disposition,
+		Disposition: disposition, ReviewedBytes: reviewedBytes,
 	})
 	if err != nil {
 		writeWorkspaceError(w, err)
@@ -878,7 +891,7 @@ func guidedProjectionDTO(detail wayfinder.WorkspaceDetail, assessment GuidedAsse
 		"discovery":  map[string]any{"state": string(assessment.State), "destination": string(assessment.Destination), "rationale": assessment.Rationale, "continuation": assessment.Continuation, "currentness": string(assessment.Currentness)},
 		"authority":  map[string]any{"currentRevisionNumber": currentAuthorityRevision, "revisions": authorityRevisions},
 		"planning":   map[string]any{"readiness": string(currentness.Readiness), "status": guidedPlanningStatus(currentness), "recoveryCategory": currentness.RecoveryCategory},
-		"completion": map[string]any{"gates": gates, "ready": completionReady, "recorded": completion.CurrentDecision != nil},
+		"completion": map[string]any{"gates": gates, "ready": completionReady, "recorded": completion.CurrentDecision != nil, "decision": completionDecisionValue(completion.CurrentDecision)},
 		"diagnostics": map[string]any{
 			"history":   map[string]any{"discoveryCurrentness": string(assessment.Currentness), "status": guidedHistoryStatus(assessment, currentness)},
 			"stale":     map[string]any{"readiness": string(currentness.Readiness), "owner": currentness.StaleOwner, "blockedOperation": currentness.BlockedOperation, "effect": currentness.Effect, "recoveryCategory": currentness.RecoveryCategory},
@@ -910,7 +923,7 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "needsRevision": value.Planning.NeedsRevision, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
 		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "briefState": value.Delivery.BriefState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
 		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
-		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded},
+		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded, "decision": value.Completion.Decision},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},
 		"diagnostics":      map[string]any{"stale": value.Diagnostics.Stale, "historical": value.Diagnostics.Historical, "discovery": value.Diagnostics.Discovery, "delivery": value.Diagnostics.Delivery, "prototype": value.Diagnostics.Prototype, "integrity": guidedIntegrityDTO(value.Diagnostics.Integrity)},
 		"availableActions": availableActions, "primaryAction": string(value.PrimaryAction.Action),
@@ -1065,6 +1078,16 @@ func guidedCompletionGatesDTO(values []featureapp.GuidedCompletionGate) []map[st
 		result = append(result, map[string]any{"name": value.Name, "ready": value.Ready})
 	}
 	return result
+}
+
+// completionDecisionValue projects the current immutable closing decision
+// ("completed" or "abandoned") for the compatibility surface. The legacy
+// decision read is the operations projection of the same owner row.
+func completionDecisionValue(value *appoperations.FeatureCompletionDecision) string {
+	if value == nil {
+		return ""
+	}
+	return value.Decision
 }
 func guidedHandoffDTO(value *featureapp.GuidedHandoff) any {
 	if value == nil {
@@ -1368,7 +1391,7 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently eligible. Reload the completion gates.")
 	case errors.Is(err, featureapp.ErrFeatureCompletionConfirmation):
 		badRequest(w, err.Error())
-	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated), errors.Is(err, featureapp.ErrInvalidDiscoveryConsequence), errors.Is(err, featureapp.ErrDiscoveryInvalidDestination), errors.Is(err, featureapp.ErrCandidateReview), errors.Is(err, featureapp.ErrCandidateReviewIncomplete):
+	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated), errors.Is(err, featureapp.ErrInvalidDiscoveryConsequence), errors.Is(err, featureapp.ErrDiscoveryInvalidDestination), errors.Is(err, featureapp.ErrCandidateReview), errors.Is(err, featureapp.ErrCandidateReviewIncomplete), errors.Is(err, featureapp.ErrCandidateBytesMismatch):
 		badRequest(w, err.Error())
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature workspace operation failed")

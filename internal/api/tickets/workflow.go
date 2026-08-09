@@ -191,12 +191,16 @@ type ticketDesignBriefAdmissionRequest struct {
 	CreatedIdentity string `json:"createdIdentity"`
 }
 
-// reviewCompletionRequest carries only the bounded disposition; the current
-// brief is resolved server-side and no findings, prose, approval evidence, or
-// identity beyond the reviewer are accepted.
+// reviewCompletionRequest carries the bounded disposition and the exact
+// reviewed bytes the auditor reviewed (base64). The current brief is resolved
+// server-side, which recalculates their SHA-256 and compares them against the
+// verified current admissible artifact before either disposition is accepted;
+// no findings, prose, approval evidence, or identity beyond the reviewer are
+// accepted.
 type reviewCompletionRequest struct {
-	ReviewerIdentity string `json:"reviewerIdentity"`
-	Disposition      string `json:"disposition"`
+	ReviewerIdentity    string `json:"reviewerIdentity"`
+	Disposition         string `json:"disposition"`
+	ReviewedBytesBase64 string `json:"bytesBase64"`
 }
 
 // ticketDesignBriefApprovalRequest carries only the explicit approval
@@ -374,10 +378,13 @@ func (h *WorkflowHandler) AdmitTicketDesignBrief(w http.ResponseWriter, r *http.
 }
 
 // CompleteTicketDesignBriefReview is the bounded completion entry the external
-// auditor uses after performing the read-only review. It records only the
-// bounded disposition over the server-resolved brief and never performs or
-// records approval; ready approval is a distinct transition on the separate
-// approval route.
+// auditor uses after performing the read-only review. The request must carry
+// the exact bytes the auditor reviewed (base64); the owner recalculates their
+// SHA-256 and rejects the completion unless they match the verified current
+// admissible brief, so a stale or replaced brief can never receive a result. It
+// records only the bounded disposition over the server-resolved brief and never
+// performs or records approval; ready approval is a distinct transition on the
+// separate approval route.
 func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter, r *http.Request) {
 	var request reviewCompletionRequest
 	if !decodeStrict(r, &request) {
@@ -389,8 +396,13 @@ func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter,
 		badRequest(w, "Invalid Ticket Design Brief review disposition")
 		return
 	}
+	reviewedBytes, err := base64.StdEncoding.DecodeString(request.ReviewedBytesBase64)
+	if err != nil || len(reviewedBytes) == 0 {
+		badRequest(w, "Ticket Design Brief review requires the exact reviewed bytes")
+		return
+	}
 	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), apptickets.CompleteBriefReviewInput{
-		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity), Disposition: disposition,
+		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity), Disposition: disposition, ReviewedBytes: reviewedBytes,
 	})
 	if err != nil {
 		writeTicketError(w, err)

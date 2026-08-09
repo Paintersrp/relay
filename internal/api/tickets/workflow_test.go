@@ -318,8 +318,8 @@ func TestTicketDesignBriefAdmissionRouteRejectsInvalidBytes(t *testing.T) {
 func TestReviewCompletionRouteReadyReviewCreatesNoApproval(t *testing.T) {
 	service := &fakeWorkflow{}
 	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`)))
-	if response.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled || service.reviewCompletionInput.WorkspaceID != "workspace-api" || service.reviewCompletionInput.ReviewerIdentity != "auditor" || service.reviewCompletionInput.Disposition != apptickets.TicketDesignBriefReviewReadyForApproval {
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
+	if response.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled || service.reviewCompletionInput.WorkspaceID != "workspace-api" || service.reviewCompletionInput.ReviewerIdentity != "auditor" || service.reviewCompletionInput.Disposition != apptickets.TicketDesignBriefReviewReadyForApproval || string(service.reviewCompletionInput.ReviewedBytes) != "# Ticket Design Brief\n" {
 		t.Fatalf("response = %d %s completion = %#v approval called = %t", response.Code, response.Body.String(), service.reviewCompletionInput, service.approveBriefCalled)
 	}
 	if !strings.Contains(response.Body.String(), `"disposition":"ready_for_approval"`) || strings.Contains(response.Body.String(), `"approvalId"`) || strings.Contains(response.Body.String(), `"refresh"`) {
@@ -330,9 +330,33 @@ func TestReviewCompletionRouteReadyReviewCreatesNoApproval(t *testing.T) {
 func TestReviewCompletionRouteRejectsMissingIdentity(t *testing.T) {
 	service := &fakeWorkflow{err: apptickets.ErrTicketDesignBriefReview}
 	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"disposition":"needs_revision"}`)))
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"disposition":"needs_revision","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
 	if response.Code != http.StatusBadRequest || !service.reviewCompletionCalled || strings.TrimSpace(service.reviewCompletionInput.ReviewerIdentity) != "" {
 		t.Fatalf("response = %d %s completion = %#v", response.Code, response.Body.String(), service.reviewCompletionInput)
+	}
+}
+
+func TestReviewCompletionRouteRejectsMissingOrInvalidReviewedBytes(t *testing.T) {
+	for _, body := range []string{
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`,
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"not-base64"}`,
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":""}`,
+	} {
+		service := &fakeWorkflow{}
+		response := httptest.NewRecorder()
+		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest || service.reviewCompletionCalled {
+			t.Fatalf("body=%s status=%d review=%t", body, response.Code, service.reviewCompletionCalled)
+		}
+	}
+}
+
+func TestReviewCompletionRouteMapsStaleReviewedBytesRejection(t *testing.T) {
+	service := &fakeWorkflow{err: apptickets.ErrTicketDesignBriefBytesMismatch}
+	response := httptest.NewRecorder()
+	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "ticket design brief bytes or digest mismatch") {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -374,7 +398,7 @@ func TestApprovalRouteConsumesReadyReviewWithExplicitEvidence(t *testing.T) {
 	service := &fakeWorkflow{}
 	router := ticketRouter(service, &fakeRead{})
 	review := httptest.NewRecorder()
-	router.ServeHTTP(review, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`)))
+	router.ServeHTTP(review, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
 	if review.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled {
 		t.Fatalf("review response = %d %s approval called = %t", review.Code, review.Body.String(), service.approveBriefCalled)
 	}

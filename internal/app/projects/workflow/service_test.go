@@ -250,3 +250,43 @@ func (r *projectGuidedProjectionReader) ReadGuidedProjection(_ context.Context, 
 	r.workspaceIDs = append(r.workspaceIDs, workspaceID)
 	return r.projection, nil
 }
+
+func TestProjectFeatureWorkspaceSummarySaysAbandonedWithReopenResume(t *testing.T) {
+	ctx := context.Background()
+	store := openProjectTestStore(t)
+	reader := &projectGuidedProjectionReader{projection: featureapp.GuidedFeatureProjection{
+		PrimaryAction: featureapp.GuidedFeatureActionAvailability{
+			Action: featureapp.GuidedActionReopenDiscovery, Enabled: true, RequiresConfirmation: true,
+		},
+		Completion: featureapp.GuidedCompletionSection{Recorded: true, Decision: "abandoned"},
+	}}
+	service, err := NewServiceWithIDs(store, &projectTestIDs{}, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := service.CreateProject(ctx, CreateProjectInput{Name: "Abandoned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateFeatureWorkspace(ctx, workflowstore.CreateFeatureWorkspaceParams{
+			WorkspaceID: "workspace-abandoned", ProjectRowID: project.ID, FeatureSlug: "payments",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := service.ListFeatureWorkspaces(ctx, ListFeatureWorkspacesInput{ProjectID: project.ProjectID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %+v", summaries)
+	}
+	got := summaries[0]
+	// The server-projected decision visibly says abandoned and the resume row
+	// carries the projected reopen route meaning; no client inference is used.
+	if got.ProgressionSummary != "Feature workspace was abandoned." || got.ResumeSummary != "reopen_discovery" || got.Blocked {
+		t.Fatalf("summary = %+v", got)
+	}
+}

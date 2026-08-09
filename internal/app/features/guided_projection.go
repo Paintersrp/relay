@@ -149,8 +149,14 @@ type GuidedPrototypeSection struct {
 	Diagnostics                                                    []string
 }
 type GuidedCompletionSection struct {
-	Gates           []GuidedCompletionGate
-	Ready, Recorded bool
+	Gates    []GuidedCompletionGate
+	Ready    bool
+	Recorded bool
+	// Decision is the server-projected closing decision of the current
+	// immutable decision row: "completed" or "abandoned". It is empty when no
+	// current decision is recorded. Clients display this outcome; they never
+	// infer it from lifecycle state.
+	Decision string
 }
 type GuidedRecoverySection struct {
 	State, Category string
@@ -774,6 +780,10 @@ func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, pr
 		recovery.State = "required"
 		recovery.Available = []string{currentness.RecoveryCategory}
 	}
+	decisionValue := ""
+	if completion.CurrentDecision != nil {
+		decisionValue = completion.CurrentDecision.Decision
+	}
 	return GuidedFeatureProjection{
 		Workspace:   GuidedWorkspaceSection{WorkspaceID: workspace.WorkspaceID, FeatureSlug: workspace.FeatureSlug, State: workspace.State, Version: workspace.Version, CreatedAt: workspace.CreatedAt, UpdatedAt: workspace.UpdatedAt},
 		Project:     GuidedProjectSection{ProjectID: project.ProjectID, Name: project.Name},
@@ -781,7 +791,7 @@ func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, pr
 		Currentness: GuidedCurrentnessSection{Readiness: string(currentness.Readiness), Owner: currentness.StaleOwner, BlockedOperation: currentness.BlockedOperation, Effect: currentness.Effect, RecoveryCategory: currentness.RecoveryCategory},
 		Authority:   GuidedAuthoritySection{CurrentRevisionNumber: currentRevisionNumber, Layers: append([]string(nil), layers...)},
 		Planning:    planning, Delivery: delivery, Prototype: prototype,
-		Completion:       GuidedCompletionSection{Gates: gates, Ready: GuidedCompletionReady(gates), Recorded: completion.CurrentDecision != nil},
+		Completion:       GuidedCompletionSection{Gates: gates, Ready: GuidedCompletionReady(gates), Recorded: completion.CurrentDecision != nil, Decision: decisionValue},
 		Recovery:         recovery,
 		Diagnostics:      GuidedDiagnosticsSection{Stale: nonEmpty(currentness.StaleOwner, currentness.BlockedOperation, currentness.Effect), Historical: guidedHistoricalDiagnostics(currentness, assessment), Discovery: append([]string(nil), assessment.Blockers...), Delivery: append([]string(nil), delivery.Diagnostics...), Prototype: append([]string(nil), prototype.Diagnostics...)},
 		AvailableActions: append([]GuidedFeatureActionAvailability(nil), decision.AvailableActions...),
@@ -1092,15 +1102,27 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		return GuidedActionResult{}, ErrVersionConflict
 	}
 	requested := GuidedFeatureAction(input.Action)
-	// The guided boundary executes exactly the presently enabled primary
-	// action. Remaining advertised actions are display surface for the
-	// operator; attempting them is rejected so the journey cannot advance out
-	// of sequence.
-	if before.PrimaryAction.Action != requested || !before.PrimaryAction.Enabled {
-		return GuidedActionResult{}, ErrGuidedActionBlocked
-	}
-	if before.PrimaryAction.RequiresConfirmation && !input.Confirmation {
-		return GuidedActionResult{}, ErrFeatureCompletionConfirmation
+	// The guided boundary executes exactly the presently enabled primary action
+	// or the enabled secondary abandonment action. Abandonment is the only
+	// accepted secondary: it re-reads the projection and version immediately
+	// before dispatch and re-checks its own explicit confirmation, exactly like
+	// any other confirmed mutation. Remaining advertised actions are display
+	// surface for the operator; attempting them is rejected so the journey
+	// cannot advance out of sequence.
+	if requested == GuidedActionAbandonFeature {
+		if !guidedActionAvailable(before.AvailableActions, GuidedActionAbandonFeature) {
+			return GuidedActionResult{}, ErrGuidedActionBlocked
+		}
+		if !input.Confirmation {
+			return GuidedActionResult{}, ErrFeatureCompletionConfirmation
+		}
+	} else {
+		if before.PrimaryAction.Action != requested || !before.PrimaryAction.Enabled {
+			return GuidedActionResult{}, ErrGuidedActionBlocked
+		}
+		if before.PrimaryAction.RequiresConfirmation && !input.Confirmation {
+			return GuidedActionResult{}, ErrFeatureCompletionConfirmation
+		}
 	}
 	switch requested {
 	case GuidedActionContinueDiscovery:
@@ -1120,6 +1142,8 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		_, _, err = s.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, ExpectedRevisionID: assessment.Revision.DiscoveryRevisionID, Destination: destination, CreatedIdentity: "guided-operator"})
 	case GuidedActionCompleteFeature:
 		_, err = s.Complete(ctx, CompletionInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorConfirmed: input.Confirmation})
+	case GuidedActionAbandonFeature:
+		_, err = s.Abandon(ctx, CompletionInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorConfirmed: input.Confirmation})
 	case GuidedActionReopenDiscovery:
 		_, _, err = s.guidedReopenDiscovery(ctx, input)
 	case GuidedActionLegacyRecovery:
@@ -1557,6 +1581,18 @@ func (s *Service) guidedApproveCurrentPackage(ctx context.Context, input GuidedA
 // the guided boundary approves a prepared package. The operator's confirmation
 // of the guided approval action is enforced by the action gate.
 const guidedApprovalEvidence = "guided-operator-approval"
+
+// guidedActionAvailable reports whether the freshly read projection advertises
+// the wanted action as an enabled availability. It backs the single accepted
+// secondary action (abandonment); every other action stays primary-only.
+func guidedActionAvailable(actions []GuidedFeatureActionAvailability, wanted GuidedFeatureAction) bool {
+	for _, action := range actions {
+		if action.Action == wanted && action.Enabled {
+			return true
+		}
+	}
+	return false
+}
 
 // guidedFamilyCandidateState resolves the semantic candidate state for the
 // family currently in flight, matching the guided decision's family priority.

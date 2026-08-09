@@ -12,6 +12,7 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "continue_discovery": return "Continue discovery";
     case "close_discovery": return "Close discovery";
     case "complete_feature": return "Complete feature";
+    case "abandon_feature": return "Abandon feature";
     case "reopen_discovery": return "Reopen discovery";
     case "author_requirements": return "Author Requirements";
     case "author_shared_design": return "Author Shared Design";
@@ -205,6 +206,7 @@ function OperationTransfer({ transfer }: { transfer: GuidedOperationTransfer }) 
 export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureDetail }) {
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = React.useState(false);
+  const [abandonConfirmed, setAbandonConfirmed] = React.useState(false);
   const [reopenMarkdown, setReopenMarkdown] = React.useState("");
   const [reopenCause, setReopenCause] = React.useState("");
   const [message, setMessage] = React.useState<string | null>(null);
@@ -215,6 +217,9 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     enabled: false,
     requiresConfirmation: true,
   };
+  // The abandonment secondary is rendered only when the server availability
+  // says it is eligible; the client never infers abandonment.
+  const abandon = detail.availableActions.find((action) => action.action === "abandon_feature" && action.enabled);
   React.useEffect(() => { setConfirmed(false); setReopenMarkdown(""); setReopenCause(""); }, [primary.action]);
   const mutation = useMutation({
     mutationFn: async () => {
@@ -238,6 +243,23 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
     onSuccess: (next) => {
       queryClient.setQueryData(featureWorkspaceKeys.guided(workspaceId), next);
       setConfirmed(false);
+      setMessage(null);
+    },
+    onError: (error) => {
+      setMessage(errorMessage(error));
+      if (error instanceof RelayApiError && (error.status === 409 || ["CURRENTNESS_BLOCKED", "GUIDED_ACTION_BLOCKED", "COMPLETION_CONFLICT"].includes(error.errorShape?.error ?? ""))) {
+        void queryClient.invalidateQueries({ queryKey: featureWorkspaceKeys.guided(workspaceId) });
+      }
+    },
+  });
+  // The abandonment control keeps its own explicit confirmation state and
+  // posts only the semantic guided action plus the expected version; it never
+  // carries a lifecycle or browser identity.
+  const abandonMutation = useMutation({
+    mutationFn: async () => actOnGuidedFeatureWorkspace(workspaceId, { expectedVersion: detail.workspace.version, action: "abandon_feature", confirmation: abandonConfirmed }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(featureWorkspaceKeys.guided(workspaceId), next);
+      setAbandonConfirmed(false);
       setMessage(null);
     },
     onError: (error) => {
@@ -354,7 +376,8 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
 
     <section aria-labelledby="guided-completion" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <h2 id="guided-completion" className="font-semibold">Completion and closing</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{detail.completion.recorded ? "Completion has been recorded." : detail.completion.ready ? "All completion gates are ready." : "Completion remains blocked by one or more gates."}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{detail.completion.decision === "abandoned" ? "This feature workspace was abandoned. Reopen discovery through the resume path to continue it." : detail.completion.recorded ? "Completion has been recorded." : detail.completion.ready ? "All completion gates are ready." : "Completion remains blocked by one or more gates."}</p>
+      {detail.completion.decision ? <p className="mt-2 text-sm"><span className="font-medium">Recorded decision: </span>{detail.completion.decision === "abandoned" ? "abandoned" : "completed"}</p> : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-2">{detail.completion.gates.map((gate) => <div key={gate.name} className="rounded border p-3 text-sm"><span className="font-medium">{gate.name}</span><span className={gate.ready ? "ml-2 text-success" : "ml-2 text-destructive"}>{gate.ready ? "ready" : "blocked"}</span></div>)}</div>
     </section>
 
@@ -384,6 +407,14 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
        {!actionEnabled ? <p role="status" className="mt-3 text-sm text-muted-foreground">{actionDisabledReason}</p> : null}
        <Button className="mt-4" type="button" disabled={!actionEnabled || (primary.requiresConfirmation && !confirmed) || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "Applying…" : actionLabel(primary.action)}</Button>
     </section>
+
+    {abandon ? <section aria-labelledby="guided-abandon" className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+      <h2 id="guided-abandon" className="font-semibold">Abandon feature</h2>
+      <p className="mt-1 text-sm text-muted-foreground">The server marked feature abandonment eligible on this current basis. Abandoning records an immutable abandoned closing decision; the existing reopen path remains the resume route.</p>
+      <label className="mt-4 flex items-start gap-2 text-sm"><input aria-label="Confirm abandon feature" type="checkbox" checked={abandonConfirmed} onChange={(event) => setAbandonConfirmed(event.target.checked)} /><span>I confirm that I want to abandon this feature workspace on the displayed basis.</span></label>
+      {!abandonConfirmed ? <p role="status" className="mt-3 text-sm text-muted-foreground">Confirm the abandonment before invoking it.</p> : null}
+      <Button className="mt-4" type="button" variant="destructive" disabled={!abandonConfirmed || abandonMutation.isPending} onClick={() => abandonMutation.mutate()}>{abandonMutation.isPending ? "Abandoning…" : "Abandon feature"}</Button>
+    </section> : null}
 
     <details className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
       <summary className="cursor-pointer font-semibold">Diagnostics</summary>

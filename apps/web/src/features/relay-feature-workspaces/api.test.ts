@@ -192,6 +192,23 @@ describe("feature workspace transport", () => {
     expect(detail.availableActions[0]).toEqual({ action: "approve_ticket_design_brief", primary: true, enabled: true, requiresConfirmation: true });
   });
 
+  it("accepts the abandonment secondary action and projects the abandoned decision outcome", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: {
+        ...guidedBody.guided,
+        completion: { ...guidedBody.guided.completion, ready: true, recorded: true, decision: "abandoned" },
+        availableActions: [
+          { action: "complete_feature", primary: true, enabled: true, requiresConfirmation: true },
+          { action: "abandon_feature", primary: false, enabled: true, requiresConfirmation: true },
+        ],
+        primaryAction: "complete_feature",
+      },
+    })));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.completion.decision).toBe("abandoned");
+    expect(detail.availableActions[1]).toEqual({ action: "abandon_feature", primary: false, enabled: true, requiresConfirmation: true });
+  });
+
   it("preserves the typed stale-write conflict for workspace controls", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ error: "VERSION_CONFLICT", message: "reload" }, 409)));
     await expect(routeFeatureWorkspace("workspace-1", { expectedVersion: 1, sequence: 1, state: "ready" })).rejects.toMatchObject({ status: 409, errorShape: { error: "VERSION_CONFLICT" } });

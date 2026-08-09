@@ -262,6 +262,54 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "reopen_discovery", confirmation: true, cause: "new exact evidence", markdown: "# Reopened discovery\n" });
   });
 
+  it("renders the distinct confirmed abandon secondary only when eligible", async () => {
+    const user = userEvent.setup();
+    mocks.action.mockClear();
+    mocks.action.mockResolvedValueOnce(base);
+    const eligible = {
+      ...base,
+      completion: { gates: [{ name: "authority", ready: true }], ready: true, recorded: false },
+      availableActions: [
+        { action: "complete_feature" as const, primary: true, enabled: true, requiresConfirmation: true },
+        { action: "abandon_feature" as const, primary: false, enabled: true, requiresConfirmation: true },
+      ],
+      primaryAction: "complete_feature" as const,
+    };
+    render(<RelayFeatureWorkspaceDetail detail={eligible} />, { wrapper });
+    expect(screen.getByRole("button", { name: "Complete feature" })).toBeInTheDocument();
+    const abandonButton = screen.getByRole("button", { name: "Abandon feature" });
+    expect(abandonButton).toBeDisabled();
+    await user.click(abandonButton);
+    expect(mocks.action).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("checkbox", { name: "Confirm abandon feature" }));
+    expect(abandonButton).toBeEnabled();
+    await user.click(abandonButton);
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "abandon_feature", confirmation: true }));
+    expect(JSON.stringify(mocks.action.mock.calls[0])).not.toMatch(/(workspaceId|rowId|sha256|completionDecisionId)/i);
+  });
+
+  it("shows the server-projected abandoned outcome and the reopen resume path", () => {
+    const abandoned = {
+      ...base,
+      discovery: { ...base.discovery, state: "closed" },
+      completion: { gates: [{ name: "authority", ready: true }], ready: true, recorded: true, decision: "abandoned" as const },
+      availableActions: [{ action: "reopen_discovery" as const, primary: true, enabled: true, requiresConfirmation: true, handoff: "Revise the closed discovery through the existing reopen owner." }],
+      primaryAction: "reopen_discovery" as const,
+    };
+    render(<RelayFeatureWorkspaceDetail detail={abandoned} />, { wrapper });
+    expect(screen.getByText(/This feature workspace was abandoned\./)).toBeInTheDocument();
+    expect(screen.getByText("Recorded decision:")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen discovery" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abandon feature" })).not.toBeInTheDocument();
+  });
+
+  it("renders no abandon control when the availability list does not include it", () => {
+    render(<RelayFeatureWorkspaceDetail detail={base} />, { wrapper });
+    expect(screen.queryByRole("button", { name: "Abandon feature" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Confirm abandon feature" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
   it("renders and confirms the distinct planning candidate approval action", async () => {
     const user = userEvent.setup();
     mocks.action.mockClear();

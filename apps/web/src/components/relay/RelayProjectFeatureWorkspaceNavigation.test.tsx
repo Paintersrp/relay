@@ -274,6 +274,104 @@ describe("Project to Feature workspace normal entry journeys", () => {
     expect(JSON.stringify(mocks.postBodies[0])).not.toMatch(/(ticketId|packageId|runId|workspaceId|sha256|rowId)/i);
   });
 
+  it("abandons through the eligible secondary control and shows the abandoned project summary after returning", async () => {
+    const postBodies: Array<Record<string, unknown>> = [];
+    const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if ((init?.method ?? "GET") === "POST" && path.includes("/guided/actions")) {
+        postBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        // The refreshed server projection exposes the abandoned outcome and
+        // selects the normal existing reopen path.
+        return Promise.resolve(json(guidedBody({
+          workspace: { version: 3 },
+          completion: { recorded: true, decision: "abandoned" },
+          ...primaryAction("reopen_discovery", true),
+        })));
+      }
+      if (path.includes("/api/projects?") && !path.includes("/api/projects/project-1")) return Promise.resolve(json({ count: 1, items: [project] }));
+      if (path.includes("/api/projects/project-1?")) return Promise.resolve(json({ project, repositories: [], notes: [], plans: [] }));
+      // The project summary uses the server-projected decision to say
+      // abandoned with the reopen resume route meaning.
+      if (path.includes("/api/projects/project-1/feature-workspaces")) return Promise.resolve(json({ count: 1, items: [{ ...workspace, projectId: project.projectId, progressionSummary: "Feature workspace was abandoned.", resumeSummary: "reopen_discovery", blocked: false }] }));
+      if (path.includes("/api/feature-workspaces/workspace-1/guided")) {
+        return Promise.resolve(json(guidedBody({
+          discovery: { destination: "no_delivery_work", state: "closed" },
+          completion: { ready: true, recorded: false },
+          availableActions: [
+            { action: "complete_feature", primary: true, enabled: true, requiresConfirmation: true },
+            { action: "abandon_feature", primary: false, enabled: true, requiresConfirmation: true },
+          ],
+          primaryAction: "complete_feature",
+        })));
+      }
+      throw new Error(`unexpected fetch ${path}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ["/projects"] }) });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    await openFeature(user);
+
+    // The visible Project -> Feature journey reaches the guided workspace:
+    // the sole primary remains complete_feature and the eligible abandon
+    // control renders as a distinct secondary with its own confirmation.
+    expect(await screen.findByRole("button", { name: "Complete feature" })).toBeInTheDocument();
+    const abandonButton = screen.getByRole("button", { name: "Abandon feature" });
+    expect(abandonButton).toBeDisabled();
+    await user.click(abandonButton);
+    expect(postBodies).toHaveLength(0);
+    await user.click(screen.getByRole("checkbox", { name: "Confirm abandon feature" }));
+    expect(abandonButton).toBeEnabled();
+    await user.click(abandonButton);
+
+    // The refreshed projection shows the abandoned outcome and the normal
+    // reopen resume path; the request carried only the semantic guided action
+    // plus the expected version, never a lifecycle identity.
+    expect(await screen.findByText(/This feature workspace was abandoned\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen discovery" })).toBeInTheDocument();
+    expect(postBodies).toHaveLength(1);
+    expect(postBodies[0]).toEqual({ expectedVersion: 2, action: "abandon_feature", confirmation: true });
+    expect(Object.keys(postBodies[0]).sort()).toEqual(["action", "confirmation", "expectedVersion"]);
+    expect(JSON.stringify(postBodies[0])).not.toMatch(/(workspaceId|sha256|rowId|completionDecisionId)/i);
+
+    // The existing normal back-to-project route makes the project summary
+    // visibly say abandoned with the reopen resume meaning.
+    await user.click(screen.getByRole("link", { name: "Return to Relay" }));
+    expect(await screen.findByText("Feature workspace was abandoned.")).toBeInTheDocument();
+    expect(screen.getAllByText("reopen_discovery").length).toBeGreaterThan(0);
+  });
+
+  it("renders no abandon control when server availability says it is not eligible", async () => {
+    const fetch = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.includes("/api/projects?") && !path.includes("/api/projects/project-1")) return Promise.resolve(json({ count: 1, items: [project] }));
+      if (path.includes("/api/projects/project-1?")) return Promise.resolve(json({ project, repositories: [], notes: [], plans: [] }));
+      if (path.includes("/api/projects/project-1/feature-workspaces")) return Promise.resolve(json({ count: 1, items: [{ ...workspace, projectId: project.projectId, progressionSummary: "Discovery is in progress.", resumeSummary: "Continue discovery.", blocked: false }] }));
+      if (path.includes("/api/feature-workspaces/workspace-1/guided")) {
+        // Gates not ready: completion is the sole disabled primary and no
+        // abandonment secondary is advertised by the server.
+        return Promise.resolve(json(guidedBody({
+          discovery: { destination: "no_delivery_work", state: "closed" },
+          completion: { ready: false, recorded: false },
+          availableActions: [{ action: "complete_feature", primary: true, enabled: false, requiresConfirmation: true, blockedReason: "Feature completion is blocked by one or more current completion gates." }],
+          primaryAction: "complete_feature",
+        })));
+      }
+      throw new Error(`unexpected fetch ${path}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ["/projects"] }) });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    await openFeature(user);
+    expect(await screen.findByRole("button", { name: "Complete feature" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abandon feature" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Confirm abandon feature" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
   it("traverses the direct Delivery Ticket lifecycle through Brief and package approval to Run continuation", async () => {
     const gets = [
       guidedWith("select_delivery_ticket", true, { delivery: { frontier: [frontierEntry] } }),

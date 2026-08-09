@@ -413,6 +413,75 @@ func TestFeatureCompletionF3TicketPublicationReopensCurrentDecision(t *testing.T
 	}
 }
 
+func TestFeatureAbandonmentRecordsImmutableDecisionAndReopensLikeCompletion(t *testing.T) {
+	ctx, store, service, workspace, _ := completedDiscoveryFixture(t)
+	if _, err := service.Abandon(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version}); !errors.Is(err, ErrFeatureCompletionConfirmation) {
+		t.Fatalf("unconfirmed abandonment error = %v", err)
+	}
+	if _, err := service.Abandon(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version - 1, OperatorConfirmed: true}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale abandonment error = %v", err)
+	}
+	abandoned, err := service.Abandon(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true})
+	if err != nil || abandoned.Decision.Decision != "abandoned" || !abandoned.Decision.DiscoveryClosurePacketRowID.Valid {
+		t.Fatalf("explicit abandonment = %#v, err=%v", abandoned, err)
+	}
+	if abandoned.Workspace.Version != workspace.Version+1 {
+		t.Fatalf("abandonment did not bump the workspace version: %d -> %d", workspace.Version, abandoned.Workspace.Version)
+	}
+	status, err := service.EvaluateCompletion(ctx, workspace.WorkspaceID)
+	if err != nil || status.CurrentDecision == nil || status.CurrentDecision.ID != abandoned.Decision.ID || status.CurrentDecision.Decision != "abandoned" {
+		t.Fatalf("current abandonment decision = %#v, err=%v", status, err)
+	}
+	if _, err := service.Complete(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: abandoned.Workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionRecorded) {
+		t.Fatalf("completion after abandonment = %v", err)
+	}
+	if _, err := service.Abandon(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: abandoned.Workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionRecorded) {
+		t.Fatalf("double abandonment = %v", err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `UPDATE feature_workspace_completion_decisions SET decision = 'completed' WHERE id = ?`, abandoned.Decision.ID); err == nil {
+		t.Fatal("abandoned decision was mutable")
+	}
+	packet, err := store.GetDiscoveryClosurePacketByRowID(ctx, abandoned.Workspace.CurrentDiscoveryClosurePacketRowID.Int64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := []byte("# Abandonment reopened\n")
+	_, reopened, err := service.ReopenFeatureDiscovery(ctx, ReopenFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: abandoned.Workspace.Version, ExpectedPacketID: packet.ClosurePacketID, OperatorConfirmed: true, Cause: "resume after abandonment", CreatedIdentity: "operator", Markdown: replacement, SHA256: discoveryTestDigest(replacement), Destination: DiscoveryDestinationRequirements})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The existing reopen mechanics reopen this current closing decision: after
+	// reopen the workspace has no current decision, exactly as for completion.
+	status, err = service.EvaluateCompletion(ctx, reopened.WorkspaceID)
+	if err != nil || status.CurrentDecision != nil {
+		t.Fatalf("abandoned decision reopening state = %#v, err=%v", status, err)
+	}
+	var reopeningKind string
+	if err = store.DB().QueryRowContext(ctx, `SELECT reopening_kind FROM feature_workspace_completion_reopenings WHERE completion_decision_row_id = ?`, abandoned.Decision.ID).Scan(&reopeningKind); err != nil || reopeningKind != "authority_revision" {
+		t.Fatalf("abandoned decision reopening = %q, err=%v", reopeningKind, err)
+	}
+}
+
+func TestFeatureAbandonmentRejectsUnreadyGatesWithoutMutation(t *testing.T) {
+	ctx, store, service, workspace, _ := completedDiscoveryFixture(t)
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		_, err := tx.CreateDeliveryTicketSelection(ctx, workflowstore.CreateDeliveryTicketSelectionParams{
+			SelectionID: "selection-abandon-not-ready", WorkspaceRowID: workspace.ID, State: "active", Rationale: "hold abandonment while work is active",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.EvaluateCompletion(ctx, workspace.WorkspaceID)
+	if err != nil || completionGateReady(status, "integration") {
+		t.Fatalf("active selection abandonment gates = %#v, err=%v", status, err)
+	}
+	if _, err := service.Abandon(ctx, CompletionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmed: true}); !errors.Is(err, ErrFeatureCompletionNotReady) {
+		t.Fatalf("unready abandonment = %v", err)
+	}
+	assertNoFeatureCompletionDecision(t, ctx, store, workspace.ID)
+}
+
 func TestFeatureCompletionRejectsStaleDiscoveryPacketRevisionBinding(t *testing.T) {
 	ctx, store, service, workspace, _ := completedDiscoveryFixture(t)
 	before := workspace

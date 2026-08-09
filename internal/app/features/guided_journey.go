@@ -16,6 +16,7 @@ const (
 	GuidedActionPromotePlanningCandidate GuidedFeatureAction = "promote_planning_candidate"
 	GuidedActionContinueEstablishedRoute GuidedFeatureAction = "continue_established_route"
 	GuidedActionCompleteFeature          GuidedFeatureAction = "complete_feature"
+	GuidedActionAbandonFeature           GuidedFeatureAction = "abandon_feature"
 	GuidedActionCompletionRecorded       GuidedFeatureAction = "completion_recorded"
 	GuidedActionLegacyRecovery           GuidedFeatureAction = "legacy_recovery"
 	GuidedActionReopenDiscovery          GuidedFeatureAction = "reopen_discovery"
@@ -145,7 +146,6 @@ func DecideGuidedFeatureAction(state GuidedJourneyState, currentness FeatureCurr
 // author -> review -> explicit approval -> promotion -> next family or ticket instead
 // of inferring progression from authority layer presence.
 func guidedClosedDestinationAvailability(state GuidedJourneyState, completion GuidedCompletion) []GuidedFeatureActionAvailability {
-	completionReady := GuidedCompletionReady(completion.Gates)
 	switch state.Destination {
 	case DiscoveryDestinationNoDeliveryWork, "":
 		if completion.Recorded {
@@ -156,12 +156,7 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 			// and requires operator confirmation of the replacement.
 			return []GuidedFeatureActionAvailability{{Action: GuidedActionReopenDiscovery, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Revise the closed discovery through the existing reopen owner: author the replacement integrated revision, confirm the reopen, then reclose and complete again."}}
 		}
-		enabled := completionReady
-		reason := ""
-		if !enabled {
-			reason = "Feature completion is blocked by one or more current completion gates."
-		}
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: enabled, RequiresConfirmation: true, BlockedReason: reason}}
+		return guidedCompletionActions(completion)
 	case DiscoveryDestinationDirectDeliveryTicket:
 		return guidedDeliveryAvailability(state, completion)
 	case DiscoveryDestinationRequirements:
@@ -231,7 +226,6 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 // the audit phase, remediation while an audit remediation seed is open, and
 // Feature completion once the delivered Run has completed.
 func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompletion) []GuidedFeatureActionAvailability {
-	completionReady := GuidedCompletionReady(completion.Gates)
 	delivery := state.Delivery
 	// A current Delivery Ticket candidate is still owned by the planning
 	// candidate lifecycle. It must finish review, explicit approval, and
@@ -300,11 +294,11 @@ func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompl
 		case "packet_recorded":
 			return []GuidedFeatureActionAvailability{{Action: GuidedActionRecordAuditDecision, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Record the workflow audit decision through the audit owner for the current packet, then return here."}}
 		}
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}}
+		return guidedCompletionActions(completion)
 	case "completed":
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}}
+		return guidedCompletionActions(completion)
 	}
-	return []GuidedFeatureActionAvailability{{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}}
+	return guidedCompletionActions(completion)
 }
 
 func guidedCompletionBlockedReason(ready bool) string {
@@ -312,6 +306,23 @@ func guidedCompletionBlockedReason(ready bool) string {
 		return ""
 	}
 	return "Feature completion is blocked by one or more current completion gates."
+}
+
+// guidedCompletionActions emits the completion primary action and, only when
+// no current decision is recorded and the completion gate matrix is ready, the
+// enabled confirmed abandonment secondary on the same basis. Abandonment
+// eligibility equals the completion-gate/current-basis eligibility; the primary
+// action remains complete_feature.
+func guidedCompletionActions(completion GuidedCompletion) []GuidedFeatureActionAvailability {
+	completionReady := GuidedCompletionReady(completion.Gates)
+	primary := GuidedFeatureActionAvailability{Action: GuidedActionCompleteFeature, Primary: true, Enabled: completionReady, RequiresConfirmation: true, BlockedReason: guidedCompletionBlockedReason(completionReady)}
+	if !completionReady || completion.Recorded {
+		return []GuidedFeatureActionAvailability{primary}
+	}
+	return []GuidedFeatureActionAvailability{
+		primary,
+		{Action: GuidedActionAbandonFeature, Primary: false, Enabled: true, RequiresConfirmation: true, Handoff: "Abandon this feature workspace: record an immutable abandoned closing decision on the current basis. Reopening discovery remains the resume path."},
+	}
 }
 
 // guidedDeliveryStageAvailable reports whether the delivery owner already

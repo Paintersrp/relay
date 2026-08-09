@@ -507,7 +507,7 @@ func admitApprovedFixtureBrief(t *testing.T, fixture *packageServiceFixture) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved fixture Brief", CreatedIdentity: "operator"}); err != nil {
+	if _, err := owner.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: fixture.brief.Bytes}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved fixture Brief", CreatedIdentity: "operator"}); err != nil {
 		t.Fatal(err)
 	}
 }

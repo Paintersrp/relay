@@ -99,12 +99,16 @@ const (
 )
 
 // CompleteCandidateReviewInput records the bounded disposition of a read-only
-// auditor review of the current planning candidate. No findings or prose are
+// auditor review of the current planning candidate. ReviewedBytes identifies
+// the exact bytes the auditor reviewed; the owner recalculates their SHA-256
+// and requires them to match the verified current admissible candidate bytes
+// and digest before either disposition is accepted. No findings or prose are
 // accepted or persisted.
 type CompleteCandidateReviewInput struct {
 	WorkspaceID      string
 	ReviewerIdentity string
 	Disposition      PlanningCandidateReviewDisposition
+	ReviewedBytes    []byte
 }
 
 type CompleteCandidateReviewResult struct {
@@ -525,13 +529,18 @@ func equalBytes(a, b []byte) bool {
 	return true
 }
 
-// CompletePlanningCandidateReview reads and validates the current candidate,
-// then returns a transient review result. It writes no durable review state: a
+// CompletePlanningCandidateReview validates that the reviewed bytes identify
+// the exact current candidate, then returns a transient review result. The
+// server recalculates the SHA-256 of the supplied reviewed bytes and requires
+// byte-for-byte and digest equality with the verified current admissible
+// artifact before accepting either disposition, so a review composed against a
+// replaced, stale-basis, or otherwise changed candidate is rejected and no
+// result ever attaches to the replacement. It writes no durable review state: a
 // ready review stores only the exact process-local continuation on the Service
 // for the distinct workspace-only approval transition, and a needs-revision
 // review clears any continuation and returns the exact planner refresh handoff.
 func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input CompleteCandidateReviewInput) (CompleteCandidateReviewResult, error) {
-	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" ||
+	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" || len(input.ReviewedBytes) == 0 ||
 		(input.Disposition != PlanningCandidateReviewReadyForApproval && input.Disposition != PlanningCandidateReviewNeedsRevision) {
 		return CompleteCandidateReviewResult{}, ErrCandidateReview
 	}
@@ -576,15 +585,18 @@ func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input Com
 				if err != nil || digest(bytes) != candidate.ArtifactSha256 || int64(len(bytes)) != candidate.ArtifactSizeBytes {
 					return ErrCandidateBytesMismatch
 				}
+				if digest(input.ReviewedBytes) != candidate.ArtifactSha256 || !equalBytes(input.ReviewedBytes, bytes) {
+					return ErrCandidateBytesMismatch
+				}
 				result = CompleteCandidateReviewResult{Candidate: candidate, Disposition: input.Disposition, Review: PlanningCandidateReviewCompletion{ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition)}}
 				if input.Disposition == PlanningCandidateReviewReadyForApproval {
-					s.storePlanningReviewContinuation(workspace.WorkspaceID, &planningReviewContinuation{workspaceID: workspace.WorkspaceID, candidateID: candidate.CandidateID, sha256: candidate.ArtifactSha256, sizeBytes: candidate.ArtifactSizeBytes, closure: workspace.CurrentDiscoveryClosurePacketRowID, authority: workspace.CurrentAuthorityRevisionRowID, bytes: append([]byte(nil), bytes...)})
+					s.storePlanningReviewContinuation(workspace.WorkspaceID, &planningReviewContinuation{workspaceID: workspace.WorkspaceID, candidateID: candidate.CandidateID, sha256: candidate.ArtifactSha256, sizeBytes: candidate.ArtifactSizeBytes, closure: workspace.CurrentDiscoveryClosurePacketRowID, authority: workspace.CurrentAuthorityRevisionRowID, bytes: append([]byte(nil), input.ReviewedBytes...)})
 				} else {
 					// A needs-revision review clears any prior ready continuation
 					// so it can never be approved, and preserves the exact
 					// planner refresh handoff for a replacement candidate.
 					s.storePlanningReviewContinuation(workspace.WorkspaceID, nil)
-					result.Refresh = &PlanningReviewRefresh{OperationID: planningRefreshOperation(candidate.Family), AuditorReviewResult: string(input.Disposition), ReviewedCandidate: append([]byte(nil), bytes...)}
+					result.Refresh = &PlanningReviewRefresh{OperationID: planningRefreshOperation(candidate.Family), AuditorReviewResult: string(input.Disposition), ReviewedCandidate: append([]byte(nil), input.ReviewedBytes...)}
 				}
 				return nil
 			}

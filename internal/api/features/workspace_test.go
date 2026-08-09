@@ -517,6 +517,7 @@ func TestGuidedActionHTTPAllowsTicketDesignBriefActionsToReachDispatch(t *testin
 		{action: "approve_planning_candidate"},
 		{action: "continue_run", runState: "executing"},
 		{action: "recover_run", runState: "execution_failed"},
+		{action: "abandon_feature"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			delivery := featureapp.GuidedDeliverySection{SelectionState: "active", BriefState: "authored"}
@@ -531,6 +532,53 @@ func TestGuidedActionHTTPAllowsTicketDesignBriefActionsToReachDispatch(t *testin
 				t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestGuidedAbandonActionReachesDispatchAndProjectsDecision(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-abandon", FeatureSlug: "payments", Version: 8}}
+	guided := &richFakeGuided{
+		projection: featureapp.GuidedFeatureProjection{
+			Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: 8},
+			PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionCompleteFeature, Primary: true, Enabled: true},
+			AvailableActions: []featureapp.GuidedFeatureActionAvailability{
+				{Action: featureapp.GuidedActionCompleteFeature, Primary: true, Enabled: true},
+				{Action: featureapp.GuidedActionAbandonFeature, Primary: false, Enabled: true, RequiresConfirmation: true},
+			},
+		},
+		result: featureapp.GuidedActionResult{Projection: featureapp.GuidedFeatureProjection{
+			Workspace:  featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: 9},
+			Completion: featureapp.GuidedCompletionSection{Recorded: true, Decision: "abandoned"},
+			PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionReopenDiscovery, Primary: true, Enabled: true},
+		}},
+	}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-abandon/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"abandon_feature","confirmation":true}`)))
+	if response.Code != http.StatusOK || guided.input.Action != "abandon_feature" || !guided.input.Confirmation || guided.input.ExpectedVersion != 8 {
+		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
+	}
+	// The response projects the server decision outcome (abandoned) and the
+	// recorded state without exposing any durable row identity.
+	if !strings.Contains(response.Body.String(), `"decision":"abandoned"`) || !strings.Contains(response.Body.String(), `"recorded":true`) || !strings.Contains(response.Body.String(), `"primaryAction":"reopen_discovery"`) {
+		t.Fatalf("body=%s", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "completionDecisionId") || strings.Contains(response.Body.String(), "workspaceRowId") {
+		t.Fatalf("body exposed row identity: %s", response.Body.String())
+	}
+}
+
+func TestGuidedProjectionProjectsAbandonedDecisionOutcome(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", State: "closed", Version: 8}}
+	guided := &fakeGuided{assessment: GuidedAssessment{State: featureapp.DiscoveryStateClosed, Currentness: featureapp.DiscoveryCurrent}, current: featureapp.FeatureCurrentnessDecision{Readiness: featureapp.FeatureCurrent}}
+	completion := &fakeCompletion{status: appoperations.FeatureCompletionStatus{
+		Workspace:       appoperations.FeatureCompletionWorkspace{WorkspaceID: detail.Workspace.WorkspaceID, Version: 8},
+		Gates:           []appoperations.FeatureCompletionGate{{Name: "closure", Ready: true}},
+		CurrentDecision: &appoperations.FeatureCompletionDecision{CompletionDecisionID: "decision-abandoned-api", Decision: "abandoned"},
+	}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-guided/guided", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"decision":"abandoned"`) || !strings.Contains(response.Body.String(), `"recorded":true`) || !strings.Contains(response.Body.String(), `"primaryAction":"reopen_discovery"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -580,8 +628,8 @@ func TestPlanningCandidateReviewCompletionIsReadOnlyAndReturnsReadyDisposition(t
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
 	guided := &reviewCompletionFakeGuided{}
 	response := httptest.NewRecorder()
-	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`)))
-	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.ReviewerIdentity != "auditor" || guided.input.Disposition != featureapp.PlanningCandidateReviewReadyForApproval {
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
+	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.ReviewerIdentity != "auditor" || guided.input.Disposition != featureapp.PlanningCandidateReviewReadyForApproval || string(guided.input.ReviewedBytes) != "# Requirements\n" {
 		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
 	}
 	// The review endpoint never approves: the response carries the ready
@@ -639,6 +687,32 @@ func TestPlanningCandidateReviewCompletionRouteRejectsMissingIdentity(t *testing
 	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"disposition":"ready_for_approval"}`)))
 	if response.Code != http.StatusBadRequest || !strings.Contains(strings.ToLower(response.Body.String()), "planning candidate review") || guided.input.WorkspaceID != "" {
 		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
+	}
+}
+
+func TestPlanningCandidateReviewCompletionRouteRejectsMissingOrInvalidReviewedBytes(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
+	for _, body := range []string{
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`,
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"not-base64"}`,
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":""}`,
+	} {
+		guided := &reviewCompletionFakeGuided{}
+		response := httptest.NewRecorder()
+		guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest || guided.input.WorkspaceID != "" {
+			t.Fatalf("body=%s status=%d input=%#v", body, response.Code, guided.input)
+		}
+	}
+}
+
+func TestPlanningCandidateReviewCompletionRouteMapsStaleReviewedBytesRejection(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
+	guided := &reviewCompletionFakeGuided{err: featureapp.ErrCandidateBytesMismatch}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBSZXF1aXJlbWVudHMK"}`)))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "planning candidate bytes or digest mismatch") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

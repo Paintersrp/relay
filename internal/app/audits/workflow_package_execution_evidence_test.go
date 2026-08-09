@@ -236,7 +236,7 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := briefService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approve fixture brief", CreatedIdentity: "operator"}); err != nil {
+	if _, err := briefService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: briefBytes}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approve fixture brief", CreatedIdentity: "operator"}); err != nil {
 		t.Fatal(err)
 	}
 
