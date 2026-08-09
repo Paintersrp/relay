@@ -1,6 +1,9 @@
 package routecontracts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -175,6 +178,131 @@ func TestCompileAppToolsRejectsPostAliasCollision(t *testing.T) {
 	members[1].SurfaceContract = members[0].SurfaceContract
 	if _, err := compileAppTools(members); err == nil {
 		t.Fatal("post-alias collision accepted")
+	}
+}
+
+func TestAppSurfaceToolsProjectBoundToolIdentityOntoSerializedManifest(t *testing.T) {
+	routes, err := BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled := 0
+	for _, surface := range surfaces.Surfaces {
+		declaredOperations := make(map[string]struct{})
+		for _, member := range surface.MemberRoutes {
+			for _, operation := range member.Operations {
+				declaredOperations[member.RoutePath+"\x00"+operation.OperationID] = struct{}{}
+			}
+		}
+		for _, tool := range surface.Tools {
+			compiled++
+			if tool.SemanticToolID == "" || tool.SemanticToolID != tool.Tool.SemanticToolID {
+				t.Fatalf("tool %s semantic identity=%q bound=%q", tool.AdvertisedName, tool.SemanticToolID, tool.Tool.SemanticToolID)
+			}
+			if tool.OperationID != tool.Tool.OperationID {
+				t.Fatalf("tool %s operation identity=%q bound=%q", tool.AdvertisedName, tool.OperationID, tool.Tool.OperationID)
+			}
+			if tool.OperationID != "" {
+				if _, declared := declaredOperations[tool.InternalRoutePath+"\x00"+tool.OperationID]; !declared {
+					t.Fatalf("tool %s operation %s is not declared on %s", tool.AdvertisedName, tool.OperationID, tool.InternalRoutePath)
+				}
+			}
+			encoded, err := json.Marshal(tool)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var serialized struct {
+				SemanticToolID string `json:"semantic_tool_id"`
+				OperationID    string `json:"operation_id"`
+			}
+			if err := json.Unmarshal(encoded, &serialized); err != nil {
+				t.Fatal(err)
+			}
+			if serialized.SemanticToolID != tool.Tool.SemanticToolID || serialized.OperationID != tool.Tool.OperationID {
+				t.Fatalf("serialized identity %#v does not match bound tool %q/%q", serialized, tool.Tool.SemanticToolID, tool.Tool.OperationID)
+			}
+		}
+	}
+	if compiled == 0 {
+		t.Fatal("no app tools compiled")
+	}
+}
+
+func TestAppSurfaceManifestSHA256BindsToolSemanticAndOperationIdentity(t *testing.T) {
+	routes, err := BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuild, err := BuildAppSurfaceManifests(cloneRouteSet(routes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wayfinderIndex := -1
+	for index, surface := range original.Surfaces {
+		if surface.Surface == AppSurfaceWayfinder {
+			wayfinderIndex = index
+			break
+		}
+	}
+	if wayfinderIndex < 0 || len(original.Surfaces[wayfinderIndex].Tools) == 0 {
+		t.Fatal("wayfinder app surface is missing tools")
+	}
+	if original.Surfaces[wayfinderIndex].ManifestSHA256 != rebuild.Surfaces[wayfinderIndex].ManifestSHA256 {
+		t.Fatal("identical route set rebuilt to a different app-surface digest")
+	}
+	originalSHA := original.Surfaces[wayfinderIndex].ManifestSHA256
+	digestWith := func(mutate func(*AppToolManifest)) string {
+		modified := cloneAppSurfaceSet(original)
+		target := &modified.Surfaces[wayfinderIndex].Tools[0]
+		mutate(target)
+		basis, err := appSurfaceManifestBasis(modified.Surfaces[wayfinderIndex])
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(basis)
+		return hex.EncodeToString(sum[:])
+	}
+	if changed := digestWith(func(tool *AppToolManifest) { tool.SemanticToolID += ".revision" }); changed == originalSHA {
+		t.Fatal("semantic_tool_id change did not alter the app-surface digest")
+	}
+	if changed := digestWith(func(tool *AppToolManifest) {
+		if tool.OperationID == "wayfinder.workspace" {
+			tool.OperationID = "wayfinder.discovery"
+		} else {
+			tool.OperationID = "wayfinder.workspace"
+		}
+	}); changed == originalSHA {
+		t.Fatal("operation_id change did not alter the app-surface digest")
+	}
+}
+
+func TestCompileAppToolsRejectsMissingOrUndeclaredToolIdentity(t *testing.T) {
+	routes, err := BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingSemantic := cloneRouteSet(routes).Manifests[0]
+	missingSemantic.Tools[0].SemanticToolID = ""
+	if _, err := compileAppTools([]RouteManifest{missingSemantic}); err == nil {
+		t.Fatal("empty semantic_tool_id accepted")
+	}
+	undeclaredOperation := cloneRouteSet(routes).Manifests[0]
+	undeclaredOperation.Tools[0].OperationID = "planner.requirements"
+	if _, err := compileAppTools([]RouteManifest{undeclaredOperation}); err == nil {
+		t.Fatal("operation_id outside the route accepted")
+	}
+	generic := cloneRouteSet(routes).Manifests[0]
+	generic.Tools[0].OperationID = ""
+	if _, err := compileAppTools([]RouteManifest{generic}); err != nil {
+		t.Fatalf("generic tool with empty operation_id rejected: %v", err)
 	}
 }
 

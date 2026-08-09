@@ -52,6 +52,7 @@ func NewServerForAppSurface(log *slog.Logger, surface routecontracts.AppSurfaceM
 			registration.PublicSurface != surface.Surface || registration.InternalToolName != compiled.InternalToolName ||
 			registration.InternalRoutePath != compiled.InternalRoutePath || registration.SurfaceContract != compiled.SurfaceContract ||
 			registration.RouteManifestSHA256 != compiled.RouteManifestSHA256 || registration.StandingAuthority != compiled.StandingAuthority ||
+			registration.Tool.SemanticToolID != compiled.SemanticToolID || registration.Tool.OperationID != compiled.OperationID ||
 			registration.Handler.Name != registration.InternalToolName || registration.Handler.Handle == nil {
 			return nil, fmt.Errorf("MCP_APP_SURFACE_REGISTRATION_INVALID: %s", registration.AdvertisedName)
 		}

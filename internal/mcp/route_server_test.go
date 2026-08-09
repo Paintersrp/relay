@@ -217,6 +217,55 @@ func TestAppSurfaceRouteBoundDispatchPassesRegisteredSurfaceContractToHandler(t 
 	}
 }
 
+func TestAppSurfaceServerRejectsSemanticAndOperationRegistrationMismatch(t *testing.T) {
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := fakeAppSurfaceDispatchers(routes)
+	var surface routecontracts.AppSurfaceManifest
+	for _, candidate := range surfaces.Surfaces {
+		if candidate.Surface == routecontracts.AppSurfaceWayfinder {
+			surface = candidate
+			break
+		}
+	}
+	if surface.Surface == "" {
+		t.Fatal("Wayfinder app surface is missing")
+	}
+	registrations, err := BuildAppSurfaceHandlers(surface, owners)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registrations) == 0 {
+		t.Fatal("no app surface registrations")
+	}
+	for name, mutate := range map[string]func(*routecontracts.ToolManifest){
+		"semantic": func(tool *routecontracts.ToolManifest) { tool.SemanticToolID = "relay.unexpected.tool.v1" },
+		"operation": func(tool *routecontracts.ToolManifest) { tool.OperationID = "planner.requirements" },
+	} {
+		invalid := append([]AppToolRegistration(nil), registrations...)
+		mutate(&invalid[0].Tool)
+		if _, err := NewServerForAppSurface(nil, surface, invalid); err == nil {
+			t.Fatalf("server accepted %s registration mismatch", name)
+		}
+	}
+	server, err := NewServerForAppSurface(nil, surface, registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, definition := range server.tools {
+		compiled := surface.Tools[index]
+		if definition.Meta["relay/semanticToolID"] != compiled.SemanticToolID || definition.Meta["relay/operationID"] != compiled.OperationID {
+			t.Fatalf("%s metadata does not equal compiled identity %q/%q", definition.Name, compiled.SemanticToolID, compiled.OperationID)
+		}
+	}
+}
+
 func TestAppSurfaceActionDispatchPreservesClientArguments(t *testing.T) {
 	routes, err := routecontracts.BuildMCPRouteManifests()
 	if err != nil {

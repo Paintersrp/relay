@@ -26,6 +26,8 @@ type AppToolManifest struct {
 	SurfaceContract     string                    `json:"surface_contract"`
 	RouteManifestSHA256 string                    `json:"route_manifest_sha256"`
 	StandingAuthority   StandingAuthorityIdentity `json:"standing_authority"`
+	SemanticToolID      string                    `json:"semantic_tool_id"`
+	OperationID         string                    `json:"operation_id"`
 	Tool                ToolManifest              `json:"-"`
 	Aliased             bool                      `json:"-"`
 }
@@ -128,7 +130,19 @@ func compileAppTools(members []RouteManifest) ([]AppToolManifest, error) {
 	tools := make([]AppToolManifest, 0)
 	seenAdvertised := make(map[string]struct{})
 	for _, member := range members {
+		declaredOperations := make(map[string]struct{}, len(member.Operations))
+		for _, operation := range member.Operations {
+			declaredOperations[operation.OperationID] = struct{}{}
+		}
 		for _, tool := range member.Tools {
+			if tool.SemanticToolID == "" {
+				return nil, fmt.Errorf("MCP_APP_TOOL_IDENTITY_INVALID: %s", tool.Name)
+			}
+			if tool.OperationID != "" {
+				if _, declared := declaredOperations[tool.OperationID]; !declared {
+					return nil, fmt.Errorf("MCP_APP_TOOL_IDENTITY_INVALID: %s operation %s", tool.Name, tool.OperationID)
+				}
+			}
 			advertised := tool.Name
 			aliased := byName[tool.Name] > 1 || (member.Role == "wayfinder" && tool.Category == "wayfinder_action")
 			if aliased {
@@ -149,6 +163,7 @@ func compileAppTools(members []RouteManifest) ([]AppToolManifest, error) {
 				AdvertisedName: advertised, InternalToolName: tool.Name,
 				InternalRoutePath: member.RoutePath, SurfaceContract: member.SurfaceContract,
 				RouteManifestSHA256: member.ManifestSHA256, StandingAuthority: member.StandingAuthority,
+				SemanticToolID: tool.SemanticToolID, OperationID: tool.OperationID,
 				Tool: tool, Aliased: aliased,
 			})
 		}
@@ -199,6 +214,8 @@ func appSurfaceManifestBasis(value AppSurfaceManifest) ([]byte, error) {
 		SurfaceContract     string                    `json:"surface_contract"`
 		RouteManifestSHA256 string                    `json:"route_manifest_sha256"`
 		StandingAuthority   StandingAuthorityIdentity `json:"standing_authority"`
+		SemanticToolID      string                    `json:"semantic_tool_id"`
+		OperationID         string                    `json:"operation_id"`
 	}
 	type basis struct {
 		SchemaVersion string           `json:"schema_version"`
@@ -213,7 +230,7 @@ func appSurfaceManifestBasis(value AppSurfaceManifest) ([]byte, error) {
 	}
 	tools := make([]toolIdentity, 0, len(value.Tools))
 	for _, tool := range value.Tools {
-		tools = append(tools, toolIdentity{tool.AdvertisedName, tool.InternalToolName, tool.InternalRoutePath, tool.SurfaceContract, tool.RouteManifestSHA256, tool.StandingAuthority})
+		tools = append(tools, toolIdentity{tool.AdvertisedName, tool.InternalToolName, tool.InternalRoutePath, tool.SurfaceContract, tool.RouteManifestSHA256, tool.StandingAuthority, tool.SemanticToolID, tool.OperationID})
 	}
 	return json.Marshal(basis{"relay.mcp.app-surface-manifest.v1", value.Surface, value.PublicPath, members, tools})
 }
