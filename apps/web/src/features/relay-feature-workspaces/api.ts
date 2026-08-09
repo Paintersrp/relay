@@ -52,8 +52,8 @@ function guidedFrontierEntries(value: unknown, method: WorkflowHttpMethod, path:
 
 function guidedIntegrity(value: unknown, method: WorkflowHttpMethod, path: string): GuidedIntegrity {
   const item = value === undefined || value === null ? {} : record(value, method, path, "guided integrity diagnostics");
-  const discovery = item.discovery === undefined ? {} : record(item.discovery, method, path, "guided integrity discovery");
-  const delivery = item.delivery === undefined ? {} : record(item.delivery, method, path, "guided integrity delivery");
+  const discovery = item.discovery === undefined || item.discovery === null ? {} : record(item.discovery, method, path, "guided integrity discovery");
+  const delivery = item.delivery === undefined || item.delivery === null ? {} : record(item.delivery, method, path, "guided integrity delivery");
   return {
     discovery: {
       currentRevisionId: guidedOptionalString(discovery, "currentRevisionId"),

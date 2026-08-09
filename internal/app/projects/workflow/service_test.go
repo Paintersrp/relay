@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	featureapp "relay/internal/app/features"
 	workflowstore "relay/internal/store/workflow"
 	"relay/internal/testsupport/workflowfixture"
 )
@@ -197,7 +198,15 @@ func openProjectTestStore(t *testing.T) *workflowstore.Store {
 func TestProjectFeatureWorkspaceSummaryProvidesServerOwnedResumeGuidance(t *testing.T) {
 	ctx := context.Background()
 	store := openProjectTestStore(t)
-	service, err := NewServiceWithIDs(store, &projectTestIDs{})
+	reader := &projectGuidedProjectionReader{projection: featureapp.GuidedFeatureProjection{
+		PrimaryAction: featureapp.GuidedFeatureActionAvailability{
+			Action:        featureapp.GuidedActionContinueDiscovery,
+			Enabled:       false,
+			BlockedReason: "Discovery input is required.",
+		},
+		Recovery: featureapp.GuidedRecoverySection{State: "required", Category: "legacy"},
+	}}
+	service, err := NewServiceWithIDs(store, &projectTestIDs{}, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,10 +230,23 @@ func TestProjectFeatureWorkspaceSummaryProvidesServerOwnedResumeGuidance(t *test
 		t.Fatalf("summaries = %+v", summaries)
 	}
 	got := summaries[0]
-	if got.ProgressionSummary == "" || got.ResumeSummary == "" || !got.Blocked || got.RecoveryCategory == "" {
-		t.Fatalf("summary lacks server-owned resume/recovery guidance: %+v", got)
+	if len(reader.workspaceIDs) != 1 || reader.workspaceIDs[0] != got.Workspace.WorkspaceID {
+		t.Fatalf("guided projection reader calls = %#v, want workspace %q", reader.workspaceIDs, got.Workspace.WorkspaceID)
+	}
+	if got.ProgressionSummary != "Current guided action: continue_discovery." || got.ResumeSummary != "continue_discovery" || !got.Blocked || got.BlockedReason != "Discovery input is required." || got.RecoveryCategory != "legacy" {
+		t.Fatalf("summary = %+v", got)
 	}
 	if got.Workspace.ID == 0 {
 		t.Fatal("workspace row should remain available to the application owner")
 	}
+}
+
+type projectGuidedProjectionReader struct {
+	workspaceIDs []string
+	projection   featureapp.GuidedFeatureProjection
+}
+
+func (r *projectGuidedProjectionReader) ReadGuidedProjection(_ context.Context, workspaceID string) (featureapp.GuidedFeatureProjection, error) {
+	r.workspaceIDs = append(r.workspaceIDs, workspaceID)
+	return r.projection, nil
 }

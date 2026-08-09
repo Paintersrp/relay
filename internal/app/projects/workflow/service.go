@@ -27,14 +27,21 @@ type IDGenerator interface {
 	NoteID() string
 }
 
+// GuidedProjectionReader provides the Feature-owned semantic projection used
+// to resume a project workspace. Project does not reconstruct guided state.
+type GuidedProjectionReader interface {
+	ReadGuidedProjection(context.Context, string) (featureapp.GuidedFeatureProjection, error)
+}
+
 type defaultIDGenerator struct{}
 
 func (defaultIDGenerator) ProjectID() string { return workflowstore.NewProjectID() }
 func (defaultIDGenerator) NoteID() string    { return workflowstore.NewProjectNoteID() }
 
 type Service struct {
-	store *workflowstore.Store
-	ids   IDGenerator
+	store                  *workflowstore.Store
+	ids                    IDGenerator
+	guidedProjectionReader GuidedProjectionReader
 }
 
 type ListProjectsInput struct {
@@ -98,18 +105,25 @@ type UpdateNoteInput struct {
 	Status    *string
 }
 
-func NewService(store *workflowstore.Store) (*Service, error) {
-	return NewServiceWithIDs(store, defaultIDGenerator{})
+func NewService(store *workflowstore.Store, guidedProjectionReader ...GuidedProjectionReader) (*Service, error) {
+	return NewServiceWithIDs(store, defaultIDGenerator{}, guidedProjectionReader...)
 }
 
-func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
+func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator, guidedProjectionReader ...GuidedProjectionReader) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("workflow store is required")
 	}
 	if ids == nil {
 		return nil, fmt.Errorf("Project ID generator is required")
 	}
-	return &Service{store: store, ids: ids}, nil
+	if len(guidedProjectionReader) > 1 {
+		return nil, fmt.Errorf("at most one guided feature projection reader is allowed")
+	}
+	service := &Service{store: store, ids: ids}
+	if len(guidedProjectionReader) == 1 {
+		service.guidedProjectionReader = guidedProjectionReader[0]
+	}
+	return service, nil
 }
 
 func (s *Service) ListProjects(ctx context.Context, input ListProjectsInput) ([]workflowstore.Project, error) {
@@ -161,6 +175,9 @@ func (s *Service) GetProject(ctx context.Context, input GetProjectInput) (Projec
 // by the web client: these summaries are derived from the durable workspace
 // pointers and expose only semantic recovery guidance.
 func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWorkspacesInput) ([]ProjectFeatureWorkspaceSummary, error) {
+	if s.guidedProjectionReader == nil {
+		return nil, fmt.Errorf("guided feature projection reader is required")
+	}
 	projectID := strings.TrimSpace(input.ProjectID)
 	if projectID == "" {
 		return nil, fmt.Errorf("%w: Project ID is required", ErrInvalidProjectRequest)
@@ -173,13 +190,9 @@ func (s *Service) ListFeatureWorkspaces(ctx context.Context, input ListFeatureWo
 	if err != nil {
 		return nil, err
 	}
-	featureService, err := featureapp.NewService(s.store)
-	if err != nil {
-		return nil, err
-	}
 	summaries := make([]ProjectFeatureWorkspaceSummary, 0, len(workspaces))
 	for _, workspace := range workspaces {
-		guided, readErr := featureService.ReadGuidedProjection(ctx, workspace.WorkspaceID)
+		guided, readErr := s.guidedProjectionReader.ReadGuidedProjection(ctx, workspace.WorkspaceID)
 		if readErr != nil {
 			return nil, readErr
 		}

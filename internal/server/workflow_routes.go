@@ -65,10 +65,6 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct workflow read service: %w", err)
 	}
-	projectService, err := workflowprojects.NewService(workflowStore)
-	if err != nil {
-		return nil, nil, fmt.Errorf("construct project service: %w", err)
-	}
 	submissionService, err := workflowsubmissions.NewService(workflowStore)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct submission service: %w", err)
@@ -131,6 +127,10 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	}
 	if err := featureAuthorityService.SetGuidedAuditOwner(auditService); err != nil {
 		return nil, nil, fmt.Errorf("bind guided audit owner: %w", err)
+	}
+	projectService, err := workflowprojects.NewService(workflowStore, featureAuthorityService)
+	if err != nil {
+		return nil, nil, fmt.Errorf("construct project service: %w", err)
 	}
 	packageWorkflowService, err := appoperations.NewPackageWorkflowService(packageService, executionService, workflowStore)
 	if err != nil {

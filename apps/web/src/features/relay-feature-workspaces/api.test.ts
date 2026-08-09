@@ -50,6 +50,23 @@ describe("feature workspace transport", () => {
     expect(detail.availableActions[0]).toEqual({ action: "select_delivery_ticket", primary: true, enabled: true, requiresConfirmation: true, handoff: "Select the current frontier Delivery Ticket server-side." });
   });
 
+  it("normalizes null guided integrity subsections from the transport response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: {
+        ...guidedBody.guided,
+        diagnostics: { ...guidedBody.guided.diagnostics, integrity: { discovery: null, authority: null, planning: null, delivery: null, prototype: null } },
+      },
+    })));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.diagnostics.integrity).toEqual({
+      discovery: { currentRevisionId: "", currentPacket: null, history: [], reopenEvents: [] },
+      authority: [],
+      planning: [],
+      delivery: { frontier: [], selection: null, package: null, run: null, audit: null, remediation: null },
+      prototype: null,
+    });
+  });
+
   it("posts only the server-selected primary action with expected version and confirmation", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(response(guidedBody)).mockResolvedValueOnce(response(guidedBody));
     vi.stubGlobal("fetch", fetch);
