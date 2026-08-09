@@ -165,6 +165,17 @@ describe("feature-workspace route scrolling", () => {
     // above) and therefore cannot become the active scroll owner.
   });
 
+  it("does not emit debug logs while loading the workspace route", async () => {
+    const consoleLog = vi.spyOn(console, "log");
+    try {
+      await renderRoute("/feature-workspaces/workspace-ccd47919-307f-40b9-88d4-c8ef7026cc05");
+      await waitFor(() => expect(screen.getByText("wayfinder-bootstrap")).toBeInTheDocument());
+      expect(consoleLog).not.toHaveBeenCalled();
+    } finally {
+      consoleLog.mockRestore();
+    }
+  });
+
   it("keeps /feature-workspaces/new scroll-safe with the same single scroll-region contract", async () => {
     await renderRoute("/feature-workspaces/new");
     await waitFor(() => expect(screen.getByText("Create feature workspace")).toBeInTheDocument());

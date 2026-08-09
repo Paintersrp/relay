@@ -1035,9 +1035,9 @@ ORDER BY created_at, id;
 
 -- name: CreatePlanningCandidateReview :one
 INSERT INTO planning_candidate_reviews (
-    review_id, candidate_row_id, reviewer_identity, completed_at
+    review_id, candidate_row_id, reviewer_identity, disposition, completed_at
 )
-VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 RETURNING *;
 
 -- name: GetPlanningCandidateReviewByReviewID :one
@@ -1144,9 +1144,9 @@ WHERE brief_row_id = ?;
 
 -- name: CreateTicketDesignBriefReview :one
 INSERT INTO ticket_design_brief_reviews (
-    review_id, brief_row_id, reviewer_identity, completed_at
+    review_id, brief_row_id, reviewer_identity, disposition, completed_at
 )
-VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 RETURNING *;
 
 -- name: GetTicketDesignBriefReviewByReviewID :one

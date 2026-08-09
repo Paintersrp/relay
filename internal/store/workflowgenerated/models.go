@@ -1018,6 +1018,7 @@ type PlanningCandidateReview struct {
 	ReviewerIdentity string `json:"reviewer_identity"`
 	CompletedAt      string `json:"completed_at"`
 	CreatedAt        string `json:"created_at"`
+	Disposition      string `json:"disposition"`
 }
 
 type Project struct {
@@ -1211,4 +1212,5 @@ type TicketDesignBriefReview struct {
 	ReviewerIdentity string `json:"reviewer_identity"`
 	CompletedAt      string `json:"completed_at"`
 	CreatedAt        string `json:"created_at"`
+	Disposition      string `json:"disposition"`
 }

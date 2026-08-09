@@ -148,9 +148,22 @@ func TestDecideGuidedFeatureActionEmitsPreciseDeliveryPrimaryActions(t *testing.
 		{"no frontier authors ticket", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket}, GuidedActionAuthorDeliveryTicket, true},
 		{"active selection without brief authors brief", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active"; d.BriefState = "none" })}, GuidedActionAuthorTicketDesignBrief, true},
 		{"active selection authored brief reviews", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active"; d.BriefState = "authored" })}, GuidedActionReviewTicketDesignBrief, true},
-		{"active selection reviewed brief approves", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active"; d.BriefState = "reviewed" })}, GuidedActionApproveTicketDesignBrief, true},
+		{"active selection ready brief approves", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "active"
+			d.BriefState = "reviewed"
+			d.BriefReviewDisposition = "ready_for_approval"
+		})}, GuidedActionApproveTicketDesignBrief, true},
+		{"active selection needs-revision brief re-authors", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "active"
+			d.BriefState = "reviewed"
+			d.BriefReviewDisposition = "needs_revision"
+		})}, GuidedActionAuthorTicketDesignBrief, true},
 		{"active selection approved brief prepares package", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active"; d.BriefState = "approved" })}, GuidedActionPreparePackage, true},
-		{"prepared package approves server-side", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) { d.SelectionState = "active"; d.BriefState = "approved"; d.PackageState = "prepared" })}, GuidedActionApprovePackage, true},
+		{"prepared package approves server-side", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
+			d.SelectionState = "active"
+			d.BriefState = "approved"
+			d.PackageState = "prepared"
+		})}, GuidedActionApprovePackage, true},
 		{"approved package launches run", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: delivery(func(d *GuidedDeliverySection) {
 			d.SelectionState = "consumed"
 			d.PackageState = "approved"
@@ -208,13 +221,43 @@ func TestDecideGuidedFeatureActionEmitsPreciseDeliveryPrimaryActions(t *testing.
 	}
 }
 
-func TestDecideGuidedFeatureActionApprovesReviewedBriefWithConfirmation(t *testing.T) {
+func TestDecideGuidedFeatureActionApprovesReadyForApprovalBriefWithConfirmation(t *testing.T) {
 	current := FeatureCurrentnessDecision{Readiness: FeatureCurrent}
-	state := GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: GuidedDeliverySection{SelectionState: "active", BriefState: "reviewed"}}
+	state := GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Delivery: GuidedDeliverySection{SelectionState: "active", BriefState: "reviewed", BriefReviewDisposition: "ready_for_approval"}}
 	got := DecideGuidedFeatureAction(state, current, GuidedCompletion{})
 	if got.PrimaryAction != GuidedActionApproveTicketDesignBrief || len(got.AvailableActions) != 1 ||
 		!got.AvailableActions[0].Primary || !got.AvailableActions[0].Enabled || !got.AvailableActions[0].RequiresConfirmation {
-		t.Fatalf("reviewed brief decision=%+v", got)
+		t.Fatalf("ready-for-approval brief decision=%+v", got)
+	}
+}
+
+func TestGuidedPlanningReviewDispositionNeverTreatsReviewExistenceAsApproval(t *testing.T) {
+	current := FeatureCurrentnessDecision{Readiness: FeatureCurrent}
+	needsRevision := func() GuidedPlanningFamilySection {
+		return GuidedPlanningFamilySection{Count: 1, NeedsRevision: 1, State: "needs_revision"}
+	}
+	cases := []struct {
+		name  string
+		state GuidedJourneyState
+		want  GuidedFeatureAction
+	}{
+		{"requirements re-authors", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirements, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, NeedsRevision: 1, Requirements: needsRevision()}}, GuidedActionAuthorRequirements},
+		{"shared design re-authors", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, NeedsRevision: 1, SharedDesign: needsRevision()}}, GuidedActionAuthorSharedDesign},
+		{"delivery candidate remediates through planner", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationDirectDeliveryTicket, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, NeedsRevision: 1, DeliveryTicket: needsRevision()}}, GuidedActionAuthorDeliveryTicket},
+		{"existing route exposes delivery review", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, DeliveryTicket: GuidedPlanningFamilySection{Count: 1, AwaitingReview: 1, State: "admitted"}}}, GuidedActionReviewPlanningCandidate},
+		{"existing route exposes delivery approval", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, DeliveryTicket: GuidedPlanningFamilySection{Count: 1, AwaitingApproval: 1, State: "reviewed"}}}, GuidedActionApprovePlanningCandidate},
+		{"existing route exposes delivery production", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationExistingRouteContinuation, Planning: GuidedPlanningSection{Status: "in_progress", CandidateCount: 1, DeliveryTicket: GuidedPlanningFamilySection{Count: 1, AwaitingPromotion: 1, State: "approved"}}}, GuidedActionPromotePlanningCandidate},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			decision := DecideGuidedFeatureAction(tc.state, current, GuidedCompletion{})
+			if decision.PrimaryAction != tc.want || len(decision.AvailableActions) != 1 || decision.AvailableActions[0].Action != tc.want {
+				t.Fatalf("decision=%+v", decision)
+			}
+			if approval := guidedAvailableAction(decision.AvailableActions, GuidedActionApprovePlanningCandidate); approval != nil && tc.want != GuidedActionApprovePlanningCandidate {
+				t.Fatalf("unexpected approval availability=%+v", approval)
+			}
+		})
 	}
 }
 

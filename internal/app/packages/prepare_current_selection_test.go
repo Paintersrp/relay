@@ -42,7 +42,7 @@ func TestPrepareCurrentSelectionResolvesApprovedBriefServerSide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ticketsService.CompleteTicketDesignBriefReview(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor"}); err != nil {
+	if _, err := ticketsService.CompleteTicketDesignBriefReview(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ticketsService.ApproveTicketDesignBrief(ctx, tickets.TicketDesignBriefApprovalInput{
@@ -80,5 +80,37 @@ func TestPrepareCurrentSelectionRejectsInvalidWorkspaceInput(t *testing.T) {
 	}
 	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: ""}); !errors.Is(err, ErrInvalidPackageInput) {
 		t.Fatalf("empty workspace prepare error = %v, want ErrInvalidPackageInput", err)
+	}
+}
+
+func TestPrepareCurrentSelectionDoesNotUseNeedsRevisionBriefAfterReplacement(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageServiceFixture(t)
+	ticketService, err := tickets.NewService(fixture.store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ticketService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{
+		WorkspaceID: "workspace-package", Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, tickets.CompleteBriefReviewInput{
+		WorkspaceID: "workspace-package", ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewNeedsRevision,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := ticketService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{
+		WorkspaceID: "workspace-package", Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.Brief.SelectionRowID == first.Brief.SelectionRowID {
+		t.Fatalf("replacement brief retained first selection %d", first.Brief.SelectionRowID)
+	}
+	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"}); !errors.Is(err, ErrBriefNotApproved) {
+		t.Fatalf("needs-revision brief authorized replacement package: %v", err)
 	}
 }

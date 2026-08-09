@@ -110,7 +110,7 @@ func TestGuidedPlanningDistinguishesReviewApprovalPromotionAndHistoricalBasis(t 
 	// The external auditor records only the narrow completion fact of the
 	// read-only review; the projection then distinguishes reviewed/unapproved
 	// and emits the explicit approval as the next primary step.
-	reviewed, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"})
+	reviewed, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,10 +118,10 @@ func TestGuidedPlanningDistinguishesReviewApprovalPromotionAndHistoricalBasis(t 
 		t.Fatalf("completed review=%+v", reviewed.Review)
 	}
 	planning, err = service.guidedPlanning(ctx, workspace, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil)
-	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingApproval != 1 || planning.AwaitingPromotion != 0 || planning.CandidateState != "reviewed" || planning.ReviewState != "reviewed" || planning.ApprovalState != "none" || planning.PromotionState != "none" {
+	if err != nil || planning.AwaitingReview != 0 || planning.AwaitingApproval != 1 || planning.AwaitingPromotion != 0 || planning.CandidateState != "ready_for_approval" || planning.ReviewState != "ready_for_approval" || planning.ApprovalState != "none" || planning.PromotionState != "none" {
 		t.Fatalf("reviewed planning=%+v err=%v", planning, err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrCandidateReview) {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); !errors.Is(err, ErrCandidateReview) {
 		t.Fatalf("duplicate review completion error = %v, want ErrCandidateReview", err)
 	}
 	approved, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
@@ -263,7 +263,7 @@ func TestGuidedPlanningActionsReviewApprovePromoteServerSideWithoutClientIDs(t *
 	// read-only review through the bounded owner entry; no review outcome is
 	// accepted. The successive projection then distinguishes reviewed/unapproved
 	// and emits the explicit confirmed approval as the primary action.
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
 		t.Fatal(err)
 	}
 	awaitingApproval, err := service.ReadGuidedProjection(ctx, workspace.WorkspaceID)

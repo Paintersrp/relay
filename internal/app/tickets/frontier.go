@@ -45,6 +45,7 @@ const (
 
 type ticketReadStore interface {
 	GetSourceVaultClosureByRowID(context.Context, int64) (workflowstore.SourceVaultClosure, error)
+	GetReadySourceVaultClosureByRepositoryTargetAndCommit(context.Context, string, string) (workflowstore.SourceVaultClosure, error)
 	GetFeatureWorkspaceByRowID(context.Context, int64) (workflowstore.FeatureWorkspace, error)
 	GetFeatureWorkspaceAuthorityRevisionByRowID(context.Context, int64) (workflowstore.FeatureWorkspaceAuthorityRevision, error)
 	GetDeliveryTicketRevisionByRowID(context.Context, int64) (workflowstore.DeliveryTicketRevision, error)

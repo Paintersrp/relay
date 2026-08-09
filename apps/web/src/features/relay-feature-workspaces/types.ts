@@ -235,6 +235,28 @@ export interface GuidedIntegrityTicket {
   revisionNumber: number;
 }
 
+export interface GuidedIntegrityDiagnostic {
+  domain: string;
+  condition: "unavailable" | "unreadable" | "inconsistent" | "unverifiable";
+}
+
+export interface GuidedIntegrityTicketDesignBrief {
+  briefId: string;
+  selectionId: string;
+  selectionState: string;
+  ticketId: string;
+  revisionNumber: number;
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+  status: string;
+  reviewState: string;
+  reviewDisposition: string;
+  reviewId: string;
+  approvalId: string;
+  historical: boolean;
+}
+
 export interface GuidedIntegrityPrototypeEvidence {
   qaEvidenceId: string;
   semanticRole: string;
@@ -278,13 +300,15 @@ export interface GuidedIntegrity {
   planning: GuidedIntegrityPlanningCandidate[];
   delivery: {
     frontier: GuidedIntegrityTicket[];
-    selection: { selectionId: string } | null;
+    selection: { selectionId: string; state: string; ticketId: string; revisionNumber: number } | null;
+    briefs: GuidedIntegrityTicketDesignBrief[];
     package: { packageId: string; sha256: string; approvalId: string } | null;
     run: { runId: string; packageId: string; repoTarget: string; branch: string; baseCommit: string } | null;
     audit: { auditPacketId: string; auditDecisionId: string; auditedCommit: string } | null;
     remediation: { seedIds: string[] } | null;
   };
   prototype: GuidedIntegrityPrototype | null;
+  diagnostics: GuidedIntegrityDiagnostic[];
 }
 
 export interface GuidedFeatureDetail {
@@ -304,8 +328,8 @@ export interface GuidedFeatureDetail {
     revisions: Array<{ revisionNumber: number; layers: string[]; historical: boolean }>;
   };
   currentness?: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string };
-  planning: { readiness: string; status: string; recoveryCategory: string; candidateState?: string; reviewState?: string; approvalState?: string; promotionState?: string; candidateCount?: number; awaitingReview?: number; awaitingApproval?: number; awaitingPromotion?: number; promoted?: number; historicalCount?: number };
-  delivery?: { frontier: GuidedFrontierEntry[]; selectionState: string; packageState: string; runState: string; auditState: string; remediationState: string };
+  planning: { readiness: string; status: string; recoveryCategory: string; candidateState?: string; reviewState?: string; approvalState?: string; promotionState?: string; candidateCount?: number; awaitingReview?: number; awaitingApproval?: number; awaitingPromotion?: number; needsRevision?: number; promoted?: number; historicalCount?: number };
+  delivery?: { frontier: GuidedFrontierEntry[]; selectionState: string; briefState?: string; briefReviewDisposition?: string; packageState: string; runState: string; auditState: string; remediationState: string };
   prototype?: { runState: string; cleanupState: string; qaState: string; evidenceState: string; processOutcome: string };
   completion: { gates: Array<{ name: string; ready: boolean }>; ready: boolean; recorded: boolean };
   ticketFrontier: { status: string; summary: string; blockers: string[]; downstream: string[] };

@@ -72,7 +72,7 @@ type GuidedActionService interface {
 
 // PlanningReviewCompletionService is the narrow Feature-owned completion entry
 // the external auditor uses after performing the read-only planning candidate
-// review. It records only the completion fact; no review outcome is accepted.
+// review. It records only the bounded disposition; no findings are accepted.
 type PlanningReviewCompletionService interface {
 	CompletePlanningCandidateReview(context.Context, featureapp.CompleteCandidateReviewInput) (featureapp.CompleteCandidateReviewResult, error)
 }
@@ -358,11 +358,12 @@ type guidedActionRequest struct {
 	Continuation    string `json:"continuation"`
 }
 
-// candidateReviewCompletionRequest carries only the reviewer identity; the
-// current planning candidate is resolved server-side and no review outcome,
-// verdict, or content is accepted.
+// candidateReviewCompletionRequest carries the bounded review disposition; the
+// current planning candidate is resolved server-side and no findings or prose
+// are accepted.
 type candidateReviewCompletionRequest struct {
 	ReviewerIdentity string `json:"reviewerIdentity"`
+	Disposition      string `json:"disposition"`
 }
 type cleanupRequest struct {
 	ExpectedRunVersion int64  `json:"expectedRunVersion"`
@@ -568,7 +569,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	action := strings.TrimSpace(request.Action)
 	switch action {
 	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "legacy_recovery",
-		"reopen_discovery", "select_delivery_ticket", "prepare_package", "approve_package", "launch_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
+		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "approve_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
@@ -691,8 +692,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 
 // CompletePlanningCandidateReview is the bounded completion entry the external
 // auditor uses after performing the read-only planning candidate review. It
-// records only the narrow completion fact; the review outcome is never
-// accepted or persisted.
+// records only the bounded disposition over the server-resolved candidate.
 func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter, r *http.Request) {
 	if h.guided == nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Planning review service is unavailable")
@@ -708,8 +708,14 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 		badRequest(w, "Invalid planning candidate review completion request")
 		return
 	}
+	disposition := featureapp.PlanningCandidateReviewDisposition(strings.TrimSpace(request.Disposition))
+	if disposition != featureapp.PlanningCandidateReviewReadyForApproval && disposition != featureapp.PlanningCandidateReviewNeedsRevision {
+		badRequest(w, "Invalid planning candidate review disposition")
+		return
+	}
 	result, err := completion.CompletePlanningCandidateReview(r.Context(), featureapp.CompleteCandidateReviewInput{
 		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
+		Disposition: disposition,
 	})
 	if err != nil {
 		writeWorkspaceError(w, err)
@@ -717,7 +723,7 @@ func (h *WorkspaceHandler) CompletePlanningCandidateReview(w http.ResponseWriter
 	}
 	shared.JSON(w, http.StatusCreated, map[string]any{
 		"reviewId": result.Review.ReviewID, "candidateId": result.Candidate.CandidateID,
-		"reviewerIdentity": result.Review.ReviewerIdentity, "completedAt": result.Review.CompletedAt,
+		"reviewerIdentity": result.Review.ReviewerIdentity, "disposition": result.Review.Disposition, "completedAt": result.Review.CompletedAt,
 	})
 }
 
@@ -837,8 +843,8 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 		"discovery":        map[string]any{"state": value.Discovery.State, "destination": value.Discovery.Destination, "rationale": value.Discovery.Rationale, "continuation": value.Discovery.Continuation, "currentness": value.Discovery.Currentness, "basis": value.Discovery.Basis, "reopenState": value.Discovery.ReopenState, "hasCurrentRevision": value.Discovery.HasCurrentRevision},
 		"authority":        map[string]any{"currentRevisionNumber": value.Authority.CurrentRevisionNumber, "layers": value.Authority.Layers},
 		"currentness":      map[string]any{"readiness": value.Currentness.Readiness, "owner": value.Currentness.Owner, "blockedOperation": value.Currentness.BlockedOperation, "effect": value.Currentness.Effect, "recoveryCategory": value.Currentness.RecoveryCategory},
-		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
-		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "briefState": value.Delivery.BriefState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
+		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "needsRevision": value.Planning.NeedsRevision, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
+		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "briefState": value.Delivery.BriefState, "briefReviewDisposition": value.Delivery.BriefReviewDisposition, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
 		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
 		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},
@@ -874,12 +880,21 @@ func guidedIntegrityDTO(value featureapp.GuidedIntegritySection) map[string]any 
 	delivery := map[string]any{
 		"frontier":    guidedIntegrityFrontierDTO(value.Delivery.Frontier),
 		"selection":   guidedIntegritySelectionDTO(value.Delivery.Selection),
+		"briefs":      guidedIntegrityBriefsDTO(value.Delivery.Briefs),
 		"package":     guidedIntegrityPackageDTO(value.Delivery.Package),
 		"run":         guidedIntegrityRunDTO(value.Delivery.Run),
 		"audit":       guidedIntegrityAuditDTO(value.Delivery.Audit),
 		"remediation": guidedIntegrityRemediationDTO(value.Delivery.Remediation),
 	}
-	return map[string]any{"discovery": discovery, "authority": authority, "planning": planning, "delivery": delivery, "prototype": guidedIntegrityPrototypeDTO(value.Prototype)}
+	return map[string]any{"discovery": discovery, "authority": authority, "planning": planning, "delivery": delivery, "prototype": guidedIntegrityPrototypeDTO(value.Prototype), "diagnostics": guidedIntegrityDiagnosticsDTO(value.Diagnostics)}
+}
+
+func guidedIntegrityDiagnosticsDTO(values []featureapp.GuidedIntegrityDiagnostic) []map[string]any {
+	result := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, map[string]any{"domain": value.Domain, "condition": value.Condition})
+	}
+	return result
 }
 
 func guidedClosurePacketDTO(value *featureapp.GuidedIntegrityClosurePacket) any {
@@ -917,7 +932,21 @@ func guidedIntegritySelectionDTO(value *featureapp.GuidedIntegritySelection) any
 	if value == nil {
 		return nil
 	}
-	return map[string]any{"selectionId": value.SelectionID}
+	return map[string]any{"selectionId": value.SelectionID, "state": value.State, "ticketId": value.TicketID, "revisionNumber": value.RevisionNumber}
+}
+
+func guidedIntegrityBriefsDTO(values []featureapp.GuidedIntegrityTicketDesignBrief) []map[string]any {
+	result := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, map[string]any{
+			"briefId": value.BriefID, "selectionId": value.SelectionID, "selectionState": value.SelectionState,
+			"ticketId": value.TicketID, "revisionNumber": value.RevisionNumber, "filename": value.Filename,
+			"sha256": value.SHA256, "sizeBytes": value.SizeBytes, "status": value.Status,
+			"reviewState": value.ReviewState, "reviewDisposition": value.ReviewDisposition, "reviewId": value.ReviewID, "approvalId": value.ApprovalID,
+			"historical": value.Historical,
+		})
+	}
+	return result
 }
 
 func guidedIntegrityPackageDTO(value *featureapp.GuidedIntegrityPackage) any {
@@ -1276,7 +1305,7 @@ func writeWorkspaceError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusConflict, "COMPLETION_CONFLICT", "Feature Workspace completion is not currently eligible. Reload the completion gates.")
 	case errors.Is(err, featureapp.ErrFeatureCompletionConfirmation):
 		badRequest(w, err.Error())
-	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated), errors.Is(err, featureapp.ErrInvalidDiscoveryConsequence), errors.Is(err, featureapp.ErrDiscoveryInvalidDestination), errors.Is(err, featureapp.ErrCandidateReview):
+	case errors.Is(err, wayfinder.ErrInvalidWorkspaceRequest), errors.Is(err, featureapp.ErrInvalidAuthorityRequest), errors.Is(err, featureapp.ErrInvalidApprovalInput), errors.Is(err, featureapp.ErrApprovalMismatch), errors.Is(err, featureapp.ErrApprovalInvalidated), errors.Is(err, featureapp.ErrInvalidDiscoveryConsequence), errors.Is(err, featureapp.ErrDiscoveryInvalidDestination), errors.Is(err, featureapp.ErrCandidateReview), errors.Is(err, featureapp.ErrCandidateReviewIncomplete):
 		badRequest(w, err.Error())
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Feature workspace operation failed")

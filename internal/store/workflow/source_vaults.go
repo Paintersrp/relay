@@ -295,7 +295,19 @@ func sourceVaultNoRows(err error, operation string) error {
 // source closure used by a direct candidate when no authority layer supplies
 // an explicit closure identity.
 func (tx *Tx) GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx context.Context, repoTarget, commitOID string) (SourceVaultClosure, error) {
-	return scanSourceVaultClosure(tx.tx.QueryRowContext(ctx, `
+	return getReadySourceVaultClosureByRepositoryTargetAndCommit(ctx, tx.tx, repoTarget, commitOID)
+}
+
+// GetReadySourceVaultClosureByRepositoryTargetAndCommit resolves the latest
+// ready closure for a direct-delivery basis. A direct basis has no authority
+// revision to identify its closure, so callers must compare this exact row with
+// their retained source identity.
+func (s *Store) GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx context.Context, repoTarget, commitOID string) (SourceVaultClosure, error) {
+	return getReadySourceVaultClosureByRepositoryTargetAndCommit(ctx, s.db, repoTarget, commitOID)
+}
+
+func getReadySourceVaultClosureByRepositoryTargetAndCommit(ctx context.Context, queryer rowQueryer, repoTarget, commitOID string) (SourceVaultClosure, error) {
+	return scanSourceVaultClosure(queryer.QueryRowContext(ctx, `
 SELECT closure.id, closure.closure_id, closure.vault_row_id, closure.commit_oid, closure.tree_oid, closure.generation, closure.ref_name,
     closure.state, closure.failure_reason, closure.import_started_at, closure.verified_at, closure.released_at,
     closure.created_at, closure.updated_at

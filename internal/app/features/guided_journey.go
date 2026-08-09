@@ -215,7 +215,7 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 		// delivery stage (frontier, selection, brief, package, Run, audit, or
 		// remediation) whenever one is available, instead of generic Planner
 		// authoring for a route that already has delivery work.
-		if guidedDeliveryStageAvailable(state.Delivery) {
+		if state.Planning.DeliveryTicket.Count > 0 || guidedDeliveryStageAvailable(state.Delivery) {
 			return guidedDeliveryAvailability(state, completion)
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionContinueEstablishedRoute, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: state.Continuation}}
@@ -233,6 +233,13 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompletion) []GuidedFeatureActionAvailability {
 	completionReady := GuidedCompletionReady(completion.Gates)
 	delivery := state.Delivery
+	// A current Delivery Ticket candidate is still owned by the planning
+	// candidate lifecycle. It must finish review, explicit approval, and
+	// ticket-owner production before a frontier, selection, or audit stage can
+	// become authoritative.
+	if steps := guidedDeliveryTicketCandidateStep(state.Planning.DeliveryTicket); steps != nil {
+		return steps
+	}
 	if delivery.RemediationState == "open" {
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionRemediate, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The current audit decision requires remediation. Publish the replacement Delivery Ticket revision through the existing owner, then return here to resume selection."}}
 	}
@@ -255,7 +262,13 @@ func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompl
 		case "authored":
 			return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The admissible Ticket Design Brief is ready for review. Perform the read-only review through the auditor surface; completing it here records review completion and makes the explicit approval available."}}
 		case "reviewed":
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionApproveTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the reviewed Ticket Design Brief server-side; the approval resolves the current brief identity, exact bytes, and basis from the delivery owner."}}
+			switch delivery.BriefReviewDisposition {
+			case "ready_for_approval":
+				return []GuidedFeatureActionAvailability{{Action: GuidedActionApproveTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the reviewed Ticket Design Brief server-side; the approval resolves the current brief identity, exact bytes, and basis from the delivery owner."}}
+			case "needs_revision":
+				return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The current Ticket Design Brief needs revision. Continue planner.ticket_design_brief_remediation, admit its replacement through the delivery owner, then return for a new read-only review."}}
+			}
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The Ticket Design Brief review disposition is unavailable. Return to the auditor review surface before explicit approval can be offered."}}
 		case "approved":
 			switch delivery.PackageState {
 			case "", "none":
@@ -348,6 +361,12 @@ func guidedPlanningStep(family GuidedPlanningFamilySection, authorAction GuidedF
 	if family.Count > 0 && family.Promoted == family.Count {
 		return nil
 	}
+	if family.NeedsRevision > 0 {
+		return []GuidedFeatureActionAvailability{{
+			Action: authorAction, Primary: true, Enabled: true,
+			Handoff: "The current " + familyName + " planning candidate needs revision. Continue its registered planner re-authoring operation before a new read-only review.",
+		}}
+	}
 	if family.AwaitingPromotion > 0 {
 		return []GuidedFeatureActionAvailability{{
 			Action: GuidedActionPromotePlanningCandidate, Primary: true, Enabled: true,
@@ -366,6 +385,29 @@ func guidedPlanningStep(family GuidedPlanningFamilySection, authorAction GuidedF
 	return []GuidedFeatureActionAvailability{{Action: authorAction, Primary: true, Enabled: true, Handoff: authorHandoff}}
 }
 
+// guidedDeliveryTicketCandidateStep maps the current Delivery Ticket planning
+// candidate to its own lifecycle. It deliberately does not reuse audit
+// remediation: a candidate review disposition is planning work, not a Run
+// audit decision.
+func guidedDeliveryTicketCandidateStep(family GuidedPlanningFamilySection) []GuidedFeatureActionAvailability {
+	if family.Count == 0 || family.Produced == family.Count {
+		return nil
+	}
+	if family.NeedsRevision > 0 {
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, Handoff: "The current Delivery Ticket candidate needs revision. Continue planner.delivery_ticket_remediation, then return for the candidate's read-only review."}}
+	}
+	if family.AwaitingPromotion > 0 {
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPromotePlanningCandidate, Primary: true, Enabled: true, Handoff: "The current Delivery Ticket candidate is explicitly approved. Produce and publish it through the delivery-ticket owner using the server-resolved candidate, approval, and current basis."}}
+	}
+	if family.AwaitingApproval > 0 {
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePlanningCandidate, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "The current Delivery Ticket candidate is ready for approval. Explicitly approve the server-resolved candidate before production."}}
+	}
+	if family.AwaitingReview > 0 {
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewPlanningCandidate, Primary: true, Enabled: true, Handoff: "Review the current Delivery Ticket candidate through the exact read-only auditor.delivery_ticket_review operation. Record its bounded disposition through the planning candidate owner, then refresh."}}
+	}
+	return nil
+}
+
 // guidedCandidateFamiliesForDestination returns the candidate families that
 // may still carry in-flight (non-promoted) candidates, in decision priority
 // order. The requirement-then-shared-design destination scans Shared Design
@@ -373,11 +415,13 @@ func guidedPlanningStep(family GuidedPlanningFamilySection, authorAction GuidedF
 func guidedCandidateFamiliesForDestination(destination DiscoveryDestination) []string {
 	switch destination {
 	case DiscoveryDestinationRequirements:
-		return []string{CandidateFamilyRequirements}
+		return []string{CandidateFamilyRequirements, CandidateFamilyDeliveryTicket}
 	case DiscoveryDestinationSharedDesign:
-		return []string{CandidateFamilySharedDesign}
+		return []string{CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket}
 	case DiscoveryDestinationRequirementsThenSharedDesign:
-		return []string{CandidateFamilySharedDesign, CandidateFamilyRequirements}
+		return []string{CandidateFamilySharedDesign, CandidateFamilyRequirements, CandidateFamilyDeliveryTicket}
+	case DiscoveryDestinationDirectDeliveryTicket, DiscoveryDestinationExistingRouteContinuation:
+		return []string{CandidateFamilyDeliveryTicket}
 	default:
 		return nil
 	}

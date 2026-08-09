@@ -187,11 +187,11 @@ type ticketDesignBriefAdmissionRequest struct {
 	CreatedIdentity string `json:"createdIdentity"`
 }
 
-// reviewCompletionRequest carries only the reviewer identity; the current brief
-// is resolved server-side and no review outcome, verdict, or content is
-// accepted.
+// reviewCompletionRequest carries the bounded disposition; the current brief
+// is resolved server-side and no findings or prose are accepted.
 type reviewCompletionRequest struct {
 	ReviewerIdentity string `json:"reviewerIdentity"`
+	Disposition      string `json:"disposition"`
 }
 
 // --- Handlers ---
@@ -360,15 +360,21 @@ func (h *WorkflowHandler) AdmitTicketDesignBrief(w http.ResponseWriter, r *http.
 
 // CompleteTicketDesignBriefReview is the bounded completion entry the external
 // auditor uses after performing the read-only review. It records only the
-// narrow completion fact; the review outcome is never accepted or persisted.
+// bounded disposition over the server-resolved brief.
 func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter, r *http.Request) {
 	var request reviewCompletionRequest
 	if !decodeStrict(r, &request) {
 		badRequest(w, "Invalid Ticket Design Brief review completion request")
 		return
 	}
+	disposition := apptickets.TicketDesignBriefReviewDisposition(strings.TrimSpace(request.Disposition))
+	if disposition != apptickets.TicketDesignBriefReviewReadyForApproval && disposition != apptickets.TicketDesignBriefReviewNeedsRevision {
+		badRequest(w, "Invalid Ticket Design Brief review disposition")
+		return
+	}
 	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), apptickets.CompleteBriefReviewInput{
 		WorkspaceID: workspaceID(r), ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity),
+		Disposition: disposition,
 	})
 	if err != nil {
 		writeTicketError(w, err)
@@ -376,7 +382,7 @@ func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter,
 	}
 	shared.JSON(w, http.StatusCreated, map[string]any{
 		"reviewId": result.Review.ReviewID, "briefId": result.Brief.BriefID,
-		"reviewerIdentity": result.Review.ReviewerIdentity, "completedAt": result.Review.CompletedAt,
+		"reviewerIdentity": result.Review.ReviewerIdentity, "disposition": result.Review.Disposition, "completedAt": result.Review.CompletedAt,
 	})
 }
 

@@ -2,12 +2,13 @@ package tickets
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
 
-	"relay/internal/testfixtures"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testfixtures"
 )
 
 func TestTicketDesignBriefAdmissionApprovalAndReadback(t *testing.T) {
@@ -67,21 +68,24 @@ func TestTicketDesignBriefAdmissionApprovalAndReadback(t *testing.T) {
 		t.Fatalf("brief state after rejected approval = %+v, %v", state, err)
 	}
 
-	// The narrow review-completion fact records only that the read-only review
-	// handoff finished; no review outcome is persisted.
-	reviewed, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor"})
+	// The narrow review-completion fact records its bounded disposition, never
+	// findings or prose.
+	reviewed, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reviewed.Review.BriefRowID != admitted.Brief.ID || reviewed.Review.ReviewerIdentity != "auditor" {
+	if reviewed.Review.BriefRowID != admitted.Brief.ID || reviewed.Review.ReviewerIdentity != "auditor" || reviewed.Review.Disposition != string(TicketDesignBriefReviewReadyForApproval) {
 		t.Fatalf("completed review = %#v", reviewed.Review)
 	}
 	state, err = service.ReadWorkspaceBriefState(ctx, workspaceID)
-	if err != nil || state.State != "reviewed" {
+	if err != nil || state.State != "reviewed" || state.ReviewDisposition != string(TicketDesignBriefReviewReadyForApproval) {
 		t.Fatalf("brief state after review = %+v, %v", state, err)
 	}
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrTicketDesignBriefConflict) {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval}); !errors.Is(err, ErrTicketDesignBriefConflict) {
 		t.Fatalf("duplicate review completion error = %v, want ErrTicketDesignBriefConflict", err)
+	}
+	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); !errors.Is(err, ErrTicketDesignBriefConflict) {
+		t.Fatalf("ready brief replacement error = %v, want ErrTicketDesignBriefConflict", err)
 	}
 
 	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{
@@ -104,6 +108,124 @@ func TestTicketDesignBriefAdmissionApprovalAndReadback(t *testing.T) {
 		OperatorConfirmationEvidence: "second approval", CreatedIdentity: "auditor",
 	}); !errors.Is(err, ErrTicketDesignBriefConflict) {
 		t.Fatalf("duplicate approval error = %v, want ErrTicketDesignBriefConflict", err)
+	}
+	if _, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"}); !errors.Is(err, ErrTicketDesignBriefConflict) {
+		t.Fatalf("approved brief replacement error = %v, want ErrTicketDesignBriefConflict", err)
+	}
+	lineage, err := service.ReadWorkspaceBriefIntegrity(ctx, workspaceID)
+	if err != nil || len(lineage.Briefs) != 1 || len(lineage.Diagnostics) != 0 {
+		t.Fatalf("brief lineage = %+v, %v", lineage, err)
+	}
+	entry := lineage.Briefs[0]
+	if entry.BriefID != admitted.Brief.BriefID || entry.SelectionID != selection.Selection.SelectionID || entry.SelectionState != "active" || entry.TicketID != "P4-BR1" || entry.RevisionNumber != 1 || entry.Filename != admitted.Filename || entry.SHA256 != admitted.Brief.ArtifactSha256 || entry.SizeBytes != admitted.Brief.ArtifactSizeBytes || entry.Status != "approved" || entry.ReviewState != "completed" || entry.ReviewDisposition != string(TicketDesignBriefReviewReadyForApproval) || entry.ReviewID != reviewed.Review.ReviewID || entry.ApprovalID != approved.Approval.ApprovalID || entry.Historical {
+		t.Fatalf("brief lineage entry = %+v", entry)
+	}
+}
+
+func TestTicketDesignBriefApprovalPropagatesUnreadableReview(t *testing.T) {
+	ctx := context.Background()
+	store, workspaceID, closure, authorityID := ticketFixture(t)
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-BR-READ-ERROR", 59, 0, "brief review read error")
+	if _, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: "P4-BR-READ-ERROR", RevisionRowID: published.Revision.ID, Rationale: "select for unreadable review"}); err != nil {
+		t.Fatal(err)
+	}
+	admitted, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `ALTER TABLE ticket_design_brief_reviews RENAME COLUMN disposition TO unreadable_disposition`); err != nil {
+		t.Fatal(err)
+	}
+	_, readErr := store.GetTicketDesignBriefReviewByBriefRowID(ctx, admitted.Brief.ID)
+	if readErr == nil || errors.Is(readErr, sql.ErrNoRows) {
+		t.Fatalf("review read error = %v, want non-no-row error", readErr)
+	}
+	_, err = service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{
+		WorkspaceID: workspaceID, ExpectedVersion: workspace.Version,
+		OperatorConfirmationEvidence: "review read must propagate", CreatedIdentity: "auditor",
+	})
+	if err == nil || errors.Is(err, ErrBriefReviewIncomplete) || err.Error() != readErr.Error() {
+		t.Fatalf("approval error = %v, want propagated review read error %v", err, readErr)
+	}
+}
+
+func TestTicketDesignBriefNeedsRevisionAndReplacementCannotAuthorizeApproval(t *testing.T) {
+	ctx := context.Background()
+	store, workspaceID, closure, authorityID := ticketFixture(t)
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := publishApprovedTicket(t, ctx, service, workspaceID, closure, authorityID, "P4-BR-DISPOSITION", 57, 0, "brief disposition")
+	selection, err := service.Select(ctx, SelectInput{WorkspaceID: workspaceID, TicketID: "P4-BR-DISPOSITION", RevisionRowID: published.Revision.ID, Rationale: "select first brief basis"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewNeedsRevision})
+	if err != nil || review.Review.BriefRowID != first.Brief.ID || review.Review.Disposition != string(TicketDesignBriefReviewNeedsRevision) {
+		t.Fatalf("needs-revision review = %#v, %v", review, err)
+	}
+	state, err := service.ReadWorkspaceBriefState(ctx, workspaceID)
+	if err != nil || state.State != "reviewed" || state.ReviewDisposition != string(TicketDesignBriefReviewNeedsRevision) {
+		t.Fatalf("needs-revision brief state = %+v, %v", state, err)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "needs revision cannot approve", CreatedIdentity: "operator"}); !errors.Is(err, ErrBriefReviewIncomplete) {
+		t.Fatalf("needs-revision approval error = %v, want ErrBriefReviewIncomplete", err)
+	}
+	state, err = service.ReadWorkspaceBriefState(ctx, workspaceID)
+	if err != nil || state.State != "reviewed" || state.ReviewDisposition != string(TicketDesignBriefReviewNeedsRevision) {
+		t.Fatalf("rejected needs-revision approval changed state = %+v, %v", state, err)
+	}
+	second, err := service.AdmitTicketDesignBrief(ctx, TicketDesignBriefAdmissionInput{WorkspaceID: workspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Brief.SelectionRowID == selection.Selection.ID {
+		t.Fatalf("replacement brief reused original selection %d", selection.Selection.ID)
+	}
+	oldSelection, err := store.GetDeliveryTicketSelectionBySelectionID(ctx, selection.Selection.SelectionID)
+	if err != nil || oldSelection.State != "superseded" {
+		t.Fatalf("original selection after replacement = %#v, %v", oldSelection, err)
+	}
+	lineage, err := service.ReadWorkspaceBriefIntegrity(ctx, workspaceID)
+	if err != nil || len(lineage.Briefs) != 2 || len(lineage.Diagnostics) != 0 {
+		t.Fatalf("replacement lineage = %+v, %v", lineage, err)
+	}
+	lineageByBriefID := make(map[string]TicketDesignBriefIntegrity, len(lineage.Briefs))
+	for _, entry := range lineage.Briefs {
+		lineageByBriefID[entry.BriefID] = entry
+	}
+	if old := lineageByBriefID[first.Brief.BriefID]; !old.Historical || old.SelectionState != "superseded" || old.ReviewDisposition != string(TicketDesignBriefReviewNeedsRevision) || old.ApprovalID != "" {
+		t.Fatalf("historical replacement lineage = %+v", old)
+	}
+	if current := lineageByBriefID[second.Brief.BriefID]; current.Historical || current.SelectionState != "active" || current.ReviewState != "none" || current.ApprovalID != "" {
+		t.Fatalf("current replacement lineage = %+v", current)
+	}
+	if _, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "replacement cannot inherit review", CreatedIdentity: "operator"}); !errors.Is(err, ErrBriefReviewIncomplete) {
+		t.Fatalf("replacement inherited review error = %v, want ErrBriefReviewIncomplete", err)
+	}
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval}); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.ApproveTicketDesignBrief(ctx, TicketDesignBriefApprovalInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "ready replacement approved", CreatedIdentity: "operator"})
+	if err != nil || approved.Brief.ID != second.Brief.ID || approved.Approval.BriefRowID != second.Brief.ID {
+		t.Fatalf("ready replacement approval = %#v, %v", approved, err)
 	}
 }
 
@@ -196,7 +318,7 @@ func TestTicketDesignBriefRowsAreImmutableHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor"}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().ExecContext(ctx, `UPDATE ticket_design_brief_reviews SET reviewer_identity = 'mutated'`); err == nil {
@@ -248,7 +370,7 @@ func TestApproveCurrentTicketDesignBriefResolvesBriefServerSide(t *testing.T) {
 	if _, err := service.ApproveCurrentTicketDesignBrief(ctx, ApproveCurrentBriefInput{WorkspaceID: workspaceID, ExpectedVersion: workspace.Version, Evidence: "guided-operator-approval"}); !errors.Is(err, ErrBriefReviewIncomplete) {
 		t.Fatalf("approve current without review error = %v, want ErrBriefReviewIncomplete", err)
 	}
-	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor"}); err != nil {
+	if _, err := service.CompleteTicketDesignBriefReview(ctx, CompleteBriefReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: TicketDesignBriefReviewReadyForApproval}); err != nil {
 		t.Fatal(err)
 	}
 	// The guided approve resolves the current brief identity server-side; no

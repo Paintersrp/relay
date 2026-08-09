@@ -604,3 +604,25 @@ func TestPlanningCandidateReviewMigrationFrom43AddsEmptyImmutableHistory(t *test
 		t.Fatalf("foreign key errors = %d", foreignKeyErrors)
 	}
 }
+
+func TestReviewDispositionMigrationAddsOnlyBoundedDisposition(t *testing.T) {
+	db := openMigrationTestDB(t, "review-disposition-upgrade")
+	defer db.Close()
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"planning_candidate_reviews", "ticket_design_brief_reviews"} {
+		var definition string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&definition); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(definition, "disposition") || !strings.Contains(definition, "ready_for_approval") || !strings.Contains(definition, "needs_revision") {
+			t.Fatalf("%s lacks bounded disposition: %s", table, definition)
+		}
+		for _, forbidden := range []string{"finding", "report", "prose"} {
+			if strings.Contains(strings.ToLower(definition), forbidden) {
+				t.Fatalf("%s persists forbidden review material %q", table, forbidden)
+			}
+		}
+	}
+}

@@ -50,6 +50,15 @@ describe("feature workspace transport", () => {
     expect(detail.availableActions[0]).toEqual({ action: "select_delivery_ticket", primary: true, enabled: true, requiresConfirmation: true, handoff: "Select the current frontier Delivery Ticket server-side." });
   });
 
+  it("preserves the backend planning needsRevision count", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: { ...guidedBody.guided, planning: { ...guidedBody.guided.planning, needsRevision: 2 } },
+    })));
+
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.planning.needsRevision).toBe(2);
+  });
+
   it("normalizes null guided integrity subsections from the transport response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
       guided: {
@@ -62,9 +71,46 @@ describe("feature workspace transport", () => {
       discovery: { currentRevisionId: "", currentPacket: null, history: [], reopenEvents: [] },
       authority: [],
       planning: [],
-      delivery: { frontier: [], selection: null, package: null, run: null, audit: null, remediation: null },
+      delivery: { frontier: [], selection: null, briefs: [], package: null, run: null, audit: null, remediation: null },
       prototype: null,
+      diagnostics: [],
     });
+  });
+
+  it("normalizes inspectable Ticket Design Brief lineage and typed integrity diagnostics", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: {
+        ...guidedBody.guided,
+        diagnostics: {
+          ...guidedBody.guided.diagnostics,
+          integrity: {
+            discovery: null,
+            authority: [],
+            planning: [],
+            delivery: {
+              frontier: [],
+              selection: { selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 },
+              briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", reviewState: "completed", reviewDisposition: "ready_for_approval", reviewId: "review-1", approvalId: "approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "a".repeat(64), sizeBytes: 21, status: "superseded", reviewState: "completed", reviewDisposition: "needs_revision", reviewId: "review-0", approvalId: "", historical: true }],
+              package: { packageId: "package-1", sha256: "p".repeat(64), approvalId: "package-approval-1" },
+              run: { runId: "run-1", packageId: "package-1", repoTarget: "relay", branch: "main", baseCommit: "c".repeat(40) },
+              audit: null,
+              remediation: null,
+            },
+            prototype: null,
+            diagnostics: [{ domain: "delivery.brief", condition: "unreadable" }, { domain: "delivery.package", condition: "inconsistent" }],
+          },
+        },
+      },
+    })));
+
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.diagnostics.integrity.delivery.selection).toEqual({ selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 });
+    expect(detail.diagnostics.integrity.delivery.briefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ briefId: "brief-1", filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", reviewDisposition: "ready_for_approval", reviewId: "review-1", approvalId: "approval-1", historical: false }),
+      expect.objectContaining({ briefId: "brief-0", selectionId: "selection-0", historical: true }),
+    ]));
+    expect(detail.diagnostics.integrity.delivery.run).toEqual(expect.objectContaining({ runId: "run-1", packageId: "package-1" }));
+    expect(detail.diagnostics.integrity.diagnostics).toEqual([{ domain: "delivery.brief", condition: "unreadable" }, { domain: "delivery.package", condition: "inconsistent" }]);
   });
 
   it("posts only the server-selected primary action with expected version and confirmation", async () => {
@@ -76,7 +122,7 @@ describe("feature workspace transport", () => {
     expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)).toEqual({ expectedVersion: 2, action: "select_delivery_ticket", confirmation: true });
     const posted = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string);
     expect(Object.keys(posted).sort()).toEqual(["action", "confirmation", "expectedVersion"]);
-    expect(JSON.stringify(posted)).not.toMatch(/(ticketId|packageId|runId|workspaceId|sha256|rowId)/i);
+    expect(JSON.stringify(posted)).not.toMatch(/(ticketId|briefId|selectionId|packageId|runId|approvalId|reviewId|workspaceId|sha256|rowId)/i);
   });
 
   it("parses the owner-composed handoff transfer after a handoff action", async () => {

@@ -26,6 +26,7 @@ var (
 	ErrCandidateBytesMismatch      = errors.New("planning candidate bytes or digest mismatch")
 	ErrCandidateApprovalInvalid    = errors.New("planning candidate approval is invalid")
 	ErrCandidateReview             = errors.New("planning candidate review is invalid")
+	ErrCandidateReviewIncomplete   = errors.New("planning candidate review is not ready for approval")
 	ErrAuthorityConflict           = errors.New("feature authority layer conflicts with candidate")
 	ErrAuthorityDuplicate          = errors.New("feature authority layer is already present")
 	ErrHistoricalBasis             = errors.New("historical basis cannot authorize progression")
@@ -86,12 +87,20 @@ type CandidatePromotionResult struct {
 	Approval  workflowstore.PlanningCandidateApproval
 }
 
-// CompleteCandidateReviewInput records only the minimal fact that the
-// read-only auditor review handoff completed for the current planning
-// candidate. No review outcome, verdict, or content is accepted or persisted.
+type PlanningCandidateReviewDisposition string
+
+const (
+	PlanningCandidateReviewReadyForApproval PlanningCandidateReviewDisposition = "ready_for_approval"
+	PlanningCandidateReviewNeedsRevision    PlanningCandidateReviewDisposition = "needs_revision"
+)
+
+// CompleteCandidateReviewInput records the bounded disposition of a read-only
+// auditor review of the current planning candidate. No findings or prose are
+// accepted or persisted.
 type CompleteCandidateReviewInput struct {
 	WorkspaceID      string
 	ReviewerIdentity string
+	Disposition      PlanningCandidateReviewDisposition
 }
 
 type CompleteCandidateReviewResult struct {
@@ -280,6 +289,27 @@ func currentPlanningCandidateBasis(ctx context.Context, tx *workflowstore.Tx, ca
 	return nil
 }
 
+// currentExactPlanningCandidate prevents an older candidate on the same
+// closure and authority basis from retaining review authority after a newer
+// immutable replacement is admitted.
+func currentExactPlanningCandidate(ctx context.Context, tx *workflowstore.Tx, candidate workflowstore.PlanningCandidate, workspace workflowstore.FeatureWorkspace) error {
+	candidates, err := tx.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return err
+	}
+	for index := len(candidates) - 1; index >= 0; index-- {
+		current := candidates[index]
+		if current.Family != candidate.Family || current.DiscoveryClosurePacketRowID != workspace.CurrentDiscoveryClosurePacketRowID.Int64 || !sameNullableInt64(current.AuthorityRevisionRowID, workspace.CurrentAuthorityRevisionRowID) {
+			continue
+		}
+		if current.ID != candidate.ID {
+			return ErrStaleCandidateBasis
+		}
+		return nil
+	}
+	return ErrStaleCandidateBasis
+}
+
 // AdmitCandidate is a concise alias retained for application callers.
 func (s *Service) AdmitCandidate(ctx context.Context, input CandidateAdmissionInput) (CandidateAdmissionResult, error) {
 	return s.AdmitPlanningCandidate(ctx, input)
@@ -382,12 +412,28 @@ func (s *Service) ApprovePlanningCandidate(ctx context.Context, input CandidateA
 		if err := currentPlanningCandidateBasis(ctx, tx, candidate, workspace); err != nil {
 			return ErrHistoricalBasis
 		}
+		if err := currentExactPlanningCandidate(ctx, tx, candidate, workspace); err != nil {
+			return err
+		}
 		if candidate.ArtifactSha256 != input.ExpectedSHA256 || candidate.ArtifactSizeBytes != input.ExpectedSizeBytes {
 			return ErrCandidateBytesMismatch
 		}
 		stored, err := tx.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, len(input.Bytes))
 		if err != nil || !equalBytes(stored, input.Bytes) {
 			return ErrCandidateBytesMismatch
+		}
+		// Every planning candidate, including a Delivery Ticket candidate, needs
+		// the bounded ready-for-approval disposition before explicit approval.
+		// Review existence alone is not authority to approve.
+		review, err := tx.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.ID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrCandidateReviewIncomplete
+		}
+		if err != nil {
+			return err
+		}
+		if review.Disposition != string(PlanningCandidateReviewReadyForApproval) {
+			return ErrCandidateReviewIncomplete
 		}
 		approval, err := tx.CreatePlanningCandidateApproval(ctx, workflowstore.CreatePlanningCandidateApprovalParams{ApprovalID: workflowstore.NewPlanningCandidateApprovalID(), CandidateRowID: candidate.ID, CandidateArtifactRowID: candidate.ArtifactRowID, CandidateSha256: input.ExpectedSHA256, CandidateSizeBytes: input.ExpectedSizeBytes, OperatorConfirmationEvidence: evidence, CreatedIdentity: strings.TrimSpace(input.CreatedIdentity)})
 		if err != nil {
@@ -413,10 +459,11 @@ func equalBytes(a, b []byte) bool {
 // CompletePlanningCandidateReview records the narrow authoritative fact that
 // the read-only auditor review handoff completed for the current planning
 // candidate. The candidate identity is resolved server-side from the
-// workspace's current closure basis; the review outcome is never accepted or
+// workspace's current closure basis; only its bounded disposition is
 // persisted, and this completion is a separate fact from approval.
 func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input CompleteCandidateReviewInput) (CompleteCandidateReviewResult, error) {
-	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" {
+	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ReviewerIdentity) == "" ||
+		(input.Disposition != PlanningCandidateReviewReadyForApproval && input.Disposition != PlanningCandidateReviewNeedsRevision) {
 		return CompleteCandidateReviewResult{}, ErrCandidateReview
 	}
 	result := CompleteCandidateReviewResult{}
@@ -440,9 +487,12 @@ func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input Com
 			return err
 		}
 		// Resolve the current in-flight candidate for the family priority of
-		// the workspace's closed destination, matching the guided decision.
+		// the workspace's closed destination. Newer immutable candidates replace
+		// older in-flight candidates on the same basis, so a review cannot bind
+		// an older artifact when the current artifact has been replaced.
 		for _, family := range guidedCandidateFamiliesForDestination(DiscoveryDestination(packet.Destination)) {
-			for _, candidate := range candidates {
+			for index := len(candidates) - 1; index >= 0; index-- {
+				candidate := candidates[index]
 				if candidate.Family != family || candidate.DiscoveryClosurePacketRowID != workspace.CurrentDiscoveryClosurePacketRowID.Int64 || !sameNullableInt64(candidate.AuthorityRevisionRowID, workspace.CurrentAuthorityRevisionRowID) {
 					continue
 				}
@@ -460,7 +510,7 @@ func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input Com
 				}
 				review, err := tx.CreatePlanningCandidateReview(ctx, workflowstore.CreatePlanningCandidateReviewParams{
 					ReviewID: workflowstore.NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID,
-					ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity),
+					ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition),
 				})
 				if err != nil {
 					return fmt.Errorf("%w: %v", ErrCandidateReview, err)
@@ -502,6 +552,9 @@ func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input Ca
 		}
 		if err := currentPlanningCandidateBasis(ctx, tx, candidate, workspace); err != nil {
 			return ErrHistoricalBasis
+		}
+		if err := currentExactPlanningCandidate(ctx, tx, candidate, workspace); err != nil {
+			return err
 		}
 		if _, err = tx.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, int(candidate.ArtifactSizeBytes)); err != nil {
 			return ErrCandidateBytesMismatch

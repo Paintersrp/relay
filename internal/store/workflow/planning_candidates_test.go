@@ -275,13 +275,13 @@ func TestPlanningCandidateReviewPersistenceIsNarrowImmutableFact(t *testing.T) {
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		var err error
 		review, err = tx.CreatePlanningCandidateReview(ctx, CreatePlanningCandidateReviewParams{
-			ReviewID: NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID, ReviewerIdentity: "auditor",
+			ReviewID: NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID, ReviewerIdentity: "auditor", Disposition: "ready_for_approval",
 		})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if review.CandidateRowID != candidate.ID || review.ReviewerIdentity != "auditor" || review.CompletedAt == "" {
+	if review.CandidateRowID != candidate.ID || review.ReviewerIdentity != "auditor" || review.Disposition != "ready_for_approval" || review.CompletedAt == "" {
 		t.Fatalf("created review = %#v", review)
 	}
 	if read, err := store.GetPlanningCandidateReviewByReviewID(ctx, review.ReviewID); err != nil || read.ID != review.ID {
@@ -294,7 +294,7 @@ func TestPlanningCandidateReviewPersistenceIsNarrowImmutableFact(t *testing.T) {
 	// retained immutable history with no outcome or verdict columns.
 	if err := store.WithTx(ctx, func(tx *Tx) error {
 		_, err := tx.CreatePlanningCandidateReview(ctx, CreatePlanningCandidateReviewParams{
-			ReviewID: NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID, ReviewerIdentity: "second",
+			ReviewID: NewPlanningCandidateReviewID(), CandidateRowID: candidate.ID, ReviewerIdentity: "second", Disposition: "needs_revision",
 		})
 		return err
 	}); err == nil {

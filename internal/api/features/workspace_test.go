@@ -506,6 +506,27 @@ func TestGuidedRichHandoffDelegatesInsteadOfNoOp(t *testing.T) {
 	}
 }
 
+func TestGuidedActionHTTPAllowsTicketDesignBriefActionsToReachDispatch(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-brief-actions", FeatureSlug: "payments", Version: 8}}
+	for _, tc := range []struct {
+		action, disposition string
+	}{
+		{action: "author_ticket_design_brief", disposition: "needs_revision"},
+		{action: "review_ticket_design_brief"},
+		{action: "approve_ticket_design_brief", disposition: "ready_for_approval"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			projection := featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, Delivery: featureapp.GuidedDeliverySection{SelectionState: "active", BriefState: "reviewed", BriefReviewDisposition: tc.disposition}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedFeatureAction(tc.action), Primary: true, Enabled: true}}
+			guided := &richFakeGuided{projection: projection, result: featureapp.GuidedActionResult{Projection: projection}}
+			response := httptest.NewRecorder()
+			guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-brief-actions/guided/actions", strings.NewReader(`{"expectedVersion":8,"action":"`+tc.action+`","confirmation":true}`)))
+			if response.Code != http.StatusOK || guided.input.Action != tc.action || guided.input.WorkspaceID != detail.Workspace.WorkspaceID || guided.input.ExpectedVersion != detail.Workspace.Version || !strings.Contains(response.Body.String(), `"briefReviewDisposition":"`+tc.disposition+`"`) {
+				t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestGuidedReopenTransportCarriesNoClientDigest(t *testing.T) {
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", Version: 8}}
 	guided := &richFakeGuided{projection: featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionReopenDiscovery, Primary: true, Enabled: true, RequiresConfirmation: true}}, result: featureapp.GuidedActionResult{Projection: featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionReopenDiscovery, Primary: true, Enabled: true}}}}
@@ -535,19 +556,19 @@ func (f *reviewCompletionFakeGuided) CompletePlanningCandidateReview(_ context.C
 	}
 	return featureapp.CompleteCandidateReviewResult{
 		Candidate: workflowstore.PlanningCandidate{CandidateID: "candidate-api-1"},
-		Review:    workflowstore.PlanningCandidateReview{ReviewID: "candidate-review-api-1", ReviewerIdentity: input.ReviewerIdentity, CompletedAt: "2026-08-08T00:00:00.000000000Z"},
+		Review:    workflowstore.PlanningCandidateReview{ReviewID: "candidate-review-api-1", ReviewerIdentity: input.ReviewerIdentity, Disposition: string(input.Disposition), CompletedAt: "2026-08-08T00:00:00.000000000Z"},
 	}, nil
 }
 
-func TestPlanningCandidateReviewCompletionRouteRecordsNarrowFactWithoutOutcome(t *testing.T) {
+func TestPlanningCandidateReviewCompletionRouteRecordsBoundedDispositionOnServerResolvedCandidate(t *testing.T) {
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
 	guided := &reviewCompletionFakeGuided{}
 	response := httptest.NewRecorder()
-	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor"}`)))
-	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.ReviewerIdentity != "auditor" {
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`)))
+	if response.Code != http.StatusCreated || guided.input.WorkspaceID != "workspace-api-review" || guided.input.ReviewerIdentity != "auditor" || guided.input.Disposition != featureapp.PlanningCandidateReviewReadyForApproval {
 		t.Fatalf("status=%d input=%#v body=%s", response.Code, guided.input, response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"reviewId":"candidate-review-api-1"`) || !strings.Contains(response.Body.String(), `"candidateId":"candidate-api-1"`) || !strings.Contains(response.Body.String(), `"reviewerIdentity":"auditor"`) {
+	if !strings.Contains(response.Body.String(), `"reviewId":"candidate-review-api-1"`) || !strings.Contains(response.Body.String(), `"candidateId":"candidate-api-1"`) || !strings.Contains(response.Body.String(), `"reviewerIdentity":"auditor"`) || !strings.Contains(response.Body.String(), `"disposition":"ready_for_approval"`) {
 		t.Fatalf("completion response body = %s", response.Body.String())
 	}
 	for _, forbidden := range []string{"outcome", "verdict", "finding"} {
@@ -557,11 +578,30 @@ func TestPlanningCandidateReviewCompletionRouteRecordsNarrowFactWithoutOutcome(t
 	}
 }
 
+func TestPlanningCandidateReviewCompletionRouteRejectsClientCandidateIdentityAndInvalidDisposition(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
+	for _, body := range []string{
+		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","candidateId":"other-candidate"}`,
+		`{"reviewerIdentity":"auditor","disposition":"findings_attached"}`,
+		`{"reviewerIdentity":"auditor"}`,
+	} {
+		guided := &reviewCompletionFakeGuided{err: featureapp.ErrCandidateReview}
+		response := httptest.NewRecorder()
+		guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d response=%s", body, response.Code, response.Body.String())
+		}
+		if guided.input.WorkspaceID != "" {
+			t.Fatalf("invalid review request reached owner: %#v", guided.input)
+		}
+	}
+}
+
 func TestPlanningCandidateReviewCompletionRouteRejectsMissingIdentity(t *testing.T) {
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-api-review", Version: 8}}
 	guided := &reviewCompletionFakeGuided{err: featureapp.ErrCandidateReview}
 	response := httptest.NewRecorder()
-	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{}`)))
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api-review/planning-candidate-reviews", strings.NewReader(`{"disposition":"ready_for_approval"}`)))
 	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "planning candidate review") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -585,6 +625,7 @@ func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
 			Delivery: featureapp.GuidedIntegrityDeliverySection{
 				Frontier:    []featureapp.GuidedIntegrityTicket{{TicketID: "P5-T1", RevisionNumber: 2}},
 				Selection:   &featureapp.GuidedIntegritySelection{SelectionID: "selection-1"},
+				Briefs:      []featureapp.GuidedIntegrityTicketDesignBrief{{BriefID: "brief-1", SelectionID: "selection-1", SelectionState: "active", TicketID: "P5-T1", RevisionNumber: 2, Filename: "payments.ticket-P5-T1.r2.design-brief.md", SHA256: strings.Repeat("h", 64), SizeBytes: 12, Status: "approved", ReviewState: "completed", ReviewDisposition: "ready_for_approval", ReviewID: "brief-review-1", ApprovalID: "brief-approval-1"}},
 				Package:     &featureapp.GuidedIntegrityPackage{PackageID: "package-1", SHA256: strings.Repeat("d", 64), ApprovalID: "pkg-approval-1"},
 				Run:         &featureapp.GuidedIntegrityRun{RunID: "run-1", PackageID: "package-1", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("e", 40)},
 				Audit:       &featureapp.GuidedIntegrityAudit{AuditPacketID: "packet-1", AuditDecisionID: "audit-1", AuditedCommit: strings.Repeat("f", 40)},
@@ -595,6 +636,7 @@ func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
 				Cleanup:   []featureapp.GuidedIntegrityPrototypeCleanup{{CleanupObligationID: "prototype-cleanup-1", Kind: "worktree", Status: "complete"}},
 				QAPackets: []featureapp.GuidedIntegrityPrototypeQAPacket{{QAPacketID: "prototype-qa-packet-1", Status: "admitted", AdmissionID: "prototype-qa-admission-1", Evidence: []featureapp.GuidedIntegrityPrototypeQAEvidence{{QaEvidenceID: "prototype-qa-evidence-1", SemanticRole: "result-envelope", SHA256: strings.Repeat("g", 64), SizeBytes: 4, MediaType: "application/json"}}}},
 			},
+			Diagnostics: []featureapp.GuidedIntegrityDiagnostic{{Domain: "delivery.brief", Condition: "unverifiable"}},
 		}},
 	}
 	raw, err := json.Marshal(guidedFeatureProjectionDTO(projection))
@@ -614,6 +656,9 @@ func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
 		`"promoted":true`,
 		`"approvals":["candidate-approval-1"]`,
 		`"selectionId":"selection-1"`,
+		`"briefId":"brief-1"`,
+		`"reviewDisposition":"ready_for_approval"`,
+		`"condition":"unverifiable"`,
 		`"packageId":"package-1"`,
 		`"approvalId":"pkg-approval-1"`,
 		`"runId":"run-1"`,
@@ -648,6 +693,9 @@ func TestGuidedActionRejectsIntegrityIdentityFields(t *testing.T) {
 	router := guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided)
 	for _, payload := range []string{
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"candidateId":"candidate-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"briefId":"brief-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"selectionId":"selection-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"briefApprovalId":"brief-approval-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"packageId":"package-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"runId":"run-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"auditPacketId":"packet-1"}`,

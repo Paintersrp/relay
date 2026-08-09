@@ -4,12 +4,17 @@ import { RelayFeatureWorkspaceDetail } from "@/components/relay/RelayFeatureWork
 import { Button } from "@/components/ui/button";
 import { featureWorkspaceGuidedQueryOptions } from "@/features/relay-feature-workspaces";
 
-export const Route = createFileRoute("/feature-workspaces/$workspaceId")({ component: FeatureWorkspacePage });
+export const Route = createFileRoute("/feature-workspaces/$workspaceId")({
+  component: FeatureWorkspacePage,
+});
 function FeatureWorkspacePage() {
   const { workspaceId } = Route.useParams();
   const query = useQuery(featureWorkspaceGuidedQueryOptions(workspaceId));
   return (
-    <section data-testid="route-scroll-region" className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">
+    <section
+      data-testid="route-scroll-region"
+      className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]"
+    >
       {query.isLoading ? (
         <div className="mx-auto w-full max-w-5xl p-6">Loading workspace…</div>
       ) : query.error || !query.data ? (

@@ -49,6 +49,7 @@ func TestPlanningCandidateRequirementsAndSharedDesignPromotionSequences(t *testi
 				if candidateResult.Candidate.ArtifactSha256 != discoveryTestDigest(bytes) || candidateResult.Candidate.ArtifactSizeBytes != int64(len(bytes)) || candidateResult.AuthorizedNextAction != "approve_candidate" {
 					t.Fatalf("candidate admission = %#v", candidateResult)
 				}
+				completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
 				approvalResult, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 					CandidateID: candidateResult.Candidate.CandidateID, ExpectedSHA256: candidateResult.Candidate.ArtifactSha256,
 					ExpectedSizeBytes: candidateResult.Candidate.ArtifactSizeBytes, Bytes: bytes, ExpectedVersion: workspace.Version,
@@ -166,6 +167,7 @@ func TestPlanningCandidateApprovalReviewIsExactReadOnlyAndRejectsStaleOrAlteredB
 	if current, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID); err != nil || current.Version != beforeVersion {
 		t.Fatalf("read-only composition changed workspace = %#v, %v", current, err)
 	}
+	completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
 	bad := append([]byte(nil), bytes...)
 	bad[0] = 'X'
 	if _, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256, ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: bad, ExpectedVersion: workspace.Version, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID, OperatorConfirmationEvidence: "wrong bytes", CreatedIdentity: "auditor"}); !errors.Is(err, ErrCandidateBytesMismatch) {
@@ -268,6 +270,7 @@ func TestPlanningCandidatePromotionConflictAndRollbackAreAtomic(t *testing.T) {
 		if err != nil {
 			return CandidateApprovalResult{}, err
 		}
+		completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
 		return service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256, ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: value, ExpectedVersion: expectedVersion, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID, OperatorConfirmationEvidence: "approved", CreatedIdentity: "auditor"})
 	}
 	firstBytes := []byte("# First shared design\n")
@@ -346,6 +349,7 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
+		completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
 		requirementsApproval, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 			CandidateID: requirementsCandidate.Candidate.CandidateID, ExpectedSHA256: requirementsCandidate.Candidate.ArtifactSha256,
 			ExpectedSizeBytes: requirementsCandidate.Candidate.ArtifactSizeBytes, Bytes: requirementsBytes, ExpectedVersion: workspace.Version,
@@ -384,6 +388,7 @@ func TestPlanningCandidateSharedDesignPromotionComposesCurrentRequirements(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
+		completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
 		sharedDesignApproval, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 			CandidateID: sharedDesignCandidate.Candidate.CandidateID, ExpectedSHA256: sharedDesignCandidate.Candidate.ArtifactSha256,
 			ExpectedSizeBytes: sharedDesignCandidate.Candidate.ArtifactSizeBytes, Bytes: sharedDesignCandidateBytes, ExpectedVersion: workspace.Version,
@@ -498,6 +503,7 @@ func TestPlanningCandidatePromotionRejectsUnavailableSourceClosure(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
 	approval, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256,
 		ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: bytes, ExpectedVersion: workspace.Version,
@@ -516,6 +522,13 @@ func TestPlanningCandidatePromotionRejectsUnavailableSourceClosure(t *testing.T)
 	var authorities int
 	if err := store.DB().QueryRowContext(ctx, `SELECT count(*) FROM feature_workspace_authority_revisions WHERE workspace_row_id = ?`, workspace.ID).Scan(&authorities); err != nil || authorities != 0 {
 		t.Fatalf("authority revisions after unavailable source = %d, err=%v", authorities, err)
+	}
+}
+
+func completeReadyPlanningReview(t *testing.T, ctx context.Context, service *Service, workspaceID string) {
+	t.Helper()
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -541,11 +554,11 @@ func TestCompletePlanningCandidateReviewRecordsNarrowFactWithoutOutcome(t *testi
 	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: ""}); !errors.Is(err, ErrCandidateReview) {
 		t.Fatalf("review completion without identity error = %v, want ErrCandidateReview", err)
 	}
-	completed, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"})
+	completed, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if completed.Review.CandidateRowID != admitted.Candidate.ID || completed.Review.ReviewerIdentity != "auditor" {
+	if completed.Review.CandidateRowID != admitted.Candidate.ID || completed.Review.ReviewerIdentity != "auditor" || completed.Review.Disposition != string(PlanningCandidateReviewReadyForApproval) {
 		t.Fatalf("completed review = %#v", completed.Review)
 	}
 	read, err := service.store.GetPlanningCandidateReviewByCandidateRowID(ctx, admitted.Candidate.ID)
@@ -554,7 +567,7 @@ func TestCompletePlanningCandidateReviewRecordsNarrowFactWithoutOutcome(t *testi
 	}
 	// The completion fact is recorded exactly once and cannot overwrite the
 	// review history.
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrCandidateReview) {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); !errors.Is(err, ErrCandidateReview) {
 		t.Fatalf("duplicate review completion error = %v, want ErrCandidateReview", err)
 	}
 	// An already-approved candidate cannot record a later review completion.
@@ -570,11 +583,11 @@ func TestCompletePlanningCandidateReviewRecordsNarrowFactWithoutOutcome(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); !errors.Is(err, ErrCandidateReview) {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); !errors.Is(err, ErrCandidateReview) {
 		t.Fatalf("review completion after approval error = %v, want ErrCandidateReview", err)
 	}
-	// No review outcome, verdict, or content is ever persisted: the table only
-	// carries the identity and completion time.
+	// No findings, report, or prose is persisted: the table carries only the
+	// identity, bounded disposition, and completion time.
 	var reviewColumns []string
 	rows, err := store.DB().QueryContext(ctx, `PRAGMA table_info(planning_candidate_reviews)`)
 	if err != nil {
@@ -590,11 +603,92 @@ func TestCompletePlanningCandidateReviewRecordsNarrowFactWithoutOutcome(t *testi
 		}
 		reviewColumns = append(reviewColumns, name)
 	}
-	for _, forbidden := range []string{"outcome", "verdict", "content", "finding"} {
+	for _, forbidden := range []string{"outcome", "verdict", "content", "finding", "report"} {
 		for _, column := range reviewColumns {
 			if strings.Contains(column, forbidden) {
 				t.Fatalf("review schema persists forbidden outcome column %q", column)
 			}
 		}
+	}
+}
+
+func TestPlanningCandidateNeedsRevisionAndReplacementCannotAuthorizeApproval(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	var err error
+	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-review-disposition', 'C:/planning-review-disposition', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-review-disposition", strings.Repeat("a", 40))
+	admit := func(bytes []byte) CandidateAdmissionResult {
+		result, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements, Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-review-disposition", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	approve := func(candidate CandidateAdmissionResult, bytes []byte) error {
+		_, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256, ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: bytes, ExpectedVersion: workspace.Version, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID, OperatorConfirmationEvidence: "review disposition", CreatedIdentity: "operator"})
+		return err
+	}
+	firstBytes := []byte("# first review basis\n")
+	first := admit(firstBytes)
+	needsRevision, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewNeedsRevision})
+	if err != nil || needsRevision.Review.CandidateRowID != first.Candidate.ID || needsRevision.Review.Disposition != string(PlanningCandidateReviewNeedsRevision) {
+		t.Fatalf("needs-revision review = %#v, %v", needsRevision, err)
+	}
+	if err := approve(first, firstBytes); !errors.Is(err, ErrCandidateReviewIncomplete) {
+		t.Fatalf("needs-revision approval error = %v, want ErrCandidateReviewIncomplete", err)
+	}
+	secondBytes := []byte("# replacement review basis\n")
+	second := admit(secondBytes)
+	if err := approve(first, firstBytes); !errors.Is(err, ErrStaleCandidateBasis) {
+		t.Fatalf("replaced candidate approval error = %v, want ErrStaleCandidateBasis", err)
+	}
+	if err := approve(second, secondBytes); !errors.Is(err, ErrCandidateReviewIncomplete) {
+		t.Fatalf("replacement inherited review error = %v, want ErrCandidateReviewIncomplete", err)
+	}
+	completeReadyPlanningReview(t, ctx, service, workspace.WorkspaceID)
+	if err := approve(second, secondBytes); err != nil {
+		t.Fatalf("ready replacement approval error = %v", err)
+	}
+}
+
+func TestPlanningCandidateApprovalPropagatesUnreadableReview(t *testing.T) {
+	ctx, store, service, workspace, revision := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	var err error
+	if _, workspace, err = service.CloseFeatureDiscovery(ctx, CloseFeatureDiscoveryInput{WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, ExpectedRevisionID: revision.DiscoveryRevisionID, Destination: DiscoveryDestinationRequirements, CreatedIdentity: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('planning-review-read-error', 'C:/planning-review-read-error', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	insertReadyPlanningSourceClosure(t, ctx, store, workspace, "planning-review-read-error", strings.Repeat("a", 40))
+	bytes := []byte("# unreadable review\n")
+	candidate, err := service.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyRequirements,
+		Filename: workspace.FeatureSlug + ".requirements.md", Bytes: bytes, SHA256: discoveryTestDigest(bytes), RepoTarget: "planning-review-read-error",
+		Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationRequirements, CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `ALTER TABLE planning_candidate_reviews RENAME COLUMN disposition TO unreadable_disposition`); err != nil {
+		t.Fatal(err)
+	}
+	_, readErr := store.GetPlanningCandidateReviewByCandidateRowID(ctx, candidate.Candidate.ID)
+	if readErr == nil || errors.Is(readErr, sql.ErrNoRows) {
+		t.Fatalf("review read error = %v, want non-no-row error", readErr)
+	}
+	_, err = service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256,
+		ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: bytes, ExpectedVersion: workspace.Version,
+		ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID,
+		OperatorConfirmationEvidence: "review read must propagate", CreatedIdentity: "auditor",
+	})
+	if err == nil || errors.Is(err, ErrCandidateReviewIncomplete) || err.Error() != readErr.Error() {
+		t.Fatalf("approval error = %v, want propagated review read error %v", err, readErr)
 	}
 }

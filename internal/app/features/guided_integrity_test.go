@@ -1,6 +1,8 @@
 package features
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,6 +10,33 @@ import (
 	"relay/internal/guidedapp"
 	workflowstore "relay/internal/store/workflow"
 )
+
+type unreadableIntegrityPackageOwner struct{}
+
+func (unreadableIntegrityPackageOwner) ReadWorkspacePackageState(context.Context, string) (guidedapp.PackageState, error) {
+	return guidedapp.PackageState{}, errors.New("package read unavailable")
+}
+func (unreadableIntegrityPackageOwner) ApproveCurrentPackage(context.Context, guidedapp.ApprovePackageInput) error {
+	return errors.New("not used")
+}
+func (unreadableIntegrityPackageOwner) PrepareCurrentSelection(context.Context, guidedapp.PreparePackageInput) (guidedapp.PreparePackageResult, error) {
+	return guidedapp.PreparePackageResult{}, errors.New("not used")
+}
+
+func TestGuidedIntegrityReportsUnreadableOwnerWithoutInventingIdentity(t *testing.T) {
+	ctx, _, service, workspace, _ := adoptedDiscoveryLifecycle(t, DiscoveryDestinationRequirements)
+	service.SetGuidedPackageOwnerForTest(unreadableIntegrityPackageOwner{})
+	integrity := guidedIntegrity(ctx, service, workspace, DiscoveryAssessment{}, nil, GuidedDeliverySection{}, GuidedPrototypeSection{})
+	if integrity.Delivery.Package != nil {
+		t.Fatalf("package identity from failed read = %+v", integrity.Delivery.Package)
+	}
+	for _, diagnostic := range integrity.Diagnostics {
+		if diagnostic.Domain == "delivery.package" && diagnostic.Condition == "unreadable" {
+			return
+		}
+	}
+	t.Fatalf("integrity diagnostics = %+v", integrity.Diagnostics)
+}
 
 // TestGuidedIntegrityComposesTypedDiscoveryAuthorityPlanningIdentities drives
 // the real journey from adopted discovery through close, candidate admission,
@@ -36,7 +65,7 @@ func TestGuidedIntegrityComposesTypedDiscoveryAuthorityPlanningIdentities(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor"}); err != nil {
+	if _, err := service.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
 		t.Fatal(err)
 	}
 	approved, err := service.ApprovePlanningCandidate(ctx, CandidateApprovalInput{

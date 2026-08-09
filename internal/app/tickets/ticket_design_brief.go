@@ -34,9 +34,9 @@ type TicketDesignBriefAdmissionInput struct {
 }
 
 type TicketDesignBriefAdmissionResult struct {
-	Brief    workflowstore.TicketDesignBrief
+	Brief     workflowstore.TicketDesignBrief
 	Workspace workflowstore.FeatureWorkspace
-	Filename string
+	Filename  string
 }
 
 type TicketDesignBriefApprovalInput struct {
@@ -51,12 +51,20 @@ type TicketDesignBriefApprovalResult struct {
 	Approval workflowstore.TicketDesignBriefApproval
 }
 
-// CompleteBriefReviewInput records only the minimal fact that the read-only
-// auditor review handoff completed for the current brief. No review outcome,
-// verdict, or content is accepted or persisted.
+type TicketDesignBriefReviewDisposition string
+
+const (
+	TicketDesignBriefReviewReadyForApproval TicketDesignBriefReviewDisposition = "ready_for_approval"
+	TicketDesignBriefReviewNeedsRevision    TicketDesignBriefReviewDisposition = "needs_revision"
+)
+
+// CompleteBriefReviewInput records the bounded disposition of the read-only
+// auditor review of the current brief. No findings or prose are accepted or
+// persisted.
 type CompleteBriefReviewInput struct {
 	WorkspaceID      string
 	ReviewerIdentity string
+	Disposition      TicketDesignBriefReviewDisposition
 }
 
 type TicketDesignBriefReviewResult struct {
@@ -76,13 +84,42 @@ type ApproveCurrentBriefInput struct {
 // WorkspaceBriefState is the delivery-owner semantic read of the durable
 // Ticket Design Brief for the workspace's current selection:
 // none | authored | reviewed | approved. Consumers must not reconstruct brief
-// state from ticket_design_briefs rows. "reviewed" reflects the narrow
-// authoritative fact that the read-only auditor review handoff completed;
-// review outcome is never persisted.
+// state from ticket_design_briefs rows. ReviewDisposition preserves the narrow
+// authoritative disposition of the completed read-only review, so consumers
+// can distinguish ready_for_approval from needs_revision without treating a
+// completed review as approval.
 type WorkspaceBriefState struct {
-	State          string
-	TicketID       string
-	RevisionNumber int64
+	State             string
+	ReviewDisposition string
+	TicketID          string
+	RevisionNumber    int64
+}
+
+// WorkspaceBriefIntegrity is the durable, read-only lineage for Ticket Design
+// Briefs in a workspace. It is separate from WorkspaceBriefState because it
+// retains historical selection bindings for inspection rather than using them
+// as lifecycle authority.
+type WorkspaceBriefIntegrity struct {
+	Briefs      []TicketDesignBriefIntegrity
+	Diagnostics []TicketDesignBriefIntegrityDiagnostic
+}
+
+type TicketDesignBriefIntegrity struct {
+	BriefID, SelectionID, SelectionState, TicketID               string
+	RevisionNumber                                               int64
+	Filename, SHA256                                             string
+	SizeBytes                                                    int64
+	Status, ReviewState, ReviewDisposition, ReviewID, ApprovalID string
+	Historical                                                   bool
+}
+
+// TicketDesignBriefIntegrityDiagnostic describes a partial inspection failure
+// without pretending that a missing or unverifiable value is an exact
+// identity. Conditions are intentionally stable and contain no storage error
+// text.
+type TicketDesignBriefIntegrityDiagnostic struct {
+	BriefID   string
+	Condition string // unreadable | inconsistent | unverifiable
 }
 
 // AdmitTicketDesignBrief durably records the authored Ticket Design Brief for
@@ -97,7 +134,7 @@ func (s *Service) AdmitTicketDesignBrief(ctx context.Context, input TicketDesign
 	if err != nil {
 		return TicketDesignBriefAdmissionResult{}, err
 	}
-	selection, revision, ticket, err := s.currentActiveSelectionBasis(ctx, s.store, workspace.ID)
+	_, revision, ticket, err := s.currentActiveSelectionBasis(ctx, s.store, workspace.ID)
 	if err != nil {
 		return TicketDesignBriefAdmissionResult{}, err
 	}
@@ -105,12 +142,6 @@ func (s *Service) AdmitTicketDesignBrief(ctx context.Context, input TicketDesign
 	if diagnostics := planningartifacts.Validate(speccompiler.ArtifactTicketDesignBrief, input.Bytes); len(diagnostics) != 0 {
 		return TicketDesignBriefAdmissionResult{}, fmt.Errorf("%w: brief for %s is not admissible: %v", ErrInvalidTicketDesignBrief, ticket.TicketID, diagnostics)
 	}
-	if _, err := s.store.GetTicketDesignBriefBySelectionRowID(ctx, selection.ID); err == nil {
-		return TicketDesignBriefAdmissionResult{}, fmt.Errorf("%w: a brief already exists for the active selection", ErrTicketDesignBriefConflict)
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return TicketDesignBriefAdmissionResult{}, err
-	}
-
 	artifactID := workflowstore.NewFeatureWorkspaceDiscoveryArtifactID()
 	batch, err := s.store.ArtifactStore().Begin("feature-discovery/" + workspace.WorkspaceID + "/" + artifactID)
 	if err != nil {
@@ -127,11 +158,14 @@ func (s *Service) AdmitTicketDesignBrief(ctx context.Context, input TicketDesign
 		if err != nil {
 			return err
 		}
-		selection, revision, ticket, err := s.currentActiveSelectionBasis(ctx, tx, workspace.ID)
+		selection, revision, _, err := s.currentActiveSelectionBasis(ctx, tx, workspace.ID)
 		if err != nil {
 			return err
 		}
-		_ = ticket
+		selection, err = s.replaceNeedsRevisionBriefSelection(ctx, tx, workspace, selection, revision)
+		if err != nil {
+			return err
+		}
 		artifact, err := tx.CreateFeatureWorkspaceDiscoveryArtifact(ctx, workflowstore.CreateFeatureWorkspaceDiscoveryArtifactParams{
 			DiscoveryArtifactID: artifactID, WorkspaceRowID: workspace.ID, RelativePath: file.RelativePath,
 			Sha256: file.SHA256, MediaType: file.MediaType, SizeBytes: file.SizeBytes,
@@ -152,6 +186,70 @@ func (s *Service) AdmitTicketDesignBrief(ctx context.Context, input TicketDesign
 		return nil
 	})
 	return result, err
+}
+
+// replaceNeedsRevisionBriefSelection preserves an immutable rejected brief and
+// its review by superseding the active selection, then creates a new active
+// selection for the exact still-current ticket revision. This is the only
+// replacement path: authored, ready, and approved briefs remain bound to their
+// original immutable selection.
+func (s *Service) replaceNeedsRevisionBriefSelection(
+	ctx context.Context,
+	tx *workflowstore.Tx,
+	workspace workflowstore.FeatureWorkspace,
+	selection workflowstore.DeliveryTicketSelection,
+	revision workflowstore.DeliveryTicketRevision,
+) (workflowstore.DeliveryTicketSelection, error) {
+	brief, err := tx.GetTicketDesignBriefBySelectionRowID(ctx, selection.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return selection, nil
+	}
+	if err != nil {
+		return workflowstore.DeliveryTicketSelection{}, err
+	}
+	if brief.RevisionRowID != revision.ID {
+		return workflowstore.DeliveryTicketSelection{}, ErrTicketDesignBriefBytesMismatch
+	}
+	if _, err := tx.GetTicketDesignBriefApprovalByBriefRowID(ctx, brief.ID); err == nil {
+		return workflowstore.DeliveryTicketSelection{}, fmt.Errorf("%w: the current brief is already approved", ErrTicketDesignBriefConflict)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return workflowstore.DeliveryTicketSelection{}, err
+	}
+	review, err := tx.GetTicketDesignBriefReviewByBriefRowID(ctx, brief.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return workflowstore.DeliveryTicketSelection{}, fmt.Errorf("%w: an existing brief may only be replaced after needs_revision review", ErrTicketDesignBriefConflict)
+		}
+		return workflowstore.DeliveryTicketSelection{}, err
+	}
+	if review.Disposition != string(TicketDesignBriefReviewNeedsRevision) {
+		return workflowstore.DeliveryTicketSelection{}, fmt.Errorf("%w: an existing brief may only be replaced after needs_revision review", ErrTicketDesignBriefConflict)
+	}
+	approvals, err := tx.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
+	if err != nil {
+		return workflowstore.DeliveryTicketSelection{}, err
+	}
+	approval, ok := currentDeliveryApproval(workspace, revision, approvals)
+	if !ok {
+		return workflowstore.DeliveryTicketSelection{}, ErrSelectionAuthorityStale
+	}
+	if _, err := tx.TransitionDeliveryTicketSelection(ctx, selection.SelectionID, "superseded"); err != nil {
+		return workflowstore.DeliveryTicketSelection{}, selectionConflictError(err)
+	}
+	replacement, err := tx.CreateDeliveryTicketSelection(ctx, workflowstore.CreateDeliveryTicketSelectionParams{
+		SelectionID: workflowstore.NewDeliveryTicketSelectionID(), WorkspaceRowID: workspace.ID,
+		State: "active", Rationale: "replace Ticket Design Brief after needs_revision review",
+		SourceClosureRowID: sql.NullInt64{Int64: revision.SourceClosureRowID, Valid: true},
+	})
+	if err != nil {
+		return workflowstore.DeliveryTicketSelection{}, selectionConflictError(err)
+	}
+	if _, err := tx.CreateDeliveryTicketSelectionMember(ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{
+		SelectionRowID: replacement.ID, Sequence: 1, RevisionRowID: revision.ID, ApprovalRowID: approval.ID,
+	}); err != nil {
+		return workflowstore.DeliveryTicketSelection{}, err
+	}
+	return replacement, nil
 }
 
 // ApproveTicketDesignBrief is the explicit confirmed owner mutation that
@@ -199,13 +297,17 @@ func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesi
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		// Approval is an explicit confirmed owner mutation that follows the
-		// completed read-only review; the review outcome itself is never
-		// persisted and approval is never treated as review completion.
-		if _, err := tx.GetTicketDesignBriefReviewByBriefRowID(ctx, brief.ID); errors.Is(err, sql.ErrNoRows) {
+		// Approval is an explicit confirmed owner mutation that follows a
+		// ready read-only review; review remains separate from approval.
+		review, err := tx.GetTicketDesignBriefReviewByBriefRowID(ctx, brief.ID)
+		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: the current brief has no completed review", ErrBriefReviewIncomplete)
-		} else if err != nil {
+		}
+		if err != nil {
 			return err
+		}
+		if review.Disposition != string(TicketDesignBriefReviewReadyForApproval) {
+			return fmt.Errorf("%w: the current brief has no completed review", ErrBriefReviewIncomplete)
 		}
 		approval, err := tx.CreateTicketDesignBriefApproval(ctx, workflowstore.CreateTicketDesignBriefApprovalParams{
 			ApprovalID: workflowstore.NewTicketDesignBriefApprovalID(), BriefRowID: brief.ID,
@@ -224,10 +326,11 @@ func (s *Service) ApproveTicketDesignBrief(ctx context.Context, input TicketDesi
 
 // CompleteTicketDesignBriefReview records the narrow authoritative fact that
 // the read-only auditor review handoff completed for the current brief. The
-// brief identity is resolved server-side; the review outcome is never accepted
-// or persisted, and this completion is a separate fact from approval.
+// brief identity is resolved server-side; only its bounded disposition is
+// persisted, and this completion is a separate fact from approval.
 func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input CompleteBriefReviewInput) (TicketDesignBriefReviewResult, error) {
-	if !nonBlank(input.WorkspaceID) || !nonBlank(input.ReviewerIdentity) {
+	if !nonBlank(input.WorkspaceID) || !nonBlank(input.ReviewerIdentity) ||
+		(input.Disposition != TicketDesignBriefReviewReadyForApproval && input.Disposition != TicketDesignBriefReviewNeedsRevision) {
 		return TicketDesignBriefReviewResult{}, ErrTicketDesignBriefReview
 	}
 	result := TicketDesignBriefReviewResult{}
@@ -259,7 +362,7 @@ func (s *Service) CompleteTicketDesignBriefReview(ctx context.Context, input Com
 		}
 		review, err := tx.CreateTicketDesignBriefReview(ctx, workflowstore.CreateTicketDesignBriefReviewParams{
 			ReviewID: workflowstore.NewTicketDesignBriefReviewID(), BriefRowID: brief.ID,
-			ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity),
+			ReviewerIdentity: strings.TrimSpace(input.ReviewerIdentity), Disposition: string(input.Disposition),
 		})
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrTicketDesignBriefReview, err)
@@ -289,8 +392,8 @@ func (s *Service) ApproveCurrentTicketDesignBrief(ctx context.Context, input App
 // ReadWorkspaceBriefState is the delivery-owner semantic read consumed by the
 // guided journey projection. It resolves the workspace's latest selection and
 // reports none | authored | reviewed | approved for the durable brief bound to
-// it. "reviewed" is derived only from the narrow review-completion record;
-// review outcome is never stored.
+// it. A completed review also retains its bounded disposition so the guided
+// journey can distinguish remediation from approval readiness.
 func (s *Service) ReadWorkspaceBriefState(ctx context.Context, workspaceID string) (WorkspaceBriefState, error) {
 	if !nonBlank(workspaceID) {
 		return WorkspaceBriefState{}, ErrInvalidTicket
@@ -340,8 +443,9 @@ func (s *Service) ReadWorkspaceBriefState(ctx context.Context, workspaceID strin
 		return WorkspaceBriefState{}, err
 	}
 	result.State = "authored"
-	if _, err := s.store.GetTicketDesignBriefReviewByBriefRowID(ctx, brief.ID); err == nil {
+	if review, err := s.store.GetTicketDesignBriefReviewByBriefRowID(ctx, brief.ID); err == nil {
 		result.State = "reviewed"
+		result.ReviewDisposition = review.Disposition
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return WorkspaceBriefState{}, err
 	}
@@ -351,6 +455,93 @@ func (s *Service) ReadWorkspaceBriefState(ctx context.Context, workspaceID strin
 		return WorkspaceBriefState{}, err
 	}
 	return result, nil
+}
+
+// ReadWorkspaceBriefIntegrity returns every durable Ticket Design Brief and
+// its ticket/selection lineage. It verifies each artifact before exposing its
+// digest and size; absent review or approval records are normal lifecycle
+// states, while broken bindings are reported as typed diagnostics.
+func (s *Service) ReadWorkspaceBriefIntegrity(ctx context.Context, workspaceID string) (WorkspaceBriefIntegrity, error) {
+	if !nonBlank(workspaceID) {
+		return WorkspaceBriefIntegrity{}, ErrInvalidTicket
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+	if err != nil {
+		return WorkspaceBriefIntegrity{}, err
+	}
+	briefs, err := s.store.ListTicketDesignBriefsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return WorkspaceBriefIntegrity{}, err
+	}
+	selections, err := s.store.ListDeliveryTicketSelectionsByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return WorkspaceBriefIntegrity{}, err
+	}
+	selectionByRowID := make(map[int64]workflowstore.DeliveryTicketSelection, len(selections))
+	for _, selection := range selections {
+		selectionByRowID[selection.ID] = selection
+	}
+	result := WorkspaceBriefIntegrity{Briefs: make([]TicketDesignBriefIntegrity, 0, len(briefs))}
+	for _, brief := range briefs {
+		entry := TicketDesignBriefIntegrity{BriefID: brief.BriefID, Status: "authored", ReviewState: "none"}
+		selection, ok := selectionByRowID[brief.SelectionRowID]
+		if !ok {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "inconsistent"})
+			result.Briefs = append(result.Briefs, entry)
+			continue
+		}
+		entry.SelectionID, entry.SelectionState = selection.SelectionID, selection.State
+		entry.Historical = selection.State != "active"
+		members, membersErr := s.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+		if membersErr != nil {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: briefIntegrityReadCondition(membersErr)})
+		} else if len(members) != 1 || members[0].RevisionRowID != brief.RevisionRowID {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "inconsistent"})
+		} else if revision, revisionErr := s.store.GetDeliveryTicketRevisionByRowID(ctx, brief.RevisionRowID); revisionErr != nil {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: briefIntegrityReadCondition(revisionErr)})
+		} else if ticket, ticketErr := s.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID); ticketErr != nil {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: briefIntegrityReadCondition(ticketErr)})
+		} else {
+			entry.TicketID, entry.RevisionNumber = ticket.TicketID, revision.RevisionNumber
+			if brief.Filename != ticketDesignBriefFilename(workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber) {
+				result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "inconsistent"})
+			} else {
+				entry.Filename = brief.Filename
+			}
+		}
+		if bytes, bytesErr := s.store.ReadTicketDesignBriefBytes(ctx, brief.BriefID, 1<<20); bytesErr != nil || int64(len(bytes)) != brief.ArtifactSizeBytes {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "unverifiable"})
+		} else {
+			entry.SHA256, entry.SizeBytes = brief.ArtifactSha256, brief.ArtifactSizeBytes
+		}
+		if review, reviewErr := s.store.GetTicketDesignBriefReviewByBriefRowID(ctx, brief.ID); reviewErr == nil {
+			entry.ReviewState, entry.ReviewDisposition, entry.ReviewID = "completed", review.Disposition, review.ReviewID
+			if review.Disposition == string(TicketDesignBriefReviewReadyForApproval) {
+				entry.Status = "reviewed"
+			}
+		} else if !errors.Is(reviewErr, sql.ErrNoRows) {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "unreadable"})
+		}
+		if approval, approvalErr := s.store.GetTicketDesignBriefApprovalByBriefRowID(ctx, brief.ID); approvalErr == nil {
+			entry.Status, entry.ApprovalID = "approved", approval.ApprovalID
+			if entry.ReviewState != "completed" || entry.ReviewDisposition != string(TicketDesignBriefReviewReadyForApproval) || approval.BriefArtifactRowID != brief.ArtifactRowID || approval.BriefSha256 != brief.ArtifactSha256 || approval.BriefSizeBytes != brief.ArtifactSizeBytes {
+				entry.ApprovalID = ""
+				entry.Status = "authored"
+				result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "inconsistent"})
+			}
+		} else if !errors.Is(approvalErr, sql.ErrNoRows) {
+			result.Diagnostics = append(result.Diagnostics, TicketDesignBriefIntegrityDiagnostic{BriefID: brief.BriefID, Condition: "unreadable"})
+		}
+		result.Briefs = append(result.Briefs, entry)
+	}
+	return result, nil
+}
+
+func briefIntegrityReadCondition(err error) string {
+	if errors.Is(err, sql.ErrNoRows) {
+		return "inconsistent"
+	}
+	return "unreadable"
 }
 
 // currentActiveSelectionBasis resolves the workspace's current active
@@ -380,14 +571,7 @@ func (s *Service) currentActiveSelectionBasis(ctx context.Context, reader briefB
 	if err != nil {
 		return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, err
 	}
-	if !workspace.CurrentAuthorityRevisionRowID.Valid || !selection.SourceClosureRowID.Valid {
-		return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, ErrSelectionAuthorityStale
-	}
-	authority, err := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
-	if err != nil {
-		return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, err
-	}
-	if authority.WorkspaceRowID != workspace.ID || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != selection.SourceClosureRowID.Int64 {
+	if !selection.SourceClosureRowID.Valid {
 		return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, ErrSelectionAuthorityStale
 	}
 	closure, err := reader.GetSourceVaultClosureByRowID(ctx, selection.SourceClosureRowID.Int64)
@@ -414,6 +598,23 @@ func (s *Service) currentActiveSelectionBasis(ctx context.Context, reader briefB
 	}
 	if !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID {
 		return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, ErrSelectionMemberStale
+	}
+	if revision.SourceClosureRowID != selection.SourceClosureRowID.Int64 {
+		return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, ErrSelectionSourceStale
+	}
+	if workspace.CurrentAuthorityRevisionRowID.Valid {
+		authority, authorityErr := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
+		if authorityErr != nil {
+			return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, authorityErr
+		}
+		if authority.WorkspaceRowID != workspace.ID || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != selection.SourceClosureRowID.Int64 {
+			return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, ErrSelectionAuthorityStale
+		}
+	} else {
+		currentClosure, currentErr := reader.GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx, revision.RepoTarget, revision.BaseCommit)
+		if currentErr != nil || currentClosure.ID != selection.SourceClosureRowID.Int64 {
+			return workflowstore.DeliveryTicketSelection{}, workflowstore.DeliveryTicketRevision{}, workflowstore.DeliveryTicket{}, ErrSelectionSourceStale
+		}
 	}
 	approvals, err := reader.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
 	if err != nil {
@@ -448,6 +649,7 @@ type briefBasisReader interface {
 	GetFeatureWorkspaceByRowID(context.Context, int64) (workflowstore.FeatureWorkspace, error)
 	GetFeatureWorkspaceAuthorityRevisionByRowID(context.Context, int64) (workflowstore.FeatureWorkspaceAuthorityRevision, error)
 	GetSourceVaultClosureByRowID(context.Context, int64) (workflowstore.SourceVaultClosure, error)
+	GetReadySourceVaultClosureByRepositoryTargetAndCommit(context.Context, string, string) (workflowstore.SourceVaultClosure, error)
 	GetDeliveryTicketRevisionByRowID(context.Context, int64) (workflowstore.DeliveryTicketRevision, error)
 	GetDeliveryTicketByRowID(context.Context, int64) (workflowstore.DeliveryTicket, error)
 	ListDeliveryTicketRevisionApprovals(context.Context, int64) ([]workflowstore.DeliveryTicketRevisionApproval, error)

@@ -328,9 +328,8 @@ func deriveTicketReadiness(ctx context.Context, reader ticketReadStore, detail T
 	if err != nil {
 		return Readiness{}, err
 	}
-	if !workspace.CurrentAuthorityRevisionRowID.Valid {
-		reasons = append(reasons, "authority_missing")
-	} else {
+	directBasis := !workspace.CurrentAuthorityRevisionRowID.Valid
+	if !directBasis {
 		authority, err := reader.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
 		if err != nil {
 			return Readiness{}, err
@@ -338,14 +337,19 @@ func deriveTicketReadiness(ctx context.Context, reader ticketReadStore, detail T
 		if authority.WorkspaceRowID != workspace.ID || !authority.SourceClosureRowID.Valid || authority.SourceClosureRowID.Int64 != detail.Revision.SourceClosureRowID {
 			reasons = append(reasons, "authority_stale")
 		}
+	} else {
+		currentClosure, currentErr := reader.GetReadySourceVaultClosureByRepositoryTargetAndCommit(ctx, detail.Revision.RepoTarget, detail.Revision.BaseCommit)
+		if currentErr != nil || currentClosure.ID != detail.Revision.SourceClosureRowID {
+			reasons = append(reasons, "source_not_current")
+		}
 	}
 
 	approved := map[int64]struct{}{}
 	for _, approval := range detail.Approvals {
 		if approval.ApprovalKind == "delivery" && approval.ApprovalState == "approved" &&
 			approval.SourceClosureRowID == detail.Revision.SourceClosureRowID &&
-			workspace.CurrentAuthorityRevisionRowID.Valid && approval.AuthorityRevisionRowID.Valid &&
-			approval.AuthorityRevisionRowID.Int64 == workspace.CurrentAuthorityRevisionRowID.Int64 {
+			((directBasis && !approval.AuthorityRevisionRowID.Valid) ||
+				(!directBasis && approval.AuthorityRevisionRowID.Valid && approval.AuthorityRevisionRowID.Int64 == workspace.CurrentAuthorityRevisionRowID.Int64)) {
 			approved[approval.ID] = struct{}{}
 		}
 	}

@@ -158,13 +158,11 @@ func currentDeliveryApproval(
 	revision workflowstore.DeliveryTicketRevision,
 	approvals []workflowstore.DeliveryTicketRevisionApproval,
 ) (workflowstore.DeliveryTicketRevisionApproval, bool) {
-	if !workspace.CurrentAuthorityRevisionRowID.Valid {
-		return workflowstore.DeliveryTicketRevisionApproval{}, false
-	}
 	for _, approval := range approvals {
 		if approval.ApprovalKind == "delivery" && approval.ApprovalState == "approved" &&
 			approval.SourceClosureRowID == revision.SourceClosureRowID &&
-			approval.AuthorityRevisionRowID.Valid && approval.AuthorityRevisionRowID.Int64 == workspace.CurrentAuthorityRevisionRowID.Int64 {
+			((!workspace.CurrentAuthorityRevisionRowID.Valid && !approval.AuthorityRevisionRowID.Valid) ||
+				(workspace.CurrentAuthorityRevisionRowID.Valid && approval.AuthorityRevisionRowID.Valid && approval.AuthorityRevisionRowID.Int64 == workspace.CurrentAuthorityRevisionRowID.Int64)) {
 			return approval, true
 		}
 	}

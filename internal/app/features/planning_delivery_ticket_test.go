@@ -15,6 +15,7 @@ import (
 	workflowartifacts "relay/internal/artifacts/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
+	"relay/internal/testfixtures"
 )
 
 func TestDeliveryTicketCandidateAdmissionSupportsDirectAndAuthorityGovernedDestinations(t *testing.T) {
@@ -68,6 +69,7 @@ func TestApprovedDeliveryTicketCandidateProductionUsesCompilerIdentitiesAndAppro
 	if err != nil {
 		t.Fatal(err)
 	}
+	completeReadyPlanningReview(t, ctx, featureService, workspace.WorkspaceID)
 	candidateApproval, err := featureService.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256,
 		ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: candidateBytes, ExpectedVersion: workspace.Version,
@@ -146,6 +148,107 @@ func TestApprovedDeliveryTicketCandidateProductionUsesCompilerIdentitiesAndAppro
 	}
 }
 
+func TestDirectDeliveryCandidateUsesNullAuthorityOnlyWhileAuthorityIsAbsent(t *testing.T) {
+	ctx, store, featureService, workspace, _ := deliveryTicketCandidateFixture(t, DiscoveryDestinationDirectDeliveryTicket)
+	// Direct Delivery has no Requirements/Shared Design authority. The fixture
+	// establishes one for its authority-governed coverage, so remove only the
+	// current pointer before admitting the direct candidate.
+	historicalAuthority := workspace.CurrentAuthorityRevisionRowID
+	if !historicalAuthority.Valid {
+		t.Fatal("fixture did not establish authority for stale-authority negative")
+	}
+	if _, err := store.DB().ExecContext(ctx, `UPDATE feature_workspaces SET current_authority_revision_row_id = NULL, version = version + 1 WHERE id = ?`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, workspace.WorkspaceID)
+	if err != nil || workspace.CurrentAuthorityRevisionRowID.Valid {
+		t.Fatalf("direct workspace authority = %#v, %v", workspace.CurrentAuthorityRevisionRowID, err)
+	}
+	bytes := deliveryTicketCandidateBytes("P3-DIRECT", workspace.FeatureSlug, "candidate-production", strings.Repeat("a", 40))
+	candidate, err := featureService.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+		WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyDeliveryTicket,
+		Filename: "discovery-proof.ticket-P3-DIRECT.r1.delivery-ticket.json", Bytes: bytes, SHA256: digestForPlanningTest(bytes),
+		RepoTarget: "candidate-production", Branch: "main", BaseCommit: strings.Repeat("a", 40),
+		Destination: DiscoveryDestinationDirectDeliveryTicket, CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.Candidate.AuthorityRevisionRowID.Valid {
+		t.Fatalf("direct candidate inherited authority: %#v", candidate.Candidate)
+	}
+	if _, err := featureService.CompletePlanningCandidateReview(ctx, CompleteCandidateReviewInput{WorkspaceID: workspace.WorkspaceID, ReviewerIdentity: "auditor", Disposition: PlanningCandidateReviewReadyForApproval}); err != nil {
+		t.Fatal(err)
+	}
+	candidateApproval, err := featureService.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256, ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes,
+		Bytes: bytes, ExpectedVersion: workspace.Version, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID,
+		ExpectedAuthorityRevisionRowID: sql.NullInt64{}, OperatorConfirmationEvidence: "approve exact direct candidate", CreatedIdentity: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketService, err := workflowtickets.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	produced, err := ticketService.PromoteApprovedDeliveryTicketCandidate(ctx, workflowtickets.CandidateProductionInput{
+		CandidateID: candidate.Candidate.CandidateID, ApprovalID: candidateApproval.Approval.ApprovalID,
+		ExpectedVersion: workspace.Version, ExternalPriority: 5, CreatedIdentity: "planner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if produced.ProducedApproval.AuthorityRevisionRowID.Valid {
+		t.Fatalf("direct produced approval inherited authority: %#v", produced.ProducedApproval)
+	}
+	detail, err := ticketService.Read(ctx, produced.Ticket.TicketID)
+	if err != nil || !detail.Readiness.Ready {
+		t.Fatalf("direct ticket readiness = %#v, %v", detail.Readiness, err)
+	}
+	frontier, err := ticketService.ListFrontier(ctx, workspace.WorkspaceID)
+	if err != nil || len(frontier.Entries) != 1 || frontier.Entries[0].RevisionRowID != produced.Revision.ID {
+		t.Fatalf("direct frontier = %#v, %v", frontier, err)
+	}
+	if _, err := ticketService.Select(ctx, workflowtickets.SelectInput{WorkspaceID: workspace.WorkspaceID, TicketID: produced.Ticket.TicketID, RevisionRowID: produced.Revision.ID, Rationale: "select direct ticket"}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := ticketService.AdmitTicketDesignBrief(ctx, workflowtickets.TicketDesignBriefAdmissionInput{WorkspaceID: workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
+	if err != nil || brief.Brief.ID == 0 {
+		t.Fatalf("direct brief admission = %#v, %v", brief, err)
+	}
+	var vaultID int64
+	if err := store.DB().QueryRowContext(ctx, `SELECT vault_row_id FROM source_vault_closures WHERE id = ?`, produced.Revision.SourceClosureRowID).Scan(&vaultID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx, `INSERT INTO source_vault_closures (closure_id, vault_row_id, commit_oid, tree_oid, generation, ref_name, state, import_started_at, verified_at) VALUES (?, ?, ?, ?, 2, ?, 'ready', '2026-08-02T00:00:00.000000000Z', '2026-08-02T00:00:01.000000000Z')`, "closure-direct-replacement", vaultID, produced.Revision.BaseCommit, strings.Repeat("d", 40), "refs/relay/closures/direct-replacement"); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = ticketService.Read(ctx, produced.Ticket.TicketID)
+	if err != nil || detail.Readiness.Ready || !hasTicketReadinessReason(detail.Readiness.Reasons, "source_not_current") {
+		t.Fatalf("stale direct closure readiness = %#v, %v", detail.Readiness, err)
+	}
+
+	// A null approval is valid only for the authority-absent branch. Restoring
+	// an authority immediately makes it stale rather than silently accepting it.
+	if _, err := store.DB().ExecContext(ctx, `UPDATE feature_workspaces SET current_authority_revision_row_id = ?, version = version + 1 WHERE id = ?`, historicalAuthority.Int64, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = ticketService.Read(ctx, produced.Ticket.TicketID)
+	if err != nil || detail.Readiness.Ready || !hasTicketReadinessReason(detail.Readiness.Reasons, "approval_missing_or_stale") {
+		t.Fatalf("authority-present null approval readiness = %#v, %v", detail.Readiness, err)
+	}
+}
+
+func hasTicketReadinessReason(reasons []string, want string) bool {
+	for _, reason := range reasons {
+		if reason == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestApprovedDeliveryTicketCandidateProductionRollsBackAllStateOnBatchFailure(t *testing.T) {
 	ctx, store, featureService, workspace, _ := deliveryTicketCandidateFixture(t, DiscoveryDestinationDirectDeliveryTicket)
 	candidateBytes := deliveryTicketCandidateBytes("P3-T2", workspace.FeatureSlug, "candidate-production", strings.Repeat("a", 40))
@@ -158,6 +261,7 @@ func TestApprovedDeliveryTicketCandidateProductionRollsBackAllStateOnBatchFailur
 	if err != nil {
 		t.Fatal(err)
 	}
+	completeReadyPlanningReview(t, ctx, featureService, workspace.WorkspaceID)
 	candidateApproval, err := featureService.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256,
 		ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: candidateBytes, ExpectedVersion: workspace.Version,
@@ -217,6 +321,43 @@ func TestApprovedDeliveryTicketCandidateProductionRollsBackAllStateOnBatchFailur
 	}
 	if _, _, err := store.ArtifactStore().ReadVerifiedFile(workflowstoreArtifactFile(candidateArtifact, candidate.Candidate), 1<<20); err != nil {
 		t.Fatalf("candidate artifact after rollback = %v", err)
+	}
+}
+
+func TestDeliveryTicketCandidateProductionRejectsSupersededCurrentBasis(t *testing.T) {
+	ctx, store, featureService, workspace, _ := deliveryTicketCandidateFixture(t, DiscoveryDestinationDirectDeliveryTicket)
+	bytes := deliveryTicketCandidateBytes("P3-T-SUPERSEDED", workspace.FeatureSlug, "candidate-production", strings.Repeat("a", 40))
+	admitAndApprove := func() CandidateApprovalResult {
+		candidate, err := featureService.AdmitPlanningCandidate(ctx, CandidateAdmissionInput{
+			WorkspaceID: workspace.WorkspaceID, ExpectedVersion: workspace.Version, Family: CandidateFamilyDeliveryTicket,
+			Filename: "discovery-proof.ticket-P3-T-SUPERSEDED.r1.delivery-ticket.json", Bytes: bytes, SHA256: digestForPlanningTest(bytes),
+			RepoTarget: "candidate-production", Branch: "main", BaseCommit: strings.Repeat("a", 40), Destination: DiscoveryDestinationDirectDeliveryTicket, CreatedIdentity: "planner",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		completeReadyPlanningReview(t, ctx, featureService, workspace.WorkspaceID)
+		approval, err := featureService.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
+			CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256, ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes,
+			Bytes: bytes, ExpectedVersion: workspace.Version, ExpectedClosurePacketRowID: workspace.CurrentDiscoveryClosurePacketRowID, ExpectedAuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID,
+			OperatorConfirmationEvidence: "ready", CreatedIdentity: "auditor",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return approval
+	}
+	first := admitAndApprove()
+	_ = admitAndApprove()
+	owner, err := workflowtickets.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.PromoteApprovedDeliveryTicketCandidate(ctx, workflowtickets.CandidateProductionInput{CandidateID: first.Candidate.CandidateID, ApprovalID: first.Approval.ApprovalID, ExpectedVersion: workspace.Version, ExternalPriority: 0, CreatedIdentity: "planner"}); !errors.Is(err, workflowtickets.ErrStaleCandidateBasis) {
+		t.Fatalf("superseded candidate production error = %v", err)
+	}
+	if _, err := store.GetDeliveryTicketByTicketID(ctx, "P3-T-SUPERSEDED"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("superseded candidate produced a ticket: %v", err)
 	}
 }
 
@@ -338,6 +479,7 @@ func TestApprovedDeliveryTicketCandidateRejectsCompilerErrorsBeforePublication(t
 	if err != nil {
 		t.Fatal(err)
 	}
+	completeReadyPlanningReview(t, ctx, featureService, workspace.WorkspaceID)
 	candidateApproval, err := featureService.ApprovePlanningCandidate(ctx, CandidateApprovalInput{
 		CandidateID: candidate.Candidate.CandidateID, ExpectedSHA256: candidate.Candidate.ArtifactSha256,
 		ExpectedSizeBytes: candidate.Candidate.ArtifactSizeBytes, Bytes: candidateBytes, ExpectedVersion: workspace.Version,

@@ -118,6 +118,9 @@ func (s *Service) PromoteApprovedDeliveryTicketCandidate(ctx context.Context, in
 		if err := currentDeliveryCandidateBasis(ctx, tx, candidate, workspace); err != nil {
 			return err
 		}
+		if err := currentExactDeliveryCandidate(ctx, tx, candidate, workspace); err != nil {
+			return err
+		}
 		stored, err := tx.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, int(candidate.ArtifactSizeBytes))
 		if err != nil || !equalCandidateBytes(stored, candidateBytes) {
 			return ErrCandidateBytesMismatch
@@ -259,6 +262,28 @@ func currentDeliveryCandidateBasis(ctx context.Context, tx *workflowstore.Tx, ca
 		return ErrStaleCandidateBasis
 	}
 	return nil
+}
+
+// currentExactDeliveryCandidate prevents an older immutable candidate on the
+// same current basis from producing a Ticket after a replacement has been
+// admitted. The delivery owner enforces this independently of the guided
+// projection so direct owner calls cannot resurrect stale candidate authority.
+func currentExactDeliveryCandidate(ctx context.Context, tx *workflowstore.Tx, candidate workflowstore.PlanningCandidate, workspace workflowstore.FeatureWorkspace) error {
+	candidates, err := tx.ListPlanningCandidatesByWorkspace(ctx, workspace.ID)
+	if err != nil {
+		return err
+	}
+	for index := len(candidates) - 1; index >= 0; index-- {
+		current := candidates[index]
+		if current.Family != candidateFamilyDeliveryTicket || current.DiscoveryClosurePacketRowID != workspace.CurrentDiscoveryClosurePacketRowID.Int64 || current.AuthorityRevisionRowID.Valid != workspace.CurrentAuthorityRevisionRowID.Valid || (current.AuthorityRevisionRowID.Valid && current.AuthorityRevisionRowID.Int64 != workspace.CurrentAuthorityRevisionRowID.Int64) {
+			continue
+		}
+		if current.ID == candidate.ID {
+			return nil
+		}
+		return ErrStaleCandidateBasis
+	}
+	return ErrStaleCandidateBasis
 }
 
 func candidateSourceClosure(ctx context.Context, tx *workflowstore.Tx, candidate workflowstore.PlanningCandidate, baseCommit string) (workflowstore.SourceVaultClosure, error) {

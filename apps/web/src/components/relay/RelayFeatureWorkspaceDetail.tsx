@@ -134,14 +134,33 @@ function IntegrityDeliverySection({ delivery }: { delivery: GuidedIntegrity["del
     records.push(<div key="frontier"><IntegritySubHeading>Delivery Ticket frontier</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">{delivery.frontier.map((entry) => <IntegrityField key={entry.ticketId} label={entry.ticketId} value={`Revision ${entry.revisionNumber}`} />)}</dl></div>);
   }
   const basis: Array<[string, React.ReactNode]> = [];
-  if (delivery.selection) basis.push(["Selection", delivery.selection.selectionId]);
+  if (delivery.selection) basis.push(["Selection", `${delivery.selection.selectionId} (${delivery.selection.state || "state not recorded"}; ${delivery.selection.ticketId || "ticket not recorded"} v${delivery.selection.revisionNumber || "not recorded"})`]);
   if (delivery.package) basis.push(["Package", `${delivery.package.packageId} (${delivery.package.sha256})`]);
   if (delivery.package?.approvalId) basis.push(["Package approval", delivery.package.approvalId]);
   if (delivery.run) basis.push(["Run", `${delivery.run.runId} (package ${delivery.run.packageId}; ${delivery.run.repoTarget || "no repo"} @ ${delivery.run.branch || "no branch"}, base ${delivery.run.baseCommit || "none"})`]);
   if (delivery.audit) basis.push(["Audit", `packet ${delivery.audit.auditPacketId}; decision ${delivery.audit.auditDecisionId || "none"}; audited ${delivery.audit.auditedCommit || "none"}`]);
   if (delivery.remediation) basis.push(["Remediation", delivery.remediation.seedIds.join(", ")]);
   records.push(<div key="basis"><IntegritySubHeading>Delivery identities</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">{basis.map(([label, value]) => <IntegrityField key={label} label={label} value={value} />)}</dl></div>);
+  if (delivery.briefs.length) {
+    records.push(<div key="briefs"><IntegritySubHeading>Ticket Design Briefs</IntegritySubHeading><div className="mt-2 space-y-2">{delivery.briefs.map((brief) => <IntegrityRecord key={brief.briefId} name={brief.briefId} detail={`${brief.historical ? "historical" : "current"}; ${brief.status || "status not recorded"}`}>
+      <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+        <IntegrityField label="Selection binding" value={`${brief.selectionId || "None"} (${brief.selectionState || "state not recorded"})`} />
+        <IntegrityField label="Ticket revision" value={`${brief.ticketId || "None"} v${brief.revisionNumber || "not recorded"}`} />
+        <IntegrityField label="Canonical filename" value={brief.filename} />
+        <IntegrityField label="Digest" value={brief.sha256} />
+        <IntegrityField label="Size (bytes)" value={brief.sizeBytes} />
+        <IntegrityField label="Review state" value={brief.reviewState} />
+        <IntegrityField label="Review disposition" value={brief.reviewDisposition} />
+        <IntegrityField label="Review identity" value={brief.reviewId} />
+        <IntegrityField label="Approval identity" value={brief.approvalId} />
+      </dl>
+    </IntegrityRecord>)}</div></div>);
+  }
   return <IntegritySection title="Integrity delivery" records={records} />;
+}
+
+function IntegrityDiagnostics({ diagnostics }: { diagnostics: GuidedIntegrity["diagnostics"] }) {
+  return <div><h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrity inspection diagnostics</h4>{diagnostics.length ? <ul className="mt-2 space-y-1 text-sm">{diagnostics.map((diagnostic, index) => <li key={`${diagnostic.domain}-${diagnostic.condition}-${index}`}><span className="font-medium">{diagnostic.domain}</span>: inspection source <span className="font-medium">{diagnostic.condition}</span>.</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">No integrity inspection diagnostics recorded; absent identities are not errors.</p>}</div>;
 }
 
 function IntegrityPrototypeSection({ prototype }: { prototype: GuidedIntegrity["prototype"] }) {
@@ -289,6 +308,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       </div> : null}
       {detail.delivery ? <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selection</dt><dd className="mt-1 text-sm">{detail.delivery.selectionState || "none"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ticket Design Brief</dt><dd className="mt-1 text-sm">{detail.delivery.briefState || "none"}{detail.delivery.briefReviewDisposition ? ` (${detail.delivery.briefReviewDisposition})` : ""}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package</dt><dd className="mt-1 text-sm">{detail.delivery.packageState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Run</dt><dd className="mt-1 text-sm">{detail.delivery.runState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Audit</dt><dd className="mt-1 text-sm">{detail.delivery.auditState || "none"}</dd></div>
@@ -331,6 +351,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Readiness</dt><dd className="mt-1 text-sm">{detail.planning.readiness || "Not available"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</dt><dd className="mt-1 text-sm">{detail.planning.status || "Not available"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recovery</dt><dd className="mt-1 text-sm">{detail.planning.recoveryCategory || "None"}</dd></div>
+        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needs revision</dt><dd className="mt-1 text-sm">{detail.planning.needsRevision ?? 0}</dd></div>
       </dl>
     </section>
 
@@ -381,6 +402,7 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
           <IntegrityDeliverySection delivery={detail.diagnostics.integrity.delivery} />
           <IntegrityPrototypeSection prototype={detail.diagnostics.integrity.prototype} />
         </div></div>
+        <IntegrityDiagnostics diagnostics={detail.diagnostics.integrity.diagnostics} />
       </div>
     </details>
   </div>;
