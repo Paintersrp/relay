@@ -17,7 +17,6 @@ import (
 	featureapp "relay/internal/app/features"
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowartifacts "relay/internal/artifacts/workflow"
-	"relay/internal/planningartifacts"
 	"relay/internal/sourcevault"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
@@ -45,7 +44,7 @@ type Service struct {
 	sourceVaults SourceVaultReader
 }
 
-// SourceVaultReader is the narrow source-vault surface required to read the
+// SourceVaultReader is the narrow source-vault surface required to resolve the
 // exact retained Delivery Ticket source document. It is implemented by
 // *sourcevault.Manager.
 type SourceVaultReader interface {
@@ -53,16 +52,9 @@ type SourceVaultReader interface {
 }
 
 type validatedInput struct {
-	brief              validatedBrief
 	operations         *validatedOperations
 	operationsSHA256   string
 	operationsCoverage string
-}
-
-type validatedBrief struct {
-	input    ArtifactInput
-	identity speccompiler.FilenameInfo
-	sha256   string
 }
 
 type validatedOperations struct {
@@ -77,7 +69,7 @@ type packageMemberBasis struct {
 	revision        workflowstore.DeliveryTicketRevision
 	ticket          workflowstore.DeliveryTicket
 	approval        workflowstore.DeliveryTicketRevisionApproval
-	brief           validatedBrief
+	source          selectedTicketBasis
 	packageMember   workflowstore.ExecutionPackageMember
 }
 
@@ -90,7 +82,8 @@ type packageBasis struct {
 
 	sourceSHA256       string
 	authoritySHA256    string
-	designBriefSHA256  string
+	ticketSHA256       string
+	dependenciesSHA256 string
 	operationsSHA256   string
 	operationsCoverage string
 	packageSHA256      string
@@ -100,9 +93,11 @@ func NewService(store *workflowstore.Store) (*Service, error) {
 	return newService(store, nil)
 }
 
-// NewServiceWithSourceVaults creates a Service that can read the exact retained
-// Delivery Ticket source document from the supplied source-vault manager when
-// loading approved package authority.
+// NewServiceWithSourceVaults creates a Service that can resolve the exact
+// retained Delivery Ticket source document from the supplied source-vault
+// manager. Preparation, approval revalidation, and approved-authority loading
+// all require the source-vault reader because the selected approved Delivery
+// Ticket is the sole ticket semantic authority.
 func NewServiceWithSourceVaults(store *workflowstore.Store, sourceVaults SourceVaultReader) (*Service, error) {
 	if sourceVaults == nil {
 		return nil, fmt.Errorf("source-vault reader is required")
@@ -121,6 +116,13 @@ func newService(store *workflowstore.Store, sourceVaults SourceVaultReader) (*Se
 	return &Service{store: store, runs: runs, sourceVaults: sourceVaults}, nil
 }
 
+// Prepare creates the immutable execution package for the selected approved
+// Delivery Ticket. The selection identifies the exact approved Ticket
+// revision; the server resolves its exact source-vault bytes and deterministic
+// projection. The package basis binds the Ticket revision+approval, governing
+// authority layers, completed dependencies, exact source closure, repository
+// target/branch/base commit, and the optional Deterministic Operations. No
+// Brief identity, bytes, digest, or projection participates.
 func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResult, error) {
 	validated, err := validateInput(input)
 	if err != nil {
@@ -138,10 +140,6 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 		}
 	}()
 
-	briefFile, err := batch.Stage("ticket_design_brief", input.TicketDesignBrief.DisplayName, "text/markdown", input.TicketDesignBrief.Bytes)
-	if err != nil {
-		return PrepareResult{}, err
-	}
 	var operationsFile *workflowartifacts.File
 	if input.DeterministicOperations != nil {
 		file, stageErr := batch.Stage("deterministic_operations", input.DeterministicOperations.DisplayName, "application/json", input.DeterministicOperations.Bytes)
@@ -169,7 +167,6 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 			PackageSha256:                   basis.packageSHA256,
 			AuthoritySha256:                 basis.authoritySHA256,
 			SourceSha256:                    basis.sourceSHA256,
-			DesignBriefSha256:               basis.designBriefSHA256,
 			DeterministicOperationsSha256:   nullableString(validated.operationsSHA256),
 			DeterministicOperationsCoverage: nullableString(validated.operationsCoverage),
 		})
@@ -184,17 +181,25 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 				SelectionMemberRowID: member.selectionMember.ID,
 				Sequence:             member.selectionMember.Sequence,
 				RevisionRowID:        member.revision.ID,
-				MemberSha256:         member.brief.sha256,
+				MemberSha256:         member.source.sourceSHA256,
 			})
 			if memberErr != nil {
 				return fmt.Errorf("create execution package member: %w", memberErr)
 			}
 			result.Members = append(result.Members, packageMember)
 		}
-		result.TicketDesignBrief = packageArtifactFromFile(briefFile)
+		result.Ticket = basis.members[0].ticket
+		result.TicketRevision = basis.members[0].revision
+		result.TicketDocument = PackageArtifact{
+			DisplayName:  filepath.Base(basis.members[0].revision.SourcePath),
+			RelativePath: basis.members[0].revision.SourcePath,
+			SHA256:       basis.members[0].source.sourceSHA256,
+			SizeBytes:    int64(len(basis.members[0].source.sourceBytes)),
+		}
+		result.TicketProjection = basis.members[0].source.projection
 		if operationsFile != nil {
 			artifact := packageArtifactFromFile(*operationsFile)
-			result.DeterministicOperations = &artifact
+			result.Operations = &artifact
 		}
 		return nil
 	})
@@ -239,7 +244,10 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 	if err != nil {
 		return ApproveResult{}, err
 	}
-	validated, err := validateInput(prepareInput)
+	if _, err := validateInput(prepareInput); err != nil {
+		return ApproveResult{}, err
+	}
+	workspace, err := s.store.GetFeatureWorkspaceByRowID(ctx, packageRow.WorkspaceRowID)
 	if err != nil {
 		return ApproveResult{}, err
 	}
@@ -249,7 +257,7 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 	)
 
 	created, err := s.runs.CreatePackageRun(ctx, workflowruns.CreatePackageRunInput{
-		FeatureSlug:             validated.brief.identity.FeatureSlug,
+		FeatureSlug:             workspace.FeatureSlug,
 		RepoTarget:              packageRow.RepoTarget,
 		Branch:                  packageRow.Branch,
 		BaseCommit:              packageRow.BaseCommit,
@@ -295,13 +303,13 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 			for index := range basis.members {
 				member := &basis.members[index]
 				packageMember, ok := memberByRevision[member.revision.ID]
-				if !ok || packageMember.Sequence != member.selectionMember.Sequence || packageMember.MemberSha256 != member.brief.sha256 {
+				if !ok || packageMember.Sequence != member.selectionMember.Sequence || packageMember.MemberSha256 != member.source.sourceSHA256 {
 					return fmt.Errorf("%w: package member %d changed", ErrPackageBasisChanged, member.selectionMember.Sequence)
 				}
 				member.packageMember = packageMember
 				approvalBasis := compoundSHA256(
 					"approval-basis-v1", packageRow.PackageSha256, member.approval.ApprovalID,
-					strconv.FormatInt(member.packageMember.ID, 10), member.brief.sha256,
+					strconv.FormatInt(member.packageMember.ID, 10), member.source.sourceSHA256,
 					strconv.FormatInt(member.approval.AuthorityRevisionRowID.Int64, 10),
 					strconv.FormatInt(member.approval.SourceClosureRowID, 10),
 				)
@@ -365,37 +373,51 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
+	selection, err := s.store.GetDeliveryTicketSelectionByRowID(ctx, packageRow.SelectionRowID)
+	if err != nil {
+		return Detail{}, err
+	}
+	selectionMembers, err := s.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
+	if err != nil || len(selectionMembers) != 1 {
+		if err != nil {
+			return Detail{}, err
+		}
+		return Detail{}, fmt.Errorf("%w: package selection member cardinality is invalid", ErrPackageBasisChanged)
+	}
+	revision, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, selectionMembers[0].RevisionRowID)
+	if err != nil {
+		return Detail{}, err
+	}
+	ticket, err := s.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
+	if err != nil {
+		return Detail{}, err
+	}
 	workspace, err := s.store.GetFeatureWorkspaceByRowID(ctx, packageRow.WorkspaceRowID)
 	if err != nil {
 		return Detail{}, err
 	}
-	var briefArtifact PackageArtifact
-	var selectedTicket workflowstore.DeliveryTicket
-	var selectedRevision workflowstore.DeliveryTicketRevision
+	closure, err := s.store.GetSourceVaultClosureByRowID(ctx, packageRow.SourceClosureRowID)
+	if err != nil {
+		return Detail{}, err
+	}
+	var ticketDocument PackageArtifact
 	for _, member := range members {
-		revision, revisionErr := s.store.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
+		memberRevision, revisionErr := s.store.GetDeliveryTicketRevisionByRowID(ctx, member.RevisionRowID)
 		if revisionErr != nil {
 			return Detail{}, revisionErr
 		}
-		memberTicket, ticketErr := s.store.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
-		if ticketErr != nil {
-			return Detail{}, ticketErr
+		source, sourceErr := s.readSelectedTicketDocument(ctx, closure, memberRevision.SourcePath)
+		if sourceErr != nil {
+			return Detail{}, sourceErr
 		}
-		selectedTicket, selectedRevision = memberTicket, revision
-		filename := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, memberTicket.TicketID, revision.RevisionNumber)
-		bytes, readErr := s.readPackageFile(packageRow.PackageID, filename)
-		if readErr != nil {
-			return Detail{}, readErr
+		if source.sha256 != member.MemberSha256 {
+			return Detail{}, fmt.Errorf("%w: selected Ticket source no longer matches its package member", ErrPackageBasisChanged)
 		}
-		sha := sha256Hex(bytes)
-		if sha != member.MemberSha256 {
-			return Detail{}, fmt.Errorf("%w: design brief %s no longer matches its package member", ErrPackageBasisChanged, filename)
-		}
-		briefArtifact = PackageArtifact{DisplayName: filename, RelativePath: filepath.ToSlash(filepath.Join("packages", packageRow.PackageID, filename)), SHA256: sha, SizeBytes: int64(len(bytes))}
+		ticketDocument = PackageArtifact{DisplayName: filepath.Base(memberRevision.SourcePath), RelativePath: memberRevision.SourcePath, SHA256: source.sha256, SizeBytes: int64(len(source.bytes))}
 	}
 	var operationsArtifact *PackageArtifact
 	if packageRow.DeterministicOperationsSha256.Valid {
-		operationsName := fmt.Sprintf("%s.ticket-%s.r%d.deterministic-operations.json", workspace.FeatureSlug, selectedTicket.TicketID, selectedRevision.RevisionNumber)
+		operationsName := fmt.Sprintf("%s.ticket-%s.r%d.deterministic-operations.json", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
 		operationsBytes, readErr := s.readPackageFile(packageRow.PackageID, operationsName)
 		if readErr != nil {
 			return Detail{}, readErr
@@ -411,7 +433,9 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 		Package:                 packageRow,
 		Members:                 members,
 		ApprovalBindings:        bindings,
-		TicketDesignBrief:       briefArtifact,
+		Ticket:                  ticket,
+		TicketRevision:          revision,
+		TicketDocument:          ticketDocument,
 		DeterministicOperations: operationsArtifact,
 	}
 	if run, runErr := s.store.GetRunByExecutionPackageRowID(ctx, packageRow.ID); runErr == nil {
@@ -432,17 +456,7 @@ func validateInput(input PrepareInput) (validatedInput, error) {
 	if input.SelectionID == "" || strings.TrimSpace(input.SelectionID) != input.SelectionID {
 		return validatedInput{}, fmt.Errorf("%w: selection ID must be nonblank without outer whitespace", ErrInvalidPackageInput)
 	}
-	identity, diagnostics := speccompiler.ParseFilename(input.TicketDesignBrief.DisplayName)
-	if len(diagnostics) != 0 || identity.Kind != speccompiler.ArtifactTicketDesignBrief {
-		return validatedInput{}, fmt.Errorf("%w: invalid Ticket Design Brief filename %q", ErrInvalidPackageInput, input.TicketDesignBrief.DisplayName)
-	}
-	if err := validateArtifactHash(input.TicketDesignBrief); err != nil {
-		return validatedInput{}, err
-	}
-	if diagnostics := planningartifacts.Validate(speccompiler.ArtifactTicketDesignBrief, input.TicketDesignBrief.Bytes); len(diagnostics) != 0 {
-		return validatedInput{}, fmt.Errorf("%w: Ticket Design Brief %q has invalid structure", ErrInvalidPackageInput, input.TicketDesignBrief.DisplayName)
-	}
-	validated := validatedInput{brief: validatedBrief{input: input.TicketDesignBrief, identity: identity, sha256: sha256Hex(input.TicketDesignBrief.Bytes)}}
+	validated := validatedInput{}
 	if input.DeterministicOperations != nil {
 		operationsIdentity, operationsDiagnostics := speccompiler.ParseFilename(input.DeterministicOperations.DisplayName)
 		if len(operationsDiagnostics) != 0 || operationsIdentity.Kind != speccompiler.ArtifactDeterministicOperations {
@@ -476,26 +490,6 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 		}
 		return packageBasis{}, fmt.Errorf("%w: selection %s must be %s, found %s", ErrApprovedAuthorityInvalid, input.SelectionID, expectedSelectionState, selection.State)
 	}
-	currentBrief, briefErr := tx.GetCurrentTicketDesignBriefBySelectionRowID(ctx, selection.ID)
-	if errors.Is(briefErr, sql.ErrNoRows) {
-		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief is missing", ErrPackageBasisChanged)
-	}
-	if briefErr != nil {
-		return packageBasis{}, briefErr
-	}
-	if currentBrief.SelectionRowID != selection.ID || currentBrief.ArtifactSha256 != validated.brief.sha256 || currentBrief.ArtifactSizeBytes != int64(len(validated.brief.input.Bytes)) || currentBrief.Filename != validated.brief.input.DisplayName {
-		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief changed", ErrPackageBasisChanged)
-	}
-	briefApproval, approvalErr := tx.GetTicketDesignBriefApprovalByBriefRowID(ctx, currentBrief.ID)
-	if errors.Is(approvalErr, sql.ErrNoRows) {
-		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief is not approved", ErrPackageBasisChanged)
-	}
-	if approvalErr != nil {
-		return packageBasis{}, approvalErr
-	}
-	if briefApproval.BriefArtifactRowID != currentBrief.ArtifactRowID || briefApproval.BriefSha256 != currentBrief.ArtifactSha256 || briefApproval.BriefSizeBytes != currentBrief.ArtifactSizeBytes {
-		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief approval does not match its exact artifact", ErrPackageBasisChanged)
-	}
 	if !selection.SourceClosureRowID.Valid {
 		return packageBasis{}, fmt.Errorf("%w: selection has no source closure", ErrPackageBasisChanged)
 	}
@@ -512,9 +506,6 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 		currentness.AuthorityRevisionRowID.Int64 != workspace.CurrentAuthorityRevisionRowID.Int64 {
 		return packageBasis{}, fmt.Errorf("%w: Feature currentness is not current for package progression", ErrPackageBasisChanged)
 	}
-	if workspace.FeatureSlug != validated.brief.identity.FeatureSlug || !workspace.CurrentAuthorityRevisionRowID.Valid {
-		return packageBasis{}, fmt.Errorf("%w: current workspace authority does not match the Ticket Design Brief", ErrPackageBasisChanged)
-	}
 	authority, err := tx.GetFeatureWorkspaceAuthorityRevisionByRowID(ctx, workspace.CurrentAuthorityRevisionRowID.Int64)
 	if err != nil {
 		return packageBasis{}, err
@@ -530,30 +521,16 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 		return packageBasis{}, fmt.Errorf("%w: selection must have exactly one member, found %d", ErrSelectionInvalid, len(selectionMembers))
 	}
 	selectionMember := selectionMembers[0]
-	revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, selectionMember.RevisionRowID)
+	source, err := s.resolveSelectedTicketBasis(ctx, tx, selection, workspace, selectionMember)
 	if err != nil {
 		return packageBasis{}, err
 	}
-	if currentBrief.RevisionRowID != revision.ID {
-		return packageBasis{}, fmt.Errorf("%w: current Ticket Design Brief is not bound to the selected Ticket revision", ErrPackageBasisChanged)
+	if source.approval.ApprovalKind != "delivery" || source.approval.ApprovalState != "approved" ||
+		source.approval.SourceClosureRowID != source.closure.ID || !source.approval.AuthorityRevisionRowID.Valid || source.approval.AuthorityRevisionRowID.Int64 != authority.ID {
+		return packageBasis{}, fmt.Errorf("%w: selected Ticket approval is not current", ErrPackageBasisChanged)
 	}
-	ticket, err := tx.GetDeliveryTicketByRowID(ctx, revision.DeliveryTicketRowID)
-	if err != nil {
-		return packageBasis{}, err
-	}
-	if validated.brief.identity.FeatureSlug != workspace.FeatureSlug || validated.brief.identity.TicketID != ticket.TicketID || validated.brief.identity.Revision != revision.RevisionNumber {
-		return packageBasis{}, fmt.Errorf("%w: Ticket Design Brief does not match selected Ticket revision", ErrPackageBasisChanged)
-	}
-	if !ticket.CurrentRevisionRowID.Valid || ticket.CurrentRevisionRowID.Int64 != revision.ID || revision.SourceClosureRowID != selection.SourceClosureRowID.Int64 {
-		return packageBasis{}, fmt.Errorf("%w: selected Ticket is not current on the exact package source", ErrPackageBasisChanged)
-	}
-	closure, err := tx.GetSourceVaultClosureByRowID(ctx, selection.SourceClosureRowID.Int64)
-	if err != nil {
-		return packageBasis{}, err
-	}
-	if closure.State != workflowstore.SourceVaultClosureStateReady || closure.CommitOID != revision.BaseCommit {
-		return packageBasis{}, fmt.Errorf("%w: source closure is not the exact ready Ticket base", ErrPackageBasisChanged)
-	}
+	revision := source.revision
+	closure := source.closure
 	target, err := tx.GetRepositoryTarget(ctx, revision.RepoTarget)
 	if err != nil {
 		return packageBasis{}, err
@@ -562,48 +539,44 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 		return packageBasis{}, fmt.Errorf("%w: repository target and configured branch do not match the selected Ticket", ErrPackageBasisChanged)
 	}
 	if validated.operations != nil {
-		if validated.operations.identity.FeatureSlug != workspace.FeatureSlug || validated.operations.identity.TicketID != ticket.TicketID || validated.operations.identity.Revision != revision.RevisionNumber ||
+		if validated.operations.identity.FeatureSlug != workspace.FeatureSlug || validated.operations.identity.TicketID != source.ticket.TicketID || validated.operations.identity.Revision != revision.RevisionNumber ||
 			validated.operations.document.RepoTarget != revision.RepoTarget || validated.operations.document.Branch != revision.Branch || validated.operations.document.BaseCommit != revision.BaseCommit {
 			return packageBasis{}, fmt.Errorf("%w: Deterministic Operations does not match the selected Ticket basis", ErrPackageBasisChanged)
 		}
 	}
-	approvals, err := tx.ListDeliveryTicketRevisionApprovals(ctx, revision.ID)
+	dependencies, err := tx.ListDeliveryTicketRevisionDependencies(ctx, revision.ID)
 	if err != nil {
 		return packageBasis{}, err
 	}
-	var approval workflowstore.DeliveryTicketRevisionApproval
-	foundApproval := false
-	for _, candidate := range approvals {
-		if candidate.ID == selectionMember.ApprovalRowID {
-			approval, foundApproval = candidate, true
-			break
-		}
+	dependenciesSHA, err := dependenciesBasisSHA256(ctx, tx, revision.ID, dependencies)
+	if err != nil {
+		return packageBasis{}, err
 	}
-	if !foundApproval || approval.ApprovalKind != "delivery" || approval.ApprovalState != "approved" ||
-		approval.SourceClosureRowID != closure.ID || !approval.AuthorityRevisionRowID.Valid || approval.AuthorityRevisionRowID.Int64 != authority.ID {
-		return packageBasis{}, fmt.Errorf("%w: selected Ticket approval is not current", ErrPackageBasisChanged)
-	}
-	members := []packageMemberBasis{{selectionMember: selectionMember, revision: revision, ticket: ticket, approval: approval, brief: validated.brief}}
+	members := []packageMemberBasis{{selectionMember: selectionMember, revision: revision, ticket: source.ticket, approval: source.approval, source: source}}
 	sourceSHA := sourceBasisSHA256(closure)
 	authoritySHA, err := authorityBasisSHA256(ctx, tx, workspace, authority, closure)
 	if err != nil {
 		return packageBasis{}, err
 	}
-	designSHA := compoundSHA256("ticket-design-brief-v2", strconv.FormatInt(selectionMember.Sequence, 10), ticket.TicketID, strconv.FormatInt(revision.RevisionNumber, 10), validated.brief.input.DisplayName, validated.brief.sha256)
 	operationsSHA, operationsCoverage := "", ""
 	if validated.operations != nil {
 		operationsSHA, operationsCoverage = validated.operations.sha256, validated.operations.document.Coverage
 	}
-	packageParts := []string{"selected-package-v3", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, designSHA, validated.brief.input.DisplayName, validated.brief.sha256}
+	packageParts := []string{"selected-package-v4", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(source.approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, source.sourceSHA256, dependenciesSHA}
 	packageParts = append(packageParts, selectedPackageOperationsDigestParts(validated.operations)...)
 	packageSHA := compoundSHA256(packageParts...)
-	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, designBriefSHA256: designSHA, operationsSHA256: operationsSHA, operationsCoverage: operationsCoverage, packageSHA256: packageSHA}
-	if packageRow != nil && (packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != revision.RepoTarget || packageRow.Branch != revision.Branch || packageRow.BaseCommit != revision.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || packageRow.DesignBriefSha256 != designSHA || nullStringValue(packageRow.DeterministicOperationsSha256) != nullableValue(operationsSHA) || nullStringValue(packageRow.DeterministicOperationsCoverage) != nullableValue(operationsCoverage)) {
+	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, ticketSHA256: source.sourceSHA256, dependenciesSHA256: dependenciesSHA, operationsSHA256: operationsSHA, operationsCoverage: operationsCoverage, packageSHA256: packageSHA}
+	if packageRow != nil && (packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != revision.RepoTarget || packageRow.Branch != revision.Branch || packageRow.BaseCommit != revision.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || nullStringValue(packageRow.DeterministicOperationsSha256) != nullableValue(operationsSHA) || nullStringValue(packageRow.DeterministicOperationsCoverage) != nullableValue(operationsCoverage)) {
 		return packageBasis{}, fmt.Errorf("%w: immutable package identity no longer matches current Ticket, authority, source, or bytes", ErrPackageBasisChanged)
 	}
 	return basis, nil
 }
 
+// readPackageInput reconstructs the PrepareInput for an existing immutable
+// package. The selected Ticket source bytes are not read here: they are
+// resolved from the source vault during basis validation. Only the package's
+// staged Deterministic Operations artifact bytes are read from the managed
+// artifact store.
 func (s *Service) readPackageInput(ctx context.Context, packageRow workflowstore.ExecutionPackage) (PrepareInput, error) {
 	selection, err := s.store.GetDeliveryTicketSelectionByRowID(ctx, packageRow.SelectionRowID)
 	if err != nil {
@@ -617,14 +590,6 @@ func (s *Service) readPackageInput(ctx context.Context, packageRow workflowstore
 	if err != nil {
 		return PrepareInput{}, err
 	}
-	packageMembers, err := s.store.ListExecutionPackageMembers(ctx, packageRow.ID)
-	if err != nil {
-		return PrepareInput{}, err
-	}
-	memberHashes := make(map[int64]string, len(packageMembers))
-	for _, member := range packageMembers {
-		memberHashes[member.RevisionRowID] = member.MemberSha256
-	}
 	if len(selectionMembers) != 1 {
 		return PrepareInput{}, fmt.Errorf("%w: package selection must have exactly one member", ErrPackageBasisChanged)
 	}
@@ -637,16 +602,7 @@ func (s *Service) readPackageInput(ctx context.Context, packageRow workflowstore
 	if err != nil {
 		return PrepareInput{}, err
 	}
-	filename := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
-	briefBytes, err := s.readPackageFile(packageRow.PackageID, filename)
-	if err != nil {
-		return PrepareInput{}, err
-	}
-	expectedSHA, ok := memberHashes[member.RevisionRowID]
-	if !ok {
-		return PrepareInput{}, fmt.Errorf("%w: package member for revision %d is missing", ErrPackageBasisChanged, member.RevisionRowID)
-	}
-	input := PrepareInput{SelectionID: selection.SelectionID, TicketDesignBrief: ArtifactInput{DisplayName: filename, ExpectedSHA256: expectedSHA, Bytes: briefBytes}}
+	input := PrepareInput{SelectionID: selection.SelectionID}
 	if packageRow.DeterministicOperationsSha256.Valid {
 		operationsName := fmt.Sprintf("%s.ticket-%s.r%d.deterministic-operations.json", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
 		operationsBytes, readErr := s.readPackageFile(packageRow.PackageID, operationsName)
@@ -660,11 +616,6 @@ func (s *Service) readPackageInput(ctx context.Context, packageRow workflowstore
 
 func (s *Service) rereadPackageInput(packageID string, input PrepareInput) (PrepareInput, error) {
 	fresh := input
-	bytes, err := s.readPackageFile(packageID, input.TicketDesignBrief.DisplayName)
-	if err != nil {
-		return PrepareInput{}, err
-	}
-	fresh.TicketDesignBrief = ArtifactInput{DisplayName: input.TicketDesignBrief.DisplayName, ExpectedSHA256: input.TicketDesignBrief.ExpectedSHA256, Bytes: bytes}
 	if input.DeterministicOperations != nil {
 		bytes, err := s.readPackageFile(packageID, input.DeterministicOperations.DisplayName)
 		if err != nil {
@@ -698,7 +649,7 @@ func validateArtifactHash(input ArtifactInput) error {
 }
 
 func samePackageInput(left, right PrepareInput) bool {
-	if left.SelectionID != right.SelectionID || left.TicketDesignBrief.DisplayName != right.TicketDesignBrief.DisplayName || left.TicketDesignBrief.ExpectedSHA256 != right.TicketDesignBrief.ExpectedSHA256 || !bytes.Equal(left.TicketDesignBrief.Bytes, right.TicketDesignBrief.Bytes) {
+	if left.SelectionID != right.SelectionID {
 		return false
 	}
 	if (left.DeterministicOperations == nil) != (right.DeterministicOperations == nil) {
@@ -723,10 +674,6 @@ func packageArtifactsFromFiles(files []workflowartifacts.File) []PackageArtifact
 
 func packageArtifactFromFile(file workflowartifacts.File) PackageArtifact {
 	return PackageArtifact{DisplayName: filepath.Base(file.RelativePath), RelativePath: file.RelativePath, SHA256: file.SHA256, SizeBytes: file.SizeBytes}
-}
-
-func briefKey(ticketID string, revision int64) string {
-	return ticketID + "\x00" + strconv.FormatInt(revision, 10)
 }
 
 func sha256Hex(data []byte) string {

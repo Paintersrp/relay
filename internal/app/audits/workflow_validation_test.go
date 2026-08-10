@@ -10,9 +10,9 @@ func TestDecodeWorkflowExecutionEvidenceRejectsAmbiguousValidation(t *testing.T)
 	secret := "audit-validation-secret"
 	t.Setenv("OPENAI_API_KEY", secret)
 	base := map[string]any{
-		"effective_brief_artifact_id": "artifact-brief",
-		"effective_brief_sha256":      strings.Repeat("a", 64),
-		"effective_brief_mode":        "full",
+		"execution_assignment_artifact_id": "artifact-assignment",
+		"execution_assignment_sha256":      strings.Repeat("a", 64),
+		"execution_assignment_mode":        "adaptive_no_operations",
 	}
 	valid := func(status string) map[string]any {
 		return map[string]any{"command": "go test ./...", "expected": "passes", "status": status, "concise_result": "result"}

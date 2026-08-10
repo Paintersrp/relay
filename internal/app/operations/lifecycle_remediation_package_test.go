@@ -7,11 +7,9 @@ import (
 	"testing"
 
 	appackages "relay/internal/app/packages"
-	apptickets "relay/internal/app/tickets"
 	"relay/internal/executor"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
 )
 
 type remediationPackageSourceReader struct {
@@ -21,22 +19,22 @@ type remediationPackageSourceReader struct {
 
 func (r remediationPackageSourceReader) ReadPath(_ context.Context, request sourcevault.ReadPathRequest) (sourcevault.ReadPathResult, error) {
 	if request.Path != r.path {
-		return sourcevault.ReadPathResult{}, fmt.Errorf("unexpected source path %q", request.Path)
+		return sourcevault.ReadPathResult{}, &sourcevault.Error{Code: sourcevault.CodeObjectUnavailable}
 	}
-	return sourcevault.ReadPathResult{ObjectOID: strings.Repeat("d", 40), Bytes: append([]byte(nil), r.bytes...)}, nil
+	return sourcevault.ReadPathResult{ObjectOID: strings.Repeat("e", 40), Bytes: append([]byte(nil), r.bytes...)}, nil
 }
 
-func TestLifecycleRemediationPackageWorkflowBriefOnlyAndDeterministicOperations(t *testing.T) {
-	briefOnly := runRemediationPackageWorkflow(t, false)
+func TestLifecycleRemediationPackageWorkflowTicketOnlyAndDeterministicOperations(t *testing.T) {
+	ticketOnly := runRemediationPackageWorkflow(t, false)
 	withOperations := runRemediationPackageWorkflow(t, true)
-	if briefOnly.packageRow.DeterministicOperationsSha256.Valid || briefOnly.packageRow.DeterministicOperationsCoverage.Valid {
-		t.Fatal("brief-only package retained deterministic operations identity")
+	if ticketOnly.packageRow.DeterministicOperationsSha256.Valid || ticketOnly.packageRow.DeterministicOperationsCoverage.Valid {
+		t.Fatal("ticket-only package retained deterministic operations identity")
 	}
 	if withOperations.packageRow.DeterministicOperationsSha256.String == "" || withOperations.packageRow.DeterministicOperationsCoverage.String != "complete" {
 		t.Fatalf("operations package identity = %#v", withOperations.packageRow)
 	}
-	if briefOnly.packageRow.PackageSha256 == withOperations.packageRow.PackageSha256 {
-		t.Fatal("brief-only and operations packages reused the same digest")
+	if ticketOnly.packageRow.PackageSha256 == withOperations.packageRow.PackageSha256 {
+		t.Fatal("ticket-only and operations packages reused the same digest")
 	}
 }
 
@@ -47,11 +45,8 @@ type remediationPackageWorkflowResult struct {
 func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediationPackageWorkflowResult {
 	t.Helper()
 	fixture := newRemediationLifecycleFixture(t)
-	publication := publishRemediationBriefTicket(t, fixture, false)
-	approveRemediationCurrentBrief(t, fixture)
-	brief := []byte(testfixtures.TicketDesignBrief)
-	briefName := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", fixture.workspace.FeatureSlug, publication.result.Ticket.TicketID, publication.result.Revision.RevisionNumber)
-	prepare := appackages.PrepareInput{SelectionID: publication.selection.Selection.SelectionID, TicketDesignBrief: appackages.ArtifactInput{DisplayName: briefName, ExpectedSHA256: lifecycleSHA(brief), Bytes: brief}}
+	publication := publishRemediationTicket(t, fixture, false)
+	prepare := appackages.PrepareInput{SelectionID: publication.selection.Selection.SelectionID}
 	if withOperations {
 		operations := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"%s","repo_target":"project","branch":"main","base_commit":"%s","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`, fixture.workspace.FeatureSlug, fixture.closure.CommitOID))
 		name := fmt.Sprintf("%s.ticket-%s.r%d.deterministic-operations.json", fixture.workspace.FeatureSlug, publication.result.Ticket.TicketID, publication.result.Revision.RevisionNumber)
@@ -69,7 +64,7 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.PackageID == "" || len(prepared.Members) != 1 || prepared.Members[0].RevisionRowID != publication.result.Revision.ID || prepared.TicketDesignBrief.DisplayName != briefName || prepared.TicketDesignBrief.SHA256 != lifecycleSHA(brief) || prepared.DeterministicOperations != nil != withOperations {
+	if prepared.PackageID == "" || len(prepared.Members) != 1 || prepared.Members[0].RevisionRowID != publication.result.Revision.ID || prepared.TicketDocument.SHA256 != lifecycleSHA(publication.canonical) || prepared.DeterministicOperations != nil != withOperations {
 		t.Fatalf("prepared remediation package = %#v", prepared)
 	}
 	if withOperations && prepared.DeterministicOperations.SHA256 != prepare.DeterministicOperations.ExpectedSHA256 {
@@ -107,18 +102,19 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approvedAuthority.Run.ID != run.ID || approvedAuthority.Package.ID != packageRow.ID || approvedAuthority.PackageApproval.ApprovalID != approved.PackageApprovalID || approvedAuthority.Ticket.TicketID != publication.result.Ticket.TicketID || approvedAuthority.TicketRevision.ID != publication.result.Revision.ID || approvedAuthority.TicketDesignBrief.DisplayName != briefName || string(approvedAuthority.TicketDesignBrief.Bytes) != string(brief) || approvedAuthority.DeterministicOperations != nil != withOperations {
+	if approvedAuthority.Run.ID != run.ID || approvedAuthority.Package.ID != packageRow.ID || approvedAuthority.PackageApproval.ApprovalID != approved.PackageApprovalID || approvedAuthority.Ticket.TicketID != publication.result.Ticket.TicketID || approvedAuthority.TicketRevision.ID != publication.result.Revision.ID || approvedAuthority.DeterministicOperations != nil != withOperations {
 		t.Fatalf("approved-authority readback = %#v", approvedAuthority)
 	}
-	if string(approvedAuthority.DeliveryTicket.Bytes) != string(publication.canonical) || approvedAuthority.DeliveryTicket.SHA256 != lifecycleSHA(publication.canonical) || len(approvedAuthority.BriefProjection.ValidationCommands) != 1 || strings.TrimSpace(approvedAuthority.BriefProjection.ValidationCommands[0].Command) == "" {
+	if string(approvedAuthority.DeliveryTicket.Bytes) != string(publication.canonical) || approvedAuthority.DeliveryTicket.SHA256 != lifecycleSHA(publication.canonical) || len(approvedAuthority.TicketProjection.ValidationCommands) != 1 || strings.TrimSpace(approvedAuthority.TicketProjection.ValidationCommands[0].Command) == "" {
 		t.Fatalf("approved authority retained bytes/projection = %#v", approvedAuthority)
 	}
 	if withOperations && string(approvedAuthority.DeterministicOperations.Bytes) != string(prepare.DeterministicOperations.Bytes) {
 		t.Fatal("approved authority changed deterministic operations bytes")
 	}
 
-	// Continue through the existing assignment, deterministic-outcome, effective
-	// brief, and adaptive-attempt owners. External model execution is not called.
+	// Continue through the existing assignment, deterministic-outcome,
+	// execution-mode, and adaptive-attempt owners. External model execution is
+	// not called.
 	sourceReader := remediationPackageSourceReader{path: publication.result.Revision.SourcePath, bytes: publication.canonical}
 	assignments, err := executor.NewExecutionAssignmentService(fixture.store, sourceReader)
 	if err != nil {
@@ -163,17 +159,6 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	if outcome.Outcome.Outcome.Status != string(executor.DeterministicPreflightNotPresent) {
 		t.Fatalf("deterministic outcome = %#v", outcome.Outcome)
 	}
-	briefService, err := executor.NewEffectiveExecutorBriefService(fixture.store, sourceReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	effective, err := briefService.Prepare(fixture.ctx, approved.Run.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if effective.Mode != executor.EffectiveExecutorBriefAdaptiveNoOperations || !effective.AdaptiveDispatchRequired || effective.Artifact == nil || len(effective.Bytes) == 0 {
-		t.Fatalf("effective Executor Brief = %#v", effective)
-	}
 	adaptive, err := executor.NewAdaptiveExecutionAttemptService(fixture.store, sourceReader)
 	if err != nil {
 		t.Fatal(err)
@@ -182,54 +167,13 @@ func runRemediationPackageWorkflow(t *testing.T, withOperations bool) remediatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attempt.Mode != executor.EffectiveExecutorBriefAdaptiveNoOperations || !attempt.AdaptiveDispatchRequired || attempt.Attempt == nil || attempt.Attempt.AttemptNumber != 1 || attempt.InputArtifact == nil || len(attempt.InputBytes) == 0 {
+	if attempt.Mode != executor.ExecutionModeAbsent || !attempt.AdaptiveDispatchRequired || attempt.Attempt == nil || attempt.Attempt.AttemptNumber != 1 || attempt.InputArtifact == nil || len(attempt.InputBytes) == 0 {
 		t.Fatalf("adaptive preparation = %#v", attempt)
 	}
 	if countRows(t, fixture.store, "plans") != 0 || countRows(t, fixture.store, "plan_passes") != 0 {
 		t.Fatal("remediation package created Plan or Pass linkage")
 	}
 	return remediationPackageWorkflowResult{packageRow: packageRow}
-}
-
-func consumeRemediationBriefSelection(t *testing.T, fixture remediationLifecycleFixture, publication remediationBriefPublication) {
-	t.Helper()
-	approveRemediationCurrentBrief(t, fixture)
-	owner, err := appackages.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	brief := []byte(testfixtures.TicketDesignBrief)
-	name := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", fixture.workspace.FeatureSlug, publication.result.Ticket.TicketID, publication.result.Revision.RevisionNumber)
-	prepared, err := owner.Prepare(fixture.ctx, appackages.PrepareInput{SelectionID: publication.selection.Selection.SelectionID, TicketDesignBrief: appackages.ArtifactInput{DisplayName: name, ExpectedSHA256: lifecycleSHA(brief), Bytes: brief}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := owner.Approve(fixture.ctx, appackages.ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "Consume the exact prior remediation selection."}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func approveRemediationCurrentBrief(t *testing.T, fixture remediationLifecycleFixture) {
-	t.Helper()
-	owner, err := apptickets.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admitted, err := owner.AdmitTicketDesignBrief(fixture.ctx, apptickets.TicketDesignBriefAdmissionInput{WorkspaceID: fixture.workspace.WorkspaceID, Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	review, err := owner.CompleteTicketDesignBriefReview(fixture.ctx, apptickets.CompleteBriefReviewInput{WorkspaceID: fixture.workspace.WorkspaceID, BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: apptickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := fixture.store.GetFeatureWorkspaceByWorkspaceID(fixture.ctx, fixture.workspace.WorkspaceID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := owner.ApproveReviewedTicketDesignBrief(fixture.ctx, review, apptickets.TicketDesignBriefApprovalInput{WorkspaceID: fixture.workspace.WorkspaceID, ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "Approve the exact remediation Brief.", CreatedIdentity: "operator"}); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func countRows(t *testing.T, store *workflowstore.Store, table string) int {

@@ -21,20 +21,16 @@ var (
 
 // GuidedTicketOwner is the ticket-owner surface the guided Feature journey
 // consumes. It is bound to the exact ticket Service instance the server
-// constructs so guided delivery reads and dispatches observe the same
-// process-local brief review continuation that the external auditor completion
-// records. The Feature owner never constructs a second ticket Service for
-// guided progression work.
+// constructs so guided delivery reads and dispatches observe the same instance.
+// The Ticket Design Brief is no longer an authority surface: the selected
+// approved Delivery Ticket is the sole ticket semantic authority, so the brief
+// author/review/approve lifecycle is not part of this contract.
 type GuidedTicketOwner interface {
 	ListFrontier(context.Context, string) (apptickets.Frontier, error)
 	ReadWorkspaceSelection(context.Context, string) (apptickets.WorkspaceSelection, error)
-	ReadWorkspaceBriefState(context.Context, string) (apptickets.WorkspaceBriefState, error)
-	ReadWorkspaceBriefIntegrity(context.Context, string) (apptickets.WorkspaceBriefIntegrity, error)
 	Read(context.Context, string) (apptickets.TicketDetail, error)
 	Select(context.Context, apptickets.SelectInput) (apptickets.SelectionResult, error)
 	PromoteApprovedDeliveryTicketCandidate(context.Context, apptickets.CandidateProductionInput) (apptickets.CandidateProductionResult, error)
-	ApproveTicketDesignBrief(context.Context, apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error)
-	HasPendingCurrentBriefApproval(context.Context, string) (bool, error)
 }
 
 // Guided operation identities transferred by the journey. These are the exact
@@ -44,12 +40,10 @@ const (
 	plannerRequirementsOperation              = "planner.requirements"
 	plannerSharedDesignOperation              = "planner.shared_design"
 	plannerDeliveryTicketOperation            = "planner.delivery_ticket"
-	plannerTicketDesignBriefOperation         = "planner.ticket_design_brief"
 	plannerDeliveryTicketRemediationOperation = "planner.delivery_ticket_remediation"
 	auditorRequirementsReviewOperation        = "auditor.requirements_review"
 	auditorSharedDesignReviewOperation        = "auditor.shared_design_review"
 	auditorDeliveryTicketReviewOperation      = "auditor.delivery_ticket_review"
-	auditorTicketDesignBriefReviewOperation   = "auditor.ticket_design_brief_review"
 )
 
 // GuidedFeatureProjection is the application-owned semantic journey. It is
@@ -127,20 +121,14 @@ type GuidedFrontierEntry struct {
 type GuidedDeliverySection struct {
 	Frontier         []GuidedFrontierEntry
 	SelectionState   string // none | active | consumed | superseded
-	BriefState       string // none | authored | approved
-	// BriefApprovalReady is the transient, process-local answer of the ticket
-	// owner: the current exact brief has a pending ready-review continuation
-	// and the distinct explicit approval is the next primary action. It is
-	// never durable and never accepted as an action input.
-	BriefApprovalReady bool
-	PackageState       string // none | prepared | approved
-	PackageID          string
-	RunState           string // none | created | setup_ready | executing | validating | audit_ready | needs_revision | completed | ...
-	RunID              string
-	AuditState         string // none | awaiting_audit | packet_recorded | decision_recorded
-	AuditPacketID      string
-	RemediationState   string // none | open | reopened
-	Diagnostics        []string
+	PackageState     string // none | prepared | approved
+	PackageID        string
+	RunState         string // none | created | setup_ready | executing | validating | audit_ready | needs_revision | completed | ...
+	RunID            string
+	AuditState       string // none | awaiting_audit | packet_recorded | decision_recorded
+	AuditPacketID    string
+	RemediationState string // none | open | reopened
+	Diagnostics      []string
 }
 
 type GuidedPrototypeSection struct {
@@ -263,7 +251,6 @@ type GuidedIntegrityPlanningCandidate struct {
 type GuidedIntegrityDeliverySection struct {
 	Frontier    []GuidedIntegrityTicket   // AC17
 	Selection   *GuidedIntegritySelection // AC18
-	Briefs      []GuidedIntegrityTicketDesignBrief
 	Package     *GuidedIntegrityPackage     // AC19/AC20
 	Run         *GuidedIntegrityRun         // AC21
 	Audit       *GuidedIntegrityAudit       // AC22
@@ -279,17 +266,6 @@ type GuidedIntegritySelection struct {
 	RevisionNumber               int64
 }
 
-// GuidedIntegrityTicketDesignBrief preserves the selected Ticket -> selection
-// -> durable Brief binding. Historical Briefs remain inspectable but cannot be
-// used as progression authority.
-type GuidedIntegrityTicketDesignBrief struct {
-	BriefID, SelectionID, SelectionState, TicketID string
-	RevisionNumber                                 int64
-	Filename, SHA256                               string
-	SizeBytes                                      int64
-	Status, ApprovalID                             string
-	Historical                                     bool
-}
 type GuidedIntegrityPackage struct {
 	PackageID  string // AC19
 	SHA256     string // AC19
@@ -373,8 +349,8 @@ type GuidedTicketTransfer struct {
 	RevisionNumber int64
 	Readiness      []string
 	// OperationID identifies the established planner operation that owns the
-	// approved Ticket Design Brief. The ticket's canonical JSON is deliberately
-	// not a Design Brief and is never substituted for one here.
+	// Delivery Ticket. The ticket's canonical JSON is deliberately not
+	// substituted for a different artifact here.
 	OperationID string
 }
 type GuidedPackageTransfer struct {
@@ -623,16 +599,6 @@ func guidedIntegrity(ctx context.Context, s *Service, workspace workflowstore.Fe
 			result.Delivery.Selection = &GuidedIntegritySelection{SelectionID: selection.SelectionID, State: selection.State, TicketID: selection.TicketID, RevisionNumber: selection.RevisionNumber} // AC18
 		} else if selectionErr != nil {
 			diagnostic("delivery", integrityReadCondition(selectionErr))
-		}
-		if briefs, briefErr := owner.ReadWorkspaceBriefIntegrity(ctx, workspace.WorkspaceID); briefErr == nil {
-			for _, brief := range briefs.Briefs {
-				result.Delivery.Briefs = append(result.Delivery.Briefs, GuidedIntegrityTicketDesignBrief{BriefID: brief.BriefID, SelectionID: brief.SelectionID, SelectionState: brief.SelectionState, TicketID: brief.TicketID, RevisionNumber: brief.RevisionNumber, Filename: brief.Filename, SHA256: brief.SHA256, SizeBytes: brief.SizeBytes, Status: brief.Status, ApprovalID: brief.ApprovalID, Historical: brief.Historical})
-			}
-			for _, item := range briefs.Diagnostics {
-				diagnostic("delivery.brief", item.Condition)
-			}
-		} else {
-			diagnostic("delivery.brief", integrityReadCondition(briefErr))
 		}
 	}
 	if s.guidedPackages != nil {
@@ -984,8 +950,8 @@ func guidedPlanningFamilyState(family GuidedPlanningFamilySection) string {
 // reads into the delivery projection. The Feature layer resolves identities
 // from the owner reads and never derives lifecycle strings from rows itself.
 // The tickets owner is the bound GuidedTicketOwner so the projection observes
-// the same process-local brief review continuation the external auditor
-// completion records; a fresh owner is never constructed for progression reads.
+// the same instance used for progression; a fresh owner is never constructed
+// for progression reads.
 func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.FeatureWorkspace) (GuidedDeliverySection, error) {
 	result := GuidedDeliverySection{SelectionState: "none", PackageState: "none", RunState: "none", AuditState: "none", RemediationState: "none"}
 	if s.guidedTickets == nil {
@@ -1005,23 +971,6 @@ func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.Fe
 	}
 	result.SelectionState = selection.State
 	if selection.State != "none" {
-		if selection.State == "active" {
-			briefState, err := tickets.ReadWorkspaceBriefState(ctx, workspace.WorkspaceID)
-			if err != nil {
-				return result, err
-			}
-			result.BriefState = briefState.State
-			if briefState.State == "authored" {
-				// A ready review stores only a process-local continuation on the
-				// bound owner; the transient read decides between the read-only
-				// review handoff and the distinct confirmed explicit approval.
-				ready, err := tickets.HasPendingCurrentBriefApproval(ctx, workspace.WorkspaceID)
-				if err != nil {
-					return result, err
-				}
-				result.BriefApprovalReady = ready
-			}
-		}
 		if s.guidedPackages == nil {
 			return result, ErrGuidedPackageOwnerUnavailable
 		}
@@ -1149,7 +1098,7 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 	case GuidedActionLegacyRecovery:
 		_, _, err = s.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorIdentity: "guided-operator"})
 	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate,
-		GuidedActionAuthorDeliveryTicket, GuidedActionAuthorTicketDesignBrief, GuidedActionReviewTicketDesignBrief,
+		GuidedActionAuthorDeliveryTicket,
 		GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun, GuidedActionPrepareAudit, GuidedActionRecordAuditDecision,
 		GuidedActionRemediate, GuidedActionPrototypeExecute, GuidedActionPrototypeCleanup, GuidedActionPrototypeQA:
 		handoff, handoffErr := s.guidedHandoff(ctx, input.WorkspaceID, requested, before)
@@ -1174,20 +1123,6 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		// server-side. The guided request carries no candidate identity or
 		// digest; the operator confirmation is enforced by the action gate.
 		_, err = s.ApproveCurrentPlanningCandidate(ctx, CandidateApprovalInput{
-			WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion,
-			OperatorConfirmationEvidence: guidedApprovalEvidence, CreatedIdentity: "guided-operator",
-		})
-	case GuidedActionApproveTicketDesignBrief:
-		// The distinct explicit brief approval is dispatched to the bound
-		// ticket owner with only workspace-level inputs. The current brief
-		// identity, exact bytes, and source-backed basis are resolved
-		// server-side from the process-local ready-review continuation; the
-		// request never carries a brief ID or digest, and the operator
-		// confirmation is enforced by the action gate.
-		if s.guidedTickets == nil {
-			return GuidedActionResult{}, ErrGuidedTicketOwnerUnavailable
-		}
-		_, err = s.guidedTickets.ApproveTicketDesignBrief(ctx, apptickets.TicketDesignBriefApprovalInput{
 			WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion,
 			OperatorConfirmationEvidence: guidedApprovalEvidence, CreatedIdentity: "guided-operator",
 		})
@@ -1248,8 +1183,8 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 	case GuidedActionAuthorDeliveryTicket:
 		// Delivery Ticket authoring is the planner.delivery_ticket operation.
 		// The produced Ticket subsequently enters the selection frontier; the
-		// Ticket Design Brief is a separate later operation, never substituted
-		// for the Delivery Ticket authoring surface here.
+		// selected approved Delivery Ticket is the sole ticket semantic
+		// authority, so no separate Ticket Design Brief stage exists.
 		operationID := plannerDeliveryTicketOperation
 		if !validGuidedOperation(operationID, registry.Role("planner")) {
 			return GuidedHandoff{}, ErrGuidedActionBlocked
@@ -1262,45 +1197,6 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 		handoff.Context["operationId"] = operationID
 		handoff.Transfer = &GuidedOperationTransfer{Ticket: &GuidedTicketTransfer{OperationID: operationID}}
 		handoff.Summary = summary
-	case GuidedActionAuthorTicketDesignBrief:
-		// Ticket Design Brief authoring is a distinct planner operation owned
-		// by the selected Delivery Ticket. The active selection and canonical
-		// filename are resolved server-side by the delivery owner on admission;
-		// this handoff transfers only the selected Ticket identity.
-		ticket, err := s.guidedSelectedTicketTransfer(ctx, workspaceID)
-		if err != nil {
-			return GuidedHandoff{}, err
-		}
-		operationID := plannerTicketDesignBriefOperation
-		if !validGuidedOperation(operationID, registry.Role("planner")) {
-			return GuidedHandoff{}, ErrGuidedActionBlocked
-		}
-		owner := "ticket_design_brief_authoring"
-		summary := "Author the Ticket Design Brief for the selected Delivery Ticket through the planner.ticket_design_brief operation and admit it through the delivery owner, then return here to review and explicitly approve it before package preparation."
-		// Pre-approval review refreshes planner.ticket_design_brief itself.
-		ticket.OperationID = operationID
-		handoff.Context["owner"] = owner
-		handoff.Context["operationId"] = operationID
-		handoff.Transfer = &GuidedOperationTransfer{Ticket: ticket}
-		handoff.Summary = summary
-	case GuidedActionReviewTicketDesignBrief:
-		// Review is a purely read-only auditor preparation handoff. It never
-		// mutates brief, review, or approval state and never persists any
-		// review outcome or verdict. Completion is recorded separately through
-		// the bounded delivery-owner entry the external auditor uses after the
-		// review; only then does the explicit guided approval become available.
-		ticket, err := s.guidedSelectedTicketTransfer(ctx, workspaceID)
-		if err != nil {
-			return GuidedHandoff{}, err
-		}
-		ticket.OperationID = auditorTicketDesignBriefReviewOperation
-		if !validGuidedOperation(auditorTicketDesignBriefReviewOperation, registry.Role("auditor")) {
-			return GuidedHandoff{}, ErrGuidedActionBlocked
-		}
-		handoff.Context["owner"] = "auditor_ticket_design_brief_review"
-		handoff.Context["operationId"] = auditorTicketDesignBriefReviewOperation
-		handoff.Transfer = &GuidedOperationTransfer{Ticket: ticket}
-		handoff.Summary = "Review the admissible Ticket Design Brief for the selected Delivery Ticket through the auditor.ticket_design_brief_review surface. The review outcome is read-only and never persisted; after completing the review, record its completion through the delivery owner so the explicit approval becomes available."
 	case GuidedActionReviewPlanningCandidate:
 		// Review is a read-only auditor preparation step. It composes the same
 		// owner envelope the planner review path uses and never writes review or
@@ -1490,33 +1386,6 @@ func (s *Service) guidedReopenDiscovery(ctx context.Context, input GuidedActionI
 		Destination:       input.Destination,
 		Continuation:      input.Continuation,
 	})
-}
-
-// guidedSelectedTicketTransfer resolves the currently selected Delivery Ticket
-// through the delivery owner and transfers its public identity and readiness.
-// The OperationID identifies the established planner operation that owns the
-// Ticket Design Brief the transfer prepares.
-func (s *Service) guidedSelectedTicketTransfer(ctx context.Context, workspaceID string) (*GuidedTicketTransfer, error) {
-	if s.guidedTickets == nil {
-		return nil, ErrGuidedTicketOwnerUnavailable
-	}
-	owner := s.guidedTickets
-	selection, err := owner.ReadWorkspaceSelection(ctx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	if selection.TicketID == "" {
-		return nil, ErrGuidedActionBlocked
-	}
-	detail, err := owner.Read(ctx, selection.TicketID)
-	if err != nil {
-		return nil, err
-	}
-	// A Delivery Ticket canonical artifact is not the approved Ticket Design
-	// Brief. The transfer identifies the established ticket-design-brief
-	// operation that resolves and validates that authority itself.
-	transfer := &GuidedTicketTransfer{TicketID: detail.Ticket.TicketID, RevisionNumber: detail.Revision.RevisionNumber, Readiness: append([]string(nil), detail.Readiness.Reasons...), OperationID: plannerTicketDesignBriefOperation}
-	return transfer, nil
 }
 
 // guidedPrototypeTransfer composes the prototype owner view for the current

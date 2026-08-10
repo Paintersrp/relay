@@ -7,12 +7,14 @@ Relay is a local-first workflow application for turning approved execution packa
 The active lifecycle is:
 
 ```text
-Delivery Ticket revision → exact revision approval → selection → complete Ticket Design Brief
-→ zero or one Deterministic Operations artifact → package preparation → package approval
-→ package-linked Run → execution and validation → audit → optional remediation
+Delivery Ticket v2 revision → exact revision approval → selection → package preparation
+→ exact package approval → package-linked Run → immutable ExecutionAssignment
+→ Orchestrator execution → audit → optional remediation
 ```
 
-The authority chain is retained governing authority, the exact approved Delivery Ticket revision, selected Ticket membership, the complete Ticket Design Brief, optional Deterministic Operations, the approved immutable package, the package-linked Run, runtime execution evidence, the audit packet and decision, and immutable remediation evidence when revision is required. Adaptive execution stores structured validation results in attempt-owned `execution_evidence`; deterministic-complete execution has no adaptive attempt and represents assigned validations as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. The Ticket Design Brief is the complete semantic implementation authority; Deterministic Operations add optional exact-execution data and never replace the Brief. Package approval is the only active Run-creation path. Authored Execution Spec submission, standalone Run creation, and Plan/pass-associated Run creation are retired.
+Zero or one Deterministic Operations artifact is authored with the Delivery Ticket, embedded in the approved package, and applied during execution before any adaptive dispatch.
+
+The authority chain is retained governing authority, the exact approved Delivery Ticket v2 revision, selected Ticket membership, optional Deterministic Operations, the approved immutable package, the package-linked Run, the immutable ExecutionAssignment, runtime execution evidence, the audit packet and decision, and immutable remediation evidence when revision is required. The approved Delivery Ticket v2 is the complete semantic implementation authority; Deterministic Operations add optional exact-execution data and never replace the Ticket. Package approval derives the immutable ExecutionAssignment for the package-linked Run; the Orchestrator executes that assignment, which embeds the approved Delivery Ticket, verified authority layers, and required validation commands. Adaptive execution stores structured validation results in attempt-owned `execution_evidence`; deterministic-complete execution has no adaptive attempt and represents assigned validations as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. Package approval is the only active Run-creation path. Ticket Design Briefs, authored Execution Spec submission, standalone Run creation, and Plan/pass-associated Run creation are retired.
 
 Projects retain repository associations, notes, Feature Workspaces, Delivery Tickets, and historical records. Plans and passes remain readable historical records only: no active Plan or pass creation or mutation path exists.
 
@@ -20,14 +22,14 @@ Projects retain repository associations, notes, Feature Workspaces, Delivery Tic
 
 Each package has one effective mode:
 
-- `adaptive_no_operations`: no deterministic writes; the adaptive Executor receives the complete Brief.
-- `adaptive_preflight_failed`: no deterministic writes; the adaptive Executor receives the complete Brief and verified preflight failure evidence.
-- `adaptive_after_partial_application`: deterministic writes occurred; the adaptive Executor receives the complete Brief and exact applied/residual evidence.
-- `deterministic_complete`: deterministic writes completed the package; no adaptive Executor attempt launches.
+- `adaptive_no_operations`: no deterministic writes; the Orchestrator executes the immutable ExecutionAssignment containing the approved Delivery Ticket v2.
+- `adaptive_preflight_failed`: no deterministic writes; the Orchestrator executes the assignment with verified preflight failure evidence.
+- `adaptive_after_partial_application`: deterministic writes occurred; the Orchestrator executes the assignment with exact applied/residual evidence.
+- `deterministic_complete`: deterministic writes completed the package; no adaptive Orchestrator dispatch launches.
 
 There is at most one adaptive Executor attempt. Relay does not perform multi-candidate or multi-agent execution.
 
-In adaptive modes, required validation commands originate in the approved execution assignment, propagate through execution admission and adaptive launch, and produce structured attempt-owned `execution_evidence`. In deterministic-complete execution, no adaptive launch occurs and assigned validations appear as `not_run` audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact family.
+In adaptive modes, required validation commands originate in the immutable ExecutionAssignment, propagate through execution admission and adaptive launch, and produce structured attempt-owned `execution_evidence`. In deterministic-complete execution, no adaptive launch occurs and assigned validations appear as `not_run` audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact family.
 
 ### Audit and remediation
 

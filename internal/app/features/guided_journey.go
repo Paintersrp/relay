@@ -21,9 +21,6 @@ const (
 	GuidedActionLegacyRecovery           GuidedFeatureAction = "legacy_recovery"
 	GuidedActionReopenDiscovery          GuidedFeatureAction = "reopen_discovery"
 	GuidedActionSelectDeliveryTicket     GuidedFeatureAction = "select_delivery_ticket"
-	GuidedActionAuthorTicketDesignBrief  GuidedFeatureAction = "author_ticket_design_brief"
-	GuidedActionReviewTicketDesignBrief  GuidedFeatureAction = "review_ticket_design_brief"
-	GuidedActionApproveTicketDesignBrief GuidedFeatureAction = "approve_ticket_design_brief"
 	GuidedActionPreparePackage           GuidedFeatureAction = "prepare_package"
 	GuidedActionApprovePackage           GuidedFeatureAction = "approve_package"
 	GuidedActionLaunchRun                GuidedFeatureAction = "launch_run"
@@ -244,41 +241,20 @@ func guidedDeliveryAvailability(state GuidedJourneyState, completion GuidedCompl
 		}
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Delivery Ticket authoring is the current bounded role operation. Return here when it is complete."}}
 	case "active":
-		// The selected Delivery Ticket must first carry a current approved
-		// Ticket Design Brief. Authoring is a distinct planner operation,
-		// review is a read-only auditor handoff whose completion is recorded as
-		// a narrow fact, approval is an explicit confirmed guided mutation,
-		// and only then is the package owner allowed to prepare the execution
-		// package server-side.
-		switch delivery.BriefState {
+		// The selected approved Delivery Ticket is the sole ticket semantic
+		// authority; there is no separate Ticket Design Brief stage. The
+		// package owner may prepare the execution package server-side from the
+		// active selection and approved Ticket immediately.
+		switch delivery.PackageState {
 		case "", "none":
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionAuthorTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Author the Ticket Design Brief for the selected Delivery Ticket through the existing planner operation, admit it through the delivery owner, then return here to review and approve it."}}
-		case "authored":
-			// Review is a read-only auditor handoff whose completion is
-			// recorded only as a process-local continuation. Once that ready
-			// continuation exists for the current exact brief, the distinct
-			// explicit confirmed approval becomes the primary action; it is
-			// never inferred from the review itself and package preparation
-			// stays unreachable until the durable approval is written.
-			if delivery.BriefApprovalReady {
-				return []GuidedFeatureActionAvailability{{
-					Action: GuidedActionApproveTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: true,
-					Handoff: "The current Ticket Design Brief review is ready. Explicitly approve the exact reviewed brief server-side; package preparation becomes available only after this durable approval.",
-				}}
-			}
-			return []GuidedFeatureActionAvailability{{Action: GuidedActionReviewTicketDesignBrief, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The admissible Ticket Design Brief is ready for review. Perform the read-only review through the auditor surface; completing it here records review completion and makes the explicit approval available."}}
-		case "approved":
-			switch delivery.PackageState {
-			case "", "none":
-				return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the package owner using the current approved Ticket Design Brief and active selection, then return here to approve it server-side."}}
-			case "prepared":
-				return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePackage, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the prepared execution package server-side; the approval resolves the exact package identity and digest from the package owner."}}
-			}
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the package owner using the current approved Delivery Ticket and active selection, then return here to approve it server-side."}}
+		case "prepared":
+			return []GuidedFeatureActionAvailability{{Action: GuidedActionApprovePackage, Primary: true, Enabled: true, RequiresConfirmation: true, Handoff: "Approve the prepared execution package server-side; the approval resolves the exact package identity and digest from the package owner."}}
 		}
 	}
 	switch delivery.RunState {
 	case "", "none":
-		return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the package owner using the current approved Ticket Design Brief and active selection, then return here to approve it server-side."}}
+		return []GuidedFeatureActionAvailability{{Action: GuidedActionPreparePackage, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "Prepare the execution package through the package owner using the current approved Delivery Ticket and active selection, then return here to approve it server-side."}}
 	case "created", "setup_ready":
 		return []GuidedFeatureActionAvailability{{Action: GuidedActionLaunchRun, Primary: true, Enabled: true, RequiresConfirmation: false, Handoff: "The package Run is ready for its initial execution. Launch it through the Run owner, then return here for a fresh currentness check."}}
 	case "executing":
@@ -326,14 +302,14 @@ func guidedCompletionActions(completion GuidedCompletion) []GuidedFeatureActionA
 }
 
 // guidedDeliveryStageAvailable reports whether the delivery owner already
-// carries a source-backed stage (frontier, selection, brief, package, Run,
-// audit, or remediation) that a continuation should resume instead of generic
-// Planner authoring.
+// carries a source-backed stage (frontier, selection, package, Run, audit, or
+// remediation) that a continuation should resume instead of generic Planner
+// authoring.
 func guidedDeliveryStageAvailable(delivery GuidedDeliverySection) bool {
 	if len(delivery.Frontier) > 0 {
 		return true
 	}
-	for _, state := range []string{delivery.SelectionState, delivery.BriefState, delivery.PackageState, delivery.RunState, delivery.AuditState, delivery.RemediationState} {
+	for _, state := range []string{delivery.SelectionState, delivery.PackageState, delivery.RunState, delivery.AuditState, delivery.RemediationState} {
 		if state != "" && state != "none" {
 			return true
 		}

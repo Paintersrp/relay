@@ -150,9 +150,6 @@ func NewGoverningArtifactApprovalID() string {
 	return "ga-approval-" + uuid.NewString()
 }
 
-func NewTicketDesignBriefID() string         { return "brief-" + uuid.NewString() }
-func NewTicketDesignBriefApprovalID() string { return "brief-approval-" + uuid.NewString() }
-
 func NewPrototypeProposalID() string          { return "prototype-proposal-" + uuid.NewString() }
 func NewPrototypeAuthorizationID() string     { return "prototype-authorization-" + uuid.NewString() }
 func NewPrototypeRunID() string               { return "prototype-run-" + uuid.NewString() }

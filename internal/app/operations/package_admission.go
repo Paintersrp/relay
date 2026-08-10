@@ -63,8 +63,10 @@ func (s *PackageWorkflowService) Prepare(ctx context.Context, input packages.Pre
 	view := packageDetailView(packages.Detail{
 		Package:                 result.Package,
 		Members:                 result.Members,
-		TicketDesignBrief:       result.TicketDesignBrief,
-		DeterministicOperations: result.DeterministicOperations,
+		Ticket:                  result.Ticket,
+		TicketRevision:          result.TicketRevision,
+		TicketDocument:          result.TicketDocument,
+		DeterministicOperations: result.Operations,
 	})
 	currentness, err := s.packageCurrentness(ctx, result.Package.WorkspaceRowID)
 	if err != nil {

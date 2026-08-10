@@ -10,7 +10,6 @@ import (
 
 	workflowpackages "relay/internal/app/packages"
 	"relay/internal/executor"
-	"relay/internal/planningartifacts"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
@@ -37,7 +36,7 @@ func testAuditCommitEvidence(baseCommit, auditedCommit string) workflowrepos.Aud
 	}
 }
 
-func testLoadVerifiedEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode) (*packageEvidenceFixture, WorkflowPackageExecutionEvidence) {
+func testLoadVerifiedEvidence(t *testing.T, mode executor.ExecutionMode) (*packageEvidenceFixture, WorkflowPackageExecutionEvidence) {
 	t.Helper()
 	fixture := buildPackageEvidence(t, mode)
 	loader, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
@@ -52,11 +51,11 @@ func testLoadVerifiedEvidence(t *testing.T, mode executor.EffectiveExecutorBrief
 }
 
 func TestAssemblePackageAuditInput_AllEffectiveModes(t *testing.T) {
-	modes := []executor.EffectiveExecutorBriefMode{
-		executor.EffectiveExecutorBriefAdaptiveNoOperations,
-		executor.EffectiveExecutorBriefAdaptivePreflightFailed,
-		executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication,
-		executor.EffectiveExecutorBriefDeterministicComplete,
+	modes := []executor.ExecutionMode{
+		executor.ExecutionModeAbsent,
+		executor.ExecutionModePreflightFailed,
+		executor.ExecutionModePartialApplied,
+		executor.ExecutionModeCompleteApplied,
 	}
 
 	auditedCommit := strings.Repeat("b", 40)
@@ -87,7 +86,7 @@ func TestAssemblePackageAuditInput_AllEffectiveModes(t *testing.T) {
 
 func TestAssemblePackageAuditInput_UserIntent(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	commit := testAuditCommitEvidence(evidence.Run.BaseCommit, auditedCommit)
 
 	// User intent comes exactly from ticket revision goal
@@ -121,7 +120,7 @@ func TestAssemblePackageAuditInput_UserIntent(t *testing.T) {
 
 func TestAssemblePackageAuditInput_DeliveryTicket(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	commit := testAuditCommitEvidence(evidence.Run.BaseCommit, auditedCommit)
 
 	input, err := assemblePackageAuditInput(evidence, commit)
@@ -181,7 +180,7 @@ func TestAssemblePackageAuditInput_DeliveryTicket(t *testing.T) {
 
 func TestAssemblePackageAuditInput_ChangedFilesAndMapping(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 
 	commit := workflowrepos.AuditCommitEvidence{
 		Branch:        evidence.Run.Branch,
@@ -228,7 +227,7 @@ func TestAssemblePackageAuditInput_ChangedFilesAndMapping(t *testing.T) {
 
 func TestAssemblePackageAuditInput_RelevantPathsSortingAndUniqueness(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 
 	commit := workflowrepos.AuditCommitEvidence{
 		Branch:        evidence.Run.Branch,
@@ -256,7 +255,7 @@ func TestAssemblePackageAuditInput_RelevantPathsSortingAndUniqueness(t *testing.
 
 func TestAssemblePackageAuditInput_ContradictoryChangedFilesFail(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 
 	baseCommit := evidence.Run.BaseCommit
 
@@ -301,7 +300,7 @@ func TestAssemblePackageAuditInput_ContradictoryChangedFilesFail(t *testing.T) {
 
 func TestAssemblePackageAuditInput_RepositoryMismatch(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	baseCommit := evidence.Run.BaseCommit
 
 	// Branch mismatch
@@ -334,7 +333,7 @@ func TestAssemblePackageAuditInput_ExecutionSummaries(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
 
 	// Adaptive mode derives fixed adaptive summary
-	_, adaptiveEvidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, adaptiveEvidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	adaptiveCommit := testAuditCommitEvidence(adaptiveEvidence.Run.BaseCommit, auditedCommit)
 	inputAdaptive, err := assemblePackageAuditInput(adaptiveEvidence, adaptiveCommit)
 	if err != nil {
@@ -346,13 +345,13 @@ func TestAssemblePackageAuditInput_ExecutionSummaries(t *testing.T) {
 	}
 
 	// Deterministic-complete mode derives fixed deterministic summary
-	_, detEvidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	_, detEvidence := testLoadVerifiedEvidence(t, executor.ExecutionModeCompleteApplied)
 	detCommit := testAuditCommitEvidence(detEvidence.Run.BaseCommit, auditedCommit)
 	inputDet, err := assemblePackageAuditInput(detEvidence, detCommit)
 	if err != nil {
 		t.Fatalf("assemble deterministic-complete failed: %v", err)
 	}
-	wantDetSummary := "Deterministic Operations completely fulfilled the approved Brief; no adaptive Executor attempt was dispatched."
+	wantDetSummary := "Deterministic Operations completely fulfilled the approved Delivery Ticket; no adaptive Executor attempt was dispatched."
 	if inputDet.Execution.CompletionSummary != wantDetSummary {
 		t.Fatalf("Deterministic summary = %q, want %q", inputDet.Execution.CompletionSummary, wantDetSummary)
 	}
@@ -360,7 +359,7 @@ func TestAssemblePackageAuditInput_ExecutionSummaries(t *testing.T) {
 
 func TestAssemblePackageAuditInput_DiffPreservationAndValidation(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	baseCommit := evidence.Run.BaseCommit
 
 	// Exact diff bytes and SHA-256 preserved without trimming or normalization
@@ -414,14 +413,11 @@ func TestAssemblePackageAuditInput_DiffPreservationAndValidation(t *testing.T) {
 
 func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModePartialApplied)
 	commit := testAuditCommitEvidence(evidence.Run.BaseCommit, auditedCommit)
 
 	if len(evidence.Authority.DeliveryTicket.Bytes) == 0 {
 		t.Fatal("verified Delivery Ticket bytes must be nonempty")
-	}
-	if len(evidence.Authority.TicketDesignBrief.Bytes) == 0 {
-		t.Fatal("verified Ticket Design Brief bytes must be nonempty")
 	}
 	if len(evidence.Authority.AuthorityLayers) == 0 || len(evidence.Authority.AuthorityLayers[0].Bytes) == 0 {
 		t.Fatal("verified authority-layer bytes must be nonempty")
@@ -431,9 +427,6 @@ func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 	}
 	if len(evidence.Deterministic.Bytes) == 0 {
 		t.Fatal("verified deterministic-outcome bytes must be nonempty")
-	}
-	if len(evidence.EffectiveBrief.Bytes) == 0 {
-		t.Fatal("verified effective-Brief bytes must be nonempty")
 	}
 	if evidence.Attempt == nil || len(evidence.Attempt.Bytes) == 0 {
 		t.Fatal("verified attempt evidence bytes must be nonempty")
@@ -447,10 +440,8 @@ func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 
 	originalAuthorityLayerBytes := append([]byte(nil), evidence.Authority.AuthorityLayers[0].Bytes...)
 	originalDeliveryTicketBytes := append([]byte(nil), evidence.Authority.DeliveryTicket.Bytes...)
-	originalTicketDesignBriefBytes := append([]byte(nil), evidence.Authority.TicketDesignBrief.Bytes...)
 	originalAssignmentBytes := append([]byte(nil), evidence.Assignment.Bytes...)
 	originalDeterministicBytes := append([]byte(nil), evidence.Deterministic.Bytes...)
-	originalEffectiveBriefBytes := append([]byte(nil), evidence.EffectiveBrief.Bytes...)
 	originalAttemptBytes := append([]byte(nil), evidence.Attempt.Bytes...)
 	originalValidation := evidence.Validation[0]
 	originalChangedFiles := append([]string(nil), commit.ChangedFiles...)
@@ -464,11 +455,9 @@ func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 
 	// Mutate every mutable surface exposed by the assembled input.
 	input.Evidence.Authority.AuthorityLayers[0].Bytes[0] ^= 0xff
-	input.Evidence.Authority.TicketDesignBrief.Bytes[0] ^= 0xff
 	input.Evidence.Authority.DeliveryTicket.Bytes[0] ^= 0xff
 	input.Evidence.Assignment.Bytes[0] ^= 0xff
 	input.Evidence.Deterministic.Bytes[0] ^= 0xff
-	input.Evidence.EffectiveBrief.Bytes[0] ^= 0xff
 	input.Evidence.Attempt.Bytes[0] ^= 0xff
 	input.Evidence.Validation[0].Status = "failed"
 	input.Commit.ChangedFiles[0].Path = "mutated-changed.go"
@@ -478,9 +467,6 @@ func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 	if !bytes.Equal(evidence.Authority.AuthorityLayers[0].Bytes, originalAuthorityLayerBytes) {
 		t.Fatal("authority-layer bytes aliased supplied evidence")
 	}
-	if !bytes.Equal(evidence.Authority.TicketDesignBrief.Bytes, originalTicketDesignBriefBytes) {
-		t.Fatal("Ticket Design Brief bytes aliased supplied evidence")
-	}
 	if !bytes.Equal(evidence.Authority.DeliveryTicket.Bytes, originalDeliveryTicketBytes) {
 		t.Fatal("Delivery Ticket bytes aliased supplied evidence")
 	}
@@ -489,9 +475,6 @@ func TestAssemblePackageAuditInput_DefensiveCopies(t *testing.T) {
 	}
 	if !bytes.Equal(evidence.Deterministic.Bytes, originalDeterministicBytes) {
 		t.Fatal("deterministic-outcome bytes aliased supplied evidence")
-	}
-	if !bytes.Equal(evidence.EffectiveBrief.Bytes, originalEffectiveBriefBytes) {
-		t.Fatal("effective-Brief bytes aliased supplied evidence")
 	}
 	if !bytes.Equal(evidence.Attempt.Bytes, originalAttemptBytes) {
 		t.Fatal("attempt evidence bytes aliased supplied evidence")
@@ -514,14 +497,14 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 	preserveContent := true
 	source := WorkflowPackageExecutionEvidence{
 		Authority: workflowpackages.ApprovedAuthority{
-			AuthorityLayers:    []workflowpackages.ApprovedAuthorityLayer{{Bytes: []byte("authority-layer")}},
-			TicketMembers:      []workflowstore.DeliveryTicketRevisionMember{{MemberPath: sql.NullString{String: "member", Valid: true}}},
-			TicketDependencies: []workflowstore.DeliveryTicketRevisionDependency{{DependsOnRevisionRowID: 7}},
-			BriefProjection: planningartifacts.TicketDesignBriefProjection{
-				ValidationCommands: []planningartifacts.ValidationCommand{{Command: "brief-command"}},
+			AuthorityLayers:       []workflowpackages.ApprovedAuthorityLayer{{Bytes: []byte("authority-layer")}},
+			TicketMembers:         []workflowstore.DeliveryTicketRevisionMember{{MemberPath: sql.NullString{String: "member", Valid: true}}},
+			TicketDependencies:    []workflowstore.DeliveryTicketRevisionDependency{{DependsOnRevisionRowID: 7}},
+			CompletedDependencies: []workflowpackages.ApprovedCompletedDependency{{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"}},
+			TicketProjection: speccompiler.DeliveryTicketProjection{
+				ValidationCommands: []speccompiler.DeliveryTicketValidationCommand{{Command: "ticket-command"}},
 			},
-			DeliveryTicket:    workflowpackages.ApprovedSourceDocument{Bytes: []byte("delivery-ticket")},
-			TicketDesignBrief: workflowpackages.ApprovedDocument{Bytes: []byte("ticket-design-brief")},
+			DeliveryTicket: workflowpackages.ApprovedSourceDocument{Bytes: []byte("delivery-ticket")},
 			DeterministicOperations: &workflowpackages.ApprovedDeterministicOperations{
 				ApprovedDocument: workflowpackages.ApprovedDocument{Bytes: []byte("deterministic-operations")},
 				Coverage:         "partial",
@@ -548,6 +531,7 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 			Assignment: executor.ExecutionAssignment{
 				AuthorityLayers:    []executor.ExecutionAssignmentLayer{{RelativePath: "original-layer"}},
 				ValidationCommands: []executor.ExecutionAssignmentValidationCommand{{Command: "assignment-command"}},
+				Dependencies:       []executor.ExecutionAssignmentDependency{{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"}},
 			},
 		},
 		Deterministic: executor.DeterministicOutcomeResult{
@@ -560,10 +544,6 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 				},
 			},
 		},
-		EffectiveBrief: executor.EffectiveExecutorBriefResult{
-			Artifact: &workflowstore.Artifact{Kind: "original-brief-artifact"},
-			Bytes:    []byte("effective-brief"),
-		},
 		Attempt: &PackageAttemptEvidence{
 			Attempt: workflowstore.ExecutionAttempt{Status: "original-attempt"},
 			Bytes:   []byte("attempt"),
@@ -575,9 +555,9 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 	copied.Authority.AuthorityLayers[0].Bytes[0] ^= 0xff
 	copied.Authority.TicketMembers[0].MemberPath.String = "mutated-member"
 	copied.Authority.TicketDependencies[0].DependsOnRevisionRowID = 99
-	copied.Authority.BriefProjection.ValidationCommands[0].Command = "mutated-brief-command"
+	copied.Authority.CompletedDependencies[0].TicketID = "mutated-dependency"
+	copied.Authority.TicketProjection.ValidationCommands[0].Command = "mutated-ticket-command"
 	copied.Authority.DeliveryTicket.Bytes[0] ^= 0xff
-	copied.Authority.TicketDesignBrief.Bytes[0] ^= 0xff
 	copied.Authority.DeterministicOperations.Bytes[0] ^= 0xff
 	copied.Authority.DeterministicOperations.Coverage = "mutated-coverage"
 	copied.Authority.DeterministicOperations.Document.FeatureSlug = "mutated-feature"
@@ -593,12 +573,11 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 	copied.Assignment.Bytes[0] ^= 0xff
 	copied.Assignment.Assignment.AuthorityLayers[0].RelativePath = "mutated-layer"
 	copied.Assignment.Assignment.ValidationCommands[0].Command = "mutated-assignment-command"
+	copied.Assignment.Assignment.Dependencies[0].TicketID = "mutated-assignment-dependency"
 	copied.Deterministic.Bytes[0] ^= 0xff
 	copied.Deterministic.Outcome.PreflightFailure.Code = "mutated-failure"
 	copied.Deterministic.Outcome.Application.Operations[0].Operation = "mutated-operation"
 	copied.Deterministic.Outcome.Application.ChangedPaths[0] = "mutated-changed-path"
-	copied.EffectiveBrief.Bytes[0] ^= 0xff
-	copied.EffectiveBrief.Artifact.Kind = "mutated-brief-artifact"
 	copied.Attempt.Bytes[0] ^= 0xff
 	copied.Attempt.Attempt.Status = "mutated-attempt"
 	copied.Validation[0].Status = "mutated-validation"
@@ -606,9 +585,9 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 	if string(source.Authority.AuthorityLayers[0].Bytes) != "authority-layer" ||
 		source.Authority.TicketMembers[0].MemberPath.String != "member" ||
 		source.Authority.TicketDependencies[0].DependsOnRevisionRowID != 7 ||
-		source.Authority.BriefProjection.ValidationCommands[0].Command != "brief-command" ||
+		source.Authority.CompletedDependencies[0].TicketID != "P2-T1" ||
+		source.Authority.TicketProjection.ValidationCommands[0].Command != "ticket-command" ||
 		string(source.Authority.DeliveryTicket.Bytes) != "delivery-ticket" ||
-		string(source.Authority.TicketDesignBrief.Bytes) != "ticket-design-brief" ||
 		string(source.Authority.DeterministicOperations.Bytes) != "deterministic-operations" ||
 		source.Authority.DeterministicOperations.Coverage != "partial" {
 		t.Fatal("authority data aliased original evidence")
@@ -627,7 +606,8 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 	}
 	if string(source.Assignment.Bytes) != "assignment" ||
 		source.Assignment.Assignment.AuthorityLayers[0].RelativePath != "original-layer" ||
-		source.Assignment.Assignment.ValidationCommands[0].Command != "assignment-command" {
+		source.Assignment.Assignment.ValidationCommands[0].Command != "assignment-command" ||
+		source.Assignment.Assignment.Dependencies[0].TicketID != "P2-T1" {
 		t.Fatal("assignment evidence aliased original evidence")
 	}
 	if string(source.Deterministic.Bytes) != "deterministic-outcome" ||
@@ -635,9 +615,6 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 		source.Deterministic.Outcome.Application.Operations[0].Operation != "original-operation" ||
 		source.Deterministic.Outcome.Application.ChangedPaths[0] != "original-changed-path" {
 		t.Fatal("deterministic outcome aliased original evidence")
-	}
-	if string(source.EffectiveBrief.Bytes) != "effective-brief" || source.EffectiveBrief.Artifact.Kind != "original-brief-artifact" {
-		t.Fatal("effective Brief aliased original evidence")
 	}
 	if string(source.Attempt.Bytes) != "attempt" || source.Attempt.Attempt.Status != "original-attempt" {
 		t.Fatal("attempt evidence aliased original evidence")
@@ -648,14 +625,14 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 
 	empty := WorkflowPackageExecutionEvidence{
 		Authority: workflowpackages.ApprovedAuthority{
-			AuthorityLayers:    nil,
-			TicketMembers:      []workflowstore.DeliveryTicketRevisionMember{},
-			TicketDependencies: nil,
-			BriefProjection: planningartifacts.TicketDesignBriefProjection{
-				ValidationCommands: []planningartifacts.ValidationCommand{},
+			AuthorityLayers:       nil,
+			TicketMembers:         []workflowstore.DeliveryTicketRevisionMember{},
+			TicketDependencies:    nil,
+			CompletedDependencies: nil,
+			TicketProjection: speccompiler.DeliveryTicketProjection{
+				ValidationCommands: []speccompiler.DeliveryTicketValidationCommand{},
 			},
-			DeliveryTicket:    workflowpackages.ApprovedSourceDocument{Bytes: []byte{}},
-			TicketDesignBrief: workflowpackages.ApprovedDocument{Bytes: nil},
+			DeliveryTicket: workflowpackages.ApprovedSourceDocument{Bytes: []byte{}},
 			DeterministicOperations: &workflowpackages.ApprovedDeterministicOperations{
 				ApprovedDocument: workflowpackages.ApprovedDocument{Bytes: []byte{}},
 				Document:         &speccompiler.DeterministicOperationsDocument{Operations: []speccompiler.DeterministicOperation{}},
@@ -666,6 +643,7 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 			Assignment: executor.ExecutionAssignment{
 				AuthorityLayers:    nil,
 				ValidationCommands: []executor.ExecutionAssignmentValidationCommand{},
+				Dependencies:       nil,
 			},
 		},
 		Deterministic: executor.DeterministicOutcomeResult{
@@ -674,23 +652,22 @@ func TestCopyWorkflowPackageExecutionEvidence_DefensiveCopies(t *testing.T) {
 				Operations: nil, ChangedPaths: []string{},
 			}},
 		},
-		EffectiveBrief: executor.EffectiveExecutorBriefResult{Bytes: nil},
 	}
 	emptyCopy := copyWorkflowPackageExecutionEvidence(empty)
-	if emptyCopy.Authority.AuthorityLayers != nil || emptyCopy.Authority.TicketMembers == nil || emptyCopy.Authority.TicketDependencies != nil || emptyCopy.Authority.BriefProjection.ValidationCommands == nil ||
-		emptyCopy.Authority.DeterministicOperations.Document.Operations == nil || emptyCopy.Assignment.Assignment.AuthorityLayers != nil || emptyCopy.Assignment.Assignment.ValidationCommands == nil ||
+	if emptyCopy.Authority.AuthorityLayers != nil || emptyCopy.Authority.TicketMembers == nil || emptyCopy.Authority.TicketDependencies != nil || emptyCopy.Authority.CompletedDependencies != nil || emptyCopy.Authority.TicketProjection.ValidationCommands == nil ||
+		emptyCopy.Authority.DeterministicOperations.Document.Operations == nil || emptyCopy.Assignment.Assignment.AuthorityLayers != nil || emptyCopy.Assignment.Assignment.ValidationCommands == nil || emptyCopy.Assignment.Assignment.Dependencies != nil ||
 		emptyCopy.Deterministic.Outcome.Application.Operations != nil || emptyCopy.Deterministic.Outcome.Application.ChangedPaths == nil {
 		t.Fatal("copier did not preserve nil versus nonnil empty slices")
 	}
-	if emptyCopy.Authority.DeliveryTicket.Bytes == nil || emptyCopy.Authority.TicketDesignBrief.Bytes != nil || emptyCopy.Authority.DeterministicOperations.Bytes == nil ||
-		emptyCopy.Assignment.Bytes != nil || emptyCopy.Deterministic.Bytes == nil || emptyCopy.EffectiveBrief.Bytes != nil {
+	if emptyCopy.Authority.DeliveryTicket.Bytes == nil || emptyCopy.Authority.DeterministicOperations.Bytes == nil ||
+		emptyCopy.Assignment.Bytes != nil || emptyCopy.Deterministic.Bytes == nil {
 		t.Fatal("copier did not preserve nil versus nonnil empty byte slices")
 	}
 }
 
 func TestAssemblePackageAuditInput_DeterministicIdenticalOutput(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	_, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	commit := testAuditCommitEvidence(evidence.Run.BaseCommit, auditedCommit)
 
 	input1, err := assemblePackageAuditInput(evidence, commit)
@@ -718,7 +695,7 @@ func TestAssemblePackageAuditInput_DeterministicIdenticalOutput(t *testing.T) {
 
 func TestAssemblePackageAuditInput_NoPureDatabaseWrites(t *testing.T) {
 	auditedCommit := strings.Repeat("b", 40)
-	fixture, evidence := testLoadVerifiedEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture, evidence := testLoadVerifiedEvidence(t, executor.ExecutionModeAbsent)
 	commit := testAuditCommitEvidence(evidence.Run.BaseCommit, auditedCommit)
 
 	// Record initial DB state by querying tables

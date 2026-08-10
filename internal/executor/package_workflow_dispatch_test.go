@@ -12,9 +12,9 @@ import (
 )
 
 func TestPackageWorkflowDispatchAdaptiveModesUsePreparedAttemptID(t *testing.T) {
-	for _, mode := range []EffectiveExecutorBriefMode{
-		EffectiveExecutorBriefAdaptiveNoOperations,
-		EffectiveExecutorBriefAdaptivePreflightFailed,
+	for _, mode := range []ExecutionMode{
+		ExecutionModeAbsent,
+		ExecutionModePreflightFailed,
 	} {
 		t.Run(string(mode), func(t *testing.T) {
 			service, prepared := syntheticPackageWorkflowDispatch(t, mode)
@@ -35,7 +35,7 @@ func TestPackageWorkflowDispatchAdaptiveModesUsePreparedAttemptID(t *testing.T) 
 }
 
 func TestPackageWorkflowDispatchPartialRequiresRetainedLease(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveAfterPartialApplication)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModePartialApplied)
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, true), nil
 	}, nil)
@@ -60,7 +60,7 @@ func TestPackageWorkflowDispatchPartialRequiresRetainedLease(t *testing.T) {
 }
 
 func TestPackageWorkflowDispatchAdaptiveReadbackAndIdentity(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveNoOperations)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeAbsent)
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, false), nil
 	}, nil)
@@ -82,7 +82,7 @@ func TestPackageWorkflowDispatchAdaptiveReadbackAndIdentity(t *testing.T) {
 }
 
 func TestPackageWorkflowDispatchAdaptiveLaunchErrorDoesNotFinalize(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveNoOperations)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeAbsent)
 	launchErr := errors.New("launch failed")
 	finalizeCalls := 0
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
@@ -98,7 +98,7 @@ func TestPackageWorkflowDispatchAdaptiveLaunchErrorDoesNotFinalize(t *testing.T)
 }
 
 func TestPackageWorkflowDispatchDeterministicCompleteOrderingAndResult(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeCompleteApplied)
 	var launchInput PreparedAdaptiveLaunchInput
 	finalizeCalls := 0
 	withPackageWorkflowDispatchSeams(t, func(_ context.Context, _ *Execution, input PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
@@ -106,7 +106,7 @@ func TestPackageWorkflowDispatchDeterministicCompleteOrderingAndResult(t *testin
 		if finalizeCalls != 0 {
 			return PreparedAdaptiveLaunchResult{}, errors.New("finalized too early")
 		}
-		return PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete}, nil
+		return PreparedAdaptiveLaunchResult{Mode: ExecutionModeCompleteApplied}, nil
 	}, func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error) {
 		finalizeCalls++
 		finalized := prepared.Run
@@ -120,10 +120,10 @@ func TestPackageWorkflowDispatchDeterministicCompleteOrderingAndResult(t *testin
 }
 
 func TestPackageWorkflowDispatchCompleteRejectsMalformedLaunchBeforeFinalization(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeCompleteApplied)
 	finalizeCalls := 0
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
-		return PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete, NewlyAdmitted: true}, nil
+		return PreparedAdaptiveLaunchResult{Mode: ExecutionModeCompleteApplied, NewlyAdmitted: true}, nil
 	}, func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error) {
 		finalizeCalls++
 		return workflowstore.Run{}, nil
@@ -135,9 +135,9 @@ func TestPackageWorkflowDispatchCompleteRejectsMalformedLaunchBeforeFinalization
 }
 
 func TestPackageWorkflowDispatchCompleteFinalizationFailurePreservesLaunch(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeCompleteApplied)
 	finalizeErr := errors.New("finalization failed")
-	launch := PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete}
+	launch := PreparedAdaptiveLaunchResult{Mode: ExecutionModeCompleteApplied}
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return launch, nil
 	}, func(context.Context, *workflowruns.Service, string) (workflowstore.Run, error) {
@@ -150,9 +150,9 @@ func TestPackageWorkflowDispatchCompleteFinalizationFailurePreservesLaunch(t *te
 }
 
 func TestPackageWorkflowDispatchCompleteIsIdempotent(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefDeterministicComplete)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeCompleteApplied)
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
-		return PreparedAdaptiveLaunchResult{Mode: EffectiveExecutorBriefDeterministicComplete}, nil
+		return PreparedAdaptiveLaunchResult{Mode: ExecutionModeCompleteApplied}, nil
 	}, nil)
 	first, err := service.DispatchPreparedPackageWorkflow(context.Background(), prepared)
 	if err != nil {
@@ -165,7 +165,7 @@ func TestPackageWorkflowDispatchCompleteIsIdempotent(t *testing.T) {
 }
 
 func TestPackageWorkflowDispatchMalformedPreparationRejectedBeforeLaunch(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveNoOperations)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModeAbsent)
 	prepared.Run.ExecutionPackageRowID.Valid = false
 	launchCalls := 0
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
@@ -179,7 +179,7 @@ func TestPackageWorkflowDispatchMalformedPreparationRejectedBeforeLaunch(t *test
 }
 
 func TestPackageWorkflowDispatchDoesNotModifyAttemptOrLease(t *testing.T) {
-	service, prepared := syntheticPackageWorkflowDispatch(t, EffectiveExecutorBriefAdaptiveAfterPartialApplication)
+	service, prepared := syntheticPackageWorkflowDispatch(t, ExecutionModePartialApplied)
 	withPackageWorkflowDispatchSeams(t, func(context.Context, *Execution, PreparedAdaptiveLaunchInput) (PreparedAdaptiveLaunchResult, error) {
 		return validAdaptiveDispatchLaunch(prepared, true), nil
 	}, nil)
@@ -207,27 +207,27 @@ func TestPackageWorkflowDispatchDoesNotModifyAttemptOrLease(t *testing.T) {
 	}
 }
 
-func syntheticPackageWorkflowDispatch(t *testing.T, mode EffectiveExecutorBriefMode) (*Execution, PackagePreparationResult) {
+func syntheticPackageWorkflowDispatch(t *testing.T, mode ExecutionMode) (*Execution, PackagePreparationResult) {
 	t.Helper()
-	fixture := newExecutionAssignmentFixture(t, mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication, "partial")
+	fixture := newExecutionAssignmentFixture(t, mode == ExecutionModePartialApplied, "partial")
 	prepared := PackagePreparationResult{Run: fixture.run}
 	prepared.Deterministic.Outcome.Outcome.Outcome.Status = "applied"
 	prepared.Deterministic.Outcome.Outcome.Outcome.Coverage = "complete"
-	if mode == EffectiveExecutorBriefAdaptiveNoOperations {
+	if mode == ExecutionModeAbsent {
 		prepared.Deterministic.Outcome.Outcome.Outcome.Status = string(DeterministicPreflightNotPresent)
 		prepared.Deterministic.Outcome.Outcome.Outcome.Coverage = ""
 	}
-	if mode == EffectiveExecutorBriefAdaptivePreflightFailed {
+	if mode == ExecutionModePreflightFailed {
 		prepared.Deterministic.Outcome.Outcome.Outcome.Status = string(DeterministicPreflightFailed)
 		prepared.Deterministic.Outcome.Outcome.Outcome.Coverage = "complete"
 		prepared.Deterministic.Outcome.Outcome.PreflightFailure = &DeterministicOutcomePreflightFailure{}
 	}
-	if mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication {
+	if mode == ExecutionModePartialApplied {
 		lease := workflowstore.RepositoryBranchMutationLease{ID: 21, LeaseID: "retained-lease", RepoTarget: fixture.run.RepoTarget, Branch: fixture.run.Branch, OwnerKind: "run_execution", OwnerIdentity: fixture.run.RunID, State: workflowstore.RepositoryBranchMutationLeaseStateActive, UncertaintyState: workflowstore.RepositoryBranchMutationLeaseCertaintyCertain, ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired}
 		prepared.Deterministic.ActiveLease = &lease
 		prepared.Deterministic.Outcome.Outcome.Outcome.Coverage = "partial"
 	}
-	if mode != EffectiveExecutorBriefDeterministicComplete {
+	if mode != ExecutionModeCompleteApplied {
 		attempt := workflowstore.ExecutionAttempt{ID: 31, AttemptID: "prepared-attempt", RunRowID: fixture.run.ID, AttemptNumber: 1, Adapter: "codex", Model: "model", Status: workflowstore.AttemptStatusPending}
 		prepared.Adaptive = AdaptiveExecutionAttemptResult{Mode: mode, AdaptiveDispatchRequired: true, Attempt: &attempt, InputArtifact: &workflowstore.Artifact{ID: 41, OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true}}, InputBytes: []byte("prepared")}
 	} else {
@@ -244,7 +244,7 @@ func validAdaptiveDispatchLaunch(prepared PackagePreparationResult, newlyAdmitte
 	run := prepared.Run
 	attempt := *prepared.Adaptive.Attempt
 	lease := workflowstore.RepositoryBranchMutationLease{ID: 51, LeaseID: "fresh-lease", RepoTarget: run.RepoTarget, Branch: run.Branch, OwnerIdentity: run.RunID, State: workflowstore.RepositoryBranchMutationLeaseStateActive, UncertaintyState: workflowstore.RepositoryBranchMutationLeaseCertaintyCertain, ReconciliationState: workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired}
-	if prepared.Adaptive.Mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication {
+	if prepared.Adaptive.Mode == ExecutionModePartialApplied {
 		lease = *prepared.Deterministic.ActiveLease
 	}
 	return PreparedAdaptiveLaunchResult{Mode: prepared.Adaptive.Mode, AdaptiveDispatchRequired: true, NewlyAdmitted: newlyAdmitted, NewlyLaunched: newlyAdmitted, Run: &run, Attempt: &attempt, Lease: &lease}

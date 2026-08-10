@@ -14,7 +14,7 @@ import (
 
 const (
 	AuthorityRepository = "Paintersrp/relay-specs"
-	AuthorityCommit     = "0b1ab1705157d0b0fcc184b35037008fce64c469"
+	AuthorityCommit     = "590c4ba79e557e3957a80ad1fefe8698cef0219e"
 )
 
 type Kind string
@@ -49,8 +49,8 @@ var schemaFS embed.FS
 var authoritativeCatalog = []catalogEntry{
 	{Kind: KindPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/plan.schema.json", Filename: "plan.schema.json", SHA256: "03a75ab1352d27193ec27b5aec9f449e65daf69de66d6897ab74672bdc705cf8"},
 	{Kind: KindDeterministicOperations, ProducerVersion: "1.0", AuthorityPath: "schemas/deterministic-operations.schema.json", Filename: "deterministic-operations.schema.json", SHA256: "630d5e028c243deae76038e3e44b6c4ff9a3f482f32d1aece69573ba04e9df28"},
-	{Kind: KindAuditPacket, ProducerVersion: "3.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "cf66e0775593079a2e288ef2634e12fb40a19d02b2e7637fdaeffee49c4ac95b"},
-	{Kind: KindDeliveryTicket, ProducerVersion: "1.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "663845dfe1191d397102e689fd09f1ff1d26823ae6dc6798a2ec9cd623a02ee7"},
+	{Kind: KindAuditPacket, ProducerVersion: "4.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "6a8b98454418fd2f08890e9a60350765bef4707a07e5be0229f6c024b2eda047"},
+	{Kind: KindDeliveryTicket, ProducerVersion: "2.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "681f0b9fa9ce60fb6d6f325426fc1d935385de63ea74324606fc7858dd5a9b0b"},
 	{Kind: KindTransitionPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/transition-plan.schema.json", Filename: "transition-plan.schema.json", SHA256: "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
 }
 
@@ -262,6 +262,18 @@ func portablePatternConstraints(pattern string) ([]any, error) {
 			notPatternConstraint(`^[\t\n\f\r\v \p{Z}\x{FEFF}]`),
 			notPatternConstraint(`[\t\n\f\r\v \p{Z}\x{FEFF}]$`),
 		}, nil
+	case `^(?:$|(?!/)(?![A-Za-z]:)(?!//)(?!.*\\)(?!.*(?:^|/)\.\.?$)(?!.*(?:^|/)\.\.?/)(?!\s)(?!.*\s$)(?!.*[\u0000-\u001F\u007F]).*\S.*)$`:
+		return []any{map[string]any{"anyOf": []any{
+			patternConstraint(`^$`),
+			map[string]any{"allOf": []any{
+				patternConstraint(`^[^\x00-\x1F\x7F\\]+$`),
+				notPatternConstraint(`^/`),
+				notPatternConstraint(`^[A-Za-z]:`),
+				notPatternConstraint(`(^|/)\.\.?($|/)`),
+				notPatternConstraint(`^[\t\n\f\r\v \p{Z}\x{FEFF}]`),
+				notPatternConstraint(`[\t\n\f\r\v \p{Z}\x{FEFF}]$`),
+			}},
+		}}}, nil
 	case `^[1-9][0-9]*\.[1-9][0-9]*$`:
 		return []any{patternConstraint(`^[1-9][0-9]*\.[1-9][0-9]*$`)}, nil
 	case `^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$`:

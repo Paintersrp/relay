@@ -52,7 +52,7 @@ func validateArtifact(input ValidationInput) ValidationResult {
 	if identity, filenameDiagnostics := speccompiler.ParseFilename(input.DisplayName); len(filenameDiagnostics) == 0 {
 		kind = string(identity.Kind)
 		switch identity.Kind {
-		case speccompiler.ArtifactRequirements, speccompiler.ArtifactSharedDesign, speccompiler.ArtifactTicketDesignBrief:
+		case speccompiler.ArtifactRequirements, speccompiler.ArtifactSharedDesign:
 			diagnostics = planningartifacts.Validate(identity.Kind, input.CanonicalBytes)
 			ok = len(diagnostics) == 0
 		default:

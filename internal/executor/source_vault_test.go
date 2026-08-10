@@ -46,7 +46,14 @@ func newPackageSourceVaultReader(path string, baseCommit string) *stubSourceVaul
 }
 
 func packageDeliveryTicketBytes(baseCommit string) []byte {
-	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, baseCommit))
+	return []byte(fmt.Sprintf(`{"schema_version":"2.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"required_invariants":["Packages must bind the exact approved Ticket."],"forbidden_behaviors":[],"implementation_obligations":[{"source_area":"internal/app/packages","obligation":"Preserve the selected package basis.","prerequisites":[]}],"proof_obligations":["Prove package preparation binds the approved Ticket."],"validation_commands":[{"working_directory":"","command":"go test ./internal/app/packages","expected":"all tests pass"}],"transition_applicability":"not_required","explicit_deferrals":[],"completion_criteria":["All tests pass."]}`, baseCommit))
+}
+
+// packageDeliveryTicketBytesWithDependency returns the canonical approved
+// Delivery Ticket bytes with one completed depends-on entry (P2-T1 revision 1),
+// matching the dependency seeded by the assignment integration fixture.
+func packageDeliveryTicketBytesWithDependency(baseCommit string) []byte {
+	return []byte(strings.Replace(string(packageDeliveryTicketBytes(baseCommit)), `"depends_on":[]`, `"depends_on":[{"ticket_id":"P2-T1","revision":1}]`, 1))
 }
 
 var _ executionpackages.SourceVaultReader = (*stubSourceVaultReader)(nil)

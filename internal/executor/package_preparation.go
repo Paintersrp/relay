@@ -126,23 +126,23 @@ func verifyPackagePreparation(run workflowstore.Run, deterministic PackageDeterm
 		return err
 	}
 	switch mode {
-	case EffectiveExecutorBriefAdaptiveNoOperations:
+	case ExecutionModeAbsent:
 		if deterministic.Application != nil || deterministic.Outcome.Outcome.Application != nil || deterministic.ActiveLease != nil || deterministic.Outcome.Outcome.PreflightFailure != nil {
 			return packagePreparationConflict("not_present result shape")
 		}
 		return verifyPackageWorkflowAdaptiveResult(run, adaptive, input, mode)
-	case EffectiveExecutorBriefAdaptivePreflightFailed:
+	case ExecutionModePreflightFailed:
 		if deterministic.Application != nil || deterministic.Outcome.Outcome.Application != nil || deterministic.ActiveLease != nil || deterministic.Outcome.Outcome.PreflightFailure == nil {
 			return packagePreparationConflict("preflight_failed result shape")
 		}
 		return verifyPackageWorkflowAdaptiveResult(run, adaptive, input, mode)
-	case EffectiveExecutorBriefAdaptiveAfterPartialApplication:
+	case ExecutionModePartialApplied:
 		lease := deterministic.ActiveLease
 		if lease == nil || lease.State != workflowstore.RepositoryBranchMutationLeaseStateActive || lease.OwnerKind != "run_execution" || lease.OwnerIdentity != run.RunID || lease.RepoTarget != run.RepoTarget || lease.Branch != run.Branch || lease.UncertaintyState != workflowstore.RepositoryBranchMutationLeaseCertaintyCertain || lease.ReconciliationState != workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired {
 			return packagePreparationConflict("partial application lease shape")
 		}
 		return verifyPackageWorkflowAdaptiveResult(run, adaptive, input, mode)
-	case EffectiveExecutorBriefDeterministicComplete:
+	case ExecutionModeCompleteApplied:
 		if deterministic.ActiveLease != nil {
 			return packagePreparationConflict("complete application has an active lease")
 		}
@@ -151,25 +151,25 @@ func verifyPackagePreparation(run workflowstore.Run, deterministic PackageDeterm
 		}
 		return nil
 	default:
-		return packagePreparationConflict("unsupported effective mode")
+		return packagePreparationConflict("unsupported execution mode")
 	}
 }
 
-func packageWorkflowExpectedMode(outcome DeterministicOutcomeSummary) (EffectiveExecutorBriefMode, error) {
+func packageWorkflowExpectedMode(outcome DeterministicOutcomeSummary) (ExecutionMode, error) {
 	switch outcome.Status {
 	case string(DeterministicPreflightNotPresent):
 		if outcome.Coverage != "" {
 			return "", packagePreparationConflict("not_present outcome coverage")
 		}
-		return EffectiveExecutorBriefAdaptiveNoOperations, nil
+		return ExecutionModeAbsent, nil
 	case string(DeterministicPreflightFailed):
-		return EffectiveExecutorBriefAdaptivePreflightFailed, nil
+		return ExecutionModePreflightFailed, nil
 	case "applied":
 		switch outcome.Coverage {
 		case "partial":
-			return EffectiveExecutorBriefAdaptiveAfterPartialApplication, nil
+			return ExecutionModePartialApplied, nil
 		case "complete":
-			return EffectiveExecutorBriefDeterministicComplete, nil
+			return ExecutionModeCompleteApplied, nil
 		default:
 			return "", packagePreparationConflict("applied outcome coverage")
 		}
@@ -178,7 +178,7 @@ func packageWorkflowExpectedMode(outcome DeterministicOutcomeSummary) (Effective
 	}
 }
 
-func verifyPackageWorkflowAdaptiveResult(run workflowstore.Run, adaptive AdaptiveExecutionAttemptResult, input PackagePreparationInput, expected EffectiveExecutorBriefMode) error {
+func verifyPackageWorkflowAdaptiveResult(run workflowstore.Run, adaptive AdaptiveExecutionAttemptResult, input PackagePreparationInput, expected ExecutionMode) error {
 	if adaptive.Mode != expected || !adaptive.AdaptiveDispatchRequired || adaptive.Attempt == nil || adaptive.InputArtifact == nil || len(adaptive.InputBytes) == 0 {
 		return packagePreparationConflict("adaptive result shape")
 	}

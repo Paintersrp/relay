@@ -1,7 +1,6 @@
 package packages
 
 import (
-	"relay/internal/planningartifacts"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -15,9 +14,13 @@ type ArtifactInput struct {
 	Bytes          []byte
 }
 
+// PrepareInput carries only the active selection identity and the optional
+// Deterministic Operations artifact. The selected approved Delivery Ticket is
+// the sole ticket semantic authority: its exact source-vault bytes and
+// deterministic projection are resolved server-side from the selection, never
+// accepted from the caller.
 type PrepareInput struct {
 	SelectionID             string
-	TicketDesignBrief       ArtifactInput
 	DeterministicOperations *ArtifactInput
 }
 
@@ -28,11 +31,18 @@ type PackageArtifact struct {
 	SizeBytes    int64
 }
 
+// PrepareResult exposes the immutable package plus the server-resolved
+// selected approved Delivery Ticket basis: the retained Ticket, its selected
+// revision, the exact source-vault document metadata, and the deterministic
+// projection. No Brief identity, bytes, digest, or projection is present.
 type PrepareResult struct {
-	Package                 workflowstore.ExecutionPackage
-	Members                 []workflowstore.ExecutionPackageMember
-	TicketDesignBrief       PackageArtifact
-	DeterministicOperations *PackageArtifact
+	Package          workflowstore.ExecutionPackage
+	Members          []workflowstore.ExecutionPackageMember
+	Ticket           workflowstore.DeliveryTicket
+	TicketRevision   workflowstore.DeliveryTicketRevision
+	TicketDocument   PackageArtifact
+	TicketProjection speccompiler.DeliveryTicketProjection
+	Operations       *PackageArtifact
 }
 
 type ApproveInput struct {
@@ -49,12 +59,15 @@ type ApproveResult struct {
 }
 
 // Detail is the bounded package projection used by later operation, UI, and
-// audit owners. A nil Run means the immutable package is still unapproved.
+// audit owners. A nil Run means the immutable package is still unapproved. It
+// carries no Brief identity, bytes, digest, or projection.
 type Detail struct {
 	Package                 workflowstore.ExecutionPackage
 	Members                 []workflowstore.ExecutionPackageMember
 	ApprovalBindings        []workflowstore.ExecutionPackageApprovalBinding
-	TicketDesignBrief       PackageArtifact
+	Ticket                  workflowstore.DeliveryTicket
+	TicketRevision          workflowstore.DeliveryTicketRevision
+	TicketDocument          PackageArtifact
 	DeterministicOperations *PackageArtifact
 	Run                     *workflowstore.Run
 	PackageApprovalID       string
@@ -93,12 +106,29 @@ type ApprovedAuthorityLayer struct {
 	Bytes        []byte
 }
 
+// ApprovedCompletedDependency is the canonical completed-dependency record for
+// one satisfied dependency of the selected Delivery Ticket revision, as loaded
+// and verified by the approved package basis. It carries the dependency
+// sequence, the depends-on Ticket ID, its revision number, and its stored
+// outcome ("satisfied"). The package basis requires every dependency to be a
+// completed, current outcome.
+type ApprovedCompletedDependency struct {
+	Sequence int64
+	TicketID string
+	Revision int64
+	Outcome  string
+}
+
 type ApprovedDeterministicOperations struct {
 	ApprovedDocument
 	Coverage string
 	Document *speccompiler.DeterministicOperationsDocument
 }
 
+// ApprovedAuthority is the bounded authority surface for an approved package
+// Run. It exposes the retained Delivery Ticket (exact source-vault bytes) and
+// its deterministic projection; the Ticket Design Brief is no longer an
+// authority surface and never appears here.
 type ApprovedAuthority struct {
 	Run             workflowstore.Run
 	Package         workflowstore.ExecutionPackage
@@ -108,18 +138,17 @@ type ApprovedAuthority struct {
 	Authority workflowstore.FeatureWorkspaceAuthorityRevision
 	Source    workflowstore.SourceVaultClosure
 
-	Ticket             workflowstore.DeliveryTicket
-	TicketRevision     workflowstore.DeliveryTicketRevision
-	TicketMembers      []workflowstore.DeliveryTicketRevisionMember
-	TicketDependencies []workflowstore.DeliveryTicketRevisionDependency
-	TicketApproval     workflowstore.DeliveryTicketRevisionApproval
+	Ticket                workflowstore.DeliveryTicket
+	TicketRevision        workflowstore.DeliveryTicketRevision
+	TicketMembers         []workflowstore.DeliveryTicketRevisionMember
+	TicketDependencies    []workflowstore.DeliveryTicketRevisionDependency
+	CompletedDependencies []ApprovedCompletedDependency
+	TicketApproval        workflowstore.DeliveryTicketRevisionApproval
 
 	AuthorityLayers []ApprovedAuthorityLayer
 
-	TicketDesignBrief ApprovedDocument
-	BriefProjection   planningartifacts.TicketDesignBriefProjection
-
-	DeliveryTicket ApprovedSourceDocument
+	DeliveryTicket   ApprovedSourceDocument
+	TicketProjection speccompiler.DeliveryTicketProjection
 
 	DeterministicOperations *ApprovedDeterministicOperations
 }

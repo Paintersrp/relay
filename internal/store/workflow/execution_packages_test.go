@@ -73,8 +73,7 @@ func TestExecutionPackageConsumptionPersistsExactImmutableBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 	if stored.SelectionRowID != seed.selection.ID || stored.AuthorityRevisionRowID != seed.authority.ID ||
-		stored.SourceClosureRowID != seed.closure.ID || !stored.DeterministicOperationsSha256.Valid || stored.DeterministicOperationsSha256.String != executionPackageHash('3') ||
-		stored.DesignBriefSha256 != executionPackageHash('2') {
+		stored.SourceClosureRowID != seed.closure.ID || !stored.DeterministicOperationsSha256.Valid || stored.DeterministicOperationsSha256.String != executionPackageHash('3') {
 		t.Fatalf("stored execution package basis = %#v", stored)
 	}
 	bindings, err := queries.ListExecutionPackageApprovalBindings(ctx, stored.ID)
@@ -407,7 +406,6 @@ func createExecutionPackage(ctx context.Context, queries *workflowgenerated.Quer
 		PackageSha256:                   executionPackageHash('1'),
 		AuthoritySha256:                 executionPackageHash('a'),
 		SourceSha256:                    executionPackageHash('b'),
-		DesignBriefSha256:               executionPackageHash('2'),
 		DeterministicOperationsSha256:   sql.NullString{String: executionPackageHash('3'), Valid: true},
 		DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true},
 	})

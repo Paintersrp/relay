@@ -189,12 +189,7 @@ func (s *Service) PromoteApprovedDeliveryTicketCandidate(ctx context.Context, in
 			return err
 		}
 		for index, obligation := range document.ImplementationObligations {
-			if _, err := tx.CreateDeliveryTicketRevisionMember(ctx, workflowstore.CreateDeliveryTicketRevisionMemberParams{RevisionRowID: revision.ID, Sequence: int64(index + 1), MemberKind: "implementation_obligation", MemberPath: nullableString(obligation.Path), MemberText: obligation.Obligation}); err != nil {
-				return err
-			}
-		}
-		for index, validation := range document.ValidationIntent {
-			if _, err := tx.CreateDeliveryTicketRevisionMember(ctx, workflowstore.CreateDeliveryTicketRevisionMemberParams{RevisionRowID: revision.ID, Sequence: int64(len(document.ImplementationObligations) + index + 1), MemberKind: "validation_intent", MemberText: validation}); err != nil {
+			if _, err := tx.CreateDeliveryTicketRevisionMember(ctx, workflowstore.CreateDeliveryTicketRevisionMemberParams{RevisionRowID: revision.ID, Sequence: int64(index + 1), MemberKind: "implementation_obligation", MemberPath: ticketObligationSourceArea(obligation.SourceArea), MemberText: obligation.Obligation}); err != nil {
 				return err
 			}
 		}
@@ -322,6 +317,15 @@ func candidateCancellation(document *speccompiler.DeliveryTicketDocument) sql.Nu
 		return sql.NullString{}
 	}
 	return nullableString(document.Cancellation.Reason)
+}
+
+// ticketObligationSourceArea maps the nullable v2.0 obligation source_area to
+// the nullable revision member path.
+func ticketObligationSourceArea(value *string) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return nullableString(*value)
 }
 
 func candidateDependencyRevision(ctx context.Context, tx *workflowstore.Tx, workspaceID int64, dependency speccompiler.DeliveryTicketDependency) (workflowstore.DeliveryTicketRevision, error) {

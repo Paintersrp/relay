@@ -41,21 +41,21 @@ type BeginExecutionAttemptResult struct {
 // BeginPreparedAdaptiveExecutionInput contains identities that were verified
 // by executor preparation. The Run service rechecks them transactionally.
 type BeginPreparedAdaptiveExecutionInput struct {
-	RunID                       string
-	RunRowID                    int64
-	AttemptID                   string
-	AttemptRowID                int64
-	AttemptNumber               int64
-	Adapter                     string
-	Model                       string
-	InputArtifactRowID          int64
-	InputArtifactSHA256         string
-	EffectiveBriefArtifactRowID int64
-	EffectiveBriefArtifactID    string
-	EffectiveBriefSHA256        string
-	EffectiveBriefMode          string
-	ProposedLeaseID             string
-	RunningResultJSON           string
+	RunID                            string
+	RunRowID                         int64
+	AttemptID                        string
+	AttemptRowID                     int64
+	AttemptNumber                    int64
+	Adapter                          string
+	Model                            string
+	InputArtifactRowID               int64
+	InputArtifactSHA256              string
+	ExecutionAssignmentArtifactRowID int64
+	ExecutionAssignmentArtifactID    string
+	ExecutionAssignmentSHA256        string
+	ExecutionAssignmentMode          string
+	ProposedLeaseID                  string
+	RunningResultJSON                string
 }
 
 type BeginPreparedAdaptiveExecutionResult struct {

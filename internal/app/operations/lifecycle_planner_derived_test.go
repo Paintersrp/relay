@@ -110,14 +110,6 @@ func createPlannerDerivedPacket(t *testing.T, f plannerDerivedFixture, operation
 	case "planner.transition_plan":
 		input, attestations := plannerDerivedArtifactInput(t, f, "selected_delivery_ticket")
 		identity.Inputs, identity.Attestations = []semanticidentity.InputBinding{input}, attestations
-	case "planner.ticket_design_brief":
-		selected, selectedAttestations := plannerDerivedArtifactInput(t, f, "selected_delivery_ticket")
-		dependencies, dependencyAttestations := plannerDerivedArtifactInput(t, f, "completed_dependency_outcomes")
-		dependencyAttestations[0].Kind = "completed_dependency_outcomes"
-		dependencyAttestations[0].Approved = false
-		dependencyAttestations[0].Complete = true
-		identity.Inputs = []semanticidentity.InputBinding{selected, dependencies}
-		identity.Attestations = append(selectedAttestations, dependencyAttestations...)
 	}
 	result, err := f.service.Create(f.ctx, CreateLifecycleInput{MutationID: "create-" + string(operationID), Identity: identity})
 	if err != nil {
@@ -303,37 +295,12 @@ func TestLifecycleTransitionPlanMaterializesCurrentTransitionApplicability(t *te
 	})
 }
 
-func TestLifecycleTicketDesignBriefMaterializesCurrentSelectionIdentity(t *testing.T) {
-	f := newPlannerDerivedFixture(t, true)
-	ticket, revision := createPlannerTicket(t, f, "not_required", true)
-	result := createPlannerDerivedPacket(t, f, "planner.ticket_design_brief", ticket.TicketID)
-	data, input, _ := readPlannerDerivedInput(t, f, result, "current_selection_identity")
-	expected, _ := canonicalJSON(selectionIdentityInput{f.workspace.WorkspaceID, f.workspace.FeatureSlug, f.workspace.Version, "selection-planner-derived", "active", ticket.TicketID, revision.ID, revision.RevisionNumber, "approval-planner-derived", "authority-planner-derived", f.closure.ClosureID})
-	if !bytes.Equal(data, expected) || input.InputRole != "authority" || input.AttestationKind != "derived_authority" {
-		t.Fatalf("input=%#v data=%s", input, data)
-	}
-
-	t.Run("no_active_selection", func(t *testing.T) {
-		invalid := newPlannerDerivedFixture(t, true)
-		invalidTicket, _ := createPlannerTicket(t, invalid, "not_required", false)
-		assertPlannerCreateInvalid(t, invalid, "planner.ticket_design_brief", invalidTicket.TicketID)
-	})
-}
-
 func assertPlannerCreateInvalid(t *testing.T, f plannerDerivedFixture, operationID registry.OperationID, ticketID string) {
 	t.Helper()
 	operation, _ := registry.Lookup(operationID)
 	identity := semanticidentity.CreateOperationPacket{SurfaceContract: operation.SurfaceContract, OperationID: operationID, ProjectID: f.projectID, WorkflowReferences: f.workflowReferences(t, ticketID)}
-	if operationID == "planner.transition_plan" {
-		input, attestations := plannerDerivedArtifactInput(t, f, "selected_delivery_ticket")
-		identity.Inputs, identity.Attestations = []semanticidentity.InputBinding{input}, attestations
-	} else {
-		selected, selectedAttestations := plannerDerivedArtifactInput(t, f, "selected_delivery_ticket")
-		dependencies, dependencyAttestations := plannerDerivedArtifactInput(t, f, "completed_dependency_outcomes")
-		dependencyAttestations[0].Kind, dependencyAttestations[0].Approved, dependencyAttestations[0].Complete = "completed_dependency_outcomes", false, true
-		identity.Inputs = []semanticidentity.InputBinding{selected, dependencies}
-		identity.Attestations = append(selectedAttestations, dependencyAttestations...)
-	}
+	input, attestations := plannerDerivedArtifactInput(t, f, "selected_delivery_ticket")
+	identity.Inputs, identity.Attestations = []semanticidentity.InputBinding{input}, attestations
 	_, err := f.service.Create(f.ctx, CreateLifecycleInput{MutationID: "invalid-" + string(operationID), Identity: identity})
 	var lifecycleErr *Error
 	if !errors.As(err, &lifecycleErr) || lifecycleErr.Code != CodeInvalidPacketDocument {
@@ -373,28 +340,6 @@ func TestCurrentPlannerDerivedInputRevalidationRejectsAuthorityDrift(t *testing.
 				return createErr
 			}
 			_, createErr = tx.SetDeliveryTicketCurrentRevision(f.ctx, ticket.TicketID, replacement.ID)
-			return createErr
-		}); err != nil {
-			t.Fatal(err)
-		}
-		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
-	})
-
-	t.Run("workspace_current_authority_replaced", func(t *testing.T) {
-		f := newPlannerDerivedFixture(t, true)
-		ticket, _ := createPlannerTicket(t, f, "not_required", true)
-		operation, _ := registry.Lookup("planner.ticket_design_brief")
-		workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
-		prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
-			authority, createErr := tx.CreateFeatureWorkspaceAuthorityRevision(f.ctx, workflowstore.CreateFeatureWorkspaceAuthorityRevisionParams{AuthorityRevisionID: "authority-planner-derived-replacement", WorkspaceRowID: f.workspace.ID, RevisionNumber: 2, SourceClosureRowID: sql.NullInt64{Int64: f.closure.ID, Valid: true}})
-			if createErr != nil {
-				return createErr
-			}
-			_, createErr = tx.SetFeatureWorkspaceAuthorityRevision(f.ctx, authority.ID, f.workspace.WorkspaceID, f.workspace.Version)
 			return createErr
 		}); err != nil {
 			t.Fatal(err)
@@ -442,57 +387,6 @@ func TestCurrentPlannerDerivedInputRevalidationRejectsAuthorityDrift(t *testing.
 		}
 		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
 	})
-
-	t.Run("active_selection_consumed", func(t *testing.T) {
-		f := newPlannerDerivedFixture(t, true)
-		ticket, _ := createPlannerTicket(t, f, "not_required", true)
-		operation, _ := registry.Lookup("planner.ticket_design_brief")
-		workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
-		prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
-			_, err := tx.TransitionDeliveryTicketSelection(f.ctx, "selection-planner-derived", "superseded")
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
-		assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
-	})
-
-	for _, name := range []string{"dependency_revision_replaced", "dependency_satisfaction_removed", "selected_revision_completed"} {
-		t.Run(name, func(t *testing.T) {
-			f := newPlannerDerivedFixture(t, true)
-			ticket, revision := createPlannerTicket(t, f, "not_required", true)
-			operation, _ := registry.Lookup("planner.ticket_design_brief")
-			if name != "selected_revision_completed" {
-				dependencyTicket, dependencyRevision := createPlannerTicketInWorkspace(t, f, f.workspace, "TICKET-PLANNER-REVALIDATION-DEPENDENCY", "not_required")
-				createPlannerDependency(t, f, revision.ID, dependencyRevision.ID)
-				insertPlannerSatisfaction(t, f, dependencyRevision.ID)
-				workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
-				prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if name == "dependency_revision_replaced" {
-					replacePlannerTicketRevision(t, &f, dependencyTicket, "not_required")
-				} else {
-					mustExec(t, &f, `DROP TRIGGER delivery_ticket_revision_satisfaction_delete_guard`)
-					mustExec(t, &f, `DELETE FROM delivery_ticket_revision_satisfactions WHERE delivery_ticket_revision_row_id = ?`, dependencyRevision.ID)
-				}
-				assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
-				return
-			}
-			workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
-			prepared, err := f.service.materializeDerivedInputs(f.ctx, operation, workflow, &retainedBuilder{ids: f.service.ids})
-			if err != nil {
-				t.Fatal(err)
-			}
-			insertPlannerSatisfaction(t, f, revision.ID)
-			assertPlannerRevalidationInvalid(t, f.ctx, f.service, operation, workflow, prepared)
-		})
-	}
 }
 
 func resolvedPlannerWorkflow(t *testing.T, f plannerDerivedFixture, ticketID string) workflowPreparation {
@@ -621,140 +515,6 @@ func TestCurrentTransitionApplicabilityRejectsPersistedAuthorityMatrix(t *testin
 			test.edit(t, &f, ticket, revision, &workflow)
 			_, _, err := f.service.loadCurrentTransitionApplicability(f.ctx, workflow)
 			assertPlannerLoaderInvalid(t, err, "")
-			assertNoPlannerPackets(t, f)
-		})
-	}
-}
-
-func TestCurrentSelectionIdentityRejectsPersistedAuthorityMatrix(t *testing.T) {
-	for _, name := range []string{
-		"no_active_selection", "selection_consumed", "multiple_active_selections", "active_selection_targets_another_revision",
-		"selection_has_zero_members", "selection_has_multiple_members", "selection_member_sequence_not_one", "selection_source_closure_mismatch",
-		"approval_not_approved", "approval_kind_not_delivery", "approval_belongs_to_another_revision", "approval_source_closure_mismatch", "approval_authority_revision_mismatch",
-		"workspace_has_no_current_authority", "workspace_current_authority_replaced", "authority_belongs_to_another_workspace", "authority_source_closure_mismatch",
-		"ticket_source_closure_not_ready", "selected_revision_already_completed", "dependency_outcome_not_satisfied", "dependency_revision_no_longer_current", "dependency_ticket_belongs_to_another_workspace", "dependency_satisfaction_missing", "workspace_route_changed_after_selection",
-	} {
-		t.Run(name, func(t *testing.T) {
-			f := newPlannerDerivedFixture(t, true)
-			ticket, revision := createPlannerTicket(t, f, "not_required", name != "no_active_selection")
-			workflow := resolvedPlannerWorkflow(t, f, ticket.TicketID)
-			var selection workflowstore.DeliveryTicketSelection
-			var member workflowstore.DeliveryTicketSelectionMember
-			var approval workflowstore.DeliveryTicketRevisionApproval
-			if name != "no_active_selection" {
-				selection, member, approval = currentPlannerSelection(t, f)
-			}
-			switch name {
-			case "selection_consumed":
-				if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
-					_, err := tx.TransitionDeliveryTicketSelection(f.ctx, selection.SelectionID, "superseded")
-					return err
-				}); err != nil {
-					t.Fatal(err)
-				}
-			case "multiple_active_selections":
-				mustExec(t, &f, `DROP INDEX idx_delivery_ticket_selections_one_active_workspace`)
-				if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
-					_, err := tx.CreateDeliveryTicketSelection(f.ctx, workflowstore.CreateDeliveryTicketSelectionParams{SelectionID: "selection-planner-derived-second", WorkspaceRowID: f.workspace.ID, State: "active", Rationale: "Second active selection.", SourceClosureRowID: sql.NullInt64{Int64: f.closure.ID, Valid: true}})
-					return err
-				}); err != nil {
-					t.Fatal(err)
-				}
-			case "active_selection_targets_another_revision", "selection_has_multiple_members", "approval_belongs_to_another_revision":
-				_, otherRevision := createPlannerTicketInWorkspace(t, f, f.workspace, "TICKET-PLANNER-SELECTION-OTHER", "not_required")
-				otherApproval := createPlannerApproval(t, f, otherRevision, f.workspace.CurrentAuthorityRevisionRowID)
-				if name == "selection_has_multiple_members" {
-					mustExec(t, &f, `DROP TRIGGER trg_single_selection_member`)
-					if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
-						_, err := tx.CreateDeliveryTicketSelectionMember(f.ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{SelectionRowID: selection.ID, Sequence: 2, RevisionRowID: otherRevision.ID, ApprovalRowID: otherApproval.ID})
-						return err
-					}); err != nil {
-						t.Fatal(err)
-					}
-				} else {
-					mustExec(t, &f, `DROP TRIGGER delivery_ticket_selection_member_update_immutable`)
-					if name == "active_selection_targets_another_revision" {
-						mustExec(t, &f, `UPDATE delivery_ticket_selection_members SET revision_row_id = ?, approval_row_id = ? WHERE id = ?`, otherRevision.ID, otherApproval.ID, member.ID)
-						assertPlannerSelectionMember(t, f, member.ID, otherRevision.ID, otherApproval.ID, otherRevision.ID)
-					} else {
-						mustExec(t, &f, `UPDATE delivery_ticket_selection_members SET approval_row_id = ? WHERE id = ?`, otherApproval.ID, member.ID)
-						assertPlannerSelectionMember(t, f, member.ID, revision.ID, otherApproval.ID, otherRevision.ID)
-					}
-				}
-			case "selection_has_zero_members":
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_selection_member_delete_guard`)
-				mustExec(t, &f, `DELETE FROM delivery_ticket_selection_members WHERE id = ?`, member.ID)
-			case "selection_member_sequence_not_one":
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_selection_member_update_immutable`)
-				mustExec(t, &f, `UPDATE delivery_ticket_selection_members SET sequence = 2 WHERE id = ?`, member.ID)
-			case "selection_source_closure_mismatch":
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_selection_identity_immutable`)
-				mustExec(t, &f, `UPDATE delivery_ticket_selections SET source_closure_row_id = ? WHERE id = ?`, createPlannerAlternateClosure(t, f), selection.ID)
-			case "approval_not_approved":
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_approval_update_immutable`)
-				mustExec(t, &f, `UPDATE delivery_ticket_revision_approvals SET approval_state = 'rejected' WHERE id = ?`, approval.ID)
-			case "approval_kind_not_delivery":
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_approval_update_immutable`)
-				mustExec(t, &f, `PRAGMA ignore_check_constraints = ON`)
-				mustExec(t, &f, `UPDATE delivery_ticket_revision_approvals SET approval_kind = 'other' WHERE id = ?`, approval.ID)
-				mustExec(t, &f, `PRAGMA ignore_check_constraints = OFF`)
-			case "approval_source_closure_mismatch":
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_approval_update_immutable`)
-				mustExec(t, &f, `UPDATE delivery_ticket_revision_approvals SET source_closure_row_id = ? WHERE id = ?`, createPlannerAlternateClosure(t, f), approval.ID)
-			case "approval_authority_revision_mismatch":
-				authority := createPlannerAuthority(t, f, f.workspace, "authority-planner-derived-unselected")
-				mustExec(t, &f, `DROP TRIGGER delivery_ticket_approval_update_immutable`)
-				mustExec(t, &f, `UPDATE delivery_ticket_revision_approvals SET authority_revision_row_id = ? WHERE id = ?`, authority.ID, approval.ID)
-			case "workspace_has_no_current_authority":
-				mustExec(t, &f, `UPDATE feature_workspaces SET current_authority_revision_row_id = NULL, version = version + 1 WHERE id = ?`, f.workspace.ID)
-			case "workspace_current_authority_replaced":
-				authority := createPlannerAuthority(t, f, f.workspace, "authority-planner-derived-replacement")
-				if err := f.store.WithTx(f.ctx, func(tx *workflowstore.Tx) error {
-					_, err := tx.SetFeatureWorkspaceAuthorityRevision(f.ctx, authority.ID, f.workspace.WorkspaceID, f.workspace.Version)
-					return err
-				}); err != nil {
-					t.Fatal(err)
-				}
-			case "authority_belongs_to_another_workspace":
-				other := createPlannerWorkspace(t, &f, "workspace-planner-authority-other", "planner-authority-other")
-				authority := createPlannerAuthority(t, f, other, "authority-planner-derived-other")
-				mustExec(t, &f, `DROP TRIGGER feature_workspace_current_authority_guard`)
-				mustExec(t, &f, `UPDATE feature_workspaces SET current_authority_revision_row_id = ?, version = version + 1 WHERE id = ?`, authority.ID, f.workspace.ID)
-			case "authority_source_closure_mismatch":
-				mustExec(t, &f, `DROP TRIGGER feature_workspace_authority_revision_update_immutable`)
-				mustExec(t, &f, `UPDATE feature_workspace_authority_revisions SET source_closure_row_id = ? WHERE id = ?`, createPlannerAlternateClosure(t, f), f.workspace.CurrentAuthorityRevisionRowID)
-			case "ticket_source_closure_not_ready":
-				mustExec(t, &f, `UPDATE source_vault_closures SET state = 'unavailable', failure_reason = 'operation_cancelled', verified_at = NULL WHERE id = ?`, f.closure.ID)
-			case "selected_revision_already_completed":
-				insertPlannerSatisfaction(t, f, revision.ID)
-			case "dependency_outcome_not_satisfied", "dependency_revision_no_longer_current", "dependency_ticket_belongs_to_another_workspace", "dependency_satisfaction_missing":
-				dependencyTicket, dependencyRevision := createPlannerTicketInWorkspace(t, f, f.workspace, "TICKET-PLANNER-DEPENDENCY", "not_required")
-				if name != "dependency_ticket_belongs_to_another_workspace" {
-					createPlannerDependency(t, f, revision.ID, dependencyRevision.ID)
-					insertPlannerSatisfaction(t, f, dependencyRevision.ID)
-				}
-				switch name {
-				case "dependency_outcome_not_satisfied":
-					mustExec(t, &f, `DROP TRIGGER delivery_ticket_dependency_update_immutable`)
-					mustExec(t, &f, `UPDATE delivery_ticket_revision_dependencies SET outcome = 'blocked' WHERE revision_row_id = ?`, revision.ID)
-				case "dependency_revision_no_longer_current":
-					replacePlannerTicketRevision(t, &f, dependencyTicket, "not_required")
-				case "dependency_ticket_belongs_to_another_workspace":
-					other := createPlannerWorkspace(t, &f, "workspace-planner-dependency-other", "planner-dependency-other")
-					foreignTicket, foreignRevision := createPlannerTicketInWorkspace(t, f, other, "TICKET-PLANNER-DEPENDENCY-FOREIGN", "not_required")
-					insertPlannerSatisfaction(t, f, foreignRevision.ID)
-					mustExec(t, &f, `DROP TRIGGER delivery_ticket_dependency_workspace_guard`)
-					createPlannerDependency(t, f, revision.ID, foreignRevision.ID)
-					assertPlannerForeignDependency(t, f, revision.ID, foreignTicket, foreignRevision)
-				case "dependency_satisfaction_missing":
-					mustExec(t, &f, `DROP TRIGGER delivery_ticket_revision_satisfaction_delete_guard`)
-					mustExec(t, &f, `DELETE FROM delivery_ticket_revision_satisfactions WHERE delivery_ticket_revision_row_id = ?`, dependencyRevision.ID)
-				}
-			case "workspace_route_changed_after_selection":
-				advancePlannerRoute(t, &f, "ready")
-			}
-			_, _, err := f.service.loadCurrentSelectionIdentity(f.ctx, workflow)
-			assertPlannerLoaderInvalid(t, err, plannerAuthorityReason(name))
 			assertNoPlannerPackets(t, f)
 		})
 	}

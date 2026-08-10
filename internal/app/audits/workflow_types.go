@@ -80,21 +80,21 @@ type workflowPackageDecisionDocument struct {
 }
 
 type WorkflowAuditAttemptResult struct {
-	ExitCode                 int    `json:"exit_code"`
-	TimedOut                 bool   `json:"timed_out"`
-	TerminationVerified      bool   `json:"termination_verified"`
-	CleanupPending           bool   `json:"cleanup_pending,omitempty"`
-	PendingTerminalStatus    string `json:"pending_terminal_status,omitempty"`
-	Error                    string `json:"error,omitempty"`
-	NormalizedStatus         string `json:"normalized_status,omitempty"`
-	BlockerText              string `json:"blocker_text,omitempty"`
-	EffectiveBriefArtifactID string `json:"effective_brief_artifact_id,omitempty"`
-	EffectiveBriefSHA256     string `json:"effective_brief_sha256,omitempty"`
-	EffectiveBriefMode       string `json:"effective_brief_mode,omitempty"`
-	StdoutTruncated          bool   `json:"stdout_truncated,omitempty"`
-	StderrTruncated          bool   `json:"stderr_truncated,omitempty"`
-	StdoutBytes              int64  `json:"stdout_bytes,omitempty"`
-	StderrBytes              int64  `json:"stderr_bytes,omitempty"`
+	ExitCode                      int    `json:"exit_code"`
+	TimedOut                      bool   `json:"timed_out"`
+	TerminationVerified           bool   `json:"termination_verified"`
+	CleanupPending                bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus         string `json:"pending_terminal_status,omitempty"`
+	Error                         string `json:"error,omitempty"`
+	NormalizedStatus              string `json:"normalized_status,omitempty"`
+	BlockerText                   string `json:"blocker_text,omitempty"`
+	ExecutionAssignmentArtifactID string `json:"execution_assignment_artifact_id,omitempty"`
+	ExecutionAssignmentSHA256     string `json:"execution_assignment_sha256,omitempty"`
+	ExecutionAssignmentMode       string `json:"execution_assignment_mode,omitempty"`
+	StdoutTruncated               bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated               bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes                   int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes                   int64  `json:"stderr_bytes,omitempty"`
 }
 
 type GetWorkflowAuditArtifactInput struct {

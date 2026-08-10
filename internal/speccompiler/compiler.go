@@ -22,7 +22,6 @@ const (
 	transitionPlanMarkdownSuffix  = ".transition-plan.md"
 	requirementsSuffix            = ".requirements.md"
 	sharedDesignSuffix            = ".design.md"
-	ticketDesignBriefSuffix       = ".design-brief.md"
 )
 
 type ArtifactKind string
@@ -34,7 +33,6 @@ const (
 	ArtifactTransitionPlan          ArtifactKind = "transition_plan"
 	ArtifactRequirements            ArtifactKind = "requirements"
 	ArtifactSharedDesign            ArtifactKind = "shared_design"
-	ArtifactTicketDesignBrief       ArtifactKind = "ticket_design_brief"
 )
 
 type filenameRule struct {
@@ -53,7 +51,6 @@ var canonicalFilenameRules = []filenameRule{
 	{suffix: transitionPlanMarkdownSuffix, kind: ArtifactTransitionPlan, ticketQualified: true},
 	{suffix: requirementsSuffix, kind: ArtifactRequirements},
 	{suffix: sharedDesignSuffix, kind: ArtifactSharedDesign},
-	{suffix: ticketDesignBriefSuffix, kind: ArtifactTicketDesignBrief, ticketQualified: true},
 }
 
 var ticketIDPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$`)
@@ -63,10 +60,9 @@ type ReplaySemantics string
 const ReplayEvolvingPathChain ReplaySemantics = "evolving_path_chain"
 
 type currentArtifactDefinition struct {
-	Kind             ArtifactKind
-	ProducerVersion  string
-	SchemaKind       artifactschema.Kind
-	CanonicalSubstep []string
+	Kind            ArtifactKind
+	ProducerVersion string
+	SchemaKind      artifactschema.Kind
 }
 
 func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
@@ -76,7 +72,7 @@ func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
 	case ArtifactDeterministicOperations:
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindDeterministicOperations}, true
 	case ArtifactDeliveryTicket:
-		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindDeliveryTicket}, true
+		return currentArtifactDefinition{Kind: kind, ProducerVersion: "2.0", SchemaKind: artifactschema.KindDeliveryTicket}, true
 	case ArtifactTransitionPlan:
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindTransitionPlan}, true
 	default:
@@ -192,6 +188,9 @@ func compileDeliveryTicketDocument(filename FilenameInfo, root *jsonNode, rawJSO
 	document, err := decodeDeliveryTicketDocument(rawJSON)
 	if err != nil {
 		return failed([]Diagnostic{{Code: "invalid_json", Path: "", Message: fmt.Sprintf("Decode validated Delivery Ticket: %v", err)}}, notices), nil
+	}
+	if _, diagnostics := ProjectDeliveryTicket(document); len(diagnostics) != 0 {
+		return failed(diagnostics, notices), nil
 	}
 	markdown, err := renderDeliveryTicket(document)
 	if err != nil {

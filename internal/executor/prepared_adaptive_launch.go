@@ -21,7 +21,7 @@ type PreparedAdaptiveLaunchInput struct {
 }
 
 type PreparedAdaptiveLaunchResult struct {
-	Mode                     EffectiveExecutorBriefMode
+	Mode                     ExecutionMode
 	AdaptiveDispatchRequired bool
 	NewlyAdmitted            bool
 	NewlyLaunched            bool
@@ -50,10 +50,10 @@ func (s *Execution) LaunchPreparedAdaptive(ctx context.Context, input PreparedAd
 		return PreparedAdaptiveLaunchResult{}, err
 	}
 	result := preparedAdaptiveLaunchResult(admitted)
-	if admitted.Mode == EffectiveExecutorBriefDeterministicComplete {
+	if admitted.Mode == ExecutionModeCompleteApplied {
 		return PreparedAdaptiveLaunchResult{Mode: admitted.Mode}, nil
 	}
-	if !admitted.AdaptiveDispatchRequired || admitted.Run == nil || admitted.Attempt == nil || admitted.Lease == nil || admitted.EffectiveBriefArtifact == nil || len(admitted.EffectiveBriefBytes) == 0 {
+	if !admitted.AdaptiveDispatchRequired || admitted.Run == nil || admitted.Attempt == nil || admitted.Lease == nil || admitted.AssignmentArtifact == nil || len(admitted.AssignmentBytes) == 0 {
 		return result, fmt.Errorf("adaptive admission returned incomplete launch identities")
 	}
 	if !admitted.NewlyAdmitted {
@@ -63,7 +63,7 @@ func (s *Execution) LaunchPreparedAdaptive(ctx context.Context, input PreparedAd
 	run := *admitted.Run
 	attempt := *admitted.Attempt
 	lease := *admitted.Lease
-	selected, err := preparedEffectiveBriefInput(s.store.ArtifactStore().Root(), run, *admitted.EffectiveBriefArtifact, admitted.EffectiveBriefBytes, admitted.Mode)
+	selected, err := preparedAssignmentInput(s.store.ArtifactStore().Root(), run, *admitted.AssignmentArtifact, admitted.AssignmentBytes, admitted.Mode)
 	if err != nil {
 		return result, s.settlePreparedPrelaunchFailure(ctx, admitted, nil, err)
 	}
@@ -93,7 +93,7 @@ func (s *Execution) LaunchPreparedAdaptive(ctx context.Context, input PreparedAd
 	invocation, err := adapter.BuildInvocation(ExecutorAdapterRequest{
 		RunID:         run.ID,
 		RepoPath:      repository.LocalPath,
-		BriefContent:  string(admitted.EffectiveBriefBytes),
+		BriefContent:  string(admitted.AssignmentBytes),
 		BriefPath:     selected.Path,
 		ResultPath:    runtimeResultPath,
 		SelectedModel: attempt.Model,
@@ -151,32 +151,31 @@ func preparedAdaptiveLaunchResult(admitted AdaptiveDispatchAdmissionResult) Prep
 	}
 }
 
-func preparedEffectiveBriefInput(root string, run workflowstore.Run, artifact workflowstore.Artifact, content []byte, mode EffectiveExecutorBriefMode) (effectiveBriefInput, error) {
-	if artifact.OwnerType != workflowstore.ArtifactOwnerRun || !artifact.RunRowID.Valid || artifact.RunRowID.Int64 != run.ID || artifact.Kind != effectiveExecutorBriefKind || artifact.MediaType != effectiveExecutorBriefMediaType || strings.TrimSpace(artifact.ArtifactID) == "" || strings.TrimSpace(artifact.RelativePath) == "" || !validPreparedSHA256(artifact.SHA256) || artifact.SizeBytes != int64(len(content)) || len(content) == 0 {
-		return effectiveBriefInput{}, fmt.Errorf("admitted effective Brief artifact identity is invalid")
+func preparedAssignmentInput(root string, run workflowstore.Run, artifact workflowstore.Artifact, content []byte, mode ExecutionMode) (selectedInput, error) {
+	if artifact.OwnerType != workflowstore.ArtifactOwnerRun || !artifact.RunRowID.Valid || artifact.RunRowID.Int64 != run.ID || artifact.Kind != executionAssignmentKind || artifact.MediaType != executionAssignmentMediaType || strings.TrimSpace(artifact.ArtifactID) == "" || strings.TrimSpace(artifact.RelativePath) == "" || !validPreparedSHA256(artifact.SHA256) || artifact.SizeBytes != int64(len(content)) || len(content) == 0 {
+		return selectedInput{}, fmt.Errorf("admitted execution assignment artifact identity is invalid")
 	}
 	digest := sha256.Sum256(content)
 	if hex.EncodeToString(digest[:]) != artifact.SHA256 {
-		return effectiveBriefInput{}, fmt.Errorf("admitted effective Brief bytes do not match artifact identity")
+		return selectedInput{}, fmt.Errorf("admitted execution assignment bytes do not match artifact identity")
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return effectiveBriefInput{}, fmt.Errorf("resolve artifact-store root: %w", err)
+		return selectedInput{}, fmt.Errorf("resolve artifact-store root: %w", err)
 	}
 	absPath, err := filepath.Abs(filepath.Join(absRoot, filepath.FromSlash(artifact.RelativePath)))
 	if err != nil {
-		return effectiveBriefInput{}, fmt.Errorf("resolve effective Brief path: %w", err)
+		return selectedInput{}, fmt.Errorf("resolve execution assignment path: %w", err)
 	}
 	relative, err := filepath.Rel(absRoot, absPath)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return effectiveBriefInput{}, fmt.Errorf("effective Brief artifact path escapes the managed root")
+		return selectedInput{}, fmt.Errorf("execution assignment artifact path escapes the managed root")
 	}
-	return effectiveBriefInput{
-		Mode:         speccompiler.EffectiveBriefFull,
-		RecordedMode: string(mode),
-		Content:      append([]byte(nil), content...),
-		Artifact:     artifact,
-		Path:         absPath,
+	return selectedInput{
+		Mode:     mode,
+		Content:  append([]byte(nil), content...),
+		Artifact: artifact,
+		Path:     absPath,
 	}, nil
 }
 
@@ -188,7 +187,7 @@ func validPreparedSHA256(value string) bool {
 	return err == nil
 }
 
-func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAdapter, attempt workflowstore.ExecutionAttempt, repositoryPath string, expectedResultPath string, selected effectiveBriefInput) error {
+func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAdapter, attempt workflowstore.ExecutionAttempt, repositoryPath string, expectedResultPath string, selected selectedInput) error {
 	if invocation.Adapter != AdapterID(attempt.Adapter) {
 		return fmt.Errorf("executor invocation adapter %q does not match admitted adapter %q", invocation.Adapter, attempt.Adapter)
 	}
@@ -204,13 +203,13 @@ func verifyPreparedInvocation(invocation ExecutorInvocation, adapter ExecutorAda
 	if invocation.ResultFile != "" && invocation.ResultFile != expectedResultPath {
 		return fmt.Errorf("executor invocation result file %q does not match expected result path %q", invocation.ResultFile, expectedResultPath)
 	}
-	if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
-		return fmt.Errorf("executor invocation effective Brief integrity check failed: %w", err)
+	if err := verifyInvocationCarriesInput(invocation, selected); err != nil {
+		return fmt.Errorf("executor invocation selected-input integrity check failed: %w", err)
 	}
 	return nil
 }
 
-func (s *Execution) settlePreparedPrelaunchFailure(ctx context.Context, admitted AdaptiveDispatchAdmissionResult, selected *effectiveBriefInput, cause error) error {
+func (s *Execution) settlePreparedPrelaunchFailure(ctx context.Context, admitted AdaptiveDispatchAdmissionResult, selected *selectedInput, cause error) error {
 	if cause == nil {
 		cause = errors.New("prepared adaptive launch failed before process start")
 	}
@@ -237,13 +236,17 @@ func (s *Execution) settlePreparedPrelaunchFailure(ctx context.Context, admitted
 	}
 	state.SourceMutationStarted = sourceMutationStarted
 	if selected != nil {
-		state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
-		state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-		state.EffectiveBriefMode = selected.evidenceMode()
-	} else if admitted.EffectiveBriefArtifact != nil {
-		state.EffectiveBriefArtifactID = admitted.EffectiveBriefArtifact.ArtifactID
-		state.EffectiveBriefSHA256 = admitted.EffectiveBriefArtifact.SHA256
-		state.EffectiveBriefMode = string(admitted.Mode)
+		state.ExecutionAssignmentArtifactID = selected.Artifact.ArtifactID
+		state.ExecutionAssignmentSHA256 = selected.Artifact.SHA256
+		if wireMode, modeValid := workflowrunsModeString(selected.Mode); modeValid {
+			state.ExecutionAssignmentMode = wireMode
+		}
+	} else if admitted.AssignmentArtifact != nil {
+		state.ExecutionAssignmentArtifactID = admitted.AssignmentArtifact.ArtifactID
+		state.ExecutionAssignmentSHA256 = admitted.AssignmentArtifact.SHA256
+		if wireMode, modeValid := workflowrunsModeString(admitted.Mode); modeValid {
+			state.ExecutionAssignmentMode = wireMode
+		}
 	}
 	state.TerminationVerified = true
 	state.Error = redactSensitive(cause.Error())

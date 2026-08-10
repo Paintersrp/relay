@@ -16,9 +16,9 @@ import (
 )
 
 func TestWorkflowPackageAuditArtifactReadbackDeclaredReferences(t *testing.T) {
-	for _, mode := range []executor.EffectiveExecutorBriefMode{
-		executor.EffectiveExecutorBriefDeterministicComplete,
-		executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication,
+	for _, mode := range []executor.ExecutionMode{
+		executor.ExecutionModeCompleteApplied,
+		executor.ExecutionModePartialApplied,
 	} {
 		t.Run(string(mode), func(t *testing.T) {
 			fixture, service, current := newPackageArtifactReadbackFixture(t, mode)
@@ -28,7 +28,6 @@ func TestWorkflowPackageAuditArtifactReadbackDeclaredReferences(t *testing.T) {
 				artifact  workflowstore.Artifact
 			}{
 				{name: "execution_assignment", reference: currentPackageArtifactReference(current, "execution_assignment"), artifact: fixture.assignment.Artifact},
-				{name: "effective_executor_brief", reference: currentPackageArtifactReference(current, "effective_executor_brief"), artifact: *fixture.brief.Artifact},
 				{name: "deterministic_application.evidence", reference: currentPackageArtifactReference(current, "deterministic_application.evidence"), artifact: fixture.outcome.Artifact},
 			}
 			for _, tc := range declared {
@@ -56,7 +55,7 @@ func TestWorkflowPackageAuditArtifactReadbackDeclaredReferences(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditArtifactReadbackRejectsAttemptOwnedReferences(t *testing.T) {
-	fixture, service, current := newPackageArtifactReadbackFixture(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication)
+	fixture, service, current := newPackageArtifactReadbackFixture(t, executor.ExecutionModePartialApplied)
 	evidence, err := service.loadPackageEvidence(context.Background(), fixture.run.RunID)
 	if err != nil {
 		t.Fatal(err)
@@ -65,26 +64,26 @@ func TestWorkflowPackageAuditArtifactReadbackRejectsAttemptOwnedReferences(t *te
 		t.Fatal("adaptive package evidence has no execution attempt")
 	}
 
-	briefReference := currentPackageArtifactReference(current, "effective_executor_brief")
-	briefArtifact, err := fixture.store.GetArtifactByArtifactID(context.Background(), briefReference)
+	assignmentReference := currentPackageArtifactReference(current, "execution_assignment")
+	assignmentArtifact, err := fixture.store.GetArtifactByArtifactID(context.Background(), assignmentReference)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if briefArtifact.OwnerType != workflowstore.ArtifactOwnerRun || !briefArtifact.RunRowID.Valid || briefArtifact.RunRowID.Int64 != current.Packet.RunRowID {
-		t.Fatalf("effective brief artifact = %#v, want Run-owned by packet Run", briefArtifact)
+	if assignmentArtifact.OwnerType != workflowstore.ArtifactOwnerRun || !assignmentArtifact.RunRowID.Valid || assignmentArtifact.RunRowID.Int64 != current.Packet.RunRowID {
+		t.Fatalf("execution assignment artifact = %#v, want Run-owned by packet Run", assignmentArtifact)
 	}
 	if _, err := service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
-		RunID: fixture.run.RunID, ArtifactReference: briefReference, MaxBytes: MaxWorkflowAuditReadBytes,
+		RunID: fixture.run.RunID, ArtifactReference: assignmentReference, MaxBytes: MaxWorkflowAuditReadBytes,
 	}); err != nil {
-		t.Fatalf("effective brief readback error = %v", err)
+		t.Fatalf("execution assignment readback error = %v", err)
 	}
 
 	requirePackageArtifactError(t, service, fixture.run.RunID, evidence.Attempt.Artifact.ArtifactID, 0, ErrWorkflowAuditArtifactReference)
 
-	if _, err := fixture.store.DB().Exec(`UPDATE artifacts SET owner_type = ?, run_row_id = NULL, execution_attempt_row_id = ? WHERE artifact_id = ?`, workflowstore.ArtifactOwnerExecutionAttempt, evidence.Attempt.Attempt.ID, briefReference); err != nil {
+	if _, err := fixture.store.DB().Exec(`UPDATE artifacts SET owner_type = ?, run_row_id = NULL, execution_attempt_row_id = ? WHERE artifact_id = ?`, workflowstore.ArtifactOwnerExecutionAttempt, evidence.Attempt.Attempt.ID, assignmentReference); err != nil {
 		t.Fatal(err)
 	}
-	requirePackageArtifactError(t, service, fixture.run.RunID, briefReference, 0, ErrWorkflowAuditArtifactOwnership)
+	requirePackageArtifactError(t, service, fixture.run.RunID, assignmentReference, 0, ErrWorkflowAuditArtifactOwnership)
 }
 
 func TestWorkflowPackageAuditArtifactReadbackRejectsInvalidReferences(t *testing.T) {
@@ -103,15 +102,18 @@ func TestWorkflowPackageAuditArtifactReadbackRejectsInvalidReferences(t *testing
 		}},
 		{name: "ambiguous declared reference", check: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService, current GetWorkflowAuditPacketResult) {
 			const reference = "artifact-ambiguous"
-			packet := WorkflowPackageAuditPacket{Authority: WorkflowPackageAuditAuthority{
-				ExecutionAssignment:    WorkflowPackageAuditArtifactReference{ArtifactReference: reference},
-				EffectiveExecutorBrief: WorkflowPackageAuditArtifactReference{ArtifactReference: reference},
-			}}
+			packet := WorkflowPackageAuditPacket{
+				Authority: WorkflowPackageAuditAuthority{
+					ExecutionAssignment: WorkflowPackageAuditArtifactReference{ArtifactReference: reference},
+				},
+				DeterministicApplication: WorkflowPackageAuditDeterministicApplication{
+					Evidence: WorkflowPackageAuditArtifactReference{ArtifactReference: reference},
+				},
+			}
 			if _, err := resolveWorkflowPackageArtifact(packet, reference); !errors.Is(err, ErrWorkflowAuditArtifactReference) {
 				t.Fatalf("error = %v, want ErrWorkflowAuditArtifactReference", err)
 			}
-		}},
-		{name: "declared SHA-256 disagrees with stored artifact", check: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService, current GetWorkflowAuditPacketResult) {
+		}}, {name: "declared SHA-256 disagrees with stored artifact", check: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService, current GetWorkflowAuditPacketResult) {
 			ref := currentPackageArtifactReference(current, "execution_assignment")
 			if _, err := fixture.store.DB().Exec(`UPDATE artifacts SET sha256 = ? WHERE artifact_id = ?`, strings.Repeat("f", 64), ref); err != nil {
 				t.Fatal(err)
@@ -161,14 +163,14 @@ func TestWorkflowPackageAuditArtifactReadbackRejectsInvalidReferences(t *testing
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture, service, current := newPackageArtifactReadbackFixture(t, executor.EffectiveExecutorBriefDeterministicComplete)
+			fixture, service, current := newPackageArtifactReadbackFixture(t, executor.ExecutionModeCompleteApplied)
 			test.check(t, fixture, service, current)
 		})
 	}
 }
 
 func TestWorkflowPackageAuditArtifactReadbackTruncatesText(t *testing.T) {
-	fixture, service, current := newPackageArtifactReadbackFixture(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	fixture, service, current := newPackageArtifactReadbackFixture(t, executor.ExecutionModeCompleteApplied)
 	ref := currentPackageArtifactReference(current, "execution_assignment")
 	full, err := fixture.store.GetArtifactByArtifactID(context.Background(), ref)
 	if err != nil {
@@ -186,7 +188,7 @@ func TestWorkflowPackageAuditArtifactReadbackTruncatesText(t *testing.T) {
 	}
 }
 
-func newPackageArtifactReadbackFixture(t *testing.T, mode executor.EffectiveExecutorBriefMode) (*packageEvidenceFixture, *WorkflowAuditService, GetWorkflowAuditPacketResult) {
+func newPackageArtifactReadbackFixture(t *testing.T, mode executor.ExecutionMode) (*packageEvidenceFixture, *WorkflowAuditService, GetWorkflowAuditPacketResult) {
 	t.Helper()
 	fixture, service := newPackageAuditReadbackFixtureForMode(t, mode)
 	current, err := service.GetCurrentPacket(context.Background(), fixture.run.RunID)
@@ -211,8 +213,6 @@ func currentPackageArtifactReference(current GetWorkflowAuditPacketResult, role 
 	switch role {
 	case "execution_assignment":
 		return packet.Authority.ExecutionAssignment.ArtifactReference
-	case "effective_executor_brief":
-		return packet.Authority.EffectiveExecutorBrief.ArtifactReference
 	case "deterministic_application.evidence":
 		return packet.DeterministicApplication.Evidence.ArtifactReference
 	default:

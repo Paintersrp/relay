@@ -74,15 +74,9 @@ func jsonRequestBody(t *testing.T, value any) string {
 func TestPrepareRouteForwardsDirectPackageInput(t *testing.T) {
 	owner := testPackageOwner()
 	router := newWorkflowRouter(t, owner)
-	briefBytes := []byte("# Brief\n")
 	operationsBytes := []byte(`{"operations":[]}`)
 	body := prepareRequest{
 		SelectionID: "selection-api",
-		TicketDesignBrief: artifactRequest{
-			DisplayName:    "feature.ticket-T1.r1.design-brief.md",
-			ExpectedSHA256: strings.Repeat("b", 64),
-			BytesBase64:    base64.StdEncoding.EncodeToString(briefBytes),
-		},
 		DeterministicOperations: &artifactRequest{
 			DisplayName:    "feature.ticket-T1.r1.deterministic-operations.json",
 			ExpectedSHA256: strings.Repeat("c", 64),
@@ -98,7 +92,7 @@ func TestPrepareRouteForwardsDirectPackageInput(t *testing.T) {
 		t.Fatal("package prepare input was not forwarded")
 	}
 	input := owner.preparedInput
-	if input.SelectionID != body.SelectionID || input.TicketDesignBrief.DisplayName != body.TicketDesignBrief.DisplayName || input.TicketDesignBrief.ExpectedSHA256 != body.TicketDesignBrief.ExpectedSHA256 || string(input.TicketDesignBrief.Bytes) != string(briefBytes) {
+	if input.SelectionID != body.SelectionID {
 		t.Fatalf("prepare input = %#v", input)
 	}
 	if input.DeterministicOperations == nil || input.DeterministicOperations.DisplayName != body.DeterministicOperations.DisplayName || input.DeterministicOperations.ExpectedSHA256 != body.DeterministicOperations.ExpectedSHA256 || string(input.DeterministicOperations.Bytes) != string(operationsBytes) {

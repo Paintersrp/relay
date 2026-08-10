@@ -1,33 +1,31 @@
 # Package-Native Workflow
 
-Relay executes only approved immutable packages. The package is prepared from one exact approved Delivery Ticket revision and its selection; package approval is the only active path that creates a Run.
+Relay executes only approved immutable packages. The package is prepared from one exact approved Delivery Ticket v2 revision and its selection; package approval is the only active path that creates a Run.
 
 ## Authority Chain
 
 Read the package from the outside in:
 
 1. Retained governing authority, including the applicable requirements and Shared Design records.
-2. The exact approved Delivery Ticket revision.
+2. The exact approved Delivery Ticket v2 revision.
 3. The selected Ticket membership that identifies the revision obligations.
-4. The complete Ticket Design Brief.
-5. Zero or one optional Deterministic Operations artifact.
-6. The approved immutable execution package.
-7. The package-linked Run and its derived execution assignment and runtime envelope.
-8. Runtime execution evidence, including attempt-owned `execution_evidence` and structured validation results when adaptive execution runs.
-9. The audit packet and audit decision.
-10. Immutable remediation evidence when the decision is `needs_revision`.
+4. Zero or one optional Deterministic Operations artifact.
+5. The approved immutable execution package.
+6. The package-linked Run and its derived immutable ExecutionAssignment.
+7. Runtime execution evidence, including attempt-owned `execution_evidence` and structured validation results when adaptive execution runs.
+8. The audit packet and audit decision.
+9. Immutable remediation evidence when the decision is `needs_revision`.
 
-The Ticket Design Brief is the complete semantic implementation authority. It must be sufficient for adaptive execution on its own. Deterministic Operations are exact-execution data only: they may perform a bounded set of mechanical writes, but they do not narrow, replace, or reinterpret the Brief.
+The approved Delivery Ticket v2 is the complete semantic implementation authority. It must be sufficient for execution on its own. Deterministic Operations are exact-execution data only: they may perform a bounded set of mechanical writes, but they do not narrow, replace, or reinterpret the Ticket. Package approval derives the immutable ExecutionAssignment for the package-linked Run; the Orchestrator executes that assignment, which embeds the approved Delivery Ticket, verified authority layers, and required validation commands.
 
 ## Responsibilities
 
-- The Planner authors the complete Ticket Design Brief and may provide zero or one Deterministic Operations artifact.
+- The Planner authors the Delivery Ticket v2 revision and may provide zero or one Deterministic Operations artifact.
 - Relay validates both artifacts, verifies their package identity, and stores the immutable package.
 - The operator reviews and approves the exact immutable package, including its digest and selected membership.
-- Package approval creates the package-linked Run. No additional chat confirmation is required.
-- Relay derives the execution assignment and runtime envelope from the approved package.
+- Package approval creates the package-linked Run and derives its immutable ExecutionAssignment. No additional chat confirmation is required.
 - When operations are present, deterministic execution runs before adaptive execution.
-- At most one adaptive Executor attempt may launch for a package-linked Run.
+- At most one adaptive attempt may launch the Orchestrator for a package-linked Run.
 - The Auditor reviews the committed implementation and records `accepted` or `needs_revision`.
 - `needs_revision` creates immutable remediation evidence and returns work to a fresh-context Planner revision. The previous Executor transcript is not supplied to that Planner.
 
@@ -35,20 +33,20 @@ The Ticket Design Brief is the complete semantic implementation authority. It mu
 
 Every package resolves to exactly one effective mode:
 
-| Mode | Deterministic writes | Evidence supplied to adaptive execution | Adaptive Executor attempt |
+| Mode | Deterministic writes | Orchestrator input | Adaptive attempt |
 | --- | --- | --- | --- |
-| `adaptive_no_operations` | None. No operations artifact was supplied. | The complete approved Brief. | Yes, at most once. |
-| `adaptive_preflight_failed` | None. Preflight failed before any write. | The complete approved Brief plus the verified preflight failure as source-state evidence. | Yes, at most once. |
-| `adaptive_after_partial_application` | Yes. The exact preflighted operations were applied successfully, but coverage is partial. | The complete approved Brief plus exact applied-operation and residual-work evidence. Adaptive execution preserves the applied work and completes the remaining Brief obligations. | Yes, at most once. |
-| `deterministic_complete` | Yes. Complete deterministic coverage was applied successfully. | No adaptive execution context is launched. Audit still evaluates the resulting implementation against the complete Brief. | No. |
+| `adaptive_no_operations` | None. No operations artifact was supplied. | The immutable ExecutionAssignment; the approved Delivery Ticket v2 is the sole semantic authority. | Yes, at most once. |
+| `adaptive_preflight_failed` | None. Preflight failed before any write. | The immutable ExecutionAssignment plus the verified preflight failure as source-state evidence. | Yes, at most once. |
+| `adaptive_after_partial_application` | Yes. The exact preflighted operations were applied successfully, but coverage is partial. | The immutable ExecutionAssignment plus exact applied-operation and residual-work evidence. The Orchestrator preserves the applied work and completes the remaining Delivery Ticket obligations. | Yes, at most once. |
+| `deterministic_complete` | Yes. Complete deterministic coverage was applied successfully. | No Orchestrator dispatch is launched. Audit still evaluates the resulting implementation against the approved Delivery Ticket v2. | No. |
 
-Preflight failure falls through to adaptive execution and does not automatically create a Ticket revision. A partial deterministic application may be completed adaptively; the adaptive Executor must not repeat, revert, repair, or reinterpret the applied operations. Deterministic-complete execution launches no adaptive Executor attempt.
+Preflight failure falls through to adaptive execution and does not automatically create a Ticket revision. A partial deterministic application may be completed adaptively; the Orchestrator must not repeat, revert, repair, or reinterpret the applied operations. Deterministic-complete execution launches no adaptive attempt.
 
 The submitted Deterministic Operations artifact contains exact operations and declares only `complete` or `partial` coverage. Relay records preflight, application, applied paths, and residual implications in runtime evidence; those outcome records are not extra authored operations. See [the partial-coverage example](examples/package-workflow/deterministic-operations.json).
 
 ## Validation Evidence
 
-Under adaptive execution, required validation commands originate in the approved execution assignment, propagate through execution admission and adaptive launch, and structured command results belong to the one adaptive Executor attempt's `execution_evidence`. Under deterministic-complete execution, no adaptive attempt or attempt-owned `execution_evidence` artifact exists; assigned validation commands are represented as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact authority family and validation is not an independent Run-level authority.
+Under adaptive execution, required validation commands originate in the immutable ExecutionAssignment, propagate through execution admission and adaptive launch, and structured command results belong to the one adaptive attempt's `execution_evidence`. Under deterministic-complete execution, no adaptive attempt or attempt-owned `execution_evidence` artifact exists; assigned validation commands are represented as `not_run` in audit evidence because no adaptive Executor attempt was dispatched. There is no parallel validation-artifact authority family and validation is not an independent Run-level authority.
 
 ## Audit Packets
 
@@ -68,42 +66,42 @@ Packet readback rechecks the stored bytes, ownership, digest, current execution 
 Material findings use one of three sources:
 
 - `implementation`: the committed implementation is materially deficient.
-- `governing_package`: the approved Brief, Deterministic Operations instructions, or retained governing authority is materially deficient.
+- `governing_package`: the approved Delivery Ticket v2, Deterministic Operations instructions, or retained governing authority is materially deficient.
 - `both`: responsibility is materially shared between the implementation and the approved package.
 
-An `accepted` decision has no material findings. A `needs_revision` decision includes at least one material finding with concise rationale, evidence, and required remediation. Relay stores immutable remediation evidence, then the work returns through a fresh Ticket revision, exact revision approval, selection, complete Brief, optional operations, package preparation, exact package approval, package-linked Run, execution, and audit. The previous Executor transcript is not part of the Planner's fresh context.
+An `accepted` decision has no material findings. A `needs_revision` decision includes at least one material finding with concise rationale, evidence, and required remediation. Relay stores immutable remediation evidence, then the work returns through a fresh Delivery Ticket revision, exact revision approval, selection, optional operations, package preparation, exact package approval, package-linked Run, immutable ExecutionAssignment, Orchestrator execution, and audit. The previous Executor transcript is not part of the Planner's fresh context.
 
 ## Historical Compatibility
 
-Plans and passes remain readable historical records only. Historical identifiers may still appear in DTOs or review surfaces. `/runs/{runId}/specification` is a retained historical-review transport name. Retained properties such as `executionSpec` or `executorBrief` do not establish active Execution Spec authority for package-linked Runs. Authored Execution Specs, newly authored Executor Briefs, standalone Run creation, and Plan/pass-associated Run creation are retired; no active workflow creates or depends on a newly authored Execution Spec.
+Plans and passes remain readable historical records only. Historical identifiers may still appear in DTOs or review surfaces. `/runs/{runId}/specification` is a retained historical-review transport name. Retained properties such as `executionSpec` or `executorBrief` do not establish active Execution Spec authority for package-linked Runs. Ticket Design Briefs, authored Execution Specs, newly authored Executor Briefs, standalone Run creation, and Plan/pass-associated Run creation are retired; no active workflow creates or depends on a newly authored Execution Spec or Brief.
 
 ## MCP Boundaries
 
 Relay exposes exactly three public role apps:
 
 - Wayfinder: discovery, workspace context, and retained-source investigation.
-- Planner: Ticket Design Brief, optional Deterministic Operations, and package authoring.
+- Planner: Delivery Ticket, optional Deterministic Operations, and package authoring.
 - Auditor: audit packet review and audit decisions.
 
 Each role app exposes only its compiled role-specific catalog. `/mcp/v1/...` values are internal route identities, not public connector URLs. The `*:all` commands supervise the three registrations and do not create a fourth aggregate MCP endpoint. Manual fallback is exceptional rather than the normal handoff mechanism.
 
 ## Operator Walkthrough
 
-1. The Planner publishes a complete Brief and, when useful, one exact operations artifact.
+1. The Planner publishes the Delivery Ticket v2 revision and, when useful, one exact operations artifact.
 2. Relay validates both inputs and prepares the immutable package.
 3. The operator approves the exact package digest and contents.
 4. Relay creates the package-linked Run from that approval.
-5. Relay determines the effective mode and derives the assignment and runtime envelope.
+5. Relay determines the effective mode and derives the immutable ExecutionAssignment.
 6. Under adaptive execution, the one adaptive attempt records structured validation results in its `execution_evidence`. Under deterministic-complete execution, no adaptive attempt runs and assigned validation commands appear as `not_run` in audit evidence because no adaptive Executor attempt was dispatched.
 7. The operator prepares an audit packet against the exact committed SHA.
 8. The Auditor accepts the implementation or records `needs_revision` with material findings.
-9. Revision-required work returns to a fresh Planner context through an ordinary Ticket revision.
+9. Revision-required work returns to a fresh Planner context through an ordinary Delivery Ticket revision.
 
 Failure-path callouts:
 
-- Deterministic preflight failure: no deterministic writes occurred; adaptive execution receives the complete Brief and failure evidence. No revision is created automatically.
-- Partial deterministic application: applied writes remain; adaptive execution receives exact applied and residual evidence and completes the Brief without repeating those writes.
+- Deterministic preflight failure: no deterministic writes occurred; the Orchestrator receives the immutable ExecutionAssignment and failure evidence. No revision is created automatically.
+- Partial deterministic application: applied writes remain; the Orchestrator receives exact applied and residual evidence and completes the remaining Delivery Ticket obligations without repeating those writes.
 - Stale audit packet: do not decide it; prepare a new packet against current evidence and the exact audited commit. The old packet remains immutable.
-- Package-attributed finding: attribute the finding to `governing_package`; `needs_revision` creates remediation evidence and returns through a fresh Ticket revision.
+- Package-attributed finding: attribute the finding to `governing_package`; `needs_revision` creates remediation evidence and returns through a fresh Delivery Ticket revision.
 
-See the [complete Brief example](examples/package-workflow/ticket-design-brief.md) and [needs-revision example](examples/package-workflow/audit-needs-revision.json).
+See the [Delivery Ticket v2 example](examples/package-workflow/delivery-ticket.json), the [deterministic-operations example](examples/package-workflow/deterministic-operations.json), and the [needs-revision example](examples/package-workflow/audit-needs-revision.json).

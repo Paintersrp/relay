@@ -97,7 +97,7 @@ func TestDiscoveryLifecycleAdoptionRejectsActiveProductionMutation(t *testing.T)
 		if _, err = tx.CreateDeliveryTicketSelectionMember(ctx, workflowstore.CreateDeliveryTicketSelectionMemberParams{SelectionRowID: selection.ID, Sequence: 1, RevisionRowID: revision.ID, ApprovalRowID: approval.ID}); err != nil {
 			return err
 		}
-		packageRow, err := tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{PackageID: "package-discovery-adoption", SelectionRowID: selection.ID, WorkspaceRowID: workspace.ID, RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: closureID, AuthorityRevisionRowID: publication.Revision.ID, PackageSha256: strings.Repeat("c", 64), AuthoritySha256: strings.Repeat("d", 64), SourceSha256: strings.Repeat("e", 64), DesignBriefSha256: strings.Repeat("f", 64)})
+		packageRow, err := tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{PackageID: "package-discovery-adoption", SelectionRowID: selection.ID, WorkspaceRowID: workspace.ID, RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), SourceClosureRowID: closureID, AuthorityRevisionRowID: publication.Revision.ID, PackageSha256: strings.Repeat("c", 64), AuthoritySha256: strings.Repeat("d", 64), SourceSha256: strings.Repeat("e", 64)})
 		if err != nil {
 			return err
 		}

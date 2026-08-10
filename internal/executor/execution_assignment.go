@@ -18,10 +18,24 @@ import (
 const (
 	executionAssignmentKind      = "execution_assignment"
 	executionAssignmentMediaType = "application/json"
-	executorInstructionsPath     = "agents/executor.md"
+	standingRoleSourcePath       = "agents/orchestrator.md"
 )
 
 var ErrExecutionAssignmentConflict = errors.New("execution assignment conflicts with approved authority")
+
+// validExecutionAssignmentOID reports whether value is a 40-hex Git object OID.
+func validExecutionAssignmentOID(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		char := value[index]
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
+}
 
 type ExecutionAssignmentResult struct {
 	Artifact   workflowstore.Artifact
@@ -37,14 +51,15 @@ type ExecutionAssignment struct {
 	Package                 ExecutionAssignmentPackage             `json:"package"`
 	PackageApproval         ExecutionAssignmentApproval            `json:"package_approval"`
 	Ticket                  ExecutionAssignmentTicket              `json:"ticket"`
+	Dependencies            []ExecutionAssignmentDependency        `json:"dependencies"`
 	Repository              ExecutionAssignmentRepository          `json:"repository"`
 	Source                  ExecutionAssignmentSource              `json:"source"`
 	Authority               ExecutionAssignmentAuthority           `json:"authority"`
 	AuthorityLayers         []ExecutionAssignmentLayer             `json:"authority_layers"`
-	TicketDesignBrief       ExecutionAssignmentDocument            `json:"ticket_design_brief"`
+	DeliveryTicket          ExecutionAssignmentDocument            `json:"delivery_ticket"`
 	DeterministicOperations ExecutionAssignmentOperations          `json:"deterministic_operations"`
 	ValidationCommands      []ExecutionAssignmentValidationCommand `json:"validation_commands"`
-	ExecutorInstructions    ExecutionAssignmentInstructions        `json:"executor_instructions"`
+	StandingRole            ExecutionAssignmentStandingRole        `json:"standing_role"`
 }
 
 type ExecutionAssignmentRun struct {
@@ -73,6 +88,18 @@ type ExecutionAssignmentTicket struct {
 	DeliveryApprovalRowID int64  `json:"delivery_approval_row_id"`
 }
 
+// ExecutionAssignmentDependency is one completed dependency of the selected
+// Ticket revision as loaded and verified by ApprovedAuthority: its sequence,
+// the depends-on Ticket ID, that Ticket's revision number, and the stored
+// completed outcome ("satisfied"). The package SHA transitively binds the same
+// outcome; this record carries it directly.
+type ExecutionAssignmentDependency struct {
+	Sequence int64  `json:"sequence"`
+	TicketID string `json:"ticket_id"`
+	Revision int64  `json:"revision"`
+	Outcome  string `json:"outcome"`
+}
+
 type ExecutionAssignmentRepository struct {
 	Target     string `json:"target"`
 	Branch     string `json:"branch"`
@@ -83,6 +110,11 @@ type ExecutionAssignmentSource struct {
 	ClosureID    string `json:"closure_id"`
 	ClosureRowID int64  `json:"closure_row_id"`
 	SHA256       string `json:"sha256"`
+	CommitOID    string `json:"commit_oid"`
+	TreeOID      string `json:"tree_oid"`
+	Generation   int64  `json:"generation"`
+	RefName      string `json:"ref_name"`
+	State        string `json:"state"`
 }
 
 type ExecutionAssignmentAuthority struct {
@@ -124,7 +156,7 @@ type ExecutionAssignmentValidationCommand struct {
 	Expected         string `json:"expected"`
 }
 
-type ExecutionAssignmentInstructions struct {
+type ExecutionAssignmentStandingRole struct {
 	AuthorityRepository string `json:"authority_repository"`
 	AuthorityCommit     string `json:"authority_commit"`
 	SourcePath          string `json:"source_path"`
@@ -284,15 +316,27 @@ func buildExecutionAssignment(authority executionpackages.ApprovedAuthority) (Ex
 	workspace := authority.Workspace
 	ticket := authority.Ticket
 	revision := authority.TicketRevision
-	wantBriefName := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
-	if authority.TicketDesignBrief.DisplayName != wantBriefName || filepath.Base(authority.TicketDesignBrief.RelativePath) != wantBriefName || authority.TicketDesignBrief.MediaType != "text/markdown" || authority.TicketDesignBrief.SHA256 == "" {
-		return ExecutionAssignment{}, nil, "", fmt.Errorf("ticket-qualified filename identity is inconsistent")
+	document := authority.DeliveryTicket
+	if document.DisplayName == "" || document.RelativePath == "" || filepath.Base(document.RelativePath) != document.DisplayName || document.MediaType != "application/json" || document.SHA256 == "" {
+		return ExecutionAssignment{}, nil, "", fmt.Errorf("ticket-qualified source document identity is inconsistent")
 	}
-	if len(authority.BriefProjection.ValidationCommands) == 0 {
-		return ExecutionAssignment{}, nil, "", fmt.Errorf("validated Brief has no validation commands")
+	if len(authority.TicketProjection.ValidationCommands) == 0 {
+		return ExecutionAssignment{}, nil, "", fmt.Errorf("approved Delivery Ticket has no validation commands")
 	}
 	if len(authority.AuthorityLayers) == 0 {
 		return ExecutionAssignment{}, nil, "", fmt.Errorf("approved authority has no verified layers")
+	}
+	if !validExecutionAssignmentOID(authority.Source.CommitOID) || !validExecutionAssignmentOID(authority.Source.TreeOID) || authority.Source.Generation < 1 || authority.Source.RefName == "" || authority.Source.State == "" {
+		return ExecutionAssignment{}, nil, "", fmt.Errorf("approved source closure identity is inconsistent")
+	}
+	dependencies := make([]ExecutionAssignmentDependency, 0, len(authority.CompletedDependencies))
+	var previousDependencySequence int64
+	for index, dep := range authority.CompletedDependencies {
+		if dep.Sequence < 1 || (index > 0 && dep.Sequence <= previousDependencySequence) || dep.TicketID == "" || dep.Revision < 1 || dep.Outcome == "" {
+			return ExecutionAssignment{}, nil, "", fmt.Errorf("approved completed dependency records are inconsistent")
+		}
+		previousDependencySequence = dep.Sequence
+		dependencies = append(dependencies, ExecutionAssignmentDependency{Sequence: dep.Sequence, TicketID: dep.TicketID, Revision: dep.Revision, Outcome: dep.Outcome})
 	}
 	layers := make([]ExecutionAssignmentLayer, 0, len(authority.AuthorityLayers))
 	var previousSequence int64
@@ -315,8 +359,8 @@ func buildExecutionAssignment(authority executionpackages.ApprovedAuthority) (Ex
 		}
 		operations = ExecutionAssignmentOperations{Presence: "present", DisplayName: operation.DisplayName, RelativePath: operation.RelativePath, MediaType: operation.MediaType, SHA256: operation.SHA256, Coverage: operation.Coverage}
 	}
-	commands := make([]ExecutionAssignmentValidationCommand, 0, len(authority.BriefProjection.ValidationCommands))
-	for _, command := range authority.BriefProjection.ValidationCommands {
+	commands := make([]ExecutionAssignmentValidationCommand, 0, len(authority.TicketProjection.ValidationCommands))
+	for _, command := range authority.TicketProjection.ValidationCommands {
 		commands = append(commands, ExecutionAssignmentValidationCommand{WorkingDirectory: command.WorkingDirectory, Command: command.Command, Expected: command.Expected})
 	}
 	assignment := ExecutionAssignment{
@@ -325,14 +369,15 @@ func buildExecutionAssignment(authority executionpackages.ApprovedAuthority) (Ex
 		Package:                 ExecutionAssignmentPackage{PackageID: authority.Package.PackageID, PackageRowID: authority.Package.ID, SHA256: authority.Package.PackageSha256},
 		PackageApproval:         ExecutionAssignmentApproval{ApprovalID: authority.PackageApproval.ApprovalID, ApprovalRowID: authority.PackageApproval.ID, ApprovedPackageSHA256: authority.PackageApproval.PackageSha256},
 		Ticket:                  ExecutionAssignmentTicket{TicketID: ticket.TicketID, TicketRowID: ticket.ID, RevisionRowID: revision.ID, RevisionNumber: revision.RevisionNumber, DeliveryApprovalID: authority.TicketApproval.ApprovalID, DeliveryApprovalRowID: authority.TicketApproval.ID},
+		Dependencies:            dependencies,
 		Repository:              ExecutionAssignmentRepository{Target: authority.Run.RepoTarget, Branch: authority.Run.Branch, BaseCommit: authority.Run.BaseCommit},
-		Source:                  ExecutionAssignmentSource{ClosureID: authority.Source.ClosureID, ClosureRowID: authority.Source.ID, SHA256: authority.Package.SourceSha256},
+		Source:                  ExecutionAssignmentSource{ClosureID: authority.Source.ClosureID, ClosureRowID: authority.Source.ID, SHA256: authority.Package.SourceSha256, CommitOID: authority.Source.CommitOID, TreeOID: authority.Source.TreeOID, Generation: authority.Source.Generation, RefName: authority.Source.RefName, State: authority.Source.State},
 		Authority:               ExecutionAssignmentAuthority{RevisionID: authority.Authority.AuthorityRevisionID, RevisionRowID: authority.Authority.ID, RevisionNumber: authority.Authority.RevisionNumber, AuthorityBasisSHA256: authority.Package.AuthoritySha256, Repository: artifactschema.AuthorityRepository, Commit: artifactschema.AuthorityCommit},
 		AuthorityLayers:         layers,
-		TicketDesignBrief:       ExecutionAssignmentDocument{DisplayName: authority.TicketDesignBrief.DisplayName, RelativePath: authority.TicketDesignBrief.RelativePath, MediaType: authority.TicketDesignBrief.MediaType, SHA256: authority.TicketDesignBrief.SHA256},
+		DeliveryTicket:          ExecutionAssignmentDocument{DisplayName: document.DisplayName, RelativePath: document.RelativePath, MediaType: document.MediaType, SHA256: document.SHA256},
 		DeterministicOperations: operations,
 		ValidationCommands:      commands,
-		ExecutorInstructions:    ExecutionAssignmentInstructions{AuthorityRepository: artifactschema.AuthorityRepository, AuthorityCommit: artifactschema.AuthorityCommit, SourcePath: executorInstructionsPath},
+		StandingRole:            ExecutionAssignmentStandingRole{AuthorityRepository: artifactschema.AuthorityRepository, AuthorityCommit: artifactschema.AuthorityCommit, SourcePath: standingRoleSourcePath},
 	}
 	content, err := json.Marshal(assignment)
 	if err != nil {

@@ -14,11 +14,11 @@ import (
 var ErrPreparedAdaptiveExecutionConflict = errors.New("prepared adaptive execution conflicts with durable execution state")
 
 type preparedAdaptiveRuntime struct {
-	MutationLeaseID          string `json:"mutation_lease_id"`
-	SourceMutationStarted    bool   `json:"source_mutation_started"`
-	EffectiveBriefArtifactID string `json:"effective_brief_artifact_id"`
-	EffectiveBriefSHA256     string `json:"effective_brief_sha256"`
-	EffectiveBriefMode       string `json:"effective_brief_mode"`
+	MutationLeaseID               string `json:"mutation_lease_id"`
+	SourceMutationStarted         bool   `json:"source_mutation_started"`
+	ExecutionAssignmentArtifactID string `json:"execution_assignment_artifact_id"`
+	ExecutionAssignmentSHA256     string `json:"execution_assignment_sha256"`
+	ExecutionAssignmentMode       string `json:"execution_assignment_mode"`
 }
 
 // BeginPreparedAdaptiveExecution atomically admits a verified existing
@@ -47,7 +47,7 @@ func (s *Service) BeginPreparedAdaptiveExecution(ctx context.Context, input Begi
 		if err := verifyPreparedArtifact(ctx, tx, input.InputArtifactRowID, input.InputArtifactSHA256, workflowstore.ArtifactOwnerExecutionAttempt, attempt.ID); err != nil {
 			return err
 		}
-		if err := verifyPreparedArtifact(ctx, tx, input.EffectiveBriefArtifactRowID, input.EffectiveBriefSHA256, workflowstore.ArtifactOwnerRun, run.ID); err != nil {
+		if err := verifyPreparedArtifact(ctx, tx, input.ExecutionAssignmentArtifactRowID, input.ExecutionAssignmentSHA256, workflowstore.ArtifactOwnerRun, run.ID); err != nil {
 			return err
 		}
 
@@ -57,7 +57,7 @@ func (s *Service) BeginPreparedAdaptiveExecution(ctx context.Context, input Begi
 				return ErrPreparedAdaptiveExecutionConflict
 			}
 			var lease workflowstore.RepositoryBranchMutationLease
-			if input.EffectiveBriefMode == preparedAdaptiveModeAfterPartialApplication {
+			if input.ExecutionAssignmentMode == preparedAdaptiveModeAfterPartialApplication {
 				lease, err = tx.GetActiveRepositoryBranchMutationLease(ctx, run.RepoTarget, run.Branch)
 				if err != nil {
 					if errors.Is(err, sql.ErrNoRows) {
@@ -121,12 +121,12 @@ func (s *Service) BeginPreparedAdaptiveExecution(ctx context.Context, input Begi
 }
 
 func validPreparedAdaptiveExecutionInput(input BeginPreparedAdaptiveExecutionInput) bool {
-	if strings.TrimSpace(input.RunID) == "" || input.RunRowID < 1 || strings.TrimSpace(input.AttemptID) == "" || input.AttemptRowID < 1 || input.AttemptNumber != 1 || strings.TrimSpace(input.Adapter) == "" || strings.TrimSpace(input.Model) == "" || input.InputArtifactRowID < 1 || input.EffectiveBriefArtifactRowID < 1 || strings.TrimSpace(input.EffectiveBriefArtifactID) == "" || !validSHA256(input.InputArtifactSHA256) || !validSHA256(input.EffectiveBriefSHA256) || strings.TrimSpace(input.EffectiveBriefMode) == "" || strings.TrimSpace(input.ProposedLeaseID) == "" || !json.Valid([]byte(input.RunningResultJSON)) {
+	if strings.TrimSpace(input.RunID) == "" || input.RunRowID < 1 || strings.TrimSpace(input.AttemptID) == "" || input.AttemptRowID < 1 || input.AttemptNumber != 1 || strings.TrimSpace(input.Adapter) == "" || strings.TrimSpace(input.Model) == "" || input.InputArtifactRowID < 1 || input.ExecutionAssignmentArtifactRowID < 1 || strings.TrimSpace(input.ExecutionAssignmentArtifactID) == "" || !validSHA256(input.InputArtifactSHA256) || !validSHA256(input.ExecutionAssignmentSHA256) || strings.TrimSpace(input.ExecutionAssignmentMode) == "" || strings.TrimSpace(input.ProposedLeaseID) == "" || !json.Valid([]byte(input.RunningResultJSON)) {
 		return false
 	}
 	state, valid := parsePreparedAdaptiveRuntime(input.RunningResultJSON)
-	expectedMutationStarted, modeValid := preparedAdaptiveSourceMutationStarted(input.EffectiveBriefMode)
-	return valid && modeValid && state.MutationLeaseID == input.ProposedLeaseID && state.SourceMutationStarted == expectedMutationStarted && state.EffectiveBriefSHA256 == input.EffectiveBriefSHA256 && state.EffectiveBriefMode == input.EffectiveBriefMode && state.EffectiveBriefArtifactID == input.EffectiveBriefArtifactID
+	expectedMutationStarted, modeValid := preparedAdaptiveSourceMutationStarted(input.ExecutionAssignmentMode)
+	return valid && modeValid && state.MutationLeaseID == input.ProposedLeaseID && state.SourceMutationStarted == expectedMutationStarted && state.ExecutionAssignmentSHA256 == input.ExecutionAssignmentSHA256 && state.ExecutionAssignmentMode == input.ExecutionAssignmentMode && state.ExecutionAssignmentArtifactID == input.ExecutionAssignmentArtifactID
 }
 
 func preparedAttemptMatches(run workflowstore.Run, attempt workflowstore.ExecutionAttempt, input BeginPreparedAdaptiveExecutionInput) bool {
@@ -152,8 +152,8 @@ func verifyPreparedArtifact(ctx context.Context, tx *workflowstore.Tx, rowID int
 
 func validPreparedRunningAdmission(resultJSON string, input BeginPreparedAdaptiveExecutionInput, run workflowstore.Run, lease workflowstore.RepositoryBranchMutationLease) bool {
 	state, valid := parsePreparedAdaptiveRuntime(resultJSON)
-	expectedMutationStarted, modeValid := preparedAdaptiveSourceMutationStarted(input.EffectiveBriefMode)
-	return valid && modeValid && state.MutationLeaseID != "" && state.MutationLeaseID == lease.LeaseID && state.SourceMutationStarted == expectedMutationStarted && state.EffectiveBriefArtifactID == input.EffectiveBriefArtifactID && state.EffectiveBriefSHA256 == input.EffectiveBriefSHA256 && state.EffectiveBriefMode == input.EffectiveBriefMode && lease.OwnerKind == runMutationLeaseOwnerKind && lease.OwnerIdentity == run.RunID && lease.RepoTarget == run.RepoTarget && lease.Branch == run.Branch && lease.State == workflowstore.RepositoryBranchMutationLeaseStateActive && lease.UncertaintyState == workflowstore.RepositoryBranchMutationLeaseCertaintyCertain && lease.ReconciliationState == workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired
+	expectedMutationStarted, modeValid := preparedAdaptiveSourceMutationStarted(input.ExecutionAssignmentMode)
+	return valid && modeValid && state.MutationLeaseID != "" && state.MutationLeaseID == lease.LeaseID && state.SourceMutationStarted == expectedMutationStarted && state.ExecutionAssignmentArtifactID == input.ExecutionAssignmentArtifactID && state.ExecutionAssignmentSHA256 == input.ExecutionAssignmentSHA256 && state.ExecutionAssignmentMode == input.ExecutionAssignmentMode && lease.OwnerKind == runMutationLeaseOwnerKind && lease.OwnerIdentity == run.RunID && lease.RepoTarget == run.RepoTarget && lease.Branch == run.Branch && lease.State == workflowstore.RepositoryBranchMutationLeaseStateActive && lease.UncertaintyState == workflowstore.RepositoryBranchMutationLeaseCertaintyCertain && lease.ReconciliationState == workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired
 }
 
 const preparedAdaptiveModeAfterPartialApplication = "adaptive_after_partial_application"
@@ -179,7 +179,7 @@ func parsePreparedAdaptiveRuntime(content string) (preparedAdaptiveRuntime, bool
 	if json.Unmarshal([]byte(content), &fields) != nil || fields == nil || json.Unmarshal([]byte(content), &state) != nil {
 		return preparedAdaptiveRuntime{}, false
 	}
-	for _, key := range []string{"mutation_lease_id", "source_mutation_started", "effective_brief_artifact_id", "effective_brief_sha256", "effective_brief_mode"} {
+	for _, key := range []string{"mutation_lease_id", "source_mutation_started", "execution_assignment_artifact_id", "execution_assignment_sha256", "execution_assignment_mode"} {
 		if _, ok := fields[key]; !ok {
 			return preparedAdaptiveRuntime{}, false
 		}

@@ -35,7 +35,8 @@ func TestBeginAdaptiveDispatchAdmission(t *testing.T) {
 	if err := json.Unmarshal([]byte(first.Attempt.ResultJSON), &runtime); err != nil {
 		t.Fatal(err)
 	}
-	if runtime.MutationLeaseID != first.Lease.LeaseID || runtime.SourceMutationStarted || runtime.EffectiveBriefArtifactID != first.EffectiveBriefArtifact.ArtifactID || runtime.EffectiveBriefSHA256 != first.EffectiveBriefArtifact.SHA256 || runtime.EffectiveBriefMode != first.Mode {
+	wireMode, _ := workflowrunsModeString(first.Mode)
+	if runtime.MutationLeaseID != first.Lease.LeaseID || runtime.SourceMutationStarted || runtime.AssignmentArtifactID != first.AssignmentArtifact.ArtifactID || runtime.AssignmentSHA256 != first.AssignmentArtifact.SHA256 || runtime.AssignmentMode != wireMode {
 		t.Fatalf("runtime = %#v", runtime)
 	}
 	second, err := service.Begin(ctx, AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
@@ -57,12 +58,12 @@ func TestBeginAdaptiveDispatchAdmissionModes(t *testing.T) {
 		operations bool
 		coverage   string
 		outcome    DeterministicOutcomeInput
-		mode       EffectiveExecutorBriefMode
+		mode       ExecutionMode
 	}{
-		{name: "operations absent", outcome: DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}}, mode: EffectiveExecutorBriefAdaptiveNoOperations},
-		{name: "partial preflight failure", operations: true, coverage: "partial", outcome: failedOutcomeInput("partial"), mode: EffectiveExecutorBriefAdaptivePreflightFailed},
-		{name: "complete preflight failure", operations: true, coverage: "complete", outcome: failedOutcomeInput("complete"), mode: EffectiveExecutorBriefAdaptivePreflightFailed},
-		{name: "partial deterministic application", operations: true, coverage: "partial", outcome: appliedOutcomeInput("partial"), mode: EffectiveExecutorBriefAdaptiveAfterPartialApplication},
+		{name: "operations absent", outcome: DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}}, mode: ExecutionModeAbsent},
+		{name: "partial preflight failure", operations: true, coverage: "partial", outcome: failedOutcomeInput("partial"), mode: ExecutionModePreflightFailed},
+		{name: "complete preflight failure", operations: true, coverage: "complete", outcome: failedOutcomeInput("complete"), mode: ExecutionModePreflightFailed},
+		{name: "partial deterministic application", operations: true, coverage: "partial", outcome: appliedOutcomeInput("partial"), mode: ExecutionModePartialApplied},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -75,17 +76,17 @@ func TestBeginAdaptiveDispatchAdmissionModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication {
+			if tc.mode == ExecutionModePartialApplied {
 				seedAdaptivePartialLease(t, fixture, "lease-admission-partial")
 			}
 			result, err := service.Begin(ctx, AdaptiveDispatchAdmissionInput{RunID: fixture.run.RunID, AttemptID: prepared.Attempt.AttemptID})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !result.AdaptiveDispatchRequired || !result.NewlyAdmitted || result.Mode != tc.mode || result.Run == nil || result.Run.ID != fixture.run.ID || result.Attempt == nil || result.Attempt.ID != prepared.Attempt.ID || result.Lease == nil || result.EffectiveBriefArtifact == nil || result.InputArtifact == nil {
+			if !result.AdaptiveDispatchRequired || !result.NewlyAdmitted || result.Mode != tc.mode || result.Run == nil || result.Run.ID != fixture.run.ID || result.Attempt == nil || result.Attempt.ID != prepared.Attempt.ID || result.Lease == nil || result.AssignmentArtifact == nil || result.InputArtifact == nil {
 				t.Fatalf("admission = %#v", result)
 			}
-			if result.EffectiveBriefArtifact.ArtifactID == "" || len(result.EffectiveBriefBytes) == 0 || len(result.InputBytes) == 0 {
+			if result.AssignmentArtifact.ArtifactID == "" || len(result.AssignmentBytes) == 0 || len(result.InputBytes) == 0 {
 				t.Fatalf("admission omitted verified artifacts: %#v", result)
 			}
 			var runtime adaptiveDispatchRuntime
@@ -93,10 +94,11 @@ func TestBeginAdaptiveDispatchAdmissionModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			expectedMutationStarted, valid := adaptiveSourceMutationStarted(tc.mode)
-			if !valid || runtime.MutationLeaseID != result.Lease.LeaseID || runtime.EffectiveBriefArtifactID != result.EffectiveBriefArtifact.ArtifactID || runtime.EffectiveBriefSHA256 != result.EffectiveBriefArtifact.SHA256 || runtime.EffectiveBriefMode != tc.mode || runtime.SourceMutationStarted != expectedMutationStarted {
+			wireMode, _ := workflowrunsModeString(tc.mode)
+			if !valid || runtime.MutationLeaseID != result.Lease.LeaseID || runtime.AssignmentArtifactID != result.AssignmentArtifact.ArtifactID || runtime.AssignmentSHA256 != result.AssignmentArtifact.SHA256 || runtime.AssignmentMode != wireMode || runtime.SourceMutationStarted != expectedMutationStarted {
 				t.Fatalf("runtime = %#v", runtime)
 			}
-			if tc.mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication && result.Lease.LeaseID != "lease-admission-partial" {
+			if tc.mode == ExecutionModePartialApplied && result.Lease.LeaseID != "lease-admission-partial" {
 				t.Fatalf("partial admission replaced lease: %#v", result.Lease)
 			}
 		})
@@ -130,7 +132,7 @@ func TestBeginAdaptiveDispatchAdmissionCompleteAndConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != EffectiveExecutorBriefDeterministicComplete || result.AdaptiveDispatchRequired || result.NewlyAdmitted || result.Run != nil || result.Attempt != nil || result.Lease != nil || result.EffectiveBriefArtifact != nil || result.InputArtifact != nil || len(result.EffectiveBriefBytes) != 0 || len(result.InputBytes) != 0 {
+	if result.Mode != ExecutionModeCompleteApplied || result.AdaptiveDispatchRequired || result.NewlyAdmitted || result.Run != nil || result.Attempt != nil || result.Lease != nil || result.AssignmentArtifact != nil || result.InputArtifact != nil || len(result.AssignmentBytes) != 0 || len(result.InputBytes) != 0 {
 		t.Fatalf("complete result = %#v", result)
 	}
 	completeAttempts, err := complete.store.ListExecutionAttemptsByRun(ctx, complete.run.ID)
@@ -255,7 +257,7 @@ func prepareDeterministicComplete(t *testing.T, fixture *executionAssignmentFixt
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.Mode != EffectiveExecutorBriefDeterministicComplete || prepared.AdaptiveDispatchRequired || prepared.Attempt != nil || prepared.InputArtifact != nil || len(prepared.InputBytes) != 0 {
+	if prepared.Mode != ExecutionModeCompleteApplied || prepared.AdaptiveDispatchRequired || prepared.Attempt != nil || prepared.InputArtifact != nil || len(prepared.InputBytes) != 0 {
 		t.Fatalf("deterministic-complete preparation = %#v", prepared)
 	}
 }
@@ -286,13 +288,13 @@ func TestBeginAdaptiveDispatchAdmissionRejectsTamperingAndLeaseConflicts(t *test
 				t.Fatal(err)
 			}
 		}},
-		{name: "effective Brief bytes changed", mutate: func(t *testing.T, f *executionAssignmentFixture, _ AdaptiveExecutionAttemptResult, service *AdaptiveDispatchAdmissionService) {
+		{name: "execution assignment bytes changed", mutate: func(t *testing.T, f *executionAssignmentFixture, _ AdaptiveExecutionAttemptResult, service *AdaptiveDispatchAdmissionService) {
 			t.Helper()
-			brief, err := service.briefs.Load(context.Background(), f.run.RunID)
+			assignment, err := service.assignments.LoadExecutionAssignment(context.Background(), f.run.RunID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(f.store.ArtifactStore().Root(), filepath.FromSlash(brief.Artifact.RelativePath)), []byte("tampered"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(f.store.ArtifactStore().Root(), filepath.FromSlash(assignment.Artifact.RelativePath)), []byte("tampered"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -308,7 +310,8 @@ func TestBeginAdaptiveDispatchAdmissionRejectsTamperingAndLeaseConflicts(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := f.store.DB().Exec(`UPDATE execution_attempts SET result_json = ? WHERE id = ?`, `{"mutation_lease_id":"lease-different","source_mutation_started":false,"effective_brief_artifact_id":"`+first.EffectiveBriefArtifact.ArtifactID+`","effective_brief_sha256":"`+first.EffectiveBriefArtifact.SHA256+`","effective_brief_mode":"`+string(first.Mode)+`"}`, first.Attempt.ID); err != nil {
+			wireMode, _ := workflowrunsModeString(first.Mode)
+			if _, err := f.store.DB().Exec(`UPDATE execution_attempts SET result_json = ? WHERE id = ?`, `{"mutation_lease_id":"lease-different","source_mutation_started":false,"execution_assignment_artifact_id":"`+first.AssignmentArtifact.ArtifactID+`","execution_assignment_sha256":"`+first.AssignmentArtifact.SHA256+`","execution_assignment_mode":"`+wireMode+`"}`, first.Attempt.ID); err != nil {
 				t.Fatal(err)
 			}
 		}},

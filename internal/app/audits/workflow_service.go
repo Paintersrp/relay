@@ -250,19 +250,18 @@ func sameWorkflowPackageRunIdentity(expected, actual workflowstore.Run) bool {
 }
 
 func packageAuditPersistenceMetadata(evidence WorkflowPackageExecutionEvidence) (string, sql.NullInt64, error) {
-	mode := evidence.EffectiveBrief.Mode
-	switch mode {
-	case executor.EffectiveExecutorBriefAdaptiveNoOperations, executor.EffectiveExecutorBriefAdaptivePreflightFailed:
+	switch evidence.Mode {
+	case executor.ExecutionModeAbsent, executor.ExecutionModePreflightFailed:
 		if evidence.Attempt == nil {
 			return "", sql.NullInt64{}, ErrWorkflowAuditPacketStale
 		}
 		return workflowstore.ImplementationActorExecutor, sql.NullInt64{Int64: evidence.Attempt.Attempt.ID, Valid: true}, nil
-	case executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication:
+	case executor.ExecutionModePartialApplied:
 		if evidence.Attempt == nil {
 			return "", sql.NullInt64{}, ErrWorkflowAuditPacketStale
 		}
 		return workflowstore.ImplementationActorHybrid, sql.NullInt64{Int64: evidence.Attempt.Attempt.ID, Valid: true}, nil
-	case executor.EffectiveExecutorBriefDeterministicComplete:
+	case executor.ExecutionModeCompleteApplied:
 		if evidence.Attempt != nil {
 			return "", sql.NullInt64{}, ErrWorkflowAuditPacketStale
 		}
@@ -552,7 +551,6 @@ func resolveWorkflowPackageArtifact(packet WorkflowPackageAuditPacket, reference
 	var found *WorkflowPackageAuditArtifactReference
 	for _, artifact := range []WorkflowPackageAuditArtifactReference{
 		packet.Authority.ExecutionAssignment,
-		packet.Authority.EffectiveExecutorBrief,
 		packet.DeterministicApplication.Evidence,
 	} {
 		if artifact.ArtifactReference != reference {

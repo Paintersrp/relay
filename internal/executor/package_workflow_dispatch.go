@@ -36,7 +36,7 @@ func (s *Execution) DispatchPreparedPackageWorkflow(ctx context.Context, prepare
 		return result, err
 	}
 
-	if mode != EffectiveExecutorBriefDeterministicComplete {
+	if mode != ExecutionModeCompleteApplied {
 		launch, launchErr := packageWorkflowDispatchLaunch(ctx, s, PreparedAdaptiveLaunchInput{
 			RunID:     prepared.Run.RunID,
 			AttemptID: prepared.Adaptive.Attempt.AttemptID,
@@ -71,7 +71,7 @@ func (s *Execution) DispatchPreparedPackageWorkflow(ctx context.Context, prepare
 	return result, nil
 }
 
-func verifyPackageWorkflowDispatchPreparation(s *Execution, prepared PackagePreparationResult) (EffectiveExecutorBriefMode, error) {
+func verifyPackageWorkflowDispatchPreparation(s *Execution, prepared PackagePreparationResult) (ExecutionMode, error) {
 	if s == nil || s.store == nil || s.runs == nil {
 		return "", packageWorkflowDispatchConflict("execution service is unavailable")
 	}
@@ -87,7 +87,7 @@ func verifyPackageWorkflowDispatchPreparation(s *Execution, prepared PackagePrep
 		return "", packageWorkflowDispatchConflict(err.Error())
 	}
 	input := PackagePreparationInput{RunID: prepared.Run.RunID}
-	if mode != EffectiveExecutorBriefDeterministicComplete {
+	if mode != ExecutionModeCompleteApplied {
 		if prepared.Adaptive.Attempt == nil {
 			return "", packageWorkflowDispatchConflict("adaptive preparation has no attempt")
 		}
@@ -121,7 +121,7 @@ func verifyPackageWorkflowAdaptiveLaunch(prepared PackagePreparationResult, laun
 	if strings.TrimSpace(lease.LeaseID) == "" || lease.OwnerIdentity != prepared.Run.RunID || lease.RepoTarget != prepared.Run.RepoTarget || lease.Branch != prepared.Run.Branch || lease.State != workflowstore.RepositoryBranchMutationLeaseStateActive || lease.UncertaintyState != workflowstore.RepositoryBranchMutationLeaseCertaintyCertain || lease.ReconciliationState != workflowstore.RepositoryBranchMutationLeaseReconciliationNotRequired {
 		return packageWorkflowDispatchConflict("adaptive launch lease identity")
 	}
-	if prepared.Adaptive.Mode == EffectiveExecutorBriefAdaptiveAfterPartialApplication {
+	if prepared.Adaptive.Mode == ExecutionModePartialApplied {
 		if prepared.Deterministic.ActiveLease == nil || lease.LeaseID != prepared.Deterministic.ActiveLease.LeaseID {
 			return packageWorkflowDispatchConflict("adaptive partial launch replaced the deterministic lease")
 		}
@@ -130,7 +130,7 @@ func verifyPackageWorkflowAdaptiveLaunch(prepared PackagePreparationResult, laun
 }
 
 func verifyPackageWorkflowCompleteLaunch(launch PreparedAdaptiveLaunchResult) error {
-	if launch.Mode != EffectiveExecutorBriefDeterministicComplete || launch.AdaptiveDispatchRequired || launch.NewlyAdmitted || launch.NewlyLaunched || launch.Run != nil || launch.Attempt != nil || launch.Lease != nil {
+	if launch.Mode != ExecutionModeCompleteApplied || launch.AdaptiveDispatchRequired || launch.NewlyAdmitted || launch.NewlyLaunched || launch.Run != nil || launch.Attempt != nil || launch.Lease != nil {
 		return packageWorkflowDispatchConflict("deterministic-complete launch result shape")
 	}
 	return nil

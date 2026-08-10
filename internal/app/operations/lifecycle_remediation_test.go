@@ -187,7 +187,7 @@ func newRemediationLifecycleFixture(t *testing.T) remediationLifecycleFixture {
 		fixture.executionPackage, err = tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{
 			PackageID: "package-remediation", SelectionRowID: selection.ID, WorkspaceRowID: fixture.workspace.ID, RepoTarget: "project", Branch: "main",
 			BaseCommit: fixture.closure.CommitOID, SourceClosureRowID: fixture.closure.ID, AuthorityRevisionRowID: fixture.authority.ID,
-			PackageSha256: packageSHA, AuthoritySha256: strings.Repeat("3", 64), SourceSha256: strings.Repeat("4", 64), DesignBriefSha256: strings.Repeat("5", 64),
+			PackageSha256: packageSHA, AuthoritySha256: strings.Repeat("3", 64), SourceSha256: strings.Repeat("4", 64),
 			DeterministicOperationsSha256: sql.NullString{String: strings.Repeat("6", 64), Valid: true}, DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true},
 		})
 		if err != nil {

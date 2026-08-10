@@ -1,6 +1,7 @@
 package audits
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,7 +15,7 @@ import (
 	"relay/internal/executor"
 )
 
-func testPackageAuditEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode) (*packageEvidenceFixture, WorkflowPackageExecutionEvidence) {
+func testPackageAuditEvidence(t *testing.T, mode executor.ExecutionMode) (*packageEvidenceFixture, WorkflowPackageExecutionEvidence) {
 	t.Helper()
 	fixture := buildPackageEvidence(t, mode)
 	loader, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
@@ -86,7 +87,7 @@ func testPackageAuditFixRequirementsJSON(evidence *WorkflowPackageExecutionEvide
 	}
 }
 
-func testPackageAuditInput(t *testing.T, mode executor.EffectiveExecutorBriefMode, auditedCommit string) WorkflowPackageAuditPacketInput {
+func testPackageAuditInput(t *testing.T, mode executor.ExecutionMode, auditedCommit string) WorkflowPackageAuditPacketInput {
 	t.Helper()
 	_, evidence := testPackageAuditEvidence(t, mode)
 	// The package evidence fixture stores the requirements layer as opaque text,
@@ -106,7 +107,7 @@ func testPackageAuditInput(t *testing.T, mode executor.EffectiveExecutorBriefMod
 }
 
 func TestWorkflowPackageAuditPacketAbsentOperations(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, data, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -143,7 +144,7 @@ func setPackageAuditPreflightCoverage(t *testing.T, input *WorkflowPackageAuditP
 }
 
 func TestWorkflowPackageAuditPacketPreflightFailedPartial(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptivePreflightFailed, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModePreflightFailed, strings.Repeat("c", 40))
 	setPackageAuditPreflightCoverage(t, &input, "partial")
 	input.Commit.ChangedFiles[0].ChangeType = "deleted"
 	input.Commit.ChangedFiles[0].Additions = 0
@@ -169,11 +170,10 @@ func TestWorkflowPackageAuditPacketPreflightFailedPartial(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketPreflightFailedComplete(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptivePreflightFailed)
+	fixture := buildPackageEvidence(t, executor.ExecutionModePreflightFailed)
 	outcome := packageEvidenceMutatePreflightCoverage(t, fixture.outcome, "complete")
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptivePreflightFailed, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModePreflightFailed, strings.Repeat("c", 40))
 	input.Evidence.Deterministic = outcome
-	input.Evidence.EffectiveBrief = fixture.brief
 	input.Evidence.Assignment = fixture.assignment
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
@@ -188,8 +188,8 @@ func TestWorkflowPackageAuditPacketPreflightFailedComplete(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketAppliedPartial(t *testing.T) {
-	_, evidence := testPackageAuditEvidence(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication)
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication, strings.Repeat("c", 40))
+	_, evidence := testPackageAuditEvidence(t, executor.ExecutionModePartialApplied)
+	input := testPackageAuditInput(t, executor.ExecutionModePartialApplied, strings.Repeat("c", 40))
 	input.Evidence = evidence
 	testPackageAuditFixRequirementsJSON(&input.Evidence)
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
@@ -208,7 +208,7 @@ func TestWorkflowPackageAuditPacketAppliedPartial(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketAppliedComplete(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeCompleteApplied, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -226,13 +226,13 @@ func TestWorkflowPackageAuditPacketAppliedComplete(t *testing.T) {
 
 func TestWorkflowPackageAuditPacketAllModesMapAdaptiveDispatch(t *testing.T) {
 	tests := []struct {
-		mode     executor.EffectiveExecutorBriefMode
+		mode     executor.ExecutionMode
 		adaptive bool
 	}{
-		{executor.EffectiveExecutorBriefAdaptiveNoOperations, true},
-		{executor.EffectiveExecutorBriefAdaptivePreflightFailed, true},
-		{executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication, true},
-		{executor.EffectiveExecutorBriefDeterministicComplete, false},
+		{executor.ExecutionModeAbsent, true},
+		{executor.ExecutionModePreflightFailed, true},
+		{executor.ExecutionModePartialApplied, true},
+		{executor.ExecutionModeCompleteApplied, false},
 	}
 	for _, test := range tests {
 		t.Run(string(test.mode), func(t *testing.T) {
@@ -249,7 +249,7 @@ func TestWorkflowPackageAuditPacketAllModesMapAdaptiveDispatch(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketDeterministicCompleteRequiresNoAttempt(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeCompleteApplied, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -260,7 +260,7 @@ func TestWorkflowPackageAuditPacketDeterministicCompleteRequiresNoAttempt(t *tes
 }
 
 func TestWorkflowPackageAuditPacketDeliveryTicketEmbeddedAsJSON(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -281,7 +281,7 @@ func TestWorkflowPackageAuditPacketDeliveryTicketEmbeddedAsJSON(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketRequirementsInAuthoritySequence(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -308,7 +308,7 @@ func TestWorkflowPackageAuditPacketRequirementsInAuthoritySequence(t *testing.T)
 }
 
 func TestWorkflowPackageAuditPacketSharedDesignInAuthoritySequence(t *testing.T) {
-	_, evidence := testPackageAuditEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	_, evidence := testPackageAuditEvidence(t, executor.ExecutionModeAbsent)
 	// Add a shared design layer to test sequence.
 	sharedBytes := []byte("{\"shared\":true}")
 	sharedLayer := workflowpackages.ApprovedAuthorityLayer{
@@ -322,7 +322,7 @@ func TestWorkflowPackageAuditPacketSharedDesignInAuthoritySequence(t *testing.T)
 	// Insert the shared design layer; fixture already has one requirements layer.
 	authority := evidence.Authority
 	authority.AuthorityLayers = append(authority.AuthorityLayers, sharedLayer)
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Evidence.Authority = authority
 	testPackageAuditFixRequirementsJSON(&input.Evidence)
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
@@ -340,38 +340,27 @@ func TestWorkflowPackageAuditPacketSharedDesignInAuthoritySequence(t *testing.T)
 	}
 }
 
-func TestWorkflowPackageAuditPacketBriefMarkdownPreserved(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+func TestWorkflowPackageAuditPacketDeliveryTicketExactBytesPreserved(t *testing.T) {
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	brief := packet.Authority.TicketDesignBrief
-	want := input.Evidence.Authority.TicketDesignBrief
-	if brief.Filename != filepath.Base(want.RelativePath) {
-		t.Fatalf("filename = %q, want %q", brief.Filename, filepath.Base(want.RelativePath))
+	want := input.DeliveryTicket
+	if packet.Authority.DeliveryTicket.SHA256 != want.SHA256 || packet.Authority.DeliveryTicket.Filename != want.Filename {
+		t.Fatalf("delivery ticket metadata = %#v, want %#v", packet.Authority.DeliveryTicket, want)
 	}
-	if brief.SHA256 != want.SHA256 {
-		t.Fatalf("SHA-256 mismatch")
+	var content json.RawMessage
+	if err := json.Unmarshal(packet.Authority.DeliveryTicket.Content, &content); err != nil {
+		t.Fatalf("delivery ticket content is not JSON: %v", err)
 	}
-	// Content is stored as a JSON string; unwrapping it should equal the original bytes.
-	var text string
-	if err := json.Unmarshal(brief.Content, &text); err != nil {
-		t.Fatalf("brief content is not a JSON string: %v", err)
-	}
-	if []byte(text) != nil && text != string(want.Bytes) {
-		t.Fatalf("brief content not preserved")
-	}
-	if string(want.Bytes) == "" && text != "" {
-		t.Fatalf("brief content not preserved")
-	}
-	if string(want.Bytes) != "" && text != string(want.Bytes) {
-		t.Fatalf("brief content not preserved")
+	if !bytes.Equal(content, want.Bytes) {
+		t.Fatal("delivery ticket content not preserved exactly")
 	}
 }
 
 func TestWorkflowPackageAuditPacketOperationsOmittedWhenAbsent(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -381,8 +370,24 @@ func TestWorkflowPackageAuditPacketOperationsOmittedWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestWorkflowPackageAuditPacketDecodedTextArtifactRejectsDigestDisagreement(t *testing.T) {
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
+	textBytes := []byte("artifact text")
+	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactInput{
+		{Filename: "note.txt", MediaType: "text/plain", SHA256: testPackageAuditSHA256(textBytes), Bytes: textBytes},
+	}
+	packet, _, err := buildWorkflowPackageAuditPacket(input)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	packet.Artifacts[0].SHA256 = strings.Repeat("0", 64)
+	if err := validateWorkflowPackageAuditPacket(packet); err == nil {
+		t.Fatal("expected text artifact digest disagreement to be rejected")
+	}
+}
+
 func TestWorkflowPackageAuditPacketOperationsEmbeddedWhenPresent(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeCompleteApplied, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -406,7 +411,7 @@ func TestWorkflowPackageAuditPacketOperationsEmbeddedWhenPresent(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketRuntimeReferencesExact(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeCompleteApplied, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -417,12 +422,6 @@ func TestWorkflowPackageAuditPacketRuntimeReferencesExact(t *testing.T) {
 	if packet.Authority.ExecutionAssignment.SHA256 != input.Evidence.Assignment.Artifact.SHA256 {
 		t.Fatalf("execution assignment SHA-256 mismatch")
 	}
-	if packet.Authority.EffectiveExecutorBrief.ArtifactReference != input.Evidence.EffectiveBrief.Artifact.ArtifactID {
-		t.Fatalf("effective brief reference mismatch")
-	}
-	if packet.Authority.EffectiveExecutorBrief.SHA256 != input.Evidence.EffectiveBrief.Artifact.SHA256 {
-		t.Fatalf("effective brief SHA-256 mismatch")
-	}
 	if packet.DeterministicApplication.Evidence.ArtifactReference != input.Evidence.Deterministic.Artifact.ArtifactID {
 		t.Fatalf("deterministic outcome reference mismatch")
 	}
@@ -432,7 +431,7 @@ func TestWorkflowPackageAuditPacketRuntimeReferencesExact(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketArtifactBytesDetermineDigest(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -446,7 +445,7 @@ func TestWorkflowPackageAuditPacketArtifactBytesDetermineDigest(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketChangedFileFieldsPreserved(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Commit.ChangedFiles = []WorkflowPackageAuditChangedFile{
 		{Path: "a/b.go", PreviousPath: "old/b.go", ChangeType: "renamed", Additions: 3, Deletions: 1},
 		{Path: "c/d.go", ChangeType: "added", Additions: 5, Deletions: 0},
@@ -467,7 +466,7 @@ func TestWorkflowPackageAuditPacketChangedFileFieldsPreserved(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketValidationOrderPreserved(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Evidence.Assignment.Assignment.ValidationCommands = []executor.ExecutionAssignmentValidationCommand{
 		{Command: "first", Expected: "pass"},
 		{Command: "second", Expected: "fail"},
@@ -493,7 +492,7 @@ func TestWorkflowPackageAuditPacketValidationOrderPreserved(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketArtifactOrderPreserved(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactInput{
 		{Filename: "first.json", MediaType: "application/json", SHA256: testPackageAuditSHA256([]byte(`{"first":true}`)), Bytes: []byte(`{"first":true}`)},
 		{Filename: "second.json", MediaType: "application/json", SHA256: testPackageAuditSHA256([]byte(`{"second":true}`)), Bytes: []byte(`{"second":true}`)},
@@ -511,7 +510,7 @@ func TestWorkflowPackageAuditPacketArtifactOrderPreserved(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketOutputTrailingNewline(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	_, data, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -525,7 +524,7 @@ func TestWorkflowPackageAuditPacketOutputTrailingNewline(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketRepeatedBuildsIdentical(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	_, first, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -540,7 +539,7 @@ func TestWorkflowPackageAuditPacketRepeatedBuildsIdentical(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketDecodedRemarshalIsCanonical(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	_, data, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -560,7 +559,7 @@ func TestWorkflowPackageAuditPacketDecodedRemarshalIsCanonical(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketMalformedDeliveryTicketRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.DeliveryTicket.Bytes = []byte("not json")
 	input.DeliveryTicket.SHA256 = testPackageAuditSHA256(input.DeliveryTicket.Bytes)
 	_, _, err := buildWorkflowPackageAuditPacket(input)
@@ -570,7 +569,7 @@ func TestWorkflowPackageAuditPacketMalformedDeliveryTicketRejected(t *testing.T)
 }
 
 func TestWorkflowPackageAuditPacketUnknownAuthorityLayerRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	badLayer := workflowpackages.ApprovedAuthorityLayer{
 		Kind:         "unknown_kind",
 		Sequence:     2,
@@ -587,7 +586,7 @@ func TestWorkflowPackageAuditPacketUnknownAuthorityLayerRejected(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketMalformedOrMismatchedDigestRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.DeliveryTicket.SHA256 = strings.Repeat("0", 64)
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -596,14 +595,14 @@ func TestWorkflowPackageAuditPacketMalformedOrMismatchedDigestRejected(t *testin
 }
 
 func TestWorkflowPackageAuditPacketUnsafeFilenameOrPathRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.DeliveryTicket.Filename = "../escape.json"
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
 		t.Fatalf("expected invalid error for unsafe filename, got %v", err)
 	}
 
-	input = testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input = testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Commit.ChangedFiles[0].Path = "/absolute/path.go"
 	_, _, err = buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -612,7 +611,7 @@ func TestWorkflowPackageAuditPacketUnsafeFilenameOrPathRejected(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketDuplicatePathOrArtifactFilenameRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Commit.ChangedFiles = []WorkflowPackageAuditChangedFile{
 		{Path: "same.go", ChangeType: "added", Additions: 1, Deletions: 0},
 		{Path: "same.go", ChangeType: "modified", Additions: 2, Deletions: 1},
@@ -622,7 +621,7 @@ func TestWorkflowPackageAuditPacketDuplicatePathOrArtifactFilenameRejected(t *te
 		t.Fatalf("expected invalid error for duplicate path, got %v", err)
 	}
 
-	input = testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input = testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Artifacts = append(input.Artifacts, input.Artifacts[0])
 	_, _, err = buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -631,7 +630,7 @@ func TestWorkflowPackageAuditPacketDuplicatePathOrArtifactFilenameRejected(t *te
 }
 
 func TestWorkflowPackageAuditPacketInvalidOutcomeCoverageRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	// Force outcome coverage to conflict with absent operations.
 	input.Evidence.Deterministic.Outcome.Outcome.Coverage = "complete"
 	_, _, err := buildWorkflowPackageAuditPacket(input)
@@ -641,7 +640,7 @@ func TestWorkflowPackageAuditPacketInvalidOutcomeCoverageRejected(t *testing.T) 
 }
 
 func TestWorkflowPackageAuditPacketModeDispatchDisagreementRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Evidence.Attempt = nil
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -650,7 +649,7 @@ func TestWorkflowPackageAuditPacketModeDispatchDisagreementRejected(t *testing.T
 }
 
 func TestWorkflowPackageAuditPacketCommittedAuditedShaDisagreementRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Execution.CommittedSHA = strings.Repeat("d", 40)
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -668,7 +667,7 @@ func TestWorkflowPackageAuditPacketEmptyRequiredCollectionsRejected(t *testing.T
 		func(i *WorkflowPackageAuditPacketInput) { i.Artifacts = nil },
 	}
 	for index, mutate := range cases {
-		input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+		input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 		mutate(&input)
 		_, _, err := buildWorkflowPackageAuditPacket(input)
 		if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -678,7 +677,7 @@ func TestWorkflowPackageAuditPacketEmptyRequiredCollectionsRejected(t *testing.T
 }
 
 func TestWorkflowPackageAuditPacketNoLegacyKeys(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	_, data, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -692,7 +691,7 @@ func TestWorkflowPackageAuditPacketNoLegacyKeys(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketNoRequirementsLayerRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	// Replace the only requirements layer with shared_design.
 	for index := range input.Evidence.Authority.AuthorityLayers {
 		input.Evidence.Authority.AuthorityLayers[index].Kind = "shared_design"
@@ -704,7 +703,7 @@ func TestWorkflowPackageAuditPacketNoRequirementsLayerRejected(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketAuthorityLayerSequenceRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	// Append a duplicate sequence layer.
 	duplicate := input.Evidence.Authority.AuthorityLayers[0]
 	input.Evidence.Authority.AuthorityLayers = append(input.Evidence.Authority.AuthorityLayers, duplicate)
@@ -715,7 +714,7 @@ func TestWorkflowPackageAuditPacketAuthorityLayerSequenceRejected(t *testing.T) 
 }
 
 func TestWorkflowPackageAuditPacketTextArtifactUtf8Rejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Artifacts[0].MediaType = "text/plain"
 	input.Artifacts[0].Bytes = []byte{0xff}
 	input.Artifacts[0].SHA256 = testPackageAuditSHA256(input.Artifacts[0].Bytes)
@@ -726,7 +725,7 @@ func TestWorkflowPackageAuditPacketTextArtifactUtf8Rejected(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketInvalidChangedFileTypeRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Commit.ChangedFiles[0].ChangeType = "unknown"
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -735,7 +734,7 @@ func TestWorkflowPackageAuditPacketInvalidChangedFileTypeRejected(t *testing.T) 
 }
 
 func TestWorkflowPackageAuditPacketValidationStatusRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Evidence.Validation[0].Status = "unknown"
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -744,7 +743,7 @@ func TestWorkflowPackageAuditPacketValidationStatusRejected(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketRepeatedBuildsPacketObjectEqual(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	first, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -761,7 +760,7 @@ func TestWorkflowPackageAuditPacketRepeatedBuildsPacketObjectEqual(t *testing.T)
 }
 
 func TestWorkflowPackageAuditPacketInvalidAuditedCommitRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, "not-a-sha")
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, "not-a-sha")
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
 		t.Fatalf("expected invalid error, got %v", err)
@@ -769,7 +768,7 @@ func TestWorkflowPackageAuditPacketInvalidAuditedCommitRejected(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketInvalidBaseCommitRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Commit.BaseCommit = strings.Repeat("G", 40)
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -777,9 +776,9 @@ func TestWorkflowPackageAuditPacketInvalidBaseCommitRejected(t *testing.T) {
 	}
 }
 
-func TestWorkflowPackageAuditPacketInvalidEffectiveBriefSHARejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	input.Evidence.EffectiveBrief.Artifact.SHA256 = "bad"
+func TestWorkflowPackageAuditPacketInvalidExecutionAssignmentSHARejected(t *testing.T) {
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
+	input.Evidence.Assignment.Artifact.SHA256 = "bad"
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
 		t.Fatalf("expected invalid error, got %v", err)
@@ -787,7 +786,7 @@ func TestWorkflowPackageAuditPacketInvalidEffectiveBriefSHARejected(t *testing.T
 }
 
 func TestWorkflowPackageAuditPacketInvalidUserIntentRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.UserIntent = "   "
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -801,7 +800,7 @@ func testPackageAuditMarshalCanonical(p WorkflowPackageAuditPacket) []byte {
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsUnsafeChangedFilePath(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -813,7 +812,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsUnsafeChangedFilePath(t *testin
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsUnsafePreviousPath(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Commit.ChangedFiles = []WorkflowPackageAuditChangedFile{
 		{Path: "a/b.go", PreviousPath: "old/b.go", ChangeType: "renamed", Additions: 1, Deletions: 0},
 	}
@@ -828,7 +827,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsUnsafePreviousPath(t *testing.T
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsUnsafeRelevantSourcePath(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -840,7 +839,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsUnsafeRelevantSourcePath(t *tes
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsUnsafeArtifactFilename(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -852,7 +851,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsUnsafeArtifactFilename(t *testi
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsWhitespaceStrings(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -886,7 +885,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsWhitespaceStrings(t *testing.T)
 }
 
 func TestWorkflowPackageAuditPacketDecodedDeliveryTicketRejectsTextString(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -899,7 +898,7 @@ func TestWorkflowPackageAuditPacketDecodedDeliveryTicketRejectsTextString(t *tes
 }
 
 func TestWorkflowPackageAuditPacketDecodedRequirementsRejectTextString(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -912,7 +911,7 @@ func TestWorkflowPackageAuditPacketDecodedRequirementsRejectTextString(t *testin
 }
 
 func TestWorkflowPackageAuditPacketDecodedSharedDesignRejectTextString(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	sharedBytes := []byte(`{"shared":true}`)
 	input.Evidence.Authority.AuthorityLayers = append(input.Evidence.Authority.AuthorityLayers, workflowpackages.ApprovedAuthorityLayer{
 		Kind:         "shared_design",
@@ -933,36 +932,8 @@ func TestWorkflowPackageAuditPacketDecodedSharedDesignRejectTextString(t *testin
 	}
 }
 
-func TestWorkflowPackageAuditPacketDecodedBriefRejectsNonStringJSON(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	packet, _, err := buildWorkflowPackageAuditPacket(input)
-	if err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	packet.Authority.TicketDesignBrief.Content = json.RawMessage(`{"not":"text"}`)
-	if err := validateWorkflowPackageAuditPacket(packet); err == nil {
-		t.Fatal("expected non-string ticket design brief content to be rejected")
-	}
-}
-
-func TestWorkflowPackageAuditPacketDecodedTextArtifactRejectsDigestDisagreement(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
-	textBytes := []byte("artifact text")
-	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactInput{
-		{Filename: "note.txt", MediaType: "text/plain", SHA256: testPackageAuditSHA256(textBytes), Bytes: textBytes},
-	}
-	packet, _, err := buildWorkflowPackageAuditPacket(input)
-	if err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	packet.Artifacts[0].SHA256 = strings.Repeat("0", 64)
-	if err := validateWorkflowPackageAuditPacket(packet); err == nil {
-		t.Fatal("expected text artifact digest disagreement to be rejected")
-	}
-}
-
 func TestWorkflowPackageAuditPacketDecodedDeterministicOpsCoverageDisagreement(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeCompleteApplied, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -976,7 +947,7 @@ func TestWorkflowPackageAuditPacketDecodedDeterministicOpsCoverageDisagreement(t
 }
 
 func TestWorkflowPackageAuditPacketDecodedNotPresentWithOperationsRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -990,7 +961,7 @@ func TestWorkflowPackageAuditPacketDecodedNotPresentWithOperationsRejected(t *te
 }
 
 func TestWorkflowPackageAuditPacketDecodedAppliedWithoutOperationsRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -1005,7 +976,7 @@ func TestWorkflowPackageAuditPacketDecodedAppliedWithoutOperationsRejected(t *te
 }
 
 func TestWorkflowPackageAuditPacketDecodedPreflightFailedWithoutOperationsRejected(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -1020,7 +991,7 @@ func TestWorkflowPackageAuditPacketDecodedPreflightFailedWithoutOperationsReject
 }
 
 func TestWorkflowPackageAuditPacketBytesRejectInvalidShapes(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	sharedBytes := []byte(`{"shared":true}`)
 	input.Evidence.Authority.AuthorityLayers = append(input.Evidence.Authority.AuthorityLayers, workflowpackages.ApprovedAuthorityLayer{
 		Kind:         "shared_design",
@@ -1060,9 +1031,6 @@ func TestWorkflowPackageAuditPacketBytesRejectInvalidShapes(t *testing.T) {
 			encoded, _ := json.Marshal("text")
 			p.Authority.SharedDesign[0].Content = json.RawMessage(encoded)
 		}},
-		{"non-string brief", func(p *WorkflowPackageAuditPacket) {
-			p.Authority.TicketDesignBrief.Content = json.RawMessage(`{"not":"text"}`)
-		}},
 		{"text artifact digest disagreement", func(p *WorkflowPackageAuditPacket) {
 			p.Artifacts[0].SHA256 = strings.Repeat("0", 64)
 		}},
@@ -1090,7 +1058,7 @@ func TestWorkflowPackageAuditPacketBytesRejectInvalidShapes(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketJSONArtifactWithWhitespaceBuilds(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	whitespaceJSON := []byte("{\n  \"key\": \"value\"\n}")
 	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactInput{
 		{Filename: "formatted.json", MediaType: "application/json", SHA256: testPackageAuditSHA256(whitespaceJSON), Bytes: whitespaceJSON},
@@ -1101,7 +1069,7 @@ func TestWorkflowPackageAuditPacketJSONArtifactWithWhitespaceBuilds(t *testing.T
 }
 
 func TestWorkflowPackageAuditPacketTextArtifactVerifiesDigest(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	textBytes := []byte("hello, text artifact")
 	input.Artifacts = []WorkflowPackageAuditEmbeddedArtifactInput{
 		{Filename: "note.txt", MediaType: "text/plain", SHA256: testPackageAuditSHA256(textBytes), Bytes: textBytes},
@@ -1116,7 +1084,7 @@ func TestWorkflowPackageAuditPacketTextArtifactVerifiesDigest(t *testing.T) {
 }
 
 func TestWorkflowPackageAuditPacketBuilderRejectsCompletionSummaryOuterWhitespace(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Execution.CompletionSummary = " completed "
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -1125,7 +1093,7 @@ func TestWorkflowPackageAuditPacketBuilderRejectsCompletionSummaryOuterWhitespac
 }
 
 func TestWorkflowPackageAuditPacketBuilderRejectsConciseResultOuterWhitespace(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Evidence.Validation[0].ConciseResult = " result "
 	_, _, err := buildWorkflowPackageAuditPacket(input)
 	if !errors.Is(err, ErrWorkflowPackageAuditPacketInvalid) {
@@ -1134,7 +1102,7 @@ func TestWorkflowPackageAuditPacketBuilderRejectsConciseResultOuterWhitespace(t 
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsCompletionSummaryOuterWhitespace(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -1146,7 +1114,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsCompletionSummaryOuterWhitespac
 }
 
 func TestWorkflowPackageAuditPacketDecodedRejectsConciseResultOuterWhitespace(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -1158,7 +1126,7 @@ func TestWorkflowPackageAuditPacketDecodedRejectsConciseResultOuterWhitespace(t 
 }
 
 func TestWorkflowPackageAuditPacketBytesRejectOuterWhitespaceFields(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -1182,7 +1150,7 @@ func TestWorkflowPackageAuditPacketBytesRejectOuterWhitespaceFields(t *testing.T
 }
 
 func TestWorkflowPackageAuditPacketValidCompletionSummaryAndConciseResultUnchanged(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	input.Execution.CompletionSummary = "Implementation completed successfully."
 	input.Evidence.Validation[0].ConciseResult = "ok"
 	packet, _, err := buildWorkflowPackageAuditPacket(input)
@@ -1197,25 +1165,25 @@ func TestWorkflowPackageAuditPacketValidCompletionSummaryAndConciseResultUnchang
 	}
 }
 
-func TestWorkflowPackageAuditPacketSchemaVersionIsThreeZero(t *testing.T) {
-	if WorkflowPackageAuditPacketSchemaVersion != "3.0" {
-		t.Fatalf("schema version = %q, want 3.0", WorkflowPackageAuditPacketSchemaVersion)
+func TestWorkflowPackageAuditPacketSchemaVersionIsFourZero(t *testing.T) {
+	if WorkflowPackageAuditPacketSchemaVersion != "4.0" {
+		t.Fatalf("schema version = %q, want 4.0", WorkflowPackageAuditPacketSchemaVersion)
 	}
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefAdaptiveNoOperations, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeAbsent, strings.Repeat("c", 40))
 	packet, data, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if packet.SchemaVersion != "3.0" {
-		t.Fatalf("packet schema version = %q, want 3.0", packet.SchemaVersion)
+	if packet.SchemaVersion != "4.0" {
+		t.Fatalf("packet schema version = %q, want 4.0", packet.SchemaVersion)
 	}
-	if !strings.Contains(string(data), "\"schema_version\": \"3.0\"") {
-		t.Fatalf("serialized schema_version must be 3.0")
+	if !strings.Contains(string(data), "\"schema_version\": \"4.0\"") {
+		t.Fatalf("serialized schema_version must be 4.0")
 	}
 }
 
 func TestWorkflowPackageAuditPacketSerializedFieldNamesUnchanged(t *testing.T) {
-	input := testPackageAuditInput(t, executor.EffectiveExecutorBriefDeterministicComplete, strings.Repeat("c", 40))
+	input := testPackageAuditInput(t, executor.ExecutionModeCompleteApplied, strings.Repeat("c", 40))
 	_, data, err := buildWorkflowPackageAuditPacket(input)
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -1224,8 +1192,8 @@ func TestWorkflowPackageAuditPacketSerializedFieldNamesUnchanged(t *testing.T) {
 		"\"schema_version\"", "\"run\"", "\"run_id\"", "\"user_intent\"",
 		"\"repository\"", "\"repo_target\"", "\"branch\"", "\"base_commit\"", "\"audited_commit\"",
 		"\"authority\"", "\"delivery_ticket\"", "\"requirements\"", "\"shared_design\"",
-		"\"ticket_design_brief\"", "\"deterministic_operations\"", "\"execution_assignment\"",
-		"\"effective_executor_brief\"", "\"artifact_reference\"", "\"sha256\"",
+		"\"deterministic_operations\"", "\"execution_assignment\"",
+		"\"artifact_reference\"", "\"sha256\"",
 		"\"deterministic_application\"", "\"outcome\"", "\"coverage\"", "\"evidence\"",
 		"\"execution\"", "\"adaptive_attempt_dispatched\"", "\"status\"", "\"committed_sha\"",
 		"\"completion_summary\"", "\"changed_files\"", "\"path\"", "\"change_type\"",

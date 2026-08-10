@@ -14,7 +14,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(operations) != 17 || len(routes) != 7 {
+	if len(operations) != 14 || len(routes) != 7 {
 		t.Fatalf("operations=%d routes=%d", len(operations), len(routes))
 	}
 	seen := map[string]struct{}{}
@@ -27,7 +27,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 			}
 		}
 	}
-	if len(seen) != 39 {
+	if len(seen) != 37 {
 		t.Fatalf("tools=%d", len(seen))
 	}
 	if _, ok := seen["create_run"]; ok {

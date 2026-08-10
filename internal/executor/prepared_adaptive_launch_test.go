@@ -87,12 +87,12 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 	cases := []struct {
 		name    string
 		outcome DeterministicOutcomeInput
-		mode    EffectiveExecutorBriefMode
+		mode    ExecutionMode
 	}{
-		{name: "operations absent", outcome: DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}}, mode: EffectiveExecutorBriefAdaptiveNoOperations},
-		{name: "partial preflight failure", outcome: failedOutcomeInput("partial"), mode: EffectiveExecutorBriefAdaptivePreflightFailed},
-		{name: "complete preflight failure", outcome: failedOutcomeInput("complete"), mode: EffectiveExecutorBriefAdaptivePreflightFailed},
-		{name: "partial deterministic application", outcome: appliedOutcomeInput("partial"), mode: EffectiveExecutorBriefAdaptiveAfterPartialApplication},
+		{name: "operations absent", outcome: DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}}, mode: ExecutionModeAbsent},
+		{name: "partial preflight failure", outcome: failedOutcomeInput("partial"), mode: ExecutionModePreflightFailed},
+		{name: "complete preflight failure", outcome: failedOutcomeInput("complete"), mode: ExecutionModePreflightFailed},
+		{name: "partial deterministic application", outcome: appliedOutcomeInput("partial"), mode: ExecutionModePartialApplied},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -111,29 +111,54 @@ func TestLaunchPreparedAdaptiveModesPreservePackageMode(t *testing.T) {
 			if err := json.Unmarshal([]byte(attempt.ResultJSON), &runtime); err != nil {
 				t.Fatal(err)
 			}
-			if runtime.EffectiveBriefMode != string(tc.mode) || !runtime.SourceMutationStarted || runtime.EffectiveBriefArtifactID == "" || runtime.EffectiveBriefSHA256 == "" {
+			wireMode, wireModeValid := workflowrunsModeString(tc.mode)
+			if !wireModeValid || runtime.ExecutionAssignmentMode != wireMode || !runtime.SourceMutationStarted || runtime.ExecutionAssignmentArtifactID == "" || runtime.ExecutionAssignmentSHA256 == "" {
 				t.Fatalf("runtime=%#v", runtime)
 			}
-			brief, err := NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
+			if strings.Contains(attempt.ResultJSON, `"execution_mode"`) {
+				t.Fatalf("attempt ResultJSON carries the obsolete execution_mode key: %s", attempt.ResultJSON)
+			}
+			assignments, err := NewExecutionAssignmentService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
 			}
-			effective, err := brief.Load(context.Background(), fixture.run.RunID)
-			if err != nil || effective.Artifact == nil {
-				t.Fatalf("effective brief=%#v err=%v", effective, err)
+			assignment, err := assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID)
+			if err != nil {
+				t.Fatalf("execution assignment=%#v err=%v", assignment, err)
 			}
 			adapter.mu.Lock()
 			request := adapter.requests[0]
 			adapter.mu.Unlock()
-			if request.BriefContent != string(effective.Bytes) || request.SelectedModel != "prepared-model" || request.BriefPath != filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(effective.Artifact.RelativePath)) || request.RepoPath != fixture.repoPath || !strings.HasSuffix(request.ResultPath, filepath.Join(fixture.run.RunID, prepared.Attempt.AttemptID, "executor-result.tmp")) {
+			if request.BriefContent != string(assignment.Bytes) || request.SelectedModel != "prepared-model" || request.BriefPath != filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(assignment.Artifact.RelativePath)) || request.RepoPath != fixture.repoPath || !strings.HasSuffix(request.ResultPath, filepath.Join(fixture.run.RunID, prepared.Attempt.AttemptID, "executor-result.tmp")) {
 				t.Fatalf("adapter request=%#v", request)
 			}
 			artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), attempt.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(artifacts) < 1 {
-				t.Fatal("successful package execution did not persist evidence")
+			var evidenceArtifact workflowstore.Artifact
+			for _, artifact := range artifacts {
+				if artifact.Kind == "execution_evidence" {
+					evidenceArtifact = artifact
+					break
+				}
+			}
+			if evidenceArtifact.ID == 0 {
+				t.Fatal("successful package execution did not persist an execution_evidence artifact")
+			}
+			evidenceBytes, err := os.ReadFile(filepath.Join(fixture.store.ArtifactStore().Root(), filepath.FromSlash(evidenceArtifact.RelativePath)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var evidence workflowExecutionEvidence
+			if err := json.Unmarshal(evidenceBytes, &evidence); err != nil {
+				t.Fatal(err)
+			}
+			if evidence.ExecutionAssignmentMode != wireMode {
+				t.Fatalf("execution_evidence assignment mode=%q, want %q", evidence.ExecutionAssignmentMode, wireMode)
+			}
+			if strings.Contains(string(evidenceBytes), `"execution_mode"`) {
+				t.Fatalf("execution_evidence carries the obsolete execution_mode key: %s", evidenceBytes)
 			}
 		})
 	}
@@ -160,7 +185,7 @@ func TestLaunchPreparedAdaptiveCompleteDoesNoLaunchWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != EffectiveExecutorBriefDeterministicComplete || result.AdaptiveDispatchRequired || result.NewlyAdmitted || result.NewlyLaunched || result.Run != nil || result.Attempt != nil || result.Lease != nil {
+	if result.Mode != ExecutionModeCompleteApplied || result.AdaptiveDispatchRequired || result.NewlyAdmitted || result.NewlyLaunched || result.Run != nil || result.Attempt != nil || result.Lease != nil {
 		t.Fatalf("result=%#v", result)
 	}
 	if adapterCalls != 0 || preflightCalls != 0 || launchCalls != 0 {
@@ -240,7 +265,8 @@ func TestLaunchPreparedAdaptivePreflightFailureSettlesAttemptAndLease(t *testing
 	if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.SourceMutationStarted || !state.TerminationVerified || state.MutationLeaseID == "" || state.EffectiveBriefMode != string(EffectiveExecutorBriefAdaptiveNoOperations) {
+	wireMode, wireModeValid := workflowrunsModeString(ExecutionModeAbsent)
+	if state.SourceMutationStarted || !state.TerminationVerified || state.MutationLeaseID == "" || !wireModeValid || state.ExecutionAssignmentMode != wireMode {
 		t.Fatalf("settled state=%#v", state)
 	}
 	run, err := fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
@@ -285,7 +311,8 @@ func TestLaunchPreparedAdaptivePartialPrelaunchFailurePreservesMutationFact(t *t
 	if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.SourceMutationStarted != true || !state.TerminationVerified || state.EffectiveBriefMode != string(EffectiveExecutorBriefAdaptiveAfterPartialApplication) {
+	wireMode, wireModeValid := workflowrunsModeString(ExecutionModePartialApplied)
+	if state.SourceMutationStarted != true || !state.TerminationVerified || !wireModeValid || state.ExecutionAssignmentMode != wireMode {
 		t.Fatalf("settled state=%#v", state)
 	}
 	leases, err := fixture.store.ListRepositoryBranchMutationLeases(context.Background(), fixture.run.RepoTarget, fixture.run.Branch)
@@ -438,7 +465,8 @@ func TestLaunchPreparedAdaptiveResultPaths(t *testing.T) {
 			if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
 				t.Fatal(err)
 			}
-			if state.SourceMutationStarted || !state.TerminationVerified || state.MutationLeaseID == "" || state.EffectiveBriefArtifactID == "" || state.EffectiveBriefSHA256 == "" || state.EffectiveBriefMode != string(EffectiveExecutorBriefAdaptiveNoOperations) {
+			wireMode, wireModeValid := workflowrunsModeString(ExecutionModeAbsent)
+			if state.SourceMutationStarted || !state.TerminationVerified || state.MutationLeaseID == "" || state.ExecutionAssignmentArtifactID == "" || state.ExecutionAssignmentSHA256 == "" || !wireModeValid || state.ExecutionAssignmentMode != wireMode {
 				t.Fatalf("settled state=%#v", state)
 			}
 			run, err := fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
@@ -515,7 +543,7 @@ func TestLaunchPreparedAdaptiveValidationEvidence(t *testing.T) {
 	adapter := &preparedLaunchAdapter{id: AdapterCodex}
 	service := newPreparedLaunchService(t, fixture, adapter)
 
-	cmdOutput := "STATUS: DONE\n\n## Validation\n\n- `go test ./internal/planningartifacts/...` - passed\n"
+	cmdOutput := "STATUS: DONE\n\n## Validation\n\n- `go test ./internal/app/packages` - passed\n"
 	service.runner = func(_ context.Context, _ string, _ string, _ []string, _ string, _ time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, _ pipeline.ProcessController) pipeline.AgentCommandRunResult {
 		identity := pipeline.ProcessIdentity{PID: 202, StartedAt: "1", Platform: "linux"}
 		if callbacks.OnProcessStarted != nil {
@@ -569,7 +597,7 @@ func TestLaunchPreparedAdaptiveValidationEvidence(t *testing.T) {
 	if len(evidence.ValidationResults) != 1 {
 		t.Fatalf("ValidationResults len = %d, want 1", len(evidence.ValidationResults))
 	}
-	if evidence.ValidationResults[0].Command != "go test ./internal/planningartifacts/..." || evidence.ValidationResults[0].Status != "passed" {
+	if evidence.ValidationResults[0].Command != "go test ./internal/app/packages" || evidence.ValidationResults[0].Status != "passed" {
 		t.Fatalf("ValidationResult = %#v", evidence.ValidationResults[0])
 	}
 }

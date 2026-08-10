@@ -11,21 +11,20 @@ import (
 // package. It is owned by the application service so transports never project
 // workflow-store records directly.
 type PackageIdentityView struct {
-	PackageID                       string `json:"packageId"`
-	SelectionRowID                  int64  `json:"selectionRowId"`
-	WorkspaceRowID                  int64  `json:"workspaceRowId"`
-	RepoTarget                      string `json:"repoTarget"`
-	Branch                          string `json:"branch"`
-	BaseCommit                      string `json:"baseCommit"`
-	SourceClosureRowID              int64  `json:"sourceClosureRowId"`
-	AuthorityRevisionRowID          int64  `json:"authorityRevisionRowId"`
-	PackageSHA256                   string `json:"packageSha256"`
-	AuthoritySHA256                 string `json:"authoritySha256"`
-	SourceSHA256                    string `json:"sourceSha256"`
-	DesignBriefSHA256               string `json:"designBriefSha256"`
-	DeterministicOperationsSHA256   string `json:"deterministicOperationsSha256,omitempty"`
-	DeterministicOperationsCoverage string `json:"deterministicOperationsCoverage,omitempty"`
-	CreatedAt                       string `json:"createdAt"`
+	PackageID                        string `json:"packageId"`
+	SelectionRowID                   int64  `json:"selectionRowId"`
+	WorkspaceRowID                   int64  `json:"workspaceRowId"`
+	RepoTarget                       string `json:"repoTarget"`
+	Branch                           string `json:"branch"`
+	BaseCommit                       string `json:"baseCommit"`
+	SourceClosureRowID               int64  `json:"sourceClosureRowId"`
+	AuthorityRevisionRowID           int64  `json:"authorityRevisionRowId"`
+	PackageSHA256                    string `json:"packageSha256"`
+	AuthoritySHA256                  string `json:"authoritySha256"`
+	SourceSHA256                     string `json:"sourceSha256"`
+	DeterministicOperationsSHA256    string `json:"deterministicOperationsSha256,omitempty"`
+	DeterministicOperationsCoverage  string `json:"deterministicOperationsCoverage,omitempty"`
+	CreatedAt                        string `json:"createdAt"`
 }
 
 type PackageMemberView struct {
@@ -64,7 +63,7 @@ type PackageDetailView struct {
 	PackageIdentityView
 	Members                 []PackageMemberView          `json:"members"`
 	ApprovalBindings        []PackageApprovalBindingView `json:"approvalBindings"`
-	TicketDesignBrief       PackageArtifactView          `json:"ticketDesignBrief"`
+	TicketDocument          PackageArtifactView          `json:"ticketDocument"`
 	DeterministicOperations *PackageArtifactView         `json:"deterministicOperations,omitempty"`
 	Run                     *RunView                     `json:"run"`
 	PackageApprovalID       string                       `json:"packageApprovalId,omitempty"`
@@ -106,7 +105,7 @@ func packageDetailView(value packages.Detail) PackageDetailView {
 		PackageIdentityView: packageIdentityView(value.Package),
 		Members:             make([]PackageMemberView, 0, len(value.Members)),
 		ApprovalBindings:    make([]PackageApprovalBindingView, 0, len(value.ApprovalBindings)),
-		TicketDesignBrief:   packageArtifactView(value.TicketDesignBrief),
+		TicketDocument:      packageArtifactView(value.TicketDocument),
 		PackageApprovalID:   value.PackageApprovalID,
 	}
 	for _, member := range value.Members {
@@ -127,7 +126,7 @@ func packageDetailView(value packages.Detail) PackageDetailView {
 }
 
 func packageIdentityView(value workflowstore.ExecutionPackage) PackageIdentityView {
-	identity := PackageIdentityView{PackageID: value.PackageID, SelectionRowID: value.SelectionRowID, WorkspaceRowID: value.WorkspaceRowID, RepoTarget: value.RepoTarget, Branch: value.Branch, BaseCommit: value.BaseCommit, SourceClosureRowID: value.SourceClosureRowID, AuthorityRevisionRowID: value.AuthorityRevisionRowID, PackageSHA256: value.PackageSha256, AuthoritySHA256: value.AuthoritySha256, SourceSHA256: value.SourceSha256, DesignBriefSHA256: value.DesignBriefSha256, CreatedAt: value.CreatedAt}
+	identity := PackageIdentityView{PackageID: value.PackageID, SelectionRowID: value.SelectionRowID, WorkspaceRowID: value.WorkspaceRowID, RepoTarget: value.RepoTarget, Branch: value.Branch, BaseCommit: value.BaseCommit, SourceClosureRowID: value.SourceClosureRowID, AuthorityRevisionRowID: value.AuthorityRevisionRowID, PackageSHA256: value.PackageSha256, AuthoritySHA256: value.AuthoritySha256, SourceSHA256: value.SourceSha256, CreatedAt: value.CreatedAt}
 	if value.DeterministicOperationsSha256.Valid {
 		identity.DeterministicOperationsSHA256 = value.DeterministicOperationsSha256.String
 		identity.DeterministicOperationsCoverage = value.DeterministicOperationsCoverage.String

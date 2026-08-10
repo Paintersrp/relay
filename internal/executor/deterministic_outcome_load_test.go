@@ -471,7 +471,7 @@ func newOutcomeLoadFixture(t *testing.T, document *speccompiler.DeterministicOpe
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := newExecutionAssignmentFixtureWithOperations(t, true, document.Coverage, raw)
+	fixture := newExecutionAssignmentFixtureWithOperations(t, true, document.Coverage, raw, nil)
 	prepareExecutionAssignment(t, fixture)
 	return fixture
 }

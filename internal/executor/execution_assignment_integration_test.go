@@ -16,7 +16,6 @@ import (
 	featureapp "relay/internal/app/features"
 	executionpackages "relay/internal/app/packages"
 	workflowstore "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
 )
 
 const executionAssignmentOperations = `{"schema_version":"1.0","feature_slug":"checkout","repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`
@@ -28,14 +27,13 @@ type executionAssignmentFixture struct {
 	selectionID        string
 	packageID          string
 	run                workflowstore.Run
-	brief              executionpackages.ArtifactInput
 	operations         executionpackages.ArtifactInput
 	assignmentFilename string
 	sourceVaultReader  *stubSourceVaultReader
 	repoPath           string
 }
 
-func TestPrepareExecutionAssignmentPersistsBriefOnlyArtifact(t *testing.T) {
+func TestPrepareExecutionAssignmentPersistsTicketOnlyArtifact(t *testing.T) {
 	fixture := newExecutionAssignmentFixture(t, false, "")
 	result := prepareExecutionAssignment(t, fixture)
 
@@ -101,6 +99,34 @@ func TestPrepareExecutionAssignmentPersistsOperationsIdentity(t *testing.T) {
 				t.Fatalf("stored operations = %#v", operations)
 			}
 		})
+	}
+}
+
+func TestPrepareExecutionAssignmentCarriesCompletedDependenciesAndSourceIdentity(t *testing.T) {
+	fixture := newExecutionAssignmentFixtureWithDependency(t)
+	result := prepareExecutionAssignment(t, fixture)
+	var decoded ExecutionAssignment
+	if err := json.Unmarshal(result.Bytes, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	wantDeps := []ExecutionAssignmentDependency{{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"}}
+	if !reflect.DeepEqual(decoded.Dependencies, wantDeps) {
+		t.Fatalf("assignment dependencies = %#v, want %#v", decoded.Dependencies, wantDeps)
+	}
+	source := decoded.Source
+	if source.CommitOID != strings.Repeat("a", 40) || source.TreeOID != strings.Repeat("b", 40) || source.Generation != 1 || source.RefName != "refs/relay/closures/closure-package" || source.State != "ready" {
+		t.Fatalf("assignment source identity = %#v", source)
+	}
+	if source.ClosureID != "closure-package" {
+		t.Fatalf("assignment source closure ID = %q, want closure-package", source.ClosureID)
+	}
+	// Idempotent reload preserves the same exact bytes including the carried records.
+	loaded, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loaded.Bytes, result.Bytes) {
+		t.Fatal("reloaded assignment bytes differ from prepared bytes")
 	}
 }
 
@@ -232,11 +258,8 @@ func TestPrepareExecutionAssignmentInvalidAuthorityCreatesNothing(t *testing.T) 
 		name   string
 		mutate func(t *testing.T, fixture *executionAssignmentFixture)
 	}{
-		{name: "changed Brief bytes", mutate: func(t *testing.T, fixture *executionAssignmentFixture) {
-			path := filepath.Join(fixture.store.ArtifactStore().Root(), "packages", fixture.packageID, fixture.brief.DisplayName)
-			if err := os.WriteFile(path, []byte("changed Brief"), 0o600); err != nil {
-				t.Fatal(err)
-			}
+		{name: "changed Ticket source bytes", mutate: func(t *testing.T, fixture *executionAssignmentFixture) {
+			fixture.sourceVaultReader.bytes = []byte(strings.Replace(string(packageDeliveryTicketBytes(strings.Repeat("a", 40))), `"goal":"Package the selected ticket."`, `"goal":"Different goal."`, 1))
 		}},
 		{name: "changed authority-layer bytes", mutate: func(t *testing.T, fixture *executionAssignmentFixture) {
 			path := filepath.Join(fixture.store.ArtifactStore().Root(), "plans", "checkout", "requirements.json")
@@ -348,10 +371,27 @@ END`); err != nil {
 }
 
 func newExecutionAssignmentFixture(t *testing.T, withOperations bool, coverage string) *executionAssignmentFixture {
-	return newExecutionAssignmentFixtureWithOperations(t, withOperations, coverage, []byte(executionAssignmentOperations))
+	return newExecutionAssignmentFixtureWithOperations(t, withOperations, coverage, []byte(executionAssignmentOperations), nil)
 }
 
-func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bool, coverage string, authoredOperations []byte) *executionAssignmentFixture {
+func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bool, coverage string, authoredOperations []byte, dependency *assignmentDependencySeed) *executionAssignmentFixture {
+	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, withOperations, coverage, authoredOperations, dependency)
+}
+
+// assignmentDependencySeed describes one completed dependency (P2-T1 revision 1)
+// that the fixture seeds into the Delivery Ticket basis before package
+// preparation, alongside the matching depends_on entry in the Ticket document.
+type assignmentDependencySeed struct {
+	ticketID       string
+	revisionNumber int64
+	sourcePath     string
+}
+
+func newExecutionAssignmentFixtureWithDependency(t *testing.T) *executionAssignmentFixture {
+	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, false, "", []byte(executionAssignmentOperations), &assignmentDependencySeed{ticketID: "P2-T1", revisionNumber: 1, sourcePath: "tickets/checkout.ticket-P2-T1.r1.delivery-ticket.json"})
+}
+
+func newExecutionAssignmentFixtureWithOperationsAndDependency(t *testing.T, withOperations bool, coverage string, authoredOperations []byte, dependency *assignmentDependencySeed) *executionAssignmentFixture {
 	t.Helper()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "repo")
@@ -364,6 +404,9 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 	treeOID := strings.Repeat("b", 40)
 	sourcePath := "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json"
 	reader := newPackageSourceVaultReader(sourcePath, baseCommit)
+	if dependency != nil {
+		reader.bytes = packageDeliveryTicketBytesWithDependency(baseCommit)
+	}
 	packageService, err := executionpackages.NewServiceWithSourceVaults(store, reader)
 	if err != nil {
 		t.Fatal(err)
@@ -381,9 +424,7 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 	if err := os.WriteFile(authorityPath, authorityBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	briefName := "checkout.ticket-P2-T2.r1.design-brief.md"
 	operationsName := "checkout.ticket-P2-T2.r1.deterministic-operations.json"
-	briefBytes := []byte(testfixtures.TicketDesignBrief)
 	operationsBytes := append([]byte(nil), authoredOperations...)
 	if coverage == "partial" {
 		operationsBytes = []byte(strings.Replace(string(operationsBytes), `"coverage":"complete"`, `"coverage":"partial"`, 1))
@@ -460,6 +501,21 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 	if _, err := db.ExecContext(ctx, `UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, revisionID, ticketID); err != nil {
 		t.Fatal(err)
 	}
+	if dependency != nil {
+		var dependencyTicketID, dependencyRevisionID int64
+		if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES (?, ?, 5) RETURNING id`, dependency.ticketID, workspaceID).Scan(&dependencyTicketID); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, ?, 'relay', 'main', ?, ?, ?, 'Dependency goal.', 'Dependency context.', 'not_required') RETURNING id`, dependencyTicketID, dependency.revisionNumber, baseCommit, closureID, dependency.sourcePath).Scan(&dependencyRevisionID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, dependencyRevisionID, dependencyTicketID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO delivery_ticket_revision_dependencies (revision_row_id, sequence, depends_on_revision_row_id, outcome) VALUES (?, 1, ?, 'satisfied')`, revisionID, dependencyRevisionID); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO delivery_ticket_revision_members (revision_row_id, sequence, member_kind, member_path, member_text) VALUES (?, 1, 'implementation_obligation', 'internal/app/packages', 'Preserve the selected package basis.')`, revisionID); err != nil {
 		t.Fatal(err)
 	}
@@ -475,13 +531,12 @@ func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bo
 
 	fixture := &executionAssignmentFixture{
 		store: store, packages: packageService, assignments: assignmentService, selectionID: "selection-package",
-		brief:              executionpackages.ArtifactInput{DisplayName: briefName, Bytes: briefBytes, ExpectedSHA256: sha256Hex(briefBytes)},
 		operations:         executionpackages.ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: sha256Hex(operationsBytes)},
 		assignmentFilename: "checkout.ticket-P2-T2.r1.execution-assignment.json",
 		sourceVaultReader:  reader,
 		repoPath:           repoPath,
 	}
-	input := executionpackages.PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: fixture.brief}
+	input := executionpackages.PrepareInput{SelectionID: fixture.selectionID}
 	if withOperations {
 		operations := fixture.operations
 		input.DeterministicOperations = &operations

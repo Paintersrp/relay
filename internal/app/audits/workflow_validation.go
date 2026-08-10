@@ -12,10 +12,10 @@ import (
 const maxWorkflowAuditValidationConciseRunes = 1024
 
 type workflowExecutionEvidencePayload struct {
-	EffectiveBriefArtifactID string                            `json:"effective_brief_artifact_id"`
-	EffectiveBriefSHA256     string                            `json:"effective_brief_sha256"`
-	EffectiveBriefMode       string                            `json:"effective_brief_mode"`
-	ValidationResults        []workflowAuditValidationEvidence `json:"-"`
+	ExecutionAssignmentArtifactID string                            `json:"execution_assignment_artifact_id"`
+	ExecutionAssignmentSHA256     string                            `json:"execution_assignment_sha256"`
+	ExecutionAssignmentMode       string                            `json:"execution_assignment_mode"`
+	ValidationResults             []workflowAuditValidationEvidence `json:"-"`
 }
 
 type workflowAuditValidationEvidence struct {
@@ -35,10 +35,10 @@ func decodeWorkflowExecutionEvidence(data []byte) (workflowExecutionEvidencePayl
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return workflowExecutionEvidencePayload{}, fmt.Errorf("decode selected execution evidence: %w", err)
 	}
-	if strings.TrimSpace(payload.EffectiveBriefArtifactID) == "" || payload.EffectiveBriefArtifactID != strings.TrimSpace(payload.EffectiveBriefArtifactID) ||
-		strings.TrimSpace(payload.EffectiveBriefSHA256) == "" || payload.EffectiveBriefSHA256 != strings.TrimSpace(payload.EffectiveBriefSHA256) ||
-		strings.TrimSpace(payload.EffectiveBriefMode) == "" || payload.EffectiveBriefMode != strings.TrimSpace(payload.EffectiveBriefMode) {
-		return workflowExecutionEvidencePayload{}, fmt.Errorf("selected execution evidence effective brief identity is incomplete or noncanonical")
+	if strings.TrimSpace(payload.ExecutionAssignmentArtifactID) == "" || payload.ExecutionAssignmentArtifactID != strings.TrimSpace(payload.ExecutionAssignmentArtifactID) ||
+		strings.TrimSpace(payload.ExecutionAssignmentSHA256) == "" || payload.ExecutionAssignmentSHA256 != strings.TrimSpace(payload.ExecutionAssignmentSHA256) ||
+		strings.TrimSpace(payload.ExecutionAssignmentMode) == "" || payload.ExecutionAssignmentMode != strings.TrimSpace(payload.ExecutionAssignmentMode) {
+		return workflowExecutionEvidencePayload{}, fmt.Errorf("selected execution evidence execution assignment identity is incomplete or noncanonical")
 	}
 	raw, present := root["validation_results"]
 	if !present {

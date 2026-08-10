@@ -3,12 +3,10 @@ package executor
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
-	workflowruns "relay/internal/app/runs/workflow"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -128,99 +126,6 @@ func (s *Execution) settleRunMutationLeaseAfterTerminalAttempt(
 	}
 	_ = attempt
 	return nil
-}
-
-func deterministicSourceMutationStarted(result *WorkflowApplierResult) bool {
-	return result != nil && (len(result.ChangedFiles) != 0 ||
-		len(result.ImplementationResult.ChangedFiles) != 0 ||
-		len(result.ImplementationResult.UncertainPaths) != 0)
-}
-
-func (s *Execution) settleRunMutationLeaseAfterDeterministicResult(
-	ctx context.Context,
-	run workflowstore.Run,
-	repository workflowstore.RepositoryTarget,
-	lease workflowstore.RepositoryBranchMutationLease,
-	result *WorkflowApplierResult,
-) error {
-	if result != nil && len(result.ImplementationResult.UncertainPaths) != 0 {
-		_, _, err := s.reconcileRunMutationLease(
-			ctx,
-			run,
-			repository,
-			lease.LeaseID,
-			"deterministic source mutation reported an uncertain outcome",
-		)
-		return err
-	}
-	return s.releaseRunMutationLease(ctx, run, lease.LeaseID)
-}
-
-func (s *Execution) settleRunMutationLeaseAfterPrelaunchFailure(
-	ctx context.Context,
-	run workflowstore.Run,
-	repository workflowstore.RepositoryTarget,
-	lease workflowstore.RepositoryBranchMutationLease,
-	sourceMutationStarted bool,
-) error {
-	if !sourceMutationStarted {
-		return s.releaseRunMutationLease(ctx, run, lease.LeaseID)
-	}
-	_, _, err := s.reconcileRunMutationLease(
-		ctx,
-		run,
-		repository,
-		lease.LeaseID,
-		"execution did not launch after deterministic source mutation",
-	)
-	return err
-}
-
-func (s *Execution) recordMutationLeaseIdentity(
-	ctx context.Context,
-	attempt workflowstore.ExecutionAttempt,
-	leaseID string,
-	sourceMutationStarted bool,
-) error {
-	leaseID = strings.TrimSpace(leaseID)
-	if leaseID == "" {
-		return fmt.Errorf("mutation lease ID is required")
-	}
-	state := workflowAttemptRuntime{}
-	if strings.TrimSpace(attempt.ResultJSON) != "" {
-		if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
-			return fmt.Errorf("decode existing execution attempt runtime: %w", err)
-		}
-	}
-	state.MutationLeaseID = leaseID
-	state.SourceMutationStarted = state.SourceMutationStarted || sourceMutationStarted
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("encode mutation lease runtime identity: %w", err)
-	}
-	if _, err := s.runs.UpdateExecutionAttemptResult(ctx, attempt.AttemptID, string(data)); err != nil {
-		return fmt.Errorf("record execution attempt mutation lease identity: %w", err)
-	}
-	return nil
-}
-
-func (s *Execution) failPrelaunchAttemptWithMutationLease(
-	ctx context.Context,
-	begun workflowruns.BeginExecutionAttemptResult,
-	preflight workflowrepos.ExecutionPreflightResult,
-	applierResult *WorkflowApplierResult,
-	selected *effectiveBriefInput,
-	cause error,
-	repository workflowstore.RepositoryTarget,
-	lease workflowstore.RepositoryBranchMutationLease,
-	sourceMutationStarted bool,
-) (WorkflowStartResult, error) {
-	result, attemptErr := s.failPrelaunchAttempt(ctx, begun, preflight, applierResult, selected, cause)
-	leaseErr := s.settleRunMutationLeaseAfterPrelaunchFailure(ctx, begun.Run, repository, lease, sourceMutationStarted)
-	if leaseErr != nil {
-		return result, errors.Join(attemptErr, leaseErr)
-	}
-	return result, attemptErr
 }
 
 // ReconcileMutationLease is the durable recovery hook for a Run whose source

@@ -17,7 +17,6 @@ import (
 const (
 	workflowPackageExecutionAssignmentKind  = "execution_assignment"
 	workflowPackageDeterministicOutcomeKind = "deterministic_outcome"
-	workflowPackageEffectiveBriefKind       = "effective_executor_brief"
 )
 
 // ErrWorkflowPackageExecutionEvidenceConflict marks any disagreement between
@@ -39,15 +38,17 @@ type PackageAttemptEvidence struct {
 
 // WorkflowPackageExecutionEvidence is the verified, read-only view of the exact
 // approved package authority and the runtime evidence for one committed
-// package-linked Run. It never contains newly created rows or artifacts.
+// package-linked Run. It never contains newly created rows or artifacts. Mode
+// is the non-authoritative ExecutionMode mechanically derived from the verified
+// deterministic outcome.
 type WorkflowPackageExecutionEvidence struct {
-	Run            workflowstore.Run
-	Authority      workflowpackages.ApprovedAuthority
-	Assignment     executor.ExecutionAssignmentResult
-	Deterministic  executor.DeterministicOutcomeResult
-	EffectiveBrief executor.EffectiveExecutorBriefResult
-	Attempt        *PackageAttemptEvidence
-	Validation     []WorkflowPackageAuditValidationResult
+	Run           workflowstore.Run
+	Authority     workflowpackages.ApprovedAuthority
+	Assignment    executor.ExecutionAssignmentResult
+	Deterministic executor.DeterministicOutcomeResult
+	Mode          executor.ExecutionMode
+	Attempt       *PackageAttemptEvidence
+	Validation    []WorkflowPackageAuditValidationResult
 }
 
 // WorkflowPackageExecutionEvidenceService resolves and cross-verifies package
@@ -58,7 +59,6 @@ type WorkflowPackageExecutionEvidenceService struct {
 	packages    *workflowpackages.Service
 	assignments *executor.ExecutionAssignmentService
 	outcomes    *executor.DeterministicOutcomeService
-	briefs      *executor.EffectiveExecutorBriefService
 
 	// Narrow package-private read seams. Production defaults call the real
 	// existing services; tests override them to inject cross-service return
@@ -67,7 +67,6 @@ type WorkflowPackageExecutionEvidenceService struct {
 	loadAuthority        func(context.Context, string) (workflowpackages.ApprovedAuthority, error)
 	loadAssignment       func(context.Context, string) (executor.ExecutionAssignmentResult, error)
 	loadOutcome          func(context.Context, string) (executor.DeterministicOutcomeResult, error)
-	loadBrief            func(context.Context, string) (executor.EffectiveExecutorBriefResult, error)
 	loadAttempts         func(context.Context, int64) ([]workflowstore.ExecutionAttempt, error)
 	loadAttemptArtifacts func(context.Context, int64) ([]workflowstore.Artifact, error)
 	readArtifactBytes    func(context.Context, workflowstore.Artifact, int) ([]byte, error)
@@ -101,15 +100,8 @@ func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sour
 		return nil, err
 	}
 
-	briefs, err := executor.NewEffectiveExecutorBriefService(
-		store,
-		sourceVaults,
-	)
-	if err != nil {
-		return nil, err
-	}
 	service := &WorkflowPackageExecutionEvidenceService{
-		store: store, packages: packages, assignments: assignments, outcomes: outcomes, briefs: briefs,
+		store: store, packages: packages, assignments: assignments, outcomes: outcomes,
 	}
 	service.loadRun = func(ctx context.Context, runID string) (workflowstore.Run, error) {
 		return service.store.GetRunByRunID(ctx, runID)
@@ -122,9 +114,6 @@ func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sour
 	}
 	service.loadOutcome = func(ctx context.Context, runID string) (executor.DeterministicOutcomeResult, error) {
 		return service.outcomes.Load(ctx, runID)
-	}
-	service.loadBrief = func(ctx context.Context, runID string) (executor.EffectiveExecutorBriefResult, error) {
-		return service.briefs.Load(ctx, runID)
 	}
 	service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
 		return service.store.ListExecutionAttemptsByRun(ctx, runRowID)
@@ -143,7 +132,7 @@ func NewWorkflowPackageExecutionEvidenceService(store *workflowstore.Store, sour
 // It performs no writes or lifecycle changes and returns only existing,
 // verified evidence.
 func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runID string) (WorkflowPackageExecutionEvidence, error) {
-	if s == nil || s.store == nil || s.packages == nil || s.assignments == nil || s.outcomes == nil || s.briefs == nil {
+	if s == nil || s.store == nil || s.packages == nil || s.assignments == nil || s.outcomes == nil {
 		return WorkflowPackageExecutionEvidence{}, fmt.Errorf("package execution evidence service is unavailable")
 	}
 	if runID == "" || strings.TrimSpace(runID) != runID {
@@ -173,10 +162,6 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 	if err != nil {
 		return WorkflowPackageExecutionEvidence{}, workflowPackageEvidenceReadError("outcome", err)
 	}
-	brief, err := s.loadBrief(ctx, runID)
-	if err != nil {
-		return WorkflowPackageExecutionEvidence{}, workflowPackageEvidenceReadError("brief", err)
-	}
 
 	if err := verifyWorkflowPackageRunAndPackage(run, authority); err != nil {
 		return WorkflowPackageExecutionEvidence{}, err
@@ -187,29 +172,25 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 	if err := verifyWorkflowPackageArtifact(outcome.Artifact, workflowPackageDeterministicOutcomeKind, run, outcome.Bytes); err != nil {
 		return WorkflowPackageExecutionEvidence{}, err
 	}
-	if brief.Artifact == nil {
-		return WorkflowPackageExecutionEvidence{}, evidenceConflict("effective Executor Brief artifact is missing")
-	}
-	if err := verifyWorkflowPackageArtifact(*brief.Artifact, workflowPackageEffectiveBriefKind, run, brief.Bytes); err != nil {
-		return WorkflowPackageExecutionEvidence{}, err
-	}
 	if err := verifyWorkflowPackageAssignment(run, authority, assignment); err != nil {
 		return WorkflowPackageExecutionEvidence{}, err
 	}
 	if err := verifyWorkflowPackageOutcome(run, assignment, outcome); err != nil {
 		return WorkflowPackageExecutionEvidence{}, err
 	}
-	if err := verifyWorkflowPackageEffectiveBrief(run, outcome, brief); err != nil {
+
+	mode, _, err := deriveWorkflowPackageExecutionMode(outcome.Outcome.Outcome)
+	if err != nil {
 		return WorkflowPackageExecutionEvidence{}, err
 	}
 
 	var pkgAttempt *PackageAttemptEvidence
 	var validation []WorkflowPackageAuditValidationResult
 
-	switch brief.Mode {
-	case executor.EffectiveExecutorBriefAdaptiveNoOperations,
-		executor.EffectiveExecutorBriefAdaptivePreflightFailed,
-		executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication:
+	switch mode {
+	case executor.ExecutionModeAbsent,
+		executor.ExecutionModePreflightFailed,
+		executor.ExecutionModePartialApplied:
 		attempts, err := s.loadAttempts(ctx, run.ID)
 		if err != nil {
 			return WorkflowPackageExecutionEvidence{}, err
@@ -286,16 +267,20 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 		}
 
 		attemptResult := workflowAuditAttemptResult(attempt.ResultJSON)
-
-		if payload.EffectiveBriefArtifactID != brief.Artifact.ArtifactID ||
-			payload.EffectiveBriefSHA256 != brief.Artifact.SHA256 ||
-			payload.EffectiveBriefMode != string(brief.Mode) {
-			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution evidence payload effective brief identity disagrees with brief")
+		wireMode, wireModeValid := workflowPackageWireMode(mode)
+		if !wireModeValid {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("unsupported adaptive mode %q for package execution", mode)
 		}
-		if attemptResult.EffectiveBriefArtifactID != brief.Artifact.ArtifactID ||
-			attemptResult.EffectiveBriefSHA256 != brief.Artifact.SHA256 ||
-			attemptResult.EffectiveBriefMode != string(brief.Mode) {
-			return WorkflowPackageExecutionEvidence{}, evidenceConflict("attempt ResultJSON effective brief identity disagrees with brief")
+
+		if payload.ExecutionAssignmentArtifactID != assignment.Artifact.ArtifactID ||
+			payload.ExecutionAssignmentSHA256 != assignment.Artifact.SHA256 ||
+			payload.ExecutionAssignmentMode != wireMode {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("execution evidence payload execution assignment identity disagrees with assignment")
+		}
+		if attemptResult.ExecutionAssignmentArtifactID != assignment.Artifact.ArtifactID ||
+			attemptResult.ExecutionAssignmentSHA256 != assignment.Artifact.SHA256 ||
+			attemptResult.ExecutionAssignmentMode != wireMode {
+			return WorkflowPackageExecutionEvidence{}, evidenceConflict("attempt ResultJSON execution assignment identity disagrees with assignment")
 		}
 
 		valResults, err := mapPackageAdaptiveValidation(assignment.Assignment.ValidationCommands, payload.ValidationResults, hasValidationResults)
@@ -310,7 +295,7 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 			Bytes:    append([]byte(nil), data...),
 		}
 
-	case executor.EffectiveExecutorBriefDeterministicComplete:
+	case executor.ExecutionModeCompleteApplied:
 		attempts, err := s.loadAttempts(ctx, run.ID)
 		if err != nil {
 			return WorkflowPackageExecutionEvidence{}, err
@@ -331,7 +316,7 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 		validation = valResults
 
 	default:
-		return WorkflowPackageExecutionEvidence{}, evidenceConflict("unsupported effective brief mode %q for package execution", brief.Mode)
+		return WorkflowPackageExecutionEvidence{}, evidenceConflict("unsupported execution mode %q for package execution", mode)
 	}
 
 	var attemptCopy *PackageAttemptEvidence
@@ -346,13 +331,13 @@ func (s *WorkflowPackageExecutionEvidenceService) Load(ctx context.Context, runI
 	copy(valCopy, validation)
 
 	return WorkflowPackageExecutionEvidence{
-		Run:            run,
-		Authority:      authority,
-		Assignment:     assignment,
-		Deterministic:  outcome,
-		EffectiveBrief: brief,
-		Attempt:        attemptCopy,
-		Validation:     valCopy,
+		Run:           run,
+		Authority:     authority,
+		Assignment:    assignment,
+		Deterministic: outcome,
+		Mode:          mode,
+		Attempt:       attemptCopy,
+		Validation:    valCopy,
 	}, nil
 }
 
@@ -466,11 +451,23 @@ func verifyWorkflowPackageAssignment(run workflowstore.Run, authority workflowpa
 	if a.Source.ClosureRowID != authority.Source.ID || a.Source.ClosureID != authority.Source.ClosureID || a.Source.SHA256 != authority.Package.SourceSha256 {
 		return evidenceConflict("assignment source closure does not match approved authority")
 	}
+	if a.Source.CommitOID != authority.Source.CommitOID || a.Source.TreeOID != authority.Source.TreeOID || a.Source.Generation != authority.Source.Generation || a.Source.RefName != authority.Source.RefName || a.Source.State != authority.Source.State {
+		return evidenceConflict("assignment source closure identity does not match approved authority")
+	}
+	if len(a.Dependencies) != len(authority.CompletedDependencies) {
+		return evidenceConflict("assignment completed-dependency count does not match approved authority")
+	}
+	for index, dep := range authority.CompletedDependencies {
+		got := a.Dependencies[index]
+		if got.Sequence != dep.Sequence || got.TicketID != dep.TicketID || got.Revision != dep.Revision || got.Outcome != dep.Outcome {
+			return evidenceConflict("assignment completed dependency %d does not match approved authority", index+1)
+		}
+	}
 	if a.Authority.RevisionRowID != authority.Authority.ID || a.Authority.RevisionID != authority.Authority.AuthorityRevisionID || a.Authority.RevisionNumber != authority.Authority.RevisionNumber || a.Authority.AuthorityBasisSHA256 != authority.Package.AuthoritySha256 {
 		return evidenceConflict("assignment authority basis does not match approved authority")
 	}
-	if a.TicketDesignBrief.DisplayName != authority.TicketDesignBrief.DisplayName || a.TicketDesignBrief.RelativePath != authority.TicketDesignBrief.RelativePath || a.TicketDesignBrief.MediaType != authority.TicketDesignBrief.MediaType || a.TicketDesignBrief.SHA256 != authority.TicketDesignBrief.SHA256 {
-		return evidenceConflict("assignment Ticket Design Brief does not match approved authority")
+	if a.DeliveryTicket.DisplayName != authority.DeliveryTicket.DisplayName || a.DeliveryTicket.RelativePath != authority.DeliveryTicket.RelativePath || a.DeliveryTicket.MediaType != authority.DeliveryTicket.MediaType || a.DeliveryTicket.SHA256 != authority.DeliveryTicket.SHA256 {
+		return evidenceConflict("assignment source document does not match approved authority")
 	}
 	if len(a.AuthorityLayers) != len(authority.AuthorityLayers) {
 		return evidenceConflict("assignment authority-layer count does not match approved authority")
@@ -484,13 +481,13 @@ func verifyWorkflowPackageAssignment(run workflowstore.Run, authority workflowpa
 	if a.DeterministicOperations != expectedAssignmentOperations(authority) {
 		return evidenceConflict("assignment Deterministic Operations do not match approved authority")
 	}
-	if len(a.ValidationCommands) != len(authority.BriefProjection.ValidationCommands) {
-		return evidenceConflict("assignment validation command count does not match approved Brief")
+	if len(a.ValidationCommands) != len(authority.TicketProjection.ValidationCommands) {
+		return evidenceConflict("assignment validation command count does not match approved Delivery Ticket")
 	}
-	for index, command := range authority.BriefProjection.ValidationCommands {
+	for index, command := range authority.TicketProjection.ValidationCommands {
 		got := a.ValidationCommands[index]
 		if got.WorkingDirectory != command.WorkingDirectory || got.Command != command.Command || got.Expected != command.Expected {
-			return evidenceConflict("assignment validation command %d does not match approved Brief", index+1)
+			return evidenceConflict("assignment validation command %d does not match approved Delivery Ticket", index+1)
 		}
 	}
 	return nil
@@ -532,45 +529,50 @@ func verifyWorkflowPackageOutcome(run workflowstore.Run, assignment executor.Exe
 	return nil
 }
 
-func verifyWorkflowPackageEffectiveBrief(run workflowstore.Run, outcome executor.DeterministicOutcomeResult, brief executor.EffectiveExecutorBriefResult) error {
-	mode, adaptive, err := deriveWorkflowPackageEffectiveMode(outcome.Outcome.Outcome)
-	if err != nil {
-		return err
-	}
-	if brief.Mode != mode {
-		return evidenceConflict("effective Brief mode %q does not match deterministic outcome", brief.Mode)
-	}
-	if brief.AdaptiveDispatchRequired != adaptive {
-		return evidenceConflict("effective Brief adaptive dispatch requirement disagrees with mode")
-	}
-	if len(brief.Bytes) == 0 {
-		return evidenceConflict("effective Brief bytes are empty")
-	}
-	return nil
-}
-
-func deriveWorkflowPackageEffectiveMode(summary executor.DeterministicOutcomeSummary) (executor.EffectiveExecutorBriefMode, bool, error) {
+// deriveWorkflowPackageExecutionMode mechanically derives the non-authoritative
+// runtime ExecutionMode from the verified deterministic outcome summary. It is
+// the audit owner's own derivation: the mode never carries semantic
+// implementation authority, and the approved Delivery Ticket remains the sole
+// semantic authority for an adaptive Executor.
+func deriveWorkflowPackageExecutionMode(summary executor.DeterministicOutcomeSummary) (executor.ExecutionMode, bool, error) {
 	switch summary.Status {
 	case string(executor.DeterministicPreflightNotPresent):
 		if summary.Coverage != "" {
 			return "", false, evidenceConflict("not_present deterministic outcome must have no coverage")
 		}
-		return executor.EffectiveExecutorBriefAdaptiveNoOperations, true, nil
+		return executor.ExecutionModeAbsent, true, nil
 	case string(executor.DeterministicPreflightFailed):
 		switch summary.Coverage {
 		case "partial", "complete":
-			return executor.EffectiveExecutorBriefAdaptivePreflightFailed, true, nil
+			return executor.ExecutionModePreflightFailed, true, nil
 		}
 		return "", false, evidenceConflict("preflight_failed deterministic outcome coverage must be partial or complete")
 	case "applied":
 		switch summary.Coverage {
 		case "partial":
-			return executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication, true, nil
+			return executor.ExecutionModePartialApplied, true, nil
 		case "complete":
-			return executor.EffectiveExecutorBriefDeterministicComplete, false, nil
+			return executor.ExecutionModeCompleteApplied, false, nil
 		}
 	}
 	return "", false, evidenceConflict("deterministic outcome status or coverage is unsupported")
+}
+
+// workflowPackageWireMode maps an adaptive ExecutionMode to the legacy mode
+// string carried by the executor runtime records and the workflowruns
+// BeginPreparedAdaptiveExecution wire contract. Deterministic completion is not
+// an adaptive wire mode.
+func workflowPackageWireMode(mode executor.ExecutionMode) (string, bool) {
+	switch mode {
+	case executor.ExecutionModeAbsent:
+		return "adaptive_no_operations", true
+	case executor.ExecutionModePreflightFailed:
+		return "adaptive_preflight_failed", true
+	case executor.ExecutionModePartialApplied:
+		return "adaptive_after_partial_application", true
+	default:
+		return "", false
+	}
 }
 
 func verifyWorkflowPackageArtifact(artifact workflowstore.Artifact, wantKind string, run workflowstore.Run, content []byte) error {
@@ -648,10 +650,6 @@ func workflowPackageEvidenceReadError(stage string, err error) error {
 			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
 		}
 		if err.Error() == workflowPackageExecutionDeterministicMissing {
-			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
-		}
-	case "brief":
-		if errors.Is(err, executor.ErrEffectiveExecutorBriefConflict) {
 			return fmt.Errorf("%w: %s read conflict: %w", ErrWorkflowPackageExecutionEvidenceConflict, stage, err)
 		}
 	}

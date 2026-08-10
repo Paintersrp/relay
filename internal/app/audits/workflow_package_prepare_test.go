@@ -20,14 +20,14 @@ import (
 func TestWorkflowPackageAuditPrepareModes(t *testing.T) {
 	tests := []struct {
 		name  string
-		mode  executor.EffectiveExecutorBriefMode
+		mode  executor.ExecutionMode
 		actor string
 		tryID bool
 	}{
-		{name: "adaptive_no_operations", mode: executor.EffectiveExecutorBriefAdaptiveNoOperations, actor: workflowstore.ImplementationActorExecutor, tryID: true},
-		{name: "adaptive_preflight_failed", mode: executor.EffectiveExecutorBriefAdaptivePreflightFailed, actor: workflowstore.ImplementationActorExecutor, tryID: true},
-		{name: "adaptive_after_partial_application", mode: executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication, actor: workflowstore.ImplementationActorHybrid, tryID: true},
-		{name: "deterministic_complete", mode: executor.EffectiveExecutorBriefDeterministicComplete, actor: workflowstore.ImplementationActorApplier},
+		{name: "adaptive_no_operations", mode: executor.ExecutionModeAbsent, actor: workflowstore.ImplementationActorExecutor, tryID: true},
+		{name: "adaptive_preflight_failed", mode: executor.ExecutionModePreflightFailed, actor: workflowstore.ImplementationActorExecutor, tryID: true},
+		{name: "adaptive_after_partial_application", mode: executor.ExecutionModePartialApplied, actor: workflowstore.ImplementationActorHybrid, tryID: true},
+		{name: "deterministic_complete", mode: executor.ExecutionModeCompleteApplied, actor: workflowstore.ImplementationActorApplier},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestWorkflowPackageAuditPrepareModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Contains(data, []byte(`"schema_version": "3.0"`)) {
+			if !bytes.Contains(data, []byte(`"schema_version": "4.0"`)) {
 				t.Fatalf("packet schema is not 3.0: %s", data)
 			}
 			if !bytes.Contains(data, []byte("diff --git a/internal/example.go")) {
@@ -280,7 +280,7 @@ type packageAuditPrepareState struct {
 
 func newPackageAuditPrepareFixture(t *testing.T, withCurrentPacket bool) (*packageEvidenceFixture, *WorkflowAuditService) {
 	t.Helper()
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeCompleteApplied)
 	setPackageRunValidating(t, fixture)
 	service, err := NewWorkflowAuditServiceWithSourceVaults(fixture.store, fixture.sourceVaultReader)
 	if err != nil {

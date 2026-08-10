@@ -128,8 +128,6 @@ ORDER BY name`)
 		"source_vault_closures",
 		"source_vault_retentions",
 		"source_vaults",
-		"ticket_design_brief_approvals",
-		"ticket_design_briefs",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected fresh workflow tables\ngot:  %v\nwant: %v", got, want)

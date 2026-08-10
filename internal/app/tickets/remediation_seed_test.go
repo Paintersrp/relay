@@ -370,7 +370,7 @@ func createRemediationSeedFixture(t *testing.T, ctx context.Context, store *work
 		if err != nil {
 			return err
 		}
-		packageRow, err := tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{PackageID: "package-" + suffix, SelectionRowID: selection.ID, WorkspaceRowID: workspace.ID, RepoTarget: "relay", Branch: "main", BaseCommit: closure.CommitOID, SourceClosureRowID: closure.ID, AuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID.Int64, PackageSha256: strings.Repeat("1", 64), AuthoritySha256: strings.Repeat("2", 64), SourceSha256: strings.Repeat("3", 64), DesignBriefSha256: strings.Repeat("4", 64), DeterministicOperationsSha256: sql.NullString{String: strings.Repeat("5", 64), Valid: true}, DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true}})
+		packageRow, err := tx.CreateExecutionPackage(ctx, workflowstore.CreateExecutionPackageParams{PackageID: "package-" + suffix, SelectionRowID: selection.ID, WorkspaceRowID: workspace.ID, RepoTarget: "relay", Branch: "main", BaseCommit: closure.CommitOID, SourceClosureRowID: closure.ID, AuthorityRevisionRowID: workspace.CurrentAuthorityRevisionRowID.Int64, PackageSha256: strings.Repeat("1", 64), AuthoritySha256: strings.Repeat("2", 64), SourceSha256: strings.Repeat("3", 64), DeterministicOperationsSha256: sql.NullString{String: strings.Repeat("5", 64), Valid: true}, DeterministicOperationsCoverage: sql.NullString{String: "complete", Valid: true}})
 		if err != nil {
 			return err
 		}

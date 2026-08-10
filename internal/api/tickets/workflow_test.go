@@ -2,7 +2,6 @@ package tickets
 
 import (
 	"context"
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,18 +26,12 @@ type fakeWorkflow struct {
 	priorityExternalPriority   int64
 	frontierWorkspaceID        string
 	selectionInput             apptickets.SelectInput
-	briefAdmissionInput        apptickets.TicketDesignBriefAdmissionInput
-	reviewCompletionInput      apptickets.CompleteBriefReviewInput
-	approveBriefInput          apptickets.TicketDesignBriefApprovalInput
 	publishCalled              bool
 	replacementCalled          bool
 	approvalCalled             bool
 	priorityCalled             bool
 	frontierCalled             bool
 	selectionCalled            bool
-	briefAdmissionCalled       bool
-	reviewCompletionCalled     bool
-	approveBriefCalled         bool
 }
 
 func (f *fakeWorkflow) Publish(_ context.Context, input apptickets.PublishInput, reference *appoperations.RemediationAuthoringReference) (apptickets.PublishedRevision, error) {
@@ -85,32 +78,8 @@ func (f *fakeWorkflow) Select(_ context.Context, input apptickets.SelectInput) (
 	return apptickets.SelectionResult{}, f.err
 }
 
-func (f *fakeWorkflow) AdmitTicketDesignBrief(_ context.Context, input apptickets.TicketDesignBriefAdmissionInput) (apptickets.TicketDesignBriefAdmissionResult, error) {
-	f.briefAdmissionCalled = true
-	f.briefAdmissionInput = input
-	return apptickets.TicketDesignBriefAdmissionResult{
-		Brief:    workflowstore.TicketDesignBrief{BriefID: "brief-api-1", ArtifactSha256: strings.Repeat("a", 64), ArtifactSizeBytes: int64(len(input.Bytes))},
-		Filename: "checkout.ticket-P1-T1.r1.design-brief.md",
-	}, f.err
-}
-
-func (f *fakeWorkflow) CompleteTicketDesignBriefReview(_ context.Context, input apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error) {
-	f.reviewCompletionCalled = true
-	f.reviewCompletionInput = input
-	return apptickets.TicketDesignBriefReviewResult{
-		Brief:       workflowstore.TicketDesignBrief{BriefID: "brief-api-1"},
-		Disposition: input.Disposition,
-		Review:      apptickets.TicketDesignBriefReviewCompletion{ReviewerIdentity: input.ReviewerIdentity, Disposition: string(input.Disposition)},
-	}, f.err
-}
-func (f *fakeWorkflow) ApproveTicketDesignBrief(_ context.Context, input apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
-	f.approveBriefCalled = true
-	f.approveBriefInput = input
-	return apptickets.TicketDesignBriefApprovalResult{Brief: workflowstore.TicketDesignBrief{BriefID: "brief-api-1"}, Approval: workflowstore.TicketDesignBriefApproval{ApprovalID: "brief-approval-api-1"}}, f.err
-}
-
 func (f *fakeWorkflow) called() bool {
-	return f.publishCalled || f.replacementCalled || f.approvalCalled || f.priorityCalled || f.frontierCalled || f.selectionCalled || f.briefAdmissionCalled || f.reviewCompletionCalled || f.approveBriefCalled
+	return f.publishCalled || f.replacementCalled || f.approvalCalled || f.priorityCalled || f.frontierCalled || f.selectionCalled
 }
 
 func publishedRevision(input apptickets.PublishInput) apptickets.PublishedRevision {
@@ -277,159 +246,6 @@ func TestSelectionRouteMapsAtomicConflict(t *testing.T) {
 	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/tickets/selection", strings.NewReader(selectionRequestJSON(""))))
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"error":"CONFLICT"`) || service.selectionInput.TicketID != "ticket-1" || service.selectionInput.RevisionRowID != 9 {
 		t.Fatalf("response = %d %s selection = %#v", response.Code, response.Body.String(), service.selectionInput)
-	}
-}
-
-func TestTicketDesignBriefAdmissionRouteDelegatesServerResolvedBasis(t *testing.T) {
-	service := &fakeWorkflow{}
-	response := httptest.NewRecorder()
-	body := `{"bytesBase64":"` + base64.StdEncoding.EncodeToString([]byte("# Ticket Design Brief\n")) + `","createdIdentity":"planner"}`
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs", strings.NewReader(body)))
-	if response.Code != http.StatusCreated || !service.briefAdmissionCalled || service.briefAdmissionInput.WorkspaceID != "workspace-api" || service.briefAdmissionInput.CreatedIdentity != "planner" || string(service.briefAdmissionInput.Bytes) != "# Ticket Design Brief\n" {
-		t.Fatalf("response = %d %s admission = %#v", response.Code, response.Body.String(), service.briefAdmissionInput)
-	}
-	if !strings.Contains(response.Body.String(), `"briefId":"brief-api-1"`) || !strings.Contains(response.Body.String(), `"filename":"checkout.ticket-P1-T1.r1.design-brief.md"`) {
-		t.Fatalf("admission response body = %s", response.Body.String())
-	}
-}
-
-func TestTicketDesignBriefAdmissionRouteLeavesReplacementAdmissionToOwner(t *testing.T) {
-	service := &fakeWorkflow{}
-	router := ticketRouter(service, &fakeRead{})
-	body := `{"bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg==","createdIdentity":"planner"}`
-	for attempt := 0; attempt < 2; attempt++ {
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs", strings.NewReader(body)))
-		if response.Code != http.StatusCreated || !service.briefAdmissionCalled || service.briefAdmissionInput.WorkspaceID != "workspace-api" {
-			t.Fatalf("attempt %d response=%d %s input=%#v", attempt, response.Code, response.Body.String(), service.briefAdmissionInput)
-		}
-	}
-}
-
-func TestTicketDesignBriefAdmissionRouteRejectsInvalidBytes(t *testing.T) {
-	service := &fakeWorkflow{}
-	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs", strings.NewReader(`{"bytesBase64":"not-base64","createdIdentity":"planner"}`)))
-	if response.Code != http.StatusBadRequest || service.briefAdmissionCalled {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-}
-
-func TestReviewCompletionRouteReadyReviewCreatesNoApproval(t *testing.T) {
-	service := &fakeWorkflow{}
-	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
-	if response.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled || service.reviewCompletionInput.WorkspaceID != "workspace-api" || service.reviewCompletionInput.BriefID != "brief-api-1" || service.reviewCompletionInput.ReviewerIdentity != "auditor" || service.reviewCompletionInput.Disposition != apptickets.TicketDesignBriefReviewReadyForApproval || string(service.reviewCompletionInput.ReviewedBytes) != "# Ticket Design Brief\n" {
-		t.Fatalf("response = %d %s completion = %#v approval called = %t", response.Code, response.Body.String(), service.reviewCompletionInput, service.approveBriefCalled)
-	}
-	if !strings.Contains(response.Body.String(), `"disposition":"ready_for_approval"`) || strings.Contains(response.Body.String(), `"approvalId"`) || strings.Contains(response.Body.String(), `"refresh"`) {
-		t.Fatalf("completion response body = %s", response.Body.String())
-	}
-}
-
-func TestReviewCompletionRouteRejectsMissingIdentity(t *testing.T) {
-	service := &fakeWorkflow{err: apptickets.ErrTicketDesignBriefReview}
-	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"briefId":"brief-api-1","disposition":"needs_revision","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
-	if response.Code != http.StatusBadRequest || !service.reviewCompletionCalled || strings.TrimSpace(service.reviewCompletionInput.ReviewerIdentity) != "" {
-		t.Fatalf("response = %d %s completion = %#v", response.Code, response.Body.String(), service.reviewCompletionInput)
-	}
-}
-
-func TestReviewCompletionRouteRejectsMissingOrInvalidReviewedBytes(t *testing.T) {
-	for _, body := range []string{
-		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`,
-		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"not-base64"}`,
-		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":""}`,
-	} {
-		service := &fakeWorkflow{}
-		response := httptest.NewRecorder()
-		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest || service.reviewCompletionCalled {
-			t.Fatalf("body=%s status=%d review=%t", body, response.Code, service.reviewCompletionCalled)
-		}
-	}
-}
-
-func TestReviewCompletionRouteMapsStaleReviewedBytesRejection(t *testing.T) {
-	service := &fakeWorkflow{err: apptickets.ErrTicketDesignBriefBytesMismatch}
-	response := httptest.NewRecorder()
-	ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "ticket design brief bytes or digest mismatch") {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-}
-
-func TestReviewCompletionRouteRejectsApprovalEvidenceFields(t *testing.T) {
-	for _, body := range []string{
-		`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
-		`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","expectedVersion":8,"createdIdentity":"operator"}`,
-		`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","expectedVersion":8,"operatorConfirmationEvidence":"proof"}`,
-		`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"needs_revision","expectedVersion":8,"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
-	} {
-		service := &fakeWorkflow{}
-		response := httptest.NewRecorder()
-		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest || service.reviewCompletionCalled || service.approveBriefCalled {
-			t.Fatalf("body=%s status=%d review=%t approval=%t", body, response.Code, service.reviewCompletionCalled, service.approveBriefCalled)
-		}
-	}
-}
-
-func TestReviewCompletionRouteAcceptsBriefIdentityAndRejectsInvalidRequests(t *testing.T) {
-	accepted := &fakeWorkflow{}
-	response := httptest.NewRecorder()
-	ticketRouter(accepted, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
-	if response.Code != http.StatusCreated || !accepted.reviewCompletionCalled || accepted.reviewCompletionInput.BriefID != "brief-api-1" {
-		t.Fatalf("accepted brief identity response=%d %s input=%#v", response.Code, response.Body.String(), accepted.reviewCompletionInput)
-	}
-	for _, body := range []string{
-		`{"reviewerIdentity":"auditor","disposition":"findings_attached","briefId":"brief-api-1"}`,
-		`{"reviewerIdentity":"auditor","briefId":"brief-api-1"}`,
-		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval"}`,
-		`{"reviewerIdentity":"auditor","disposition":"ready_for_approval","briefId":"brief-api-1"}`,
-	} {
-		service := &fakeWorkflow{err: apptickets.ErrTicketDesignBriefReview}
-		response := httptest.NewRecorder()
-		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("body=%s response=%d %s", body, response.Code, response.Body.String())
-		}
-	}
-}
-
-func TestApprovalRouteConsumesReadyReviewWithExplicitEvidence(t *testing.T) {
-	service := &fakeWorkflow{}
-	router := ticketRouter(service, &fakeRead{})
-	review := httptest.NewRecorder()
-	router.ServeHTTP(review, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/review-completions", strings.NewReader(`{"briefId":"brief-api-1","reviewerIdentity":"auditor","disposition":"ready_for_approval","bytesBase64":"IyBUaWNrZXQgRGVzaWduIEJyaWVmCg=="}`)))
-	if review.Code != http.StatusCreated || !service.reviewCompletionCalled || service.approveBriefCalled {
-		t.Fatalf("review response = %d %s approval called = %t", review.Code, review.Body.String(), service.approveBriefCalled)
-	}
-	approval := httptest.NewRecorder()
-	router.ServeHTTP(approval, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/approvals", strings.NewReader(`{"expectedVersion":8,"operatorConfirmationEvidence":"approve exact brief","createdIdentity":"operator"}`)))
-	if approval.Code != http.StatusCreated || !service.approveBriefCalled || service.approveBriefInput.WorkspaceID != "workspace-api" || service.approveBriefInput.ExpectedVersion != 8 || service.approveBriefInput.OperatorConfirmationEvidence != "approve exact brief" || service.approveBriefInput.CreatedIdentity != "operator" {
-		t.Fatalf("approval response = %d %s input = %#v", approval.Code, approval.Body.String(), service.approveBriefInput)
-	}
-	if !strings.Contains(approval.Body.String(), `"approvalId":"brief-approval-api-1"`) {
-		t.Fatalf("approval response body = %s", approval.Body.String())
-	}
-}
-
-func TestApprovalRouteRejectsClientBriefIdentityDigestAndMissingEvidence(t *testing.T) {
-	for _, body := range []string{
-		`{"briefId":"brief-1","expectedVersion":8,"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
-		`{"sha256":"` + strings.Repeat("a", 64) + `","expectedVersion":8,"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
-		`{"expectedVersion":8,"operatorConfirmationEvidence":"proof"}`,
-		`{"expectedVersion":8,"createdIdentity":"operator"}`,
-		`{"operatorConfirmationEvidence":"proof","createdIdentity":"operator"}`,
-	} {
-		service := &fakeWorkflow{}
-		response := httptest.NewRecorder()
-		ticketRouter(service, &fakeRead{}).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-api/ticket-design-briefs/approvals", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest || service.approveBriefCalled {
-			t.Fatalf("body=%s status=%d approval called=%t", body, response.Code, service.approveBriefCalled)
-		}
 	}
 }
 

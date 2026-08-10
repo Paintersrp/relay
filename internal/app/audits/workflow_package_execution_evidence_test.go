@@ -16,11 +16,9 @@ import (
 	"testing"
 
 	workflowpackages "relay/internal/app/packages"
-	"relay/internal/app/tickets"
 	"relay/internal/executor"
 	"relay/internal/sourcevault"
 	workflowstore "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
 	"relay/internal/testsupport/workflowfixture"
 )
 
@@ -36,18 +34,18 @@ type packageEvidenceFixture struct {
 	packageID         string
 	assignment        executor.ExecutionAssignmentResult
 	outcome           executor.DeterministicOutcomeResult
-	brief             executor.EffectiveExecutorBriefResult
+	mode              executor.ExecutionMode
 	sourceVaultReader *evidenceSourceVaultReader
 }
 
 // buildPackageEvidence constructs a committed package-linked Run whose runtime
-// evidence resolves to the requested effective mode, using the real production
-// package, assignment, outcome, and effective-Brief services.
-func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode) *packageEvidenceFixture {
+// evidence resolves to the requested execution mode, using the real production
+// package, assignment, outcome, and mode-derivation services.
+func buildPackageEvidence(t *testing.T, mode executor.ExecutionMode) *packageEvidenceFixture {
 	t.Helper()
-	withOperations := mode != executor.EffectiveExecutorBriefAdaptiveNoOperations
+	withOperations := mode != executor.ExecutionModeAbsent
 	coverage := "complete"
-	if mode == executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication {
+	if mode == executor.ExecutionModePartialApplied {
 		coverage = "partial"
 	}
 	fixture := newPackageEvidenceFixture(t, withOperations, coverage)
@@ -71,18 +69,9 @@ func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode
 		t.Fatal(err)
 	}
 	fixture.outcome = outcome
+	fixture.mode = mode
 
-	briefs, err := executor.NewEffectiveExecutorBriefService(fixture.store, fixture.sourceVaultReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	brief, err := briefs.Prepare(context.Background(), fixture.run.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.brief = brief
-
-	if mode != executor.EffectiveExecutorBriefDeterministicComplete {
+	if mode != executor.ExecutionModeCompleteApplied {
 		valResults := make([]workflowAuditValidationEvidence, 0, len(assignment.Assignment.ValidationCommands))
 		for _, cmd := range assignment.Assignment.ValidationCommands {
 			valResults = append(valResults, workflowAuditValidationEvidence{
@@ -99,11 +88,11 @@ func buildPackageEvidence(t *testing.T, mode executor.EffectiveExecutorBriefMode
 	return fixture
 }
 
-func packageEvidenceOutcomeInput(runID string, mode executor.EffectiveExecutorBriefMode, coverage string) executor.DeterministicOutcomeInput {
+func packageEvidenceOutcomeInput(runID string, mode executor.ExecutionMode, coverage string) executor.DeterministicOutcomeInput {
 	switch mode {
-	case executor.EffectiveExecutorBriefAdaptiveNoOperations:
+	case executor.ExecutionModeAbsent:
 		return executor.DeterministicOutcomeInput{RunID: runID, Preflight: executor.DeterministicPreflightResult{Status: executor.DeterministicPreflightNotPresent}}
-	case executor.EffectiveExecutorBriefAdaptivePreflightFailed:
+	case executor.ExecutionModePreflightFailed:
 		return executor.DeterministicOutcomeInput{RunID: runID, Preflight: executor.DeterministicPreflightResult{
 			Status:   executor.DeterministicPreflightFailed,
 			Coverage: coverage,
@@ -147,9 +136,7 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if err := os.WriteFile(authorityPath, authorityBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	briefName := "checkout.ticket-P2-T2.r1.design-brief.md"
 	operationsName := "checkout.ticket-P2-T2.r1.deterministic-operations.json"
-	briefBytes := []byte(testfixtures.TicketDesignBrief)
 	operationsBytes := []byte(workflowPackageEvidenceOperations)
 	if coverage == "partial" {
 		operationsBytes = []byte(strings.Replace(string(operationsBytes), `"coverage":"complete"`, `"coverage":"partial"`, 1))
@@ -225,25 +212,8 @@ func newPackageEvidenceFixture(t *testing.T, withOperations bool, coverage strin
 	if _, err := db.ExecContext(ctx, `INSERT INTO delivery_ticket_selection_members (selection_row_id, sequence, revision_row_id, approval_row_id) VALUES (?, 1, ?, ?)`, selectionRowID, revisionID, approvalID); err != nil {
 		t.Fatal(err)
 	}
-	briefService, err := tickets.NewService(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admitted, err := briefService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{WorkspaceID: "workspace-package", Bytes: briefBytes, CreatedIdentity: "planner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := briefService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: briefBytes}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approve fixture brief", CreatedIdentity: "operator"}); err != nil {
-		t.Fatal(err)
-	}
-
 	input := workflowpackages.PrepareInput{
-		SelectionID:       "selection-package",
-		TicketDesignBrief: workflowpackages.ArtifactInput{DisplayName: briefName, Bytes: briefBytes, ExpectedSHA256: packageEvidenceSHA(briefBytes)},
+		SelectionID: "selection-package",
 	}
 	if withOperations {
 		input.DeterministicOperations = &workflowpackages.ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: packageEvidenceSHA(operationsBytes)}
@@ -265,7 +235,7 @@ func packageEvidenceSHA(data []byte) string {
 }
 
 func packageEvidenceDeliveryTicketBytes(baseCommit string) []byte {
-	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, baseCommit))
+	return []byte(fmt.Sprintf(`{"schema_version":"2.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"required_invariants":["Packages must bind the exact approved Ticket."],"forbidden_behaviors":[],"implementation_obligations":[{"source_area":"internal/app/packages","obligation":"Preserve the selected package basis.","prerequisites":[]}],"proof_obligations":["Prove package preparation binds the approved Ticket."],"validation_commands":[{"working_directory":"","command":"go test ./internal/app/packages","expected":"all tests pass"}],"transition_applicability":"not_required","explicit_deferrals":[],"completion_criteria":["All tests pass."]}`, baseCommit))
 }
 
 type evidenceSourceVaultReader struct {
@@ -306,12 +276,12 @@ func packageEvidenceMutatePreflightCoverage(t *testing.T, outcome executor.Deter
 	return outcome
 }
 
-func packageEvidenceModes() []executor.EffectiveExecutorBriefMode {
-	return []executor.EffectiveExecutorBriefMode{
-		executor.EffectiveExecutorBriefAdaptiveNoOperations,
-		executor.EffectiveExecutorBriefAdaptivePreflightFailed,
-		executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication,
-		executor.EffectiveExecutorBriefDeterministicComplete,
+func packageEvidenceModes() []executor.ExecutionMode {
+	return []executor.ExecutionMode{
+		executor.ExecutionModeAbsent,
+		executor.ExecutionModePreflightFailed,
+		executor.ExecutionModePartialApplied,
+		executor.ExecutionModeCompleteApplied,
 	}
 }
 
@@ -321,10 +291,10 @@ func TestWorkflowPackageExecutionEvidenceConstructorInitializesDependencies(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if service.store == nil || service.packages == nil || service.assignments == nil || service.outcomes == nil || service.briefs == nil {
+	if service.store == nil || service.packages == nil || service.assignments == nil || service.outcomes == nil {
 		t.Fatalf("service dependencies are incomplete: %#v", service)
 	}
-	if service.loadRun == nil || service.loadAuthority == nil || service.loadAssignment == nil || service.loadOutcome == nil || service.loadBrief == nil {
+	if service.loadRun == nil || service.loadAuthority == nil || service.loadAssignment == nil || service.loadOutcome == nil {
 		t.Fatal("service read seams are not initialized")
 	}
 	if _, err := NewWorkflowPackageExecutionEvidenceService(nil, fixture.sourceVaultReader); err == nil {
@@ -348,7 +318,7 @@ func TestWorkflowExecutionEvidencePlaceholderFilesAbsent(t *testing.T) {
 }
 
 func TestWorkflowPackageExecutionEvidenceRejectsInvalidRunIDWithoutReads(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -366,10 +336,6 @@ func TestWorkflowPackageExecutionEvidenceRejectsInvalidRunIDWithoutReads(t *test
 	service.loadOutcome = func(context.Context, string) (executor.DeterministicOutcomeResult, error) {
 		fail("")
 		return executor.DeterministicOutcomeResult{}, nil
-	}
-	service.loadBrief = func(context.Context, string) (executor.EffectiveExecutorBriefResult, error) {
-		fail("")
-		return executor.EffectiveExecutorBriefResult{}, nil
 	}
 	for _, runID := range []string{"", " ", " run-1", "run-1 "} {
 		if _, err := service.Load(context.Background(), runID); err == nil {
@@ -410,12 +376,12 @@ func TestWorkflowPackageExecutionEvidenceResolvesEveryMode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if evidence.EffectiveBrief.Mode != mode {
-				t.Fatalf("mode = %q, want %q", evidence.EffectiveBrief.Mode, mode)
+			if evidence.Mode != mode {
+				t.Fatalf("mode = %q, want %q", evidence.Mode, mode)
 			}
-			wantAdaptive := mode != executor.EffectiveExecutorBriefDeterministicComplete
-			if evidence.EffectiveBrief.AdaptiveDispatchRequired != wantAdaptive {
-				t.Fatalf("adaptive dispatch = %v, want %v", evidence.EffectiveBrief.AdaptiveDispatchRequired, wantAdaptive)
+			wantAdaptive := mode != executor.ExecutionModeCompleteApplied
+			if (evidence.Attempt != nil) != wantAdaptive {
+				t.Fatalf("attempt presence = %v, want adaptive dispatch %v", evidence.Attempt != nil, wantAdaptive)
 			}
 			if evidence.Assignment.Artifact.ID != fixture.assignment.Artifact.ID || evidence.Assignment.Artifact.SHA256 != fixture.assignment.Artifact.SHA256 {
 				t.Fatalf("assignment artifact = %#v", evidence.Assignment.Artifact)
@@ -423,15 +389,12 @@ func TestWorkflowPackageExecutionEvidenceResolvesEveryMode(t *testing.T) {
 			if evidence.Deterministic.Artifact.ID != fixture.outcome.Artifact.ID || evidence.Deterministic.Artifact.SHA256 != fixture.outcome.Artifact.SHA256 {
 				t.Fatalf("outcome artifact = %#v", evidence.Deterministic.Artifact)
 			}
-			if evidence.EffectiveBrief.Artifact == nil || fixture.brief.Artifact == nil || evidence.EffectiveBrief.Artifact.ID != fixture.brief.Artifact.ID || evidence.EffectiveBrief.Artifact.SHA256 != fixture.brief.Artifact.SHA256 {
-				t.Fatalf("effective brief artifact = %#v", evidence.EffectiveBrief.Artifact)
-			}
 		})
 	}
 }
 
-func TestWorkflowPackageExecutionEvidenceCompleteHasBriefWithoutAdaptiveDispatch(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+func TestWorkflowPackageExecutionEvidenceCompleteHasNoAdaptiveDispatch(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.ExecutionModeCompleteApplied)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -440,10 +403,10 @@ func TestWorkflowPackageExecutionEvidenceCompleteHasBriefWithoutAdaptiveDispatch
 	if err != nil {
 		t.Fatal(err)
 	}
-	if evidence.EffectiveBrief.Artifact == nil || len(evidence.EffectiveBrief.Bytes) == 0 {
-		t.Fatalf("effective brief = %#v", evidence.EffectiveBrief)
+	if evidence.Mode != executor.ExecutionModeCompleteApplied {
+		t.Fatalf("mode = %q, want complete_applied", evidence.Mode)
 	}
-	if evidence.EffectiveBrief.AdaptiveDispatchRequired {
+	if evidence.Attempt != nil {
 		t.Fatal("complete mode required adaptive dispatch")
 	}
 }
@@ -451,42 +414,12 @@ func TestWorkflowPackageExecutionEvidenceCompleteHasBriefWithoutAdaptiveDispatch
 func TestWorkflowPackageExecutionEvidenceRejectsCrossServiceMismatches(t *testing.T) {
 	tests := []struct {
 		name    string
-		mode    executor.EffectiveExecutorBriefMode
+		mode    executor.ExecutionMode
 		corrupt func(t *testing.T, service *WorkflowPackageExecutionEvidenceService)
 	}{
 		{
-			name: "mode mismatch",
-			mode: executor.EffectiveExecutorBriefDeterministicComplete,
-			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
-				real := service.loadBrief
-				service.loadBrief = func(ctx context.Context, runID string) (executor.EffectiveExecutorBriefResult, error) {
-					brief, err := real(ctx, runID)
-					if err != nil {
-						return brief, err
-					}
-					brief.Mode = executor.EffectiveExecutorBriefAdaptiveNoOperations
-					return brief, nil
-				}
-			},
-		},
-		{
-			name: "dispatch requirement mismatch",
-			mode: executor.EffectiveExecutorBriefDeterministicComplete,
-			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
-				real := service.loadBrief
-				service.loadBrief = func(ctx context.Context, runID string) (executor.EffectiveExecutorBriefResult, error) {
-					brief, err := real(ctx, runID)
-					if err != nil {
-						return brief, err
-					}
-					brief.AdaptiveDispatchRequired = !brief.AdaptiveDispatchRequired
-					return brief, nil
-				}
-			},
-		},
-		{
 			name: "run package identity mismatch",
-			mode: executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			mode: executor.ExecutionModeAbsent,
 			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
 				real := service.loadAuthority
 				service.loadAuthority = func(ctx context.Context, runID string) (workflowpackages.ApprovedAuthority, error) {
@@ -501,7 +434,7 @@ func TestWorkflowPackageExecutionEvidenceRejectsCrossServiceMismatches(t *testin
 		},
 		{
 			name: "assignment authority mismatch",
-			mode: executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			mode: executor.ExecutionModeAbsent,
 			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
 				real := service.loadAssignment
 				service.loadAssignment = func(ctx context.Context, runID string) (executor.ExecutionAssignmentResult, error) {
@@ -515,8 +448,38 @@ func TestWorkflowPackageExecutionEvidenceRejectsCrossServiceMismatches(t *testin
 			},
 		},
 		{
+			name: "assignment source identity mismatch",
+			mode: executor.ExecutionModeAbsent,
+			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
+				real := service.loadAssignment
+				service.loadAssignment = func(ctx context.Context, runID string) (executor.ExecutionAssignmentResult, error) {
+					assignment, err := real(ctx, runID)
+					if err != nil {
+						return assignment, err
+					}
+					assignment.Assignment.Source.CommitOID = strings.Repeat("0", 40)
+					return assignment, nil
+				}
+			},
+		},
+		{
+			name: "assignment completed dependency mismatch",
+			mode: executor.ExecutionModeAbsent,
+			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
+				real := service.loadAssignment
+				service.loadAssignment = func(ctx context.Context, runID string) (executor.ExecutionAssignmentResult, error) {
+					assignment, err := real(ctx, runID)
+					if err != nil {
+						return assignment, err
+					}
+					assignment.Assignment.Dependencies = append(assignment.Assignment.Dependencies, executor.ExecutionAssignmentDependency{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"})
+					return assignment, nil
+				}
+			},
+		},
+		{
 			name: "outcome assignment mismatch",
-			mode: executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			mode: executor.ExecutionModeAbsent,
 			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
 				real := service.loadOutcome
 				service.loadOutcome = func(ctx context.Context, runID string) (executor.DeterministicOutcomeResult, error) {
@@ -530,19 +493,18 @@ func TestWorkflowPackageExecutionEvidenceRejectsCrossServiceMismatches(t *testin
 			},
 		},
 		{
-			name: "effective brief ownership mismatch",
-			mode: executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			name: "outcome status tampering changes mode",
+			mode: executor.ExecutionModeAbsent,
 			corrupt: func(t *testing.T, service *WorkflowPackageExecutionEvidenceService) {
-				real := service.loadBrief
-				service.loadBrief = func(ctx context.Context, runID string) (executor.EffectiveExecutorBriefResult, error) {
-					brief, err := real(ctx, runID)
+				real := service.loadOutcome
+				service.loadOutcome = func(ctx context.Context, runID string) (executor.DeterministicOutcomeResult, error) {
+					outcome, err := real(ctx, runID)
 					if err != nil {
-						return brief, err
+						return outcome, err
 					}
-					artifact := *brief.Artifact
-					artifact.RunRowID.Int64++
-					brief.Artifact = &artifact
-					return brief, nil
+					outcome.Outcome.Outcome.Status = "applied"
+					outcome.Outcome.Outcome.Coverage = "complete"
+					return outcome, nil
 				}
 			},
 		},
@@ -555,41 +517,6 @@ func TestWorkflowPackageExecutionEvidenceRejectsCrossServiceMismatches(t *testin
 				t.Fatal(err)
 			}
 			test.corrupt(t, service)
-			if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-				t.Fatalf("error = %v, want conflict", err)
-			}
-		})
-	}
-}
-
-func TestWorkflowPackageExecutionEvidenceMalformedArtifactFailsClosed(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(a *workflowstore.Artifact)
-	}{
-		{name: "path", mutate: func(a *workflowstore.Artifact) { a.RelativePath = "" }},
-		{name: "media type", mutate: func(a *workflowstore.Artifact) { a.MediaType = "" }},
-		{name: "digest", mutate: func(a *workflowstore.Artifact) { a.SHA256 = "not-a-real-digest" }},
-		{name: "size", mutate: func(a *workflowstore.Artifact) { a.SizeBytes++ }},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
-			if err != nil {
-				t.Fatal(err)
-			}
-			real := service.loadBrief
-			service.loadBrief = func(ctx context.Context, runID string) (executor.EffectiveExecutorBriefResult, error) {
-				brief, err := real(ctx, runID)
-				if err != nil {
-					return brief, err
-				}
-				artifact := *brief.Artifact
-				test.mutate(&artifact)
-				brief.Artifact = &artifact
-				return brief, nil
-			}
 			if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
 				t.Fatalf("error = %v, want conflict", err)
 			}
@@ -633,7 +560,7 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 			t.Fatalf("missing outcome error = %v", err)
 		}
 	})
-	t.Run("missing effective brief", func(t *testing.T) {
+	t.Run("missing execution attempt", func(t *testing.T) {
 		fixture := newPackageEvidenceFixture(t, false, "")
 		assignments, err := executor.NewExecutionAssignmentService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
@@ -646,7 +573,7 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := outcomes.Persist(context.Background(), packageEvidenceOutcomeInput(fixture.run.RunID, executor.EffectiveExecutorBriefAdaptiveNoOperations, "")); err != nil {
+		if _, err := outcomes.Persist(context.Background(), packageEvidenceOutcomeInput(fixture.run.RunID, executor.ExecutionModeAbsent, "")); err != nil {
 			t.Fatal(err)
 		}
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
@@ -655,16 +582,16 @@ func TestWorkflowPackageExecutionEvidenceMissingEvidenceFailsClosed(t *testing.T
 		}
 		_, err = service.Load(context.Background(), fixture.run.RunID)
 		if err == nil {
-			t.Fatal("missing effective brief was accepted")
+			t.Fatal("missing execution attempt was accepted")
 		}
 		if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-			t.Fatalf("missing effective brief error = %v", err)
+			t.Fatalf("missing execution attempt error = %v", err)
 		}
 	})
 }
 
 func TestWorkflowPackageExecutionEvidenceDuplicateFromLoaderIsConflict(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -682,7 +609,7 @@ func TestWorkflowPackageExecutionEvidenceDuplicateFromLoaderIsConflict(t *testin
 }
 
 func TestWorkflowPackageExecutionEvidenceDeterministicOutcomeConflictIsClassified(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -699,26 +626,8 @@ func TestWorkflowPackageExecutionEvidenceDeterministicOutcomeConflictIsClassifie
 	}
 }
 
-func TestWorkflowPackageExecutionEvidenceEffectiveBriefConflictIsClassified(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
-	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service.loadBrief = func(context.Context, string) (executor.EffectiveExecutorBriefResult, error) {
-		return executor.EffectiveExecutorBriefResult{}, executor.ErrEffectiveExecutorBriefConflict
-	}
-	_, err = service.Load(context.Background(), fixture.run.RunID)
-	if !errors.Is(err, executor.ErrEffectiveExecutorBriefConflict) {
-		t.Fatalf("effective brief conflict error = %v", err)
-	}
-	if !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
-		t.Fatalf("effective brief conflict not classified as audit conflict: %v", err)
-	}
-}
-
 func TestWorkflowPackageExecutionEvidenceApprovedAuthorityInvalidIsClassified(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -736,7 +645,7 @@ func TestWorkflowPackageExecutionEvidenceApprovedAuthorityInvalidIsClassified(t 
 }
 
 func TestWorkflowPackageExecutionEvidenceInfrastructureErrorIsNotClassified(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -767,7 +676,7 @@ func TestWorkflowPackageExecutionEvidencePreflightFailedCoverage(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptivePreflightFailed)
+			fixture := buildPackageEvidence(t, executor.ExecutionModePreflightFailed)
 			service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 			if err != nil {
 				t.Fatal(err)
@@ -798,7 +707,7 @@ func TestWorkflowPackageExecutionEvidencePreflightFailedCoverage(t *testing.T) {
 }
 
 func TestWorkflowPackageExecutionEvidenceRepeatedLoadIsIdentical(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeCompleteApplied)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -811,7 +720,7 @@ func TestWorkflowPackageExecutionEvidenceRepeatedLoadIsIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(first.Assignment, second.Assignment) || !reflect.DeepEqual(first.Deterministic, second.Deterministic) || !reflect.DeepEqual(first.EffectiveBrief, second.EffectiveBrief) {
+	if !reflect.DeepEqual(first.Assignment, second.Assignment) || !reflect.DeepEqual(first.Deterministic, second.Deterministic) || first.Mode != second.Mode {
 		t.Fatal("repeated Load returned different evidence")
 	}
 	if first.Run.ID != second.Run.ID || first.Authority.Package.PackageID != second.Authority.Package.PackageID {
@@ -820,7 +729,7 @@ func TestWorkflowPackageExecutionEvidenceRepeatedLoadIsIdentical(t *testing.T) {
 }
 
 func TestWorkflowPackageExecutionEvidenceLoadPerformsNoWrites(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -947,11 +856,18 @@ func addTestAttemptAndEvidence(
 
 	var attemptRowID int64
 	attemptID := workflowstore.NewExecutionAttemptID()
+	wireMode, wireModeValid := workflowPackageWireMode(fixture.mode)
+	if !wireModeValid {
+		// Deterministic-complete runs never dispatch an adaptive attempt, so
+		// Load rejects any attempt before reading its payload identity. The
+		// placeholder keeps the attempt fixture record well-formed.
+		wireMode = "adaptive_no_operations"
+	}
 	resultStruct := map[string]any{
-		"exit_code":                   0,
-		"effective_brief_artifact_id": fixture.brief.Artifact.ArtifactID,
-		"effective_brief_sha256":      fixture.brief.Artifact.SHA256,
-		"effective_brief_mode":        string(fixture.brief.Mode),
+		"exit_code":                        0,
+		"execution_assignment_artifact_id": fixture.assignment.Artifact.ArtifactID,
+		"execution_assignment_sha256":      fixture.assignment.Artifact.SHA256,
+		"execution_assignment_mode":        wireMode,
 	}
 	resultJSON, err := json.Marshal(resultStruct)
 	if err != nil {
@@ -981,9 +897,9 @@ func addTestAttemptAndEvidence(
 	}
 
 	payload := map[string]any{
-		"effective_brief_artifact_id": fixture.brief.Artifact.ArtifactID,
-		"effective_brief_sha256":      fixture.brief.Artifact.SHA256,
-		"effective_brief_mode":        string(fixture.brief.Mode),
+		"execution_assignment_artifact_id": fixture.assignment.Artifact.ArtifactID,
+		"execution_assignment_sha256":      fixture.assignment.Artifact.SHA256,
+		"execution_assignment_mode":        wireMode,
 	}
 	if validationResults != nil {
 		payload["validation_results"] = validationResults
@@ -1039,7 +955,7 @@ func addTestAttemptAndEvidence(
 }
 
 func TestWorkflowPackageExecutionEvidenceDeterministicCompleteWithAttemptFails(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeCompleteApplied)
 	addTestAttemptAndEvidence(t, fixture, nil)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
@@ -1052,7 +968,7 @@ func TestWorkflowPackageExecutionEvidenceDeterministicCompleteWithAttemptFails(t
 
 func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *testing.T) {
 	t.Run("zero attempts fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1066,7 +982,7 @@ func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *t
 	})
 
 	t.Run("multiple attempts fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1085,7 +1001,7 @@ func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *t
 	})
 
 	t.Run("nonsucceeded attempt status fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1105,7 +1021,7 @@ func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *t
 	})
 
 	t.Run("attempt number not 1 fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1125,7 +1041,7 @@ func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *t
 	})
 
 	t.Run("noncanonical attempt ID fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1147,7 +1063,7 @@ func TestWorkflowPackageExecutionEvidenceAdaptiveExecutionAttemptValidation(t *t
 
 func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	t.Run("missing execution_evidence artifact fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1161,7 +1077,7 @@ func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	})
 
 	t.Run("duplicate execution_evidence artifact fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1180,7 +1096,7 @@ func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	})
 
 	t.Run("wrongly owned artifact fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1200,7 +1116,7 @@ func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	})
 
 	t.Run("wrongly typed artifact fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1220,7 +1136,7 @@ func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	})
 
 	t.Run("wrongly pathed artifact fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1240,7 +1156,7 @@ func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	})
 
 	t.Run("tampered artifact digest fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1259,9 +1175,9 @@ func TestWorkflowPackageExecutionEvidenceArtifactValidation(t *testing.T) {
 	})
 }
 
-func TestWorkflowPackageExecutionEvidenceBriefBindingMismatchFails(t *testing.T) {
-	t.Run("effective brief artifact ID mismatch fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+func TestWorkflowPackageExecutionEvidenceAssignmentBindingMismatchFails(t *testing.T) {
+	t.Run("execution assignment artifact ID mismatch fails", func(t *testing.T) {
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1271,18 +1187,18 @@ func TestWorkflowPackageExecutionEvidenceBriefBindingMismatchFails(t *testing.T)
 			if err := json.Unmarshal(data, &m); err != nil {
 				return nil, err
 			}
-			m["effective_brief_artifact_id"] = "wrong-id"
+			m["execution_assignment_artifact_id"] = "wrong-id"
 			return json.Marshal(m)
 		})
-		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "execution evidence payload effective brief identity disagrees with brief") {
-			t.Fatalf("error = %v, want effective-Brief identity conflict", err)
+		if _, err := service.Load(context.Background(), fixture.run.RunID); err == nil || !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) || !strings.Contains(err.Error(), "execution evidence payload execution assignment identity disagrees with assignment") {
+			t.Fatalf("error = %v, want execution-assignment identity conflict", err)
 		}
 	})
 
 }
 
 func TestWorkflowPackageExecutionEvidenceResultJSONBindingMismatchFails(t *testing.T) {
-	fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 	if err != nil {
 		t.Fatal(err)
@@ -1293,7 +1209,7 @@ func TestWorkflowPackageExecutionEvidenceResultJSONBindingMismatchFails(t *testi
 		if err != nil {
 			return nil, err
 		}
-		attempts[0].ResultJSON = `{"effective_brief_artifact_id":"wrong-id"}`
+		attempts[0].ResultJSON = `{"execution_assignment_artifact_id":"wrong-id"}`
 		return attempts, nil
 	}
 	if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
@@ -1301,9 +1217,54 @@ func TestWorkflowPackageExecutionEvidenceResultJSONBindingMismatchFails(t *testi
 	}
 }
 
+// TestWorkflowPackageExecutionEvidenceRejectsObsoleteExecutionModeKey pins the
+// canonical execution_assignment_mode wire key that the real executor now
+// persists. A runtime or evidence payload carrying the retired execution_mode
+// key (or omitting the canonical key) must be rejected as an execution
+// assignment identity conflict.
+func TestWorkflowPackageExecutionEvidenceRejectsObsoleteExecutionModeKey(t *testing.T) {
+	fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
+	service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	realAttempts := service.loadAttempts
+	service.loadAttempts = func(ctx context.Context, runRowID int64) ([]workflowstore.ExecutionAttempt, error) {
+		attempts, err := realAttempts(ctx, runRowID)
+		if err != nil {
+			return nil, err
+		}
+		var runtime map[string]any
+		if err := json.Unmarshal([]byte(attempts[0].ResultJSON), &runtime); err != nil {
+			t.Fatalf("decode attempt ResultJSON: %v", err)
+			return nil, err
+		}
+		delete(runtime, "execution_assignment_mode")
+		runtime["execution_mode"] = "absent"
+		rewritten, err := json.Marshal(runtime)
+		if err != nil {
+			return nil, err
+		}
+		attempts[0].ResultJSON = string(rewritten)
+		return attempts, nil
+	}
+	installExecutionEvidenceMutation(t, service, func(data []byte) ([]byte, error) {
+		var payload map[string]any
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, err
+		}
+		delete(payload, "execution_assignment_mode")
+		payload["execution_mode"] = "absent"
+		return json.Marshal(payload)
+	})
+	if _, err := service.Load(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowPackageExecutionEvidenceConflict) {
+		t.Fatalf("error = %v, want execution-assignment identity conflict", err)
+	}
+}
+
 func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
 	t.Run("missing declared results become not_run", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1337,7 +1298,7 @@ func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
 	})
 
 	t.Run("deterministic-complete commands become not_run", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefDeterministicComplete)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeCompleteApplied)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1362,7 +1323,7 @@ func TestWorkflowPackageExecutionEvidenceValidationMapping(t *testing.T) {
 
 func TestWorkflowPackageExecutionEvidenceValidationMappingRejectsInvalid(t *testing.T) {
 	t.Run("unknown command fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1391,7 +1352,7 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 			if err != nil {
 				return auth, err
 			}
-			auth.BriefProjection.ValidationCommands = nil
+			auth.TicketProjection.ValidationCommands = nil
 			return auth, nil
 		}
 		realAssign := service.loadAssignment
@@ -1406,7 +1367,7 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 	}
 
 	t.Run("absent validation_results succeeds", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1430,7 +1391,7 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 	})
 
 	t.Run("empty validation_results array fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)
@@ -1454,7 +1415,7 @@ func TestWorkflowPackageExecutionEvidenceZeroValidationCommands(t *testing.T) {
 	})
 
 	t.Run("null validation_results fails", func(t *testing.T) {
-		fixture := buildPackageEvidence(t, executor.EffectiveExecutorBriefAdaptiveNoOperations)
+		fixture := buildPackageEvidence(t, executor.ExecutionModeAbsent)
 		service, err := NewWorkflowPackageExecutionEvidenceService(fixture.store, fixture.sourceVaultReader)
 		if err != nil {
 			t.Fatal(err)

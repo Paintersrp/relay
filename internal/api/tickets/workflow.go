@@ -4,7 +4,6 @@ package tickets
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,9 +24,6 @@ type WorkflowService interface {
 	UpdatePriority(context.Context, string, int64) (DeliveryTicket, error)
 	ListFrontier(context.Context, string) (apptickets.Frontier, error)
 	Select(context.Context, apptickets.SelectInput) (apptickets.SelectionResult, error)
-	AdmitTicketDesignBrief(context.Context, apptickets.TicketDesignBriefAdmissionInput) (apptickets.TicketDesignBriefAdmissionResult, error)
-	CompleteTicketDesignBriefReview(context.Context, apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error)
-	ApproveTicketDesignBrief(context.Context, apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error)
 }
 
 type ReadService interface {
@@ -108,17 +104,6 @@ func (a appWorkflowAdapter) Select(ctx context.Context, input apptickets.SelectI
 	return a.service.Select(ctx, input)
 }
 
-func (a appWorkflowAdapter) AdmitTicketDesignBrief(ctx context.Context, input apptickets.TicketDesignBriefAdmissionInput) (apptickets.TicketDesignBriefAdmissionResult, error) {
-	return a.service.AdmitTicketDesignBrief(ctx, input)
-}
-
-func (a appWorkflowAdapter) CompleteTicketDesignBriefReview(ctx context.Context, input apptickets.CompleteBriefReviewInput) (apptickets.TicketDesignBriefReviewResult, error) {
-	return a.service.CompleteTicketDesignBriefReview(ctx, input)
-}
-func (a appWorkflowAdapter) ApproveTicketDesignBrief(ctx context.Context, input apptickets.TicketDesignBriefApprovalInput) (apptickets.TicketDesignBriefApprovalResult, error) {
-	return a.service.ApproveTicketDesignBrief(ctx, input)
-}
-
 // --- HTTP request types ---
 // Legacy packet-admission fields (packetId, operationId, requiredDependencies)
 // are rejected by strict JSON decoding. Remediation authoring fields are
@@ -181,38 +166,6 @@ type selectionRequest struct {
 	TicketID      string `json:"ticketId"`
 	RevisionRowID int64  `json:"revisionRowId"`
 	Rationale     string `json:"rationale"`
-}
-
-// ticketDesignBriefAdmissionRequest carries the operator-authored Ticket
-// Design Brief Markdown. The canonical filename, digest, and active selection
-// basis are resolved server-side by the delivery owner.
-type ticketDesignBriefAdmissionRequest struct {
-	BytesBase64     string `json:"bytesBase64"`
-	CreatedIdentity string `json:"createdIdentity"`
-}
-
-// reviewCompletionRequest carries the bounded disposition, the exact immutable
-// Brief attempt identity the auditor reviewed, and the exact reviewed bytes the
-// auditor reviewed (base64). The owner verifies the brief belongs to the
-// workspace's active selection and is still the current brief pointer,
-// recalculating their SHA-256 and comparing them against the verified stored
-// artifact before either disposition is accepted; no findings, prose, approval
-// evidence, or digest are accepted.
-type reviewCompletionRequest struct {
-	BriefID             string `json:"briefId"`
-	ReviewerIdentity    string `json:"reviewerIdentity"`
-	Disposition         string `json:"disposition"`
-	ReviewedBytesBase64 string `json:"bytesBase64"`
-}
-
-// ticketDesignBriefApprovalRequest carries only the explicit approval
-// evidence. The workspace is resolved from the route and the current brief
-// identity and digest are resolved server-side from the process-local
-// ready-review continuation; no brief ID or digest is accepted.
-type ticketDesignBriefApprovalRequest struct {
-	ExpectedVersion              int64  `json:"expectedVersion"`
-	OperatorConfirmationEvidence string `json:"operatorConfirmationEvidence"`
-	CreatedIdentity              string `json:"createdIdentity"`
 }
 
 // --- Handlers ---
@@ -351,104 +304,6 @@ func (h *WorkflowHandler) Select(w http.ResponseWriter, r *http.Request) {
 	shared.JSON(w, http.StatusCreated, selectionDTO(result))
 }
 
-// AdmitTicketDesignBrief is the operational admission entry for the authored
-// Ticket Design Brief. The delivery owner resolves the current active
-// selection, canonical filename, and digest server-side; the request carries
-// only the authored Markdown and an identity.
-func (h *WorkflowHandler) AdmitTicketDesignBrief(w http.ResponseWriter, r *http.Request) {
-	var request ticketDesignBriefAdmissionRequest
-	if !decodeStrict(r, &request) {
-		badRequest(w, "Invalid Ticket Design Brief admission request")
-		return
-	}
-	bytes, err := base64.StdEncoding.DecodeString(request.BytesBase64)
-	if err != nil {
-		badRequest(w, "Invalid Ticket Design Brief bytes")
-		return
-	}
-	result, err := h.workflow.AdmitTicketDesignBrief(r.Context(), apptickets.TicketDesignBriefAdmissionInput{
-		WorkspaceID: workspaceID(r), Bytes: bytes, CreatedIdentity: strings.TrimSpace(request.CreatedIdentity),
-	})
-	if err != nil {
-		writeTicketError(w, err)
-		return
-	}
-	shared.JSON(w, http.StatusCreated, map[string]any{
-		"briefId": result.Brief.BriefID, "filename": result.Filename,
-		"sha256": result.Brief.ArtifactSha256, "sizeBytes": result.Brief.ArtifactSizeBytes,
-	})
-}
-
-// CompleteTicketDesignBriefReview is the bounded completion entry the external
-// auditor uses after performing the read-only review. The request must carry
-// the exact immutable Brief attempt identity the auditor reviewed and the
-// exact bytes the auditor reviewed (base64); the owner recalculates their
-// SHA-256 and rejects the completion unless the identified attempt belongs to
-// the workspace's active selection and is still the current brief pointer, so a
-// stale or replaced brief can never receive a result. It records only the
-// bounded disposition over the identified brief and never performs or records
-// approval; ready approval is a distinct transition on the separate approval
-// route.
-func (h *WorkflowHandler) CompleteTicketDesignBriefReview(w http.ResponseWriter, r *http.Request) {
-	var request reviewCompletionRequest
-	if !decodeStrict(r, &request) {
-		badRequest(w, "Invalid Ticket Design Brief review completion request")
-		return
-	}
-	disposition := apptickets.TicketDesignBriefReviewDisposition(strings.TrimSpace(request.Disposition))
-	if disposition != apptickets.TicketDesignBriefReviewReadyForApproval && disposition != apptickets.TicketDesignBriefReviewNeedsRevision {
-		badRequest(w, "Invalid Ticket Design Brief review disposition")
-		return
-	}
-	if strings.TrimSpace(request.BriefID) == "" {
-		badRequest(w, "Ticket Design Brief review requires the exact brief identity")
-		return
-	}
-	reviewedBytes, err := base64.StdEncoding.DecodeString(request.ReviewedBytesBase64)
-	if err != nil || len(reviewedBytes) == 0 {
-		badRequest(w, "Ticket Design Brief review requires the exact reviewed bytes")
-		return
-	}
-	result, err := h.workflow.CompleteTicketDesignBriefReview(r.Context(), apptickets.CompleteBriefReviewInput{
-		WorkspaceID: workspaceID(r), BriefID: strings.TrimSpace(request.BriefID),
-		ReviewerIdentity: strings.TrimSpace(request.ReviewerIdentity), Disposition: disposition, ReviewedBytes: reviewedBytes,
-	})
-	if err != nil {
-		writeTicketError(w, err)
-		return
-	}
-	response := map[string]any{"briefId": result.Brief.BriefID, "disposition": result.Disposition}
-	if result.Refresh != nil {
-		response["refresh"] = map[string]any{"operationId": result.Refresh.OperationID, "reviewedBrief": result.Refresh.ReviewedBrief, "auditorReviewResult": result.Refresh.AuditorReviewResult}
-	}
-	shared.JSON(w, http.StatusCreated, response)
-}
-
-// ApproveTicketDesignBrief is the distinct explicit approval transition. The
-// current brief identity and digest are resolved server-side from the
-// process-local ready-review continuation; the request carries only the
-// expected workspace version, confirmation evidence, and identity.
-func (h *WorkflowHandler) ApproveTicketDesignBrief(w http.ResponseWriter, r *http.Request) {
-	var request ticketDesignBriefApprovalRequest
-	if !decodeStrict(r, &request) {
-		badRequest(w, "Invalid Ticket Design Brief approval request")
-		return
-	}
-	if request.ExpectedVersion < 1 || strings.TrimSpace(request.OperatorConfirmationEvidence) == "" || strings.TrimSpace(request.CreatedIdentity) == "" {
-		badRequest(w, "Ticket Design Brief approval requires expected version, confirmation evidence, and identity")
-		return
-	}
-	approved, err := h.workflow.ApproveTicketDesignBrief(r.Context(), apptickets.TicketDesignBriefApprovalInput{
-		WorkspaceID: workspaceID(r), ExpectedVersion: request.ExpectedVersion,
-		OperatorConfirmationEvidence: request.OperatorConfirmationEvidence, CreatedIdentity: request.CreatedIdentity,
-	})
-	if err != nil {
-		writeTicketError(w, err)
-		return
-	}
-	shared.JSON(w, http.StatusCreated, map[string]any{"briefId": approved.Brief.BriefID, "approvalId": approved.Approval.ApprovalID})
-}
-
 func buildPublishInput(externalPriority, expectedRevisionNumber int64, revision revisionRequest, workspaceID, ticketID string) (apptickets.PublishInput, error) {
 	if revision.CanonicalJSON == nil {
 		return apptickets.PublishInput{}, errors.New("canonicalJson is required")
@@ -549,19 +404,17 @@ func badRequest(w http.ResponseWriter, message string) {
 func writeTicketError(w http.ResponseWriter, err error) {
 	packetCode := appoperations.ErrorCode(err)
 	switch {
-	case errors.Is(err, sql.ErrNoRows), errors.Is(err, apptickets.ErrTicketNotFound), errors.Is(err, apptickets.ErrSelectionWorkspaceNotFound), errors.Is(err, apptickets.ErrTicketDesignBriefNotFound):
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Delivery ticket, workspace, or Ticket Design Brief was not found")
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, apptickets.ErrTicketNotFound), errors.Is(err, apptickets.ErrSelectionWorkspaceNotFound):
+		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Delivery ticket or workspace was not found")
 	case packetCode == appoperations.CodePacketNotFound:
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Planner remediation authoring packet was not found")
 	case packetCode != "" && packetCode != appoperations.CodeInternalFailure:
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Planner remediation authoring packet is stale, unavailable, or does not match this remediation publication")
-	case errors.Is(err, apptickets.ErrSelectionConflict), errors.Is(err, apptickets.ErrSelectionMemberStale), errors.Is(err, apptickets.ErrSelectionSourceStale), errors.Is(err, apptickets.ErrSelectionAuthorityStale), errors.Is(err, apptickets.ErrSelectionDependenciesInvalid), errors.Is(err, apptickets.ErrRevisionConflict), errors.Is(err, apptickets.ErrTicketDesignBriefConflict), errors.Is(err, apptickets.ErrNoActiveSelection), errors.Is(err, appoperations.ErrTicketAdmission):
+	case errors.Is(err, apptickets.ErrSelectionConflict), errors.Is(err, apptickets.ErrSelectionMemberStale), errors.Is(err, apptickets.ErrSelectionSourceStale), errors.Is(err, apptickets.ErrSelectionAuthorityStale), errors.Is(err, apptickets.ErrSelectionDependenciesInvalid), errors.Is(err, apptickets.ErrRevisionConflict), errors.Is(err, appoperations.ErrTicketAdmission):
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket state is stale or invalid")
 	case errors.Is(err, apptickets.ErrRemediationSeed):
 		shared.Error(w, http.StatusConflict, "CONFLICT", "Delivery ticket remediation seed is stale or already consumed")
-	case errors.Is(err, apptickets.ErrInvalidTicket), errors.Is(err, apptickets.ErrInvalidSelection), errors.Is(err, apptickets.ErrSelectionMemberNotReady),
-		errors.Is(err, apptickets.ErrInvalidTicketDesignBrief), errors.Is(err, apptickets.ErrTicketDesignBriefBytesMismatch),
-		errors.Is(err, apptickets.ErrTicketDesignBriefApproval), errors.Is(err, apptickets.ErrTicketDesignBriefReview), errors.Is(err, apptickets.ErrBriefReviewIncomplete):
+	case errors.Is(err, apptickets.ErrInvalidTicket), errors.Is(err, apptickets.ErrInvalidSelection), errors.Is(err, apptickets.ErrSelectionMemberNotReady):
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Delivery ticket operation failed")
@@ -576,7 +429,4 @@ func MountWorkflowRoutes(r chi.Router, handler *WorkflowHandler) {
 	r.Post("/delivery-tickets/{ticketID}/approvals", handler.Approve)
 	r.Patch("/delivery-tickets/{ticketID}/priority", handler.UpdatePriority)
 	r.Post("/feature-workspaces/{workspaceID}/tickets/selection", handler.Select)
-	r.Post("/feature-workspaces/{workspaceID}/ticket-design-briefs", handler.AdmitTicketDesignBrief)
-	r.Post("/feature-workspaces/{workspaceID}/ticket-design-briefs/review-completions", handler.CompleteTicketDesignBriefReview)
-	r.Post("/feature-workspaces/{workspaceID}/ticket-design-briefs/approvals", handler.ApproveTicketDesignBrief)
 }

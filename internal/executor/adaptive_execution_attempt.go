@@ -30,7 +30,7 @@ type AdaptiveExecutionAttemptInput struct {
 }
 
 type AdaptiveExecutionAttemptResult struct {
-	Mode                     EffectiveExecutorBriefMode
+	Mode                     ExecutionMode
 	AdaptiveDispatchRequired bool
 	Attempt                  *workflowstore.ExecutionAttempt
 	InputArtifact            *workflowstore.Artifact
@@ -38,11 +38,14 @@ type AdaptiveExecutionAttemptResult struct {
 }
 
 // AdaptiveExecutionAttemptService records the immutable input for a later
-// adaptive Executor dispatch. It never starts that dispatch or changes Run
+// adaptive Executor dispatch. The input transports the verified
+// ExecutionAssignment artifact identity directly; it never embeds a generated
+// markdown restatement. The service never starts that dispatch or changes Run
 // lifecycle state.
 type AdaptiveExecutionAttemptService struct {
-	store  *workflowstore.Store
-	briefs *EffectiveExecutorBriefService
+	store       *workflowstore.Store
+	assignments *ExecutionAssignmentService
+	outcomes    *DeterministicOutcomeService
 }
 
 func NewAdaptiveExecutionAttemptService(
@@ -55,21 +58,25 @@ func NewAdaptiveExecutionAttemptService(
 	if sourceVaults == nil {
 		return nil, fmt.Errorf("source-vault reader is required")
 	}
-	briefs, err := NewEffectiveExecutorBriefService(store, sourceVaults)
+	assignments, err := NewExecutionAssignmentService(store, sourceVaults)
 	if err != nil {
 		return nil, err
 	}
-	return &AdaptiveExecutionAttemptService{store: store, briefs: briefs}, nil
+	outcomes, err := NewDeterministicOutcomeService(store, sourceVaults)
+	if err != nil {
+		return nil, err
+	}
+	return &AdaptiveExecutionAttemptService{store: store, assignments: assignments, outcomes: outcomes}, nil
 }
 
 func (s *AdaptiveExecutionAttemptService) Prepare(ctx context.Context, input AdaptiveExecutionAttemptInput) (AdaptiveExecutionAttemptResult, error) {
-	if s == nil || s.store == nil || s.briefs == nil {
+	if s == nil || s.store == nil || s.assignments == nil || s.outcomes == nil {
 		return AdaptiveExecutionAttemptResult{}, fmt.Errorf("adaptive execution attempt service is unavailable")
 	}
 	if strings.TrimSpace(input.RunID) == "" {
 		return AdaptiveExecutionAttemptResult{}, fmt.Errorf("Run ID is required")
 	}
-	brief, err := s.briefs.Prepare(ctx, input.RunID)
+	assignment, mode, err := s.loadAssignmentAndMode(ctx, input.RunID)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
@@ -77,10 +84,10 @@ func (s *AdaptiveExecutionAttemptService) Prepare(ctx context.Context, input Ada
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
-	if brief.Mode == EffectiveExecutorBriefDeterministicComplete {
-		return s.resolveComplete(ctx, run, brief.Mode)
+	if mode == ExecutionModeCompleteApplied {
+		return s.resolveComplete(ctx, run, mode)
 	}
-	if !brief.AdaptiveDispatchRequired || brief.Artifact == nil || len(brief.Bytes) == 0 {
+	if !adaptiveDispatchRequired(mode) {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
 	adapter, err := NormalizeKnownAdapterID(input.Adapter)
@@ -94,15 +101,15 @@ func (s *AdaptiveExecutionAttemptService) Prepare(ctx context.Context, input Ada
 	if existing, err := s.store.ListExecutionAttemptsByRun(ctx, run.ID); err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	} else if len(existing) != 0 {
-		return s.resolveExisting(ctx, run, brief, adapter, model, existing)
+		return s.resolveExisting(ctx, run, mode, assignment.Artifact, adapter, model, existing)
 	}
 
 	attemptID := workflowstore.NewExecutionAttemptID()
-	filename, err := adaptiveExecutionInputFilename(*brief.Artifact)
+	filename, err := adaptiveExecutionInputFilename(assignment.Artifact)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
-	content, err := marshalAdaptiveExecutionInput(run, brief.Mode, *brief.Artifact, attemptID, 1, adapter, model)
+	content, err := marshalAdaptiveExecutionInput(run, mode, assignment.Artifact, attemptID, 1, adapter, model)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
@@ -147,11 +154,11 @@ func (s *AdaptiveExecutionAttemptService) Prepare(ctx context.Context, input Ada
 		return err
 	})
 	if err == nil {
-		return adaptiveExecutionAttemptResult(brief.Mode, createdAttempt, createdArtifact, content), nil
+		return adaptiveExecutionAttemptResult(mode, createdAttempt, createdArtifact, content), nil
 	}
 	if errors.Is(err, ErrAdaptiveExecutionAttemptConflict) || isPackageAttemptUniquenessError(err) {
 		if attempts, listErr := s.store.ListExecutionAttemptsByRun(ctx, run.ID); listErr == nil && len(attempts) != 0 {
-			return s.resolveExisting(ctx, run, brief, adapter, model, attempts)
+			return s.resolveExisting(ctx, run, mode, assignment.Artifact, adapter, model, attempts)
 		}
 	}
 	return AdaptiveExecutionAttemptResult{}, err
@@ -160,13 +167,13 @@ func (s *AdaptiveExecutionAttemptService) Prepare(ctx context.Context, input Ada
 // Load resolves exactly one already-prepared adaptive attempt. It is strictly
 // read-only and accepts attempts that have advanced from pending to running.
 func (s *AdaptiveExecutionAttemptService) Load(ctx context.Context, runID string) (AdaptiveExecutionAttemptResult, error) {
-	if s == nil || s.store == nil || s.briefs == nil {
+	if s == nil || s.store == nil || s.assignments == nil || s.outcomes == nil {
 		return AdaptiveExecutionAttemptResult{}, fmt.Errorf("adaptive execution attempt service is unavailable")
 	}
 	if strings.TrimSpace(runID) == "" {
 		return AdaptiveExecutionAttemptResult{}, fmt.Errorf("Run ID is required")
 	}
-	brief, err := s.briefs.Load(ctx, runID)
+	assignment, mode, err := s.loadAssignmentAndMode(ctx, runID)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
@@ -174,10 +181,10 @@ func (s *AdaptiveExecutionAttemptService) Load(ctx context.Context, runID string
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
-	if brief.Mode == EffectiveExecutorBriefDeterministicComplete {
-		return s.resolveComplete(ctx, run, brief.Mode)
+	if mode == ExecutionModeCompleteApplied {
+		return s.resolveComplete(ctx, run, mode)
 	}
-	if !brief.AdaptiveDispatchRequired || brief.Artifact == nil || len(brief.Bytes) == 0 {
+	if !adaptiveDispatchRequired(mode) {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
 	attempts, err := s.store.ListExecutionAttemptsByRun(ctx, run.ID)
@@ -207,10 +214,29 @@ func (s *AdaptiveExecutionAttemptService) Load(ctx context.Context, runID string
 	if err := json.Unmarshal(content, &document); err != nil || document.SchemaVersion != "1.0" || document.Executor.Adapter != attempt.Adapter || document.Executor.Model != attempt.Model {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
-	return s.resolveExisting(ctx, run, brief, attempt.Adapter, attempt.Model, attempts)
+	return s.resolveExisting(ctx, run, mode, assignment.Artifact, attempt.Adapter, attempt.Model, attempts)
 }
 
-func (s *AdaptiveExecutionAttemptService) resolveComplete(ctx context.Context, run workflowstore.Run, mode EffectiveExecutorBriefMode) (AdaptiveExecutionAttemptResult, error) {
+// loadAssignmentAndMode resolves the verified ExecutionAssignment artifact and
+// mechanically derives the non-authoritative runtime ExecutionMode from the
+// durable Deterministic Outcome. Both are bound to the same approved authority.
+func (s *AdaptiveExecutionAttemptService) loadAssignmentAndMode(ctx context.Context, runID string) (ExecutionAssignmentResult, ExecutionMode, error) {
+	assignment, err := s.assignments.LoadExecutionAssignment(ctx, runID)
+	if err != nil {
+		return ExecutionAssignmentResult{}, "", err
+	}
+	outcome, err := s.outcomes.Load(ctx, runID)
+	if err != nil {
+		return ExecutionAssignmentResult{}, "", err
+	}
+	mode, err := executionModeFromOutcome(outcome.Outcome.Outcome)
+	if err != nil {
+		return ExecutionAssignmentResult{}, "", ErrAdaptiveExecutionAttemptConflict
+	}
+	return assignment, mode, nil
+}
+
+func (s *AdaptiveExecutionAttemptService) resolveComplete(ctx context.Context, run workflowstore.Run, mode ExecutionMode) (AdaptiveExecutionAttemptResult, error) {
 	attempts, err := s.store.ListExecutionAttemptsByRun(ctx, run.ID)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
@@ -221,7 +247,7 @@ func (s *AdaptiveExecutionAttemptService) resolveComplete(ctx context.Context, r
 	return AdaptiveExecutionAttemptResult{Mode: mode}, nil
 }
 
-func (s *AdaptiveExecutionAttemptService) resolveExisting(ctx context.Context, run workflowstore.Run, brief EffectiveExecutorBriefResult, adapter, model string, attempts []workflowstore.ExecutionAttempt) (AdaptiveExecutionAttemptResult, error) {
+func (s *AdaptiveExecutionAttemptService) resolveExisting(ctx context.Context, run workflowstore.Run, mode ExecutionMode, assignment workflowstore.Artifact, adapter, model string, attempts []workflowstore.ExecutionAttempt) (AdaptiveExecutionAttemptResult, error) {
 	if len(attempts) != 1 {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
@@ -229,7 +255,7 @@ func (s *AdaptiveExecutionAttemptService) resolveExisting(ctx context.Context, r
 	if attempt.AttemptNumber != 1 || attempt.Adapter != adapter || attempt.Model != model {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
-	if brief.Artifact == nil || brief.Mode == EffectiveExecutorBriefDeterministicComplete || !brief.AdaptiveDispatchRequired {
+	if mode == ExecutionModeCompleteApplied || !adaptiveDispatchRequired(mode) {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
 	artifacts, err := s.store.ListArtifactsByExecutionAttempt(ctx, attempt.ID)
@@ -240,11 +266,11 @@ func (s *AdaptiveExecutionAttemptService) resolveExisting(ctx context.Context, r
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
-	filename, err := adaptiveExecutionInputFilename(*brief.Artifact)
+	filename, err := adaptiveExecutionInputFilename(assignment)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
-	expected, err := marshalAdaptiveExecutionInput(run, brief.Mode, *brief.Artifact, attempt.AttemptID, attempt.AttemptNumber, adapter, model)
+	expected, err := marshalAdaptiveExecutionInput(run, mode, assignment, attempt.AttemptID, attempt.AttemptNumber, adapter, model)
 	if err != nil {
 		return AdaptiveExecutionAttemptResult{}, err
 	}
@@ -256,10 +282,10 @@ func (s *AdaptiveExecutionAttemptService) resolveExisting(ctx context.Context, r
 	if readErr != nil || verified.RelativePath != artifact.RelativePath || !bytes.Equal(content, expected) {
 		return AdaptiveExecutionAttemptResult{}, ErrAdaptiveExecutionAttemptConflict
 	}
-	return adaptiveExecutionAttemptResult(brief.Mode, attempt, artifact, content), nil
+	return adaptiveExecutionAttemptResult(mode, attempt, artifact, content), nil
 }
 
-func adaptiveExecutionAttemptResult(mode EffectiveExecutorBriefMode, attempt workflowstore.ExecutionAttempt, artifact workflowstore.Artifact, content []byte) AdaptiveExecutionAttemptResult {
+func adaptiveExecutionAttemptResult(mode ExecutionMode, attempt workflowstore.ExecutionAttempt, artifact workflowstore.Artifact, content []byte) AdaptiveExecutionAttemptResult {
 	attemptCopy, artifactCopy := attempt, artifact
 	return AdaptiveExecutionAttemptResult{Mode: mode, AdaptiveDispatchRequired: true, Attempt: &attemptCopy, InputArtifact: &artifactCopy, InputBytes: append([]byte(nil), content...)}
 }
@@ -282,11 +308,11 @@ func findAdaptiveExecutionInputArtifact(artifacts []workflowstore.Artifact, atte
 	return *found, nil
 }
 
-func adaptiveExecutionInputFilename(brief workflowstore.Artifact) (string, error) {
-	base := filepath.Base(brief.RelativePath)
-	const suffix = ".effective-executor-brief.md"
+func adaptiveExecutionInputFilename(assignment workflowstore.Artifact) (string, error) {
+	base := filepath.Base(assignment.RelativePath)
+	const suffix = ".execution-assignment.json"
 	if !strings.HasSuffix(base, suffix) {
-		return "", fmt.Errorf("effective Executor Brief filename is not canonical")
+		return "", fmt.Errorf("execution assignment filename is not canonical")
 	}
 	return strings.TrimSuffix(base, suffix) + ".adaptive-execution-input.json", nil
 }
@@ -296,12 +322,12 @@ func isPackageAttemptUniquenessError(err error) bool {
 }
 
 type adaptiveExecutionInputDocument struct {
-	SchemaVersion          string                         `json:"schema_version"`
-	Run                    adaptiveExecutionInputRun      `json:"run"`
-	Mode                   EffectiveExecutorBriefMode     `json:"mode"`
-	EffectiveExecutorBrief adaptiveExecutionInputBrief    `json:"effective_executor_brief"`
-	ExecutionAttempt       adaptiveExecutionInputAttempt  `json:"execution_attempt"`
-	Executor               adaptiveExecutionInputExecutor `json:"executor"`
+	SchemaVersion       string                         `json:"schema_version"`
+	Run                 adaptiveExecutionInputRun      `json:"run"`
+	Mode                ExecutionMode                  `json:"mode"`
+	ExecutionAssignment adaptiveExecutionInputArtifact `json:"execution_assignment"`
+	ExecutionAttempt    adaptiveExecutionInputAttempt  `json:"execution_attempt"`
+	Executor            adaptiveExecutionInputExecutor `json:"executor"`
 }
 
 type adaptiveExecutionInputRun struct {
@@ -312,7 +338,7 @@ type adaptiveExecutionInputRun struct {
 	BaseCommit string `json:"base_commit"`
 }
 
-type adaptiveExecutionInputBrief struct {
+type adaptiveExecutionInputArtifact struct {
 	ArtifactID    string `json:"artifact_id"`
 	ArtifactRowID int64  `json:"artifact_row_id"`
 	RelativePath  string `json:"relative_path"`
@@ -331,14 +357,14 @@ type adaptiveExecutionInputExecutor struct {
 	Model   string `json:"model"`
 }
 
-func marshalAdaptiveExecutionInput(run workflowstore.Run, mode EffectiveExecutorBriefMode, brief workflowstore.Artifact, attemptID string, attemptNumber int64, adapter, model string) ([]byte, error) {
+func marshalAdaptiveExecutionInput(run workflowstore.Run, mode ExecutionMode, assignment workflowstore.Artifact, attemptID string, attemptNumber int64, adapter, model string) ([]byte, error) {
 	content, err := json.Marshal(adaptiveExecutionInputDocument{
-		SchemaVersion:          "1.0",
-		Run:                    adaptiveExecutionInputRun{RunID: run.RunID, RunRowID: run.ID, RepoTarget: run.RepoTarget, Branch: run.Branch, BaseCommit: run.BaseCommit},
-		Mode:                   mode,
-		EffectiveExecutorBrief: adaptiveExecutionInputBrief{ArtifactID: brief.ArtifactID, ArtifactRowID: brief.ID, RelativePath: brief.RelativePath, MediaType: brief.MediaType, SHA256: brief.SHA256, SizeBytes: brief.SizeBytes},
-		ExecutionAttempt:       adaptiveExecutionInputAttempt{AttemptID: attemptID, AttemptNumber: attemptNumber},
-		Executor:               adaptiveExecutionInputExecutor{Adapter: adapter, Model: model},
+		SchemaVersion:       "1.0",
+		Run:                 adaptiveExecutionInputRun{RunID: run.RunID, RunRowID: run.ID, RepoTarget: run.RepoTarget, Branch: run.Branch, BaseCommit: run.BaseCommit},
+		Mode:                mode,
+		ExecutionAssignment: adaptiveExecutionInputArtifact{ArtifactID: assignment.ArtifactID, ArtifactRowID: assignment.ID, RelativePath: assignment.RelativePath, MediaType: assignment.MediaType, SHA256: assignment.SHA256, SizeBytes: assignment.SizeBytes},
+		ExecutionAttempt:    adaptiveExecutionInputAttempt{AttemptID: attemptID, AttemptNumber: attemptNumber},
+		Executor:            adaptiveExecutionInputExecutor{Adapter: adapter, Model: model},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal adaptive execution input: %w", err)

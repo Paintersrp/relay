@@ -131,9 +131,12 @@ func TestValidateArtifactValidatesAuthoredMarkdownWithoutAdmission(t *testing.T)
 		t.Fatalf("valid authored Markdown result = %+v", valid)
 	}
 
+	// The Ticket Design Brief is no longer a supported canonical artifact
+	// kind: its filename is blocked as an unsupported artifact and no durable
+	// row or file is created.
 	invalidBytes := []byte("# Ticket Design Brief\n\n## Selected Ticket\n")
 	blocked := validateArtifact(ValidationInput{DisplayName: "relay.ticket-P2-T5.r1.design-brief.md", CanonicalBytes: invalidBytes})
-	if blocked.OK || blocked.Status != "blocked" || blocked.Kind != "ticket_design_brief" || blocked.SHA256 != SHA256(invalidBytes) || len(blocked.Diagnostics) == 0 {
+	if blocked.OK || blocked.Status != "blocked" || blocked.Kind != "unknown" || blocked.SHA256 != SHA256(invalidBytes) || len(blocked.Diagnostics) == 0 || blocked.Diagnostics[0].Code != "unsupported_artifact_filename" {
 		t.Fatalf("blocked authored Markdown result = %+v", blocked)
 	}
 	for _, table := range []string{"plans", "plan_passes", "runs", "artifacts"} {

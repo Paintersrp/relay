@@ -22,7 +22,7 @@ func TestRouteManifestIdentityIsCanonicalAndComplete(t *testing.T) {
 		if !bytes.Equal(a.ManifestBasis, b.ManifestBasis) || a.ManifestSHA256 != b.ManifestSHA256 || a.ManifestBasisSizeBytes != len(a.ManifestBasis) {
 			t.Fatalf("manifest %d is unstable", i)
 		}
-		if a.StandingAuthority.Repository != "Paintersrp/relay-specs" || a.StandingAuthority.Commit != "7bc0841c9378da372525f3425e4f45c67c5997af" {
+		if a.StandingAuthority.Repository != "Paintersrp/relay-specs" || a.StandingAuthority.Commit != "590c4ba79e557e3957a80ad1fefe8698cef0219e" {
 			t.Fatalf("standing=%#v", a.StandingAuthority)
 		}
 		for _, tool := range a.Tools {

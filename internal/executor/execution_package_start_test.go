@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"relay/internal/applier"
 	"relay/internal/pipeline"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
@@ -113,8 +112,8 @@ func TestWorkflowStartPackageAdaptiveSuccessDispatchesOnceAndProjectsIdentity(t 
 	if result.Run != launchRun || result.Attempt != launchAttempt || result.Package == nil || !reflect.DeepEqual(*result.Package, dispatched) {
 		t.Fatalf("result=%#v dispatched=%#v", result, dispatched)
 	}
-	if !reflect.DeepEqual(result.Preflight, workflowrepos.ExecutionPreflightResult{}) || result.Applier != nil {
-		t.Fatalf("legacy fields were populated: preflight=%#v applier=%#v", result.Preflight, result.Applier)
+	if !reflect.DeepEqual(result.Preflight, workflowrepos.ExecutionPreflightResult{}) {
+		t.Fatalf("legacy preflight field was populated: preflight=%#v", result.Preflight)
 	}
 }
 
@@ -237,10 +236,6 @@ func TestWorkflowStartPackageNeverEntersLegacyExecution(t *testing.T) {
 		t.Fatal("package Start called legacy repository preflight")
 		return workflowrepos.ExecutionPreflightResult{}
 	}
-	service.applier = func(context.Context, applier.Input) (applier.Result, error) {
-		t.Fatal("package Start called legacy applier")
-		return applier.Result{}, nil
-	}
 	withPackageWorkflowStartSeams(t,
 		func(context.Context, *PackagePreparation, PackagePreparationInput) (PackagePreparationResult, error) {
 			return prepared, nil
@@ -299,10 +294,6 @@ func TestWorkflowStartLegacyRunRetiredBeforeExecutionSideEffects(t *testing.T) {
 	fixture.service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		t.Fatal("legacy Run entered repository preflight")
 		return workflowrepos.ExecutionPreflightResult{}
-	}
-	fixture.service.applier = func(context.Context, applier.Input) (applier.Result, error) {
-		t.Fatal("legacy Run invoked deterministic applier")
-		return applier.Result{}, nil
 	}
 	fixture.service.adapterFactory = func(string) (ExecutorAdapter, error) {
 		t.Fatal("legacy Run built an executor adapter")

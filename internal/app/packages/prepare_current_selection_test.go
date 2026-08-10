@@ -3,54 +3,19 @@ package packages
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
-	"relay/internal/app/tickets"
 	"relay/internal/guidedapp"
-	"relay/internal/testfixtures"
 )
 
-func TestPrepareCurrentSelectionResolvesApprovedBriefServerSide(t *testing.T) {
+func TestPrepareCurrentSelectionResolvesApprovedTicketServerSide(t *testing.T) {
 	ctx := context.Background()
 	fixture := newPackageServiceFixture(t)
-	ticketsService, err := tickets.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	// Without an authored brief the package owner refuses preparation.
-	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"}); !errors.Is(err, ErrApprovedBriefMissing) {
-		t.Fatalf("prepare without brief error = %v, want ErrApprovedBriefMissing", err)
-	}
-
-	// Authoring admits the brief through the delivery owner; an authored but
-	// unapproved brief must not authorize package preparation.
-	admitted, err := ticketsService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{
-		WorkspaceID: "workspace-package", Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if admitted.Filename != fixture.brief.DisplayName {
-		t.Fatalf("admitted brief filename = %q, want %q", admitted.Filename, fixture.brief.DisplayName)
-	}
-	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"}); !errors.Is(err, ErrBriefNotApproved) {
-		t.Fatalf("prepare without approval error = %v, want ErrBriefNotApproved", err)
-	}
-
-	workspace, err := fixture.store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ticketsService.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: []byte(testfixtures.TicketDesignBrief)}, tickets.TicketDesignBriefApprovalInput{
-		WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version,
-		OperatorConfirmationEvidence: "reviewed and approved", CreatedIdentity: "auditor",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Preparation resolves the current active selection and approved Brief
-	// server-side; the caller supplied no selection ID, brief ID, or digest.
+	// Preparation resolves the current active selection and the selected
+	// approved Delivery Ticket server-side; the caller supplied no selection
+	// ID, Ticket digest, or Brief identity.
 	result, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"})
 	if err != nil {
 		t.Fatal(err)
@@ -80,34 +45,15 @@ func TestPrepareCurrentSelectionRejectsInvalidWorkspaceInput(t *testing.T) {
 	}
 }
 
-func TestPrepareCurrentSelectionDoesNotUseNeedsRevisionBriefAfterReplacement(t *testing.T) {
+func TestPrepareCurrentSelectionUsesOnlySelectedApprovedTicket(t *testing.T) {
 	ctx := context.Background()
 	fixture := newPackageServiceFixture(t)
-	ticketService, err := tickets.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
+	// Mutate the selected Ticket source bytes: the server-resolved preparation
+	// must refuse because the approved Ticket exact bytes are the sole basis.
+	mutated := []byte(strings.Replace(string(fixture.ticketDocument), `"goal":"Package the selected ticket."`, `"goal":"Different goal."`, 1))
+	fixture.service.setSourceVaults(newPackageSourceVaultReader(fixture.sourcePath, mutated))
+	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"}); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("prepare with mutated Ticket source error = %v, want ErrPackageBasisChanged", err)
 	}
-	first, err := ticketService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{
-		WorkspaceID: "workspace-package", Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ticketService.CompleteTicketDesignBriefReview(ctx, tickets.CompleteBriefReviewInput{
-		WorkspaceID: "workspace-package", BriefID: first.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewNeedsRevision, ReviewedBytes: []byte(testfixtures.TicketDesignBrief),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	replacement, err := ticketService.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{
-		WorkspaceID: "workspace-package", Bytes: []byte(testfixtures.TicketDesignBrief), CreatedIdentity: "planner",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if replacement.Brief.SelectionRowID != first.Brief.SelectionRowID || replacement.Brief.AttemptNumber != first.Brief.AttemptNumber+1 {
-		t.Fatalf("replacement brief did not advance the current selection attempt: first=%#v replacement=%#v", first.Brief, replacement.Brief)
-	}
-	if _, err := fixture.service.PrepareCurrentSelection(ctx, guidedapp.PreparePackageInput{WorkspaceID: "workspace-package"}); !errors.Is(err, ErrBriefNotApproved) {
-		t.Fatalf("needs-revision brief authorized replacement package: %v", err)
-	}
+	assertCount(t, fixture.store.DB(), "execution_packages", 0)
 }

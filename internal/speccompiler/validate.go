@@ -21,435 +21,6 @@ func (v *validator) add(code, path, message string) {
 	v.diagnostics = append(v.diagnostics, Diagnostic{Code: code, Path: path, Message: message})
 }
 
-type executionDependencyRecord struct {
-	Ref  string
-	Path string
-}
-
-type executionSubstepRecord struct {
-	Ref       string
-	Path      string
-	Order     int
-	DependsOn []executionDependencyRecord
-}
-
-var substepReferencePattern = regexp.MustCompile(`^[1-9][0-9]*\.[1-9][0-9]*$`)
-
-func validateExecutionSpec(root *jsonNode, filenameSlug string, definition currentArtifactDefinition) []Diagnostic {
-	v := &validator{}
-	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}, []string{"feature_slug", "repo_target", "branch", "base_commit", "goal", "context", "scope", "steps", "validation", "completion_criteria"}) {
-		return v.diagnostics
-	}
-
-	if slug, ok := v.stringMember(root, "feature_slug", "/feature_slug", stringFeatureSlug); ok && slug != filenameSlug {
-		v.add("filename_slug_mismatch", "/feature_slug", fmt.Sprintf("feature_slug %q does not match filename slug %q.", slug, filenameSlug))
-	}
-	v.stringMember(root, "repo_target", "/repo_target", stringRepositoryKey)
-	v.stringMember(root, "branch", "/branch", stringBranch)
-	v.stringMember(root, "base_commit", "/base_commit", stringCommit)
-	v.stringMember(root, "goal", "/goal", stringSingleLine)
-	v.stringMember(root, "context", "/context", stringMultiline)
-	if member, ok := root.objectMember("scope"); ok {
-		v.validateScope(member.value, "/scope")
-	}
-
-	fileCount := 0
-	operations := map[string]string{}
-	destinations := map[string]string{}
-	var substeps []executionSubstepRecord
-	if member, ok := root.objectMember("steps"); ok {
-		if member.value.kind != nodeArray {
-			v.add("invalid_value_type", "/steps", "steps must be an array.")
-		} else if len(member.value.array) == 0 {
-			v.add("empty_required_value", "/steps", "steps must not be empty.")
-		} else {
-			for i, step := range member.value.array {
-				stepPath := joinPointer("/steps", strconv.Itoa(i))
-				v.validateExecutionStep(step, stepPath, i+1, definition, &fileCount, operations, destinations, &substeps)
-			}
-		}
-	}
-	if fileCount == 0 {
-		v.add("missing_file_declaration", "/steps", "At least one file declaration is required.")
-	}
-	v.validateExecutionDependencies(substeps)
-
-	if member, ok := root.objectMember("validation"); ok {
-		v.validateValidation(member.value, "/validation")
-	}
-	if member, ok := root.objectMember("completion_criteria"); ok {
-		v.validateStringArray(member.value, "/completion_criteria", false)
-	}
-	return v.diagnostics
-}
-
-func (v *validator) validateExecutionStep(node *jsonNode, path string, expectedNumber int, definition currentArtifactDefinition, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
-	if !v.objectShape(node, path, []string{"number", "goal", "substeps", "completion_criteria"}, []string{"number", "goal", "substeps", "completion_criteria"}) {
-		return
-	}
-	stepNumber := expectedNumber
-	if number, ok := v.integerMember(node, "number", path+"/number", 1); ok {
-		stepNumber = number
-		if number != expectedNumber {
-			v.add("nonsequential_step_number", path+"/number", fmt.Sprintf("Step number must be %d.", expectedNumber))
-		}
-	}
-	v.stringMember(node, "goal", path+"/goal", stringSingleLine)
-	if member, ok := node.objectMember("substeps"); ok {
-		if member.value.kind != nodeArray {
-			v.add("invalid_value_type", path+"/substeps", "substeps must be an array.")
-		} else if len(member.value.array) == 0 {
-			v.add("empty_required_value", path+"/substeps", "substeps must not be empty.")
-		} else {
-			for i, substep := range member.value.array {
-				subPath := joinPointer(path+"/substeps", strconv.Itoa(i))
-				v.validateExecutionSubstep(substep, subPath, stepNumber, i+1, definition, fileCount, operations, destinations, records)
-			}
-		}
-	}
-	if member, ok := node.objectMember("completion_criteria"); ok {
-		v.validateStringArray(member.value, path+"/completion_criteria", false)
-	}
-}
-
-func (v *validator) validateExecutionSubstep(node *jsonNode, path string, stepNumber, expectedNumber int, definition currentArtifactDefinition, fileCount *int, operations, destinations map[string]string, records *[]executionSubstepRecord) {
-	if !v.objectShape(node, path, definition.CanonicalSubstep, []string{"number", "instruction", "files", "completion_criteria"}) {
-		return
-	}
-	substepNumber := expectedNumber
-	if number, ok := v.integerMember(node, "number", path+"/number", 1); ok {
-		substepNumber = number
-		if number != expectedNumber {
-			v.add("nonsequential_substep_number", path+"/number", fmt.Sprintf("Substep number must be %d.", expectedNumber))
-		}
-	}
-	v.stringMember(node, "instruction", path+"/instruction", stringSingleLine)
-
-	record := executionSubstepRecord{
-		Ref:   fmt.Sprintf("%d.%d", stepNumber, substepNumber),
-		Path:  path,
-		Order: len(*records),
-	}
-	if member, ok := node.objectMember("depends_on"); ok {
-		if member.value.kind != nodeArray {
-			v.add("invalid_value_type", path+"/depends_on", "depends_on must be an array.")
-		} else if len(member.value.array) == 0 {
-			v.add("empty_required_value", path+"/depends_on", "depends_on must not be empty when authored.")
-		} else {
-			for i, dependency := range member.value.array {
-				dependencyPath := joinPointer(path+"/depends_on", strconv.Itoa(i))
-				if dependency.kind != nodeString {
-					v.add("invalid_substep_reference", dependencyPath, "Substep references must use <step>.<substep> form.")
-					continue
-				}
-				record.DependsOn = append(record.DependsOn, executionDependencyRecord{Ref: dependency.text, Path: dependencyPath})
-			}
-		}
-	}
-	*records = append(*records, record)
-
-	if member, ok := node.objectMember("files"); ok {
-		if member.value.kind != nodeArray {
-			v.add("invalid_value_type", path+"/files", "files must be an array.")
-		} else if len(member.value.array) == 0 {
-			v.add("empty_required_value", path+"/files", "files must not be empty.")
-		} else {
-			for i, file := range member.value.array {
-				(*fileCount)++
-				filePath := joinPointer(path+"/files", strconv.Itoa(i))
-				v.validateFile(file, filePath, operations, destinations)
-			}
-		}
-	}
-	if member, ok := node.objectMember("completion_criteria"); ok {
-		v.validateStringArray(member.value, path+"/completion_criteria", false)
-	}
-}
-
-func (v *validator) validateExecutionDependencies(records []executionSubstepRecord) {
-	byRef := make(map[string]executionSubstepRecord, len(records))
-	for _, record := range records {
-		byRef[record.Ref] = record
-	}
-	graph := make(map[string][]string, len(records))
-	for _, record := range records {
-		for _, dependency := range record.DependsOn {
-			if substepReferencePattern.MatchString(dependency.Ref) {
-				if _, ok := byRef[dependency.Ref]; ok {
-					graph[record.Ref] = append(graph[record.Ref], dependency.Ref)
-				}
-			}
-		}
-	}
-
-	for _, record := range records {
-		seen := map[string]struct{}{}
-		for _, dependency := range record.DependsOn {
-			if !substepReferencePattern.MatchString(dependency.Ref) {
-				v.add("invalid_substep_reference", dependency.Path, "Substep references must use <step>.<substep> form.")
-				continue
-			}
-			if _, duplicate := seen[dependency.Ref]; duplicate {
-				v.add("duplicate_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q is duplicated.", dependency.Ref))
-				continue
-			}
-			seen[dependency.Ref] = struct{}{}
-			if dependency.Ref == record.Ref {
-				v.add("self_dependency", dependency.Path, "A substep cannot depend on itself.")
-				continue
-			}
-			target, exists := byRef[dependency.Ref]
-			if !exists {
-				v.add("unknown_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q does not exist.", dependency.Ref))
-				continue
-			}
-			if target.Order > record.Order {
-				v.add("forward_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q must reference an earlier substep.", dependency.Ref))
-			}
-			if dependencyReaches(graph, dependency.Ref, record.Ref, map[string]bool{}) {
-				v.add("circular_dependency", dependency.Path, fmt.Sprintf("Substep dependency %q participates in a cycle.", dependency.Ref))
-			}
-		}
-	}
-}
-
-func dependencyReaches(graph map[string][]string, current, target string, visiting map[string]bool) bool {
-	if current == target {
-		return true
-	}
-	if visiting[current] {
-		return false
-	}
-	visiting[current] = true
-	defer delete(visiting, current)
-	for _, next := range graph[current] {
-		if dependencyReaches(graph, next, target, visiting) {
-			return true
-		}
-	}
-	return false
-}
-
-func (v *validator) validateFile(node *jsonNode, path string, operations, destinations map[string]string) {
-	if node == nil || node.kind != nodeObject {
-		v.add("invalid_value_type", path, "File declaration must be an object.")
-		return
-	}
-	op := ""
-	if member, ok := node.objectMember("operation"); ok && member.value.kind == nodeString {
-		op = member.value.text
-	}
-	order := []string{"path", "operation", "purpose", "implementation"}
-	required := []string{"path", "operation", "purpose", "implementation"}
-	if op == "rename" {
-		order = []string{"path", "destination_path", "operation", "purpose", "implementation"}
-		required = []string{"path", "destination_path", "operation", "purpose", "implementation"}
-	}
-	v.objectShape(node, path, order, required)
-
-	filePath, pathOK := v.stringMember(node, "path", path+"/path", stringRepositoryPath)
-	operation, operationOK := v.stringMember(node, "operation", path+"/operation", stringSingleLine)
-	if operationOK && operation != "modify" && operation != "create" && operation != "delete" && operation != "rename" {
-		v.add("invalid_file_operation", path+"/operation", fmt.Sprintf("Unsupported file operation %q.", operation))
-	}
-	v.stringMember(node, "purpose", path+"/purpose", stringSingleLine)
-
-	destination := ""
-	if operation == "rename" {
-		var ok bool
-		destination, ok = v.stringMember(node, "destination_path", path+"/destination_path", stringRepositoryPath)
-		if !ok {
-			v.add("missing_rename_destination", path+"/destination_path", "Rename operations require destination_path.")
-		}
-	} else if _, ok := node.objectMember("destination_path"); ok {
-		v.add("unexpected_rename_destination", path+"/destination_path", "destination_path is allowed only for rename operations.")
-	}
-
-	if pathOK && operationOK {
-		if prior, exists := operations[filePath]; exists && prior != operation {
-			v.add("conflicting_file_operation", path+"/operation", fmt.Sprintf("Path %q previously used operation %q.", filePath, prior))
-		} else {
-			operations[filePath] = operation
-		}
-		if operation == "rename" {
-			if prior, exists := destinations[filePath]; exists && prior != destination {
-				v.add("conflicting_rename_destination", path+"/destination_path", fmt.Sprintf("Path %q previously used rename destination %q.", filePath, prior))
-			} else {
-				destinations[filePath] = destination
-			}
-		}
-	}
-
-	implementation, ok := node.objectMember("implementation")
-	if !ok {
-		v.add("missing_file_implementation", path+"/implementation", "File declaration requires implementation content.")
-		return
-	}
-	switch operation {
-	case "modify":
-		v.validateModifyImplementation(implementation.value, path+"/implementation")
-	case "create":
-		v.validateCreateImplementation(implementation.value, path+"/implementation")
-	case "delete":
-		v.validateDeleteImplementation(implementation.value, path+"/implementation")
-	case "rename":
-		v.validateRenameImplementation(implementation.value, path+"/implementation")
-	default:
-		if implementation.value.kind != nodeObject {
-			v.add("operation_incompatible_file_implementation", path+"/implementation", "implementation must be an object compatible with the file operation.")
-		}
-	}
-}
-
-func (v *validator) validateModifyImplementation(node *jsonNode, path string) {
-	if !v.objectShape(node, path, []string{"changes"}, []string{"changes"}) {
-		v.add("operation_incompatible_file_implementation", path, "modify implementation must contain changes.")
-		return
-	}
-	member, ok := node.objectMember("changes")
-	if !ok {
-		return
-	}
-	if member.value.kind != nodeArray {
-		v.add("operation_incompatible_file_implementation", path+"/changes", "changes must be an array.")
-		return
-	}
-	if len(member.value.array) == 0 {
-		v.add("empty_modify_changes", path+"/changes", "modify changes must not be empty.")
-		return
-	}
-	for i, change := range member.value.array {
-		v.validateModifyChange(change, joinPointer(path+"/changes", strconv.Itoa(i)))
-	}
-}
-
-func (v *validator) validateModifyChange(node *jsonNode, path string) {
-	if node == nil || node.kind != nodeObject {
-		v.add("invalid_modify_directive", path, "Modify directive must be an object.")
-		return
-	}
-	kind := ""
-	if member, ok := node.objectMember("kind"); ok && member.value.kind == nodeString {
-		kind = member.value.text
-	}
-	var order, required []string
-	switch kind {
-	case "replace":
-		order = []string{"kind", "old_text", "new_text", "expected_occurrences"}
-		required = order
-	case "insert_before", "insert_after":
-		order = []string{"kind", "anchor", "content", "expected_occurrences"}
-		required = order
-	case "remove":
-		order = []string{"kind", "old_text", "expected_occurrences"}
-		required = order
-	case "replace_file":
-		order = []string{"kind", "content"}
-		required = order
-	default:
-		order = []string{"kind", "old_text", "anchor", "new_text", "content", "expected_occurrences"}
-		required = []string{"kind"}
-	}
-	v.objectShape(node, path, order, required)
-	if _, ok := v.stringMember(node, "kind", path+"/kind", stringSingleLine); ok {
-		if kind != "replace" && kind != "insert_before" && kind != "insert_after" && kind != "remove" && kind != "replace_file" {
-			v.add("invalid_modify_directive", path+"/kind", fmt.Sprintf("Unsupported modify directive %q.", kind))
-		}
-	}
-	switch kind {
-	case "replace":
-		v.stringMember(node, "old_text", path+"/old_text", stringMultiline)
-		if value, ok := v.stringMember(node, "new_text", path+"/new_text", stringMultiline); ok {
-			v.validateTargetContent(value, path+"/new_text")
-		}
-		v.integerMemberWithCode(node, "expected_occurrences", path+"/expected_occurrences", 1, "invalid_expected_occurrences")
-	case "insert_before", "insert_after":
-		v.stringMember(node, "anchor", path+"/anchor", stringMultiline)
-		if value, ok := v.stringMember(node, "content", path+"/content", stringMultiline); ok {
-			v.validateTargetContent(value, path+"/content")
-		}
-		v.integerMemberWithCode(node, "expected_occurrences", path+"/expected_occurrences", 1, "invalid_expected_occurrences")
-	case "remove":
-		v.stringMember(node, "old_text", path+"/old_text", stringMultiline)
-		v.integerMemberWithCode(node, "expected_occurrences", path+"/expected_occurrences", 1, "invalid_expected_occurrences")
-	case "replace_file":
-		if value, ok := v.stringMember(node, "content", path+"/content", stringMultiline); ok {
-			v.validateTargetContent(value, path+"/content")
-		}
-	}
-}
-
-func (v *validator) validateCreateImplementation(node *jsonNode, path string) {
-	if !v.objectShape(node, path, []string{"content"}, []string{"content"}) {
-		v.add("operation_incompatible_file_implementation", path, "create implementation must contain complete content.")
-		return
-	}
-	if value, ok := v.stringMember(node, "content", path+"/content", stringMultiline); ok {
-		v.validateTargetContent(value, path+"/content")
-	}
-}
-
-func (v *validator) validateDeleteImplementation(node *jsonNode, path string) {
-	if !v.objectShape(node, path, []string{"delete_file"}, []string{"delete_file"}) {
-		v.add("operation_incompatible_file_implementation", path, "delete implementation must contain delete_file: true.")
-		return
-	}
-	member, ok := node.objectMember("delete_file")
-	if ok && (member.value.kind != nodeBool || !member.value.boolean) {
-		v.add("operation_incompatible_file_implementation", path+"/delete_file", "delete_file must be true.")
-	}
-}
-
-func (v *validator) validateRenameImplementation(node *jsonNode, path string) {
-	if node == nil || node.kind != nodeObject {
-		v.add("operation_incompatible_file_implementation", path, "rename implementation must be an object.")
-		return
-	}
-	v.objectShape(node, path, []string{"preserve_content", "content"}, nil)
-	preserve, hasPreserve := node.objectMember("preserve_content")
-	content, hasContent := node.objectMember("content")
-	if hasPreserve == hasContent {
-		v.add("invalid_rename_implementation", path, "Rename implementation requires exactly one of preserve_content or content.")
-		return
-	}
-	if hasPreserve && (preserve.value.kind != nodeBool || !preserve.value.boolean) {
-		v.add("invalid_rename_implementation", path+"/preserve_content", "preserve_content must be true.")
-	}
-	if hasContent {
-		if value, ok := v.stringNode(content.value, path+"/content", stringMultiline); ok {
-			v.validateTargetContent(value, path+"/content")
-		}
-	}
-}
-
-func (v *validator) validateValidation(node *jsonNode, path string) {
-	if !v.objectShape(node, path, []string{"commands", "executor_checks"}, []string{"commands"}) {
-		return
-	}
-	if member, ok := node.objectMember("commands"); ok {
-		if member.value.kind != nodeArray {
-			v.add("invalid_value_type", path+"/commands", "commands must be an array.")
-		} else if len(member.value.array) == 0 {
-			v.add("missing_validation_command", path+"/commands", "At least one validation command is required.")
-		} else {
-			for i, command := range member.value.array {
-				commandPath := joinPointer(path+"/commands", strconv.Itoa(i))
-				if !v.objectShape(command, commandPath, []string{"command", "working_directory", "expected"}, []string{"command", "expected"}) {
-					continue
-				}
-				v.stringMember(command, "command", commandPath+"/command", stringSingleLine)
-				if _, ok := command.objectMember("working_directory"); ok {
-					v.stringMember(command, "working_directory", commandPath+"/working_directory", stringRepositoryPath)
-				}
-				v.stringMember(command, "expected", commandPath+"/expected", stringSingleLine)
-			}
-		}
-	}
-	if member, ok := node.objectMember("executor_checks"); ok {
-		v.validateStringArray(member.value, path+"/executor_checks", false)
-	}
-}
-
 func validatePlan(root *jsonNode, filenameSlug string) []Diagnostic {
 	v := &validator{}
 	if !v.objectShape(root, "", []string{"schema_version", "feature_slug", "goal", "context", "scope", "repo_targets", "passes", "completion_criteria"}, []string{"feature_slug", "goal", "context", "scope", "repo_targets", "passes", "completion_criteria"}) {
@@ -638,13 +209,16 @@ func validateDeliveryTicket(root *jsonNode, filename FilenameInfo) []Diagnostic 
 	order := []string{
 		"schema_version", "feature_slug", "ticket_id", "revision", "replaces_revision",
 		"repo_target", "branch", "base_commit", "goal", "context", "scope", "depends_on",
-		"implementation_obligations", "validation_intent", "transition_applicability",
-		"cancellation", "completion_criteria",
+		"required_invariants", "forbidden_behaviors", "implementation_obligations",
+		"proof_obligations", "validation_commands", "transition_applicability",
+		"explicit_deferrals", "cancellation", "completion_criteria",
 	}
 	required := []string{
 		"feature_slug", "ticket_id", "revision", "replaces_revision", "repo_target", "branch",
-		"base_commit", "goal", "context", "scope", "depends_on", "implementation_obligations",
-		"validation_intent", "transition_applicability", "completion_criteria",
+		"base_commit", "goal", "context", "scope", "depends_on", "required_invariants",
+		"forbidden_behaviors", "implementation_obligations", "proof_obligations",
+		"validation_commands", "transition_applicability", "explicit_deferrals",
+		"completion_criteria",
 	}
 	if !v.objectShape(root, "", order, required) {
 		return v.diagnostics
@@ -675,8 +249,9 @@ func validateDeliveryTicket(root *jsonNode, filename FilenameInfo) []Diagnostic 
 		v.validateCancellation(member.value, "/cancellation")
 	}
 	v.validateDeliveryTicketDependencies(root, filename.TicketID, &cancelled)
+	v.validateDeliveryTicketStringArrays(root, cancelled)
 	v.validateDeliveryTicketObligations(root, cancelled)
-	v.validateDeliveryTicketValidation(root, cancelled)
+	v.validateDeliveryTicketValidationCommands(root, cancelled)
 	if member, ok := root.objectMember("transition_applicability"); ok {
 		if value, ok := v.stringNode(member.value, "/transition_applicability", stringSingleLine); ok && value != "not_required" && value != "required" {
 			v.add("invalid_transition_applicability", "/transition_applicability", "Value must be either not_required or required.")
@@ -811,6 +386,23 @@ func (v *validator) validateDeliveryTicketDependencies(node *jsonNode, ticketID 
 	}
 }
 
+func (v *validator) validateDeliveryTicketStringArrays(node *jsonNode, cancelled bool) {
+	for _, field := range []string{"required_invariants", "forbidden_behaviors", "proof_obligations", "explicit_deferrals"} {
+		member, ok := node.objectMember(field)
+		if !ok {
+			continue
+		}
+		path := "/" + field
+		v.validateStringArray(member.value, path, true)
+		if cancelled && member.value.kind == nodeArray && len(member.value.array) != 0 {
+			v.add("cancellation_has_"+field, path, fmt.Sprintf("Cancelled tickets must use an empty %s array.", field))
+		}
+		if field == "proof_obligations" && !cancelled && member.value.kind == nodeArray && len(member.value.array) == 0 {
+			v.add("empty_required_value", "/proof_obligations", "Array must not be empty.")
+		}
+	}
+}
+
 func (v *validator) validateDeliveryTicketObligations(node *jsonNode, cancelled bool) {
 	member, ok := node.objectMember("implementation_obligations")
 	if !ok {
@@ -826,40 +418,53 @@ func (v *validator) validateDeliveryTicketObligations(node *jsonNode, cancelled 
 	if cancelled && len(member.value.array) != 0 {
 		v.add("cancellation_has_obligations", "/implementation_obligations", "Cancelled tickets must not declare implementation obligations.")
 	}
-	seenPaths := map[string]struct{}{}
 	for index, obligation := range member.value.array {
 		path := joinPointer("/implementation_obligations", strconv.Itoa(index))
-		if !v.objectShape(obligation, path, []string{"path", "obligation"}, []string{"path", "obligation"}) {
+		if !v.objectShape(obligation, path, []string{"source_area", "obligation", "prerequisites"}, []string{"source_area", "obligation", "prerequisites"}) {
 			continue
 		}
-		obligationPath, pathOK := v.stringMember(obligation, "path", path+"/path", stringRepositoryPath)
+		v.validateObligationSourceArea(obligation, path+"/source_area")
 		v.stringMember(obligation, "obligation", path+"/obligation", stringSingleLine)
-		if pathOK {
-			if _, duplicate := seenPaths[obligationPath]; duplicate {
-				v.add("duplicate_obligation_path", path+"/path", fmt.Sprintf("Implementation obligation path %q is duplicated.", obligationPath))
-			}
-			seenPaths[obligationPath] = struct{}{}
+		if member, ok := obligation.objectMember("prerequisites"); ok {
+			v.validateStringArray(member.value, path+"/prerequisites", true)
 		}
 	}
 }
 
-func (v *validator) validateDeliveryTicketValidation(node *jsonNode, cancelled bool) {
-	member, ok := node.objectMember("validation_intent")
+func (v *validator) validateObligationSourceArea(node *jsonNode, path string) {
+	member, ok := node.objectMember("source_area")
+	if !ok {
+		return
+	}
+	if member.value.kind == nodeNull {
+		return
+	}
+	v.stringNode(member.value, path, stringRepositoryPath)
+}
+
+func (v *validator) validateDeliveryTicketValidationCommands(node *jsonNode, cancelled bool) {
+	member, ok := node.objectMember("validation_commands")
 	if !ok {
 		return
 	}
 	if member.value.kind != nodeArray {
-		v.add("invalid_value_type", "/validation_intent", "Value must be an array.")
+		v.add("invalid_value_type", "/validation_commands", "Value must be an array.")
 		return
 	}
 	if len(member.value.array) == 0 && !cancelled {
-		v.add("empty_required_value", "/validation_intent", "Array must not be empty.")
+		v.add("empty_required_value", "/validation_commands", "Array must not be empty.")
 	}
 	if cancelled && len(member.value.array) != 0 {
-		v.add("cancellation_has_validation", "/validation_intent", "Cancelled tickets must not declare validation intent.")
+		v.add("cancellation_has_validation", "/validation_commands", "Cancelled tickets must not declare validation commands.")
 	}
-	for index, item := range member.value.array {
-		v.stringNode(item, joinPointer("/validation_intent", strconv.Itoa(index)), stringSingleLine)
+	for index, command := range member.value.array {
+		path := joinPointer("/validation_commands", strconv.Itoa(index))
+		if !v.objectShape(command, path, []string{"working_directory", "command", "expected"}, []string{"working_directory", "command", "expected"}) {
+			continue
+		}
+		v.stringMember(command, "working_directory", path+"/working_directory", stringWorkingDirectory)
+		v.stringMember(command, "command", path+"/command", stringSingleLine)
+		v.stringMember(command, "expected", path+"/expected", stringSingleLine)
 	}
 }
 
@@ -914,6 +519,7 @@ const (
 	stringBranch
 	stringCommit
 	stringRepositoryPath
+	stringWorkingDirectory
 )
 
 func (v *validator) stringMember(node *jsonNode, key, path string, kind stringKind) (string, bool) {
@@ -930,6 +536,9 @@ func (v *validator) stringNode(node *jsonNode, path string, kind stringKind) (st
 		return "", false
 	}
 	value := node.text
+	if kind == stringWorkingDirectory && value == "" {
+		return value, true
+	}
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		v.add("empty_required_value", path, "String value must not be empty.")
@@ -962,6 +571,10 @@ func (v *validator) stringNode(node *jsonNode, path string, kind stringKind) (st
 	case stringRepositoryPath:
 		if !validRepositoryPath(value) {
 			v.add("unsafe_repository_path", path, "Path must be a safe repository-relative POSIX path.")
+		}
+	case stringWorkingDirectory:
+		if !validWorkingDirectory(value) {
+			v.add("unsafe_working_directory", path, "Working directory must be empty for the repository root or a safe repository-relative POSIX directory.")
 		}
 	}
 	return value, true
@@ -1042,6 +655,13 @@ func validMachineString(value string) bool {
 		}
 	}
 	return true
+}
+
+func validWorkingDirectory(value string) bool {
+	if value == "" {
+		return true
+	}
+	return validRepositoryPath(value)
 }
 
 func validRepositoryPath(value string) bool {

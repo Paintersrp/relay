@@ -506,23 +506,20 @@ func TestGuidedRichHandoffDelegatesInsteadOfNoOp(t *testing.T) {
 	}
 }
 
-func TestGuidedActionHTTPAllowsTicketDesignBriefActionsToReachDispatch(t *testing.T) {
+func TestGuidedActionHTTPAllowsTicketActionsToReachDispatch(t *testing.T) {
 	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-brief-actions", FeatureSlug: "payments", Version: 8}}
 	for _, tc := range []struct {
 		action, runState string
 	}{
-		{action: "author_ticket_design_brief"},
-		{action: "review_ticket_design_brief"},
-		{action: "approve_ticket_design_brief"},
 		{action: "approve_planning_candidate"},
 		{action: "continue_run", runState: "executing"},
 		{action: "recover_run", runState: "execution_failed"},
 		{action: "abandon_feature"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
-			delivery := featureapp.GuidedDeliverySection{SelectionState: "active", BriefState: "authored"}
+			delivery := featureapp.GuidedDeliverySection{SelectionState: "active"}
 			if tc.runState != "" {
-				delivery.SelectionState, delivery.BriefState, delivery.PackageState, delivery.RunState = "consumed", "approved", "approved", tc.runState
+				delivery.SelectionState, delivery.PackageState, delivery.RunState = "consumed", "approved", tc.runState
 			}
 			projection := featureapp.GuidedFeatureProjection{Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version}, Delivery: delivery, PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedFeatureAction(tc.action), Primary: true, Enabled: true}}
 			guided := &richFakeGuided{projection: projection, result: featureapp.GuidedActionResult{Projection: projection}}
@@ -769,7 +766,6 @@ func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
 			Delivery: featureapp.GuidedIntegrityDeliverySection{
 				Frontier:    []featureapp.GuidedIntegrityTicket{{TicketID: "P5-T1", RevisionNumber: 2}},
 				Selection:   &featureapp.GuidedIntegritySelection{SelectionID: "selection-1"},
-				Briefs:      []featureapp.GuidedIntegrityTicketDesignBrief{{BriefID: "brief-1", SelectionID: "selection-1", SelectionState: "active", TicketID: "P5-T1", RevisionNumber: 2, Filename: "payments.ticket-P5-T1.r2.design-brief.md", SHA256: strings.Repeat("h", 64), SizeBytes: 12, Status: "approved", ApprovalID: "brief-approval-1"}},
 				Package:     &featureapp.GuidedIntegrityPackage{PackageID: "package-1", SHA256: strings.Repeat("d", 64), ApprovalID: "pkg-approval-1"},
 				Run:         &featureapp.GuidedIntegrityRun{RunID: "run-1", PackageID: "package-1", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("e", 40)},
 				Audit:       &featureapp.GuidedIntegrityAudit{AuditPacketID: "packet-1", AuditDecisionID: "audit-1", AuditedCommit: strings.Repeat("f", 40)},
@@ -800,7 +796,6 @@ func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
 		`"promoted":true`,
 		`"approvals":["candidate-approval-1"]`,
 		`"selectionId":"selection-1"`,
-		`"briefId":"brief-1"`,
 		`"condition":"unverifiable"`,
 		`"packageId":"package-1"`,
 		`"approvalId":"pkg-approval-1"`,
@@ -836,9 +831,8 @@ func TestGuidedActionRejectsIntegrityIdentityFields(t *testing.T) {
 	router := guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided)
 	for _, payload := range []string{
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"candidateId":"candidate-1"}`,
-		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"briefId":"brief-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"selectionId":"selection-1"}`,
-		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"briefApprovalId":"brief-approval-1"}`,
+		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"packageId":"package-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"packageId":"package-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"runId":"run-1"}`,
 		`{"expectedVersion":8,"action":"close_discovery","confirmation":true,"auditPacketId":"packet-1"}`,

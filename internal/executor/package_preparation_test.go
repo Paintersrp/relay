@@ -15,13 +15,13 @@ func TestPackageWorkflowPreparationModeMatrix(t *testing.T) {
 		operations bool
 		coverage   string
 		preflight  DeterministicPreflightStatus
-		mode       EffectiveExecutorBriefMode
+		mode       ExecutionMode
 		adaptive   bool
 	}{
-		{name: "no operations", mode: EffectiveExecutorBriefAdaptiveNoOperations, adaptive: true},
-		{name: "preflight failed", operations: true, coverage: "complete", preflight: DeterministicPreflightFailed, mode: EffectiveExecutorBriefAdaptivePreflightFailed, adaptive: true},
-		{name: "partial application", operations: true, coverage: "partial", preflight: DeterministicPreflightReady, mode: EffectiveExecutorBriefAdaptiveAfterPartialApplication, adaptive: true},
-		{name: "complete application", operations: true, coverage: "complete", preflight: DeterministicPreflightReady, mode: EffectiveExecutorBriefDeterministicComplete},
+		{name: "no operations", mode: ExecutionModeAbsent, adaptive: true},
+		{name: "preflight failed", operations: true, coverage: "complete", preflight: DeterministicPreflightFailed, mode: ExecutionModePreflightFailed, adaptive: true},
+		{name: "partial application", operations: true, coverage: "partial", preflight: DeterministicPreflightReady, mode: ExecutionModePartialApplied, adaptive: true},
+		{name: "complete application", operations: true, coverage: "complete", preflight: DeterministicPreflightReady, mode: ExecutionModeCompleteApplied},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newExecutionAssignmentFixture(t, test.operations, test.coverage)

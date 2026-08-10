@@ -597,7 +597,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	action := strings.TrimSpace(request.Action)
 	switch action {
 	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "abandon_feature", "legacy_recovery",
-		"reopen_discovery", "select_delivery_ticket", "author_ticket_design_brief", "review_ticket_design_brief", "approve_ticket_design_brief", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
+		"reopen_discovery", "select_delivery_ticket", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
 		return
@@ -930,7 +930,7 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 		"authority":        map[string]any{"currentRevisionNumber": value.Authority.CurrentRevisionNumber, "layers": value.Authority.Layers},
 		"currentness":      map[string]any{"readiness": value.Currentness.Readiness, "owner": value.Currentness.Owner, "blockedOperation": value.Currentness.BlockedOperation, "effect": value.Currentness.Effect, "recoveryCategory": value.Currentness.RecoveryCategory},
 		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "needsRevision": value.Planning.NeedsRevision, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
-		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "briefState": value.Delivery.BriefState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
+		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
 		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
 		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded, "decision": value.Completion.Decision},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},
@@ -966,7 +966,6 @@ func guidedIntegrityDTO(value featureapp.GuidedIntegritySection) map[string]any 
 	delivery := map[string]any{
 		"frontier":    guidedIntegrityFrontierDTO(value.Delivery.Frontier),
 		"selection":   guidedIntegritySelectionDTO(value.Delivery.Selection),
-		"briefs":      guidedIntegrityBriefsDTO(value.Delivery.Briefs),
 		"package":     guidedIntegrityPackageDTO(value.Delivery.Package),
 		"run":         guidedIntegrityRunDTO(value.Delivery.Run),
 		"audit":       guidedIntegrityAuditDTO(value.Delivery.Audit),
@@ -1019,19 +1018,6 @@ func guidedIntegritySelectionDTO(value *featureapp.GuidedIntegritySelection) any
 		return nil
 	}
 	return map[string]any{"selectionId": value.SelectionID, "state": value.State, "ticketId": value.TicketID, "revisionNumber": value.RevisionNumber}
-}
-
-func guidedIntegrityBriefsDTO(values []featureapp.GuidedIntegrityTicketDesignBrief) []map[string]any {
-	result := make([]map[string]any, 0, len(values))
-	for _, value := range values {
-		result = append(result, map[string]any{
-			"briefId": value.BriefID, "selectionId": value.SelectionID, "selectionState": value.SelectionState,
-			"ticketId": value.TicketID, "revisionNumber": value.RevisionNumber, "filename": value.Filename,
-			"sha256": value.SHA256, "sizeBytes": value.SizeBytes, "status": value.Status, "approvalId": value.ApprovalID,
-			"historical": value.Historical,
-		})
-	}
-	return result
 }
 
 func guidedIntegrityPackageDTO(value *featureapp.GuidedIntegrityPackage) any {

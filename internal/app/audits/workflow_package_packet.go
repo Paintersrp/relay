@@ -14,7 +14,7 @@ import (
 	"relay/internal/executor"
 )
 
-const WorkflowPackageAuditPacketSchemaVersion = "3.0"
+const WorkflowPackageAuditPacketSchemaVersion = "4.0"
 
 var ErrWorkflowPackageAuditPacketInvalid = errors.New(
 	"workflow package audit packet is invalid",
@@ -51,10 +51,8 @@ type WorkflowPackageAuditAuthority struct {
 	DeliveryTicket          WorkflowPackageAuditEmbeddedArtifact   `json:"delivery_ticket"`
 	Requirements            []WorkflowPackageAuditEmbeddedArtifact `json:"requirements"`
 	SharedDesign            []WorkflowPackageAuditEmbeddedArtifact `json:"shared_design"`
-	TicketDesignBrief       WorkflowPackageAuditEmbeddedArtifact   `json:"ticket_design_brief"`
 	DeterministicOperations *WorkflowPackageAuditEmbeddedArtifact  `json:"deterministic_operations,omitempty"`
 	ExecutionAssignment     WorkflowPackageAuditArtifactReference  `json:"execution_assignment"`
-	EffectiveExecutorBrief  WorkflowPackageAuditArtifactReference  `json:"effective_executor_brief"`
 }
 
 type WorkflowPackageAuditArtifactReference struct {
@@ -181,11 +179,6 @@ func constructWorkflowPackageAuditPacket(input WorkflowPackageAuditPacketInput) 
 		}
 	}
 
-	brief, err := embeddedArtifactFromApprovedDocument(input.Evidence.Authority.TicketDesignBrief)
-	if err != nil {
-		return WorkflowPackageAuditPacket{}, fmt.Errorf("ticket design brief: %v", err)
-	}
-
 	var deterministicOps *WorkflowPackageAuditEmbeddedArtifact
 	if input.Evidence.Authority.DeterministicOperations != nil {
 		ops, err := embeddedArtifactFromApprovedDocument(input.Evidence.Authority.DeterministicOperations.ApprovedDocument)
@@ -248,15 +241,10 @@ func constructWorkflowPackageAuditPacket(input WorkflowPackageAuditPacketInput) 
 			DeliveryTicket:          delivery,
 			Requirements:            requirements,
 			SharedDesign:            sharedDesign,
-			TicketDesignBrief:       brief,
 			DeterministicOperations: deterministicOps,
 			ExecutionAssignment: WorkflowPackageAuditArtifactReference{
 				ArtifactReference: input.Evidence.Assignment.Artifact.ArtifactID,
 				SHA256:            input.Evidence.Assignment.Artifact.SHA256,
-			},
-			EffectiveExecutorBrief: WorkflowPackageAuditArtifactReference{
-				ArtifactReference: input.Evidence.EffectiveBrief.Artifact.ArtifactID,
-				SHA256:            input.Evidence.EffectiveBrief.Artifact.SHA256,
 			},
 		},
 		DeterministicApplication: WorkflowPackageAuditDeterministicApplication{
@@ -508,32 +496,6 @@ func validateWorkflowPackageAuditPacketInput(input WorkflowPackageAuditPacketInp
 		return fmt.Errorf("at least one requirements authority layer is required")
 	}
 
-	if authority.TicketDesignBrief.SHA256 == "" {
-		return fmt.Errorf("ticket design brief SHA-256 is required")
-	}
-	if !workflowPackageValidSHA256(authority.TicketDesignBrief.SHA256) {
-		return fmt.Errorf("ticket design brief SHA-256 is malformed")
-	}
-	if authority.TicketDesignBrief.Bytes == nil {
-		return fmt.Errorf("ticket design brief bytes are required")
-	}
-	if authority.TicketDesignBrief.SHA256 != workflowPackageSHA256(authority.TicketDesignBrief.Bytes) {
-		return fmt.Errorf("ticket design brief SHA-256 does not match bytes")
-	}
-	if authority.TicketDesignBrief.MediaType == "" {
-		return fmt.Errorf("ticket design brief media type is required")
-	}
-	if !strings.HasPrefix(authority.TicketDesignBrief.MediaType, "text/") {
-		return fmt.Errorf("ticket design brief media type must be text/*")
-	}
-	if !utf8.Valid(authority.TicketDesignBrief.Bytes) {
-		return fmt.Errorf("ticket design brief content must be valid UTF-8")
-	}
-	wantBriefName := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", authority.Workspace.FeatureSlug, authority.Ticket.TicketID, authority.TicketRevision.RevisionNumber)
-	if filepath.Base(authority.TicketDesignBrief.RelativePath) != wantBriefName {
-		return fmt.Errorf("ticket design brief filename must be %q", wantBriefName)
-	}
-
 	if authority.DeterministicOperations != nil {
 		ops := authority.DeterministicOperations
 		if ops.SHA256 == "" {
@@ -581,15 +543,6 @@ func validateWorkflowPackageAuditPacketInput(input WorkflowPackageAuditPacketInp
 	}
 	if !workflowPackageValidSHA256(input.Evidence.Assignment.Artifact.SHA256) {
 		return fmt.Errorf("execution assignment SHA-256 is malformed")
-	}
-	if input.Evidence.EffectiveBrief.Artifact == nil {
-		return fmt.Errorf("effective executor brief artifact is required")
-	}
-	if input.Evidence.EffectiveBrief.Artifact.ArtifactID == "" {
-		return fmt.Errorf("effective executor brief artifact reference is required")
-	}
-	if !workflowPackageValidSHA256(input.Evidence.EffectiveBrief.Artifact.SHA256) {
-		return fmt.Errorf("effective executor brief SHA-256 is malformed")
 	}
 	if input.Evidence.Deterministic.Artifact.ArtifactID == "" {
 		return fmt.Errorf("deterministic outcome artifact reference is required")
@@ -742,24 +695,21 @@ func validateWorkflowPackageAuditPacketInput(input WorkflowPackageAuditPacketInp
 		}
 	}
 
-	mode, adaptive, err := deriveWorkflowPackageEffectiveMode(input.Evidence.Deterministic.Outcome.Outcome)
+	mode, adaptive, err := deriveWorkflowPackageExecutionMode(input.Evidence.Deterministic.Outcome.Outcome)
 	if err != nil {
-		return fmt.Errorf("effective mode: %v", err)
+		return fmt.Errorf("execution mode: %v", err)
 	}
-	if input.Evidence.EffectiveBrief.Mode != mode {
-		return fmt.Errorf("effective brief mode %q does not match deterministic outcome", input.Evidence.EffectiveBrief.Mode)
+	if input.Evidence.Mode != mode {
+		return fmt.Errorf("evidence execution mode %q does not match deterministic outcome", input.Evidence.Mode)
 	}
 	dispatched := input.Evidence.Attempt != nil
 	if input.Execution.Status == "" {
 		return fmt.Errorf("execution status is required")
 	}
-	if input.Evidence.EffectiveBrief.AdaptiveDispatchRequired != adaptive {
-		return fmt.Errorf("effective brief adaptive dispatch does not match mode")
-	}
 	if dispatched != adaptive {
-		return fmt.Errorf("execution adaptive_attempt_dispatched %v does not match effective mode %q", dispatched, mode)
+		return fmt.Errorf("execution adaptive_attempt_dispatched %v does not match execution mode %q", dispatched, mode)
 	}
-	if mode == executor.EffectiveExecutorBriefDeterministicComplete && dispatched {
+	if mode == executor.ExecutionModeCompleteApplied && dispatched {
 		return fmt.Errorf("deterministic-complete requires adaptive_attempt_dispatched false")
 	}
 
@@ -847,9 +797,6 @@ func validateWorkflowPackageAuditPacket(packet WorkflowPackageAuditPacket) error
 			return fmt.Errorf("authority shared_design %d: %v", index, err)
 		}
 	}
-	if err := textAuthoredContentArtifact(packet.Authority.TicketDesignBrief, "ticket_design_brief"); err != nil {
-		return fmt.Errorf("authority ticket_design_brief: %v", err)
-	}
 	var deterministicOpsCoverage string
 	if packet.Authority.DeterministicOperations != nil {
 		if err := jsonAuthoredContentArtifact(*packet.Authority.DeterministicOperations, "deterministic_operations"); err != nil {
@@ -871,12 +818,6 @@ func validateWorkflowPackageAuditPacket(packet WorkflowPackageAuditPacket) error
 	}
 	if !workflowPackageValidSHA256(packet.Authority.ExecutionAssignment.SHA256) {
 		return fmt.Errorf("authority execution_assignment SHA-256 is malformed")
-	}
-	if packet.Authority.EffectiveExecutorBrief.ArtifactReference == "" {
-		return fmt.Errorf("authority effective_executor_brief artifact_reference is required")
-	}
-	if !workflowPackageValidSHA256(packet.Authority.EffectiveExecutorBrief.SHA256) {
-		return fmt.Errorf("authority effective_executor_brief SHA-256 is malformed")
 	}
 
 	if packet.DeterministicApplication.Evidence.ArtifactReference == "" {

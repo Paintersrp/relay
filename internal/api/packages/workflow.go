@@ -32,7 +32,6 @@ type artifactRequest struct {
 
 type prepareRequest struct {
 	SelectionID             string           `json:"selectionId"`
-	TicketDesignBrief       artifactRequest  `json:"ticketDesignBrief"`
 	DeterministicOperations *artifactRequest `json:"deterministicOperations,omitempty"`
 }
 
@@ -51,11 +50,6 @@ func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid execution package preparation request")
 		return
 	}
-	brief, err := artifactInput(request.TicketDesignBrief)
-	if err != nil {
-		badRequest(w, "Invalid package artifact bytes")
-		return
-	}
 	var operations *packages.ArtifactInput
 	if request.DeterministicOperations != nil {
 		value, decodeErr := artifactInput(*request.DeterministicOperations)
@@ -65,7 +59,7 @@ func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
 		}
 		operations = &value
 	}
-	input := packages.PrepareInput{SelectionID: request.SelectionID, TicketDesignBrief: brief, DeterministicOperations: operations}
+	input := packages.PrepareInput{SelectionID: request.SelectionID, DeterministicOperations: operations}
 	result, err := h.service.Prepare(r.Context(), input)
 	if err != nil {
 		writePackageError(w, err)

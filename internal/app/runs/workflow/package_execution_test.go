@@ -94,9 +94,9 @@ func newPackageAdmissionFixture(t *testing.T) *packageAdmissionFixture {
 	if _, err := db.Exec(`INSERT INTO execution_packages (
         id, package_id, selection_row_id, workspace_row_id, repo_target, branch,
         base_commit, source_closure_row_id, authority_revision_row_id,
-        package_sha256, authority_sha256, source_sha256, design_brief_sha256
-    ) VALUES (1, 'package-admission', 1, 1, 'relay', 'main', ?, 1, 1, ?, ?, ?, ?)`,
-		baseCommit, strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64), strings.Repeat("e", 64)); err != nil {
+        package_sha256, authority_sha256, source_sha256
+    ) VALUES (1, 'package-admission', 1, 1, 'relay', 'main', ?, 1, 1, ?, ?, ?)`,
+		baseCommit, strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO execution_package_approvals (
@@ -245,10 +245,10 @@ func TestAdmitPackageExecutionRejectsInvalidInputAndStates(t *testing.T) {
 		if _, err := fixture.store.DB().Exec(`INSERT INTO execution_packages (
 			id, package_id, selection_row_id, workspace_row_id, repo_target, branch,
 			base_commit, source_closure_row_id, authority_revision_row_id,
-			package_sha256, authority_sha256, source_sha256, design_brief_sha256
-		) VALUES (?, ?, ?, 1, 'relay', 'main', ?, 1, 1, ?, ?, ?, ?)`,
+			package_sha256, authority_sha256, source_sha256
+		) VALUES (?, ?, ?, 1, 'relay', 'main', ?, 1, 1, ?, ?, ?)`,
 			packageRowID, fmt.Sprintf("package-admission-%d", packageRowID), packageRowID, strings.Repeat("a", 40),
-			strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64), strings.Repeat("e", 64)); err != nil {
+			strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := fixture.store.DB().Exec(`INSERT INTO runs (

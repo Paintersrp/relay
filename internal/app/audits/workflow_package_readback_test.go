@@ -15,11 +15,11 @@ import (
 )
 
 func TestWorkflowPackageAuditGetCurrentPacketModes(t *testing.T) {
-	modes := []executor.EffectiveExecutorBriefMode{
-		executor.EffectiveExecutorBriefAdaptiveNoOperations,
-		executor.EffectiveExecutorBriefAdaptivePreflightFailed,
-		executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication,
-		executor.EffectiveExecutorBriefDeterministicComplete,
+	modes := []executor.ExecutionMode{
+		executor.ExecutionModeAbsent,
+		executor.ExecutionModePreflightFailed,
+		executor.ExecutionModePartialApplied,
+		executor.ExecutionModeCompleteApplied,
 	}
 	for _, mode := range modes {
 		t.Run(string(mode), func(t *testing.T) {
@@ -66,7 +66,7 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 	tests := []struct {
 		name      string
 		reason    string
-		mode      executor.EffectiveExecutorBriefMode
+		mode      executor.ExecutionMode
 		configure func(*testing.T, *packageEvidenceFixture, *WorkflowAuditService) error
 		preserved error
 	}{
@@ -117,10 +117,10 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 		{
 			name:   "actor_kind_disagrees",
 			reason: "package_execution_evidence_changed",
-			mode:   executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			mode:   executor.ExecutionModeAbsent,
 			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
 				overridePackageEvidence(t, fixture, service, func(evidence *WorkflowPackageExecutionEvidence) {
-					evidence.EffectiveBrief.Mode = executor.EffectiveExecutorBriefAdaptiveAfterPartialApplication
+					evidence.Mode = executor.ExecutionModePartialApplied
 				})
 				return nil
 			},
@@ -128,7 +128,7 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 		{
 			name:   "execution_attempt_disagrees",
 			reason: "package_execution_evidence_changed",
-			mode:   executor.EffectiveExecutorBriefAdaptiveNoOperations,
+			mode:   executor.ExecutionModeAbsent,
 			configure: func(t *testing.T, fixture *packageEvidenceFixture, service *WorkflowAuditService) error {
 				packet, err := fixture.store.GetCurrentAuditPacketByRun(context.Background(), fixture.run.ID)
 				if err != nil {
@@ -223,7 +223,7 @@ func TestWorkflowPackageAuditGetCurrentPacketMarksStale(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			mode := test.mode
 			if mode == "" {
-				mode = executor.EffectiveExecutorBriefDeterministicComplete
+				mode = executor.ExecutionModeCompleteApplied
 			}
 			fixture, service := newPackageAuditReadbackFixtureForMode(t, mode)
 			if err := test.configure(t, fixture, service); err != nil {
@@ -290,7 +290,7 @@ func TestWorkflowPackageAuditGetCurrentPacketRejectsMalformedAndNoncanonicalDocu
 			name:   "wrong_schema_version",
 			reason: "packet_schema_readback_failed",
 			mutate: func(data []byte) []byte {
-				return bytes.Replace(data, []byte(`"schema_version": "3.0"`), []byte(`"schema_version": "4.0"`), 1)
+				return bytes.Replace(data, []byte(`"schema_version": "4.0"`), []byte(`"schema_version": "3.0"`), 1)
 			},
 		},
 		{
@@ -304,7 +304,7 @@ func TestWorkflowPackageAuditGetCurrentPacketRejectsMalformedAndNoncanonicalDocu
 			name:   "duplicate_property",
 			reason: "packet_schema_readback_failed",
 			mutate: func(data []byte) []byte {
-				return bytes.Replace(data, []byte("{\n"), []byte("{\n  \"schema_version\": \"3.0\",\n"), 1)
+				return bytes.Replace(data, []byte("{\n"), []byte("{\n  \"schema_version\": \"4.0\",\n"), 1)
 			},
 		},
 		{
@@ -351,10 +351,10 @@ func TestWorkflowPackageAuditGetCurrentPacketRejectsCoherentlyAlteredCanonicalDo
 }
 
 func newPackageAuditReadbackFixture(t *testing.T) (*packageEvidenceFixture, *WorkflowAuditService) {
-	return newPackageAuditReadbackFixtureForMode(t, executor.EffectiveExecutorBriefDeterministicComplete)
+	return newPackageAuditReadbackFixtureForMode(t, executor.ExecutionModeCompleteApplied)
 }
 
-func newPackageAuditReadbackFixtureForMode(t *testing.T, mode executor.EffectiveExecutorBriefMode) (*packageEvidenceFixture, *WorkflowAuditService) {
+func newPackageAuditReadbackFixtureForMode(t *testing.T, mode executor.ExecutionMode) (*packageEvidenceFixture, *WorkflowAuditService) {
 	t.Helper()
 	fixture := buildPackageEvidence(t, mode)
 	setPackageRunValidating(t, fixture)

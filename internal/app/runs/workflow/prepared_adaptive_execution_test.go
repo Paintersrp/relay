@@ -39,7 +39,7 @@ func TestBeginPreparedAdaptiveExecutionAdmitsAndReadsExisting(t *testing.T) {
 	if err := json.Unmarshal([]byte(first.Attempt.ResultJSON), &runtime); err != nil {
 		t.Fatal(err)
 	}
-	if runtime.MutationLeaseID != first.Lease.LeaseID || runtime.EffectiveBriefArtifactID != fixture.input.EffectiveBriefArtifactID || runtime.EffectiveBriefSHA256 != fixture.input.EffectiveBriefSHA256 || runtime.SourceMutationStarted {
+	if runtime.MutationLeaseID != first.Lease.LeaseID || runtime.ExecutionAssignmentArtifactID != fixture.input.ExecutionAssignmentArtifactID || runtime.ExecutionAssignmentSHA256 != fixture.input.ExecutionAssignmentSHA256 || runtime.SourceMutationStarted {
 		t.Fatalf("runtime = %#v", runtime)
 	}
 	leases, err := fixture.store.ListRepositoryBranchMutationLeases(ctx, fixture.run.RepoTarget, fixture.run.Branch)
@@ -66,7 +66,7 @@ func TestBeginPreparedAdaptiveExecutionAdmitsAndReadsExisting(t *testing.T) {
 func TestBeginPreparedAdaptiveExecutionAdoptsPartialLease(t *testing.T) {
 	ctx := context.Background()
 	fixture := newPreparedAdaptiveFixture(t)
-	fixture.input.EffectiveBriefMode = preparedAdaptiveModeAfterPartialApplication
+	fixture.input.ExecutionAssignmentMode = preparedAdaptiveModeAfterPartialApplication
 	fixture.input.ProposedLeaseID = "lease-prepared-partial"
 	fixture.input.RunningResultJSON = preparedRuntimeJSON(t, fixture.input)
 	if err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
@@ -145,7 +145,7 @@ func TestBeginPreparedAdaptiveExecutionRejectsInvalidPartialLeaseHandoff(t *test
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := newPreparedAdaptiveFixture(t)
-			fixture.input.EffectiveBriefMode = preparedAdaptiveModeAfterPartialApplication
+			fixture.input.ExecutionAssignmentMode = preparedAdaptiveModeAfterPartialApplication
 			fixture.input.ProposedLeaseID = "lease-prepared-partial"
 			fixture.input.RunningResultJSON = preparedRuntimeJSON(t, fixture.input)
 			tc.mutate(t, fixture)
@@ -171,7 +171,7 @@ func TestBeginPreparedAdaptiveExecutionRejectsInvalidPartialLeaseHandoff(t *test
 
 func TestBeginPreparedAdaptiveExecutionPartialLeaseRollbackPreservesLease(t *testing.T) {
 	fixture := newPreparedAdaptiveFixture(t)
-	fixture.input.EffectiveBriefMode = preparedAdaptiveModeAfterPartialApplication
+	fixture.input.ExecutionAssignmentMode = preparedAdaptiveModeAfterPartialApplication
 	fixture.input.ProposedLeaseID = "lease-prepared-partial"
 	fixture.input.RunningResultJSON = preparedRuntimeJSON(t, fixture.input)
 	seedPreparedPartialLease(t, fixture)
@@ -268,7 +268,7 @@ func TestBeginPreparedAdaptiveExecutionRejectsInvalidDurableState(t *testing.T) 
 		}},
 		{name: "wrong artifact digest", mutate: func(t *testing.T, f *preparedAdaptiveFixture) {
 			t.Helper()
-			_, err := f.store.DB().Exec(`UPDATE artifacts SET sha256 = ? WHERE id = ?`, strings.Repeat("f", 64), f.input.EffectiveBriefArtifactRowID)
+			_, err := f.store.DB().Exec(`UPDATE artifacts SET sha256 = ? WHERE id = ?`, strings.Repeat("f", 64), f.input.ExecutionAssignmentArtifactRowID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -324,7 +324,7 @@ func newPreparedAdaptiveFixture(t *testing.T) *preparedAdaptiveFixture {
 		t.Fatal(err)
 	}
 	var packageID int64
-	if err := db.QueryRow(`INSERT INTO execution_packages (package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256, design_brief_sha256) VALUES ('package-prepared-adaptive', 1, 1, 'relay', 'main', ?, 1, 1, ?, ?, ?, ?) RETURNING id`, strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64), strings.Repeat("e", 64)).Scan(&packageID); err != nil {
+	if err := db.QueryRow(`INSERT INTO execution_packages (package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit, source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256, source_sha256) VALUES ('package-prepared-adaptive', 1, 1, 'relay', 'main', ?, 1, 1, ?, ?, ?) RETURNING id`, strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64)).Scan(&packageID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
@@ -351,7 +351,7 @@ func newPreparedAdaptiveFixture(t *testing.T) *preparedAdaptiveFixture {
 		t.Fatal(err)
 	}
 	var attempt workflowstore.ExecutionAttempt
-	var inputArtifact, briefArtifact workflowstore.Artifact
+	var inputArtifact, assignmentArtifact workflowstore.Artifact
 	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
 		var createErr error
 		attempt, createErr = tx.CreateExecutionAttempt(ctx, workflowstore.CreateExecutionAttemptParams{AttemptID: "attempt-prepared-adaptive", RunRowID: run.ID, AttemptNumber: 1, Adapter: "codex", Model: "model"})
@@ -362,12 +362,12 @@ func newPreparedAdaptiveFixture(t *testing.T) *preparedAdaptiveFixture {
 		if createErr != nil {
 			return createErr
 		}
-		briefArtifact, createErr = tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: "artifact-prepared-brief", OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: "effective_brief", RelativePath: "runs/prepared/brief.md", MediaType: "text/markdown", SHA256: preparedDigest("brief"), SizeBytes: 5})
+		assignmentArtifact, createErr = tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: "artifact-prepared-assignment", OwnerType: workflowstore.ArtifactOwnerRun, RunRowID: sql.NullInt64{Int64: run.ID, Valid: true}, Kind: "execution_assignment", RelativePath: "runs/prepared/execution-assignment.json", MediaType: "application/json", SHA256: preparedDigest("assignment"), SizeBytes: 5})
 		return createErr
 	}); err != nil {
 		t.Fatal(err)
 	}
-	input := BeginPreparedAdaptiveExecutionInput{RunID: run.RunID, RunRowID: run.ID, AttemptID: attempt.AttemptID, AttemptRowID: attempt.ID, AttemptNumber: attempt.AttemptNumber, Adapter: attempt.Adapter, Model: attempt.Model, InputArtifactRowID: inputArtifact.ID, InputArtifactSHA256: inputArtifact.SHA256, EffectiveBriefArtifactRowID: briefArtifact.ID, EffectiveBriefArtifactID: briefArtifact.ArtifactID, EffectiveBriefSHA256: briefArtifact.SHA256, EffectiveBriefMode: "adaptive_no_operations", ProposedLeaseID: "lease-prepared-adaptive"}
+	input := BeginPreparedAdaptiveExecutionInput{RunID: run.RunID, RunRowID: run.ID, AttemptID: attempt.AttemptID, AttemptRowID: attempt.ID, AttemptNumber: attempt.AttemptNumber, Adapter: attempt.Adapter, Model: attempt.Model, InputArtifactRowID: inputArtifact.ID, InputArtifactSHA256: inputArtifact.SHA256, ExecutionAssignmentArtifactRowID: assignmentArtifact.ID, ExecutionAssignmentArtifactID: assignmentArtifact.ArtifactID, ExecutionAssignmentSHA256: assignmentArtifact.SHA256, ExecutionAssignmentMode: "adaptive_no_operations", ProposedLeaseID: "lease-prepared-adaptive"}
 	input.RunningResultJSON = preparedRuntimeJSON(t, input)
 	service, err := NewService(store)
 	if err != nil {
@@ -383,11 +383,11 @@ func preparedDigest(value string) string {
 
 func preparedRuntimeJSON(t *testing.T, input BeginPreparedAdaptiveExecutionInput) string {
 	t.Helper()
-	sourceMutationStarted, valid := preparedAdaptiveSourceMutationStarted(input.EffectiveBriefMode)
+	sourceMutationStarted, valid := preparedAdaptiveSourceMutationStarted(input.ExecutionAssignmentMode)
 	if !valid {
 		t.Fatal("invalid prepared adaptive mode")
 	}
-	content, err := json.Marshal(preparedAdaptiveRuntime{MutationLeaseID: input.ProposedLeaseID, SourceMutationStarted: sourceMutationStarted, EffectiveBriefArtifactID: input.EffectiveBriefArtifactID, EffectiveBriefSHA256: input.EffectiveBriefSHA256, EffectiveBriefMode: input.EffectiveBriefMode})
+	content, err := json.Marshal(preparedAdaptiveRuntime{MutationLeaseID: input.ProposedLeaseID, SourceMutationStarted: sourceMutationStarted, ExecutionAssignmentArtifactID: input.ExecutionAssignmentArtifactID, ExecutionAssignmentSHA256: input.ExecutionAssignmentSHA256, ExecutionAssignmentMode: input.ExecutionAssignmentMode})
 	if err != nil {
 		t.Fatal(err)
 	}

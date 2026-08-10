@@ -9,7 +9,6 @@ import (
 	"time"
 
 	executionpackages "relay/internal/app/packages"
-	"relay/internal/applier"
 	"relay/internal/pipeline"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/sourcevault"
@@ -23,7 +22,6 @@ var executorConstructors = []struct {
 }{
 	{"NewExecutionAssignmentService", NewExecutionAssignmentService, true},
 	{"NewDeterministicOutcomeService", NewDeterministicOutcomeService, true},
-	{"NewEffectiveExecutorBriefService", NewEffectiveExecutorBriefService, true},
 	{"NewAdaptiveExecutionAttemptService", NewAdaptiveExecutionAttemptService, true},
 	{"NewAdaptiveDispatchAdmissionService", NewAdaptiveDispatchAdmissionService, true},
 	{"NewPackageDeterministicExecutionService", NewPackageDeterministicExecutionService, true},
@@ -173,10 +171,6 @@ func TestExecutionLegacyNonPackageStartAvoidsPackagePath(t *testing.T) {
 	fixture.service.preflight = func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult {
 		t.Fatal("legacy Run entered repository preflight")
 		return workflowrepos.ExecutionPreflightResult{}
-	}
-	fixture.service.applier = func(context.Context, applier.Input) (applier.Result, error) {
-		t.Fatal("legacy Run invoked deterministic applier")
-		return applier.Result{}, nil
 	}
 	fixture.service.adapterFactory = func(string) (ExecutorAdapter, error) {
 		t.Fatal("legacy Run built an executor adapter")

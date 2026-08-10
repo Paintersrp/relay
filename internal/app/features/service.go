@@ -106,11 +106,11 @@ func (s *Service) SetGuidedAuditOwner(v guidedapp.AuditOwner) error {
 func (s *Service) SetGuidedAuditOwnerForTest(v guidedapp.AuditOwner) { s.guidedAudit = v }
 
 // SetGuidedTicketOwner binds the ticket owner used by the guided delivery
-// projection, selection, production, and explicit Ticket Design Brief approval
-// dispatch. The owner must be the exact ticket Service instance the server
-// constructs so guided reads observe the same process-local brief review
-// continuation that the external auditor completion records; the Feature owner
-// never constructs a second ticket Service for guided work.
+// projection, selection, and production dispatch. The owner must be the exact
+// ticket Service instance the server constructs so guided reads observe the
+// same process-local planning review continuation that the external auditor
+// completion records; the Feature owner never constructs a second ticket
+// Service for guided work.
 func (s *Service) SetGuidedTicketOwner(v GuidedTicketOwner) error {
 	if v == nil {
 		return fmt.Errorf("guided ticket owner is required")

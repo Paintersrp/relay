@@ -13,9 +13,9 @@
     },
     {
       "source": "governing_package",
-      "summary": "The approved Ticket Design Brief does not require input immutability proof.",
-      "evidence": "The exact approved Brief lists output cases but omits the required invariant that the input cart remains unchanged.",
-      "required_remediation": "Publish a fresh Ticket revision whose complete Brief states the input-immutability obligation and validation command."
+      "summary": "The approved Delivery Ticket does not require input immutability proof.",
+      "evidence": "The exact approved Delivery Ticket lists output cases but omits the required invariant that the input cart remains unchanged.",
+      "required_remediation": "Publish a fresh Delivery Ticket revision whose required_invariants state the input-immutability obligation and whose validation_commands verify it."
     }
   ],
   "observations": [

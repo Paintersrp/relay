@@ -1,0 +1,72 @@
+{
+  "schema_version": "2.0",
+  "feature_slug": "checkout",
+  "ticket_id": "P2-T2",
+  "revision": 3,
+  "replaces_revision": 2,
+  "repo_target": "relay",
+  "branch": "main",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "goal": "Make the checkout summary deterministic for empty, single-item, and multi-item carts.",
+  "context": "Checkout already has item and money types plus neighboring summary behavior. The selected change fills the missing deterministic summary cases without changing adjacent checkout responsibilities.",
+  "scope": {
+    "in_scope": [
+      "The checkout summary calculation in the existing checkout package.",
+      "Focused tests for the empty, single-item, and multi-item summary cases."
+    ],
+    "out_of_scope": [
+      "Pricing, tax, inventory, payment, API, UI, migration, and dependency changes.",
+      "Broad checkout refactoring."
+    ]
+  },
+  "depends_on": [],
+  "required_invariants": [
+    "Empty carts return the documented empty summary.",
+    "Item order is preserved in the rendered summary.",
+    "Existing callers continue to compile and receive the same error values.",
+    "The implementation must not mutate the input cart."
+  ],
+  "forbidden_behaviors": [
+    "Do not change pricing, tax, inventory, or payment behavior.",
+    "Do not add a new external dependency or network call.",
+    "Do not make the summary depend on wall-clock time, map iteration order, or environment-specific state."
+  ],
+  "implementation_obligations": [
+    {
+      "source_area": "internal/checkout",
+      "obligation": "Implement the deterministic summary cases in the existing checkout package and add focused tests.",
+      "prerequisites": [
+        "Preserve the repository's existing public API and error conventions.",
+        "Keep the change local to the checkout package with no generated-file or schema modifications."
+      ]
+    }
+  ],
+  "proof_obligations": [
+    "Demonstrate the empty-cart, one-item, multiple-item, and error paths with focused tests.",
+    "Demonstrate that the input slice is unchanged after summary generation.",
+    "Demonstrate that the existing package validation command remains green."
+  ],
+  "validation_commands": [
+    {
+      "working_directory": "",
+      "command": "go test ./internal/checkout/...",
+      "expected": "all checkout package tests pass, including the focused summary cases"
+    },
+    {
+      "working_directory": "",
+      "command": "go test ./internal/...",
+      "expected": "all internal Go tests pass without generated-file or schema changes"
+    }
+  ],
+  "transition_applicability": "not_required",
+  "explicit_deferrals": [
+    "Pricing, tax, inventory, payment, API, UI, migration, and dependency changes.",
+    "Broad checkout refactoring."
+  ],
+  "completion_criteria": [
+    "The required summary behavior and focused tests are committed.",
+    "The input cart remains unchanged.",
+    "All required validation commands pass.",
+    "The diff contains no unrelated or generated-file changes."
+  ]
+}

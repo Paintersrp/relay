@@ -32,7 +32,7 @@ type ApprovePackageInput struct {
 }
 
 // PreparePackageInput carries only workspace-level guided inputs; the active
-// selection and the current approved Ticket Design Brief are resolved
+// selection and the selected approved Delivery Ticket are resolved
 // server-side by the package owner.
 type PreparePackageInput struct {
 	WorkspaceID string

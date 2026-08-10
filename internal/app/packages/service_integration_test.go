@@ -11,24 +11,44 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/app/tickets"
 	"relay/internal/sourcevault"
 	"relay/internal/speccompiler"
 	workflow "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
 	"relay/internal/testsupport/workflowfixture"
 )
 
 const packageOperations = `{"schema_version":"1.0","feature_slug":"checkout","repo_target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":"complete","operations":[{"path":"internal/example.go","operation":"create","implementation":{"content":"package example\n"}}]}`
 
+// packageTicketDocument is a valid Delivery Ticket v2 source document bound to
+// the package fixture's selected revision. Its exact bytes are the sole ticket
+// authority; no Brief participates.
+func packageTicketDocument(baseCommit string) []byte {
+	return []byte(fmt.Sprintf(`{"schema_version":"2.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"required_invariants":["Packages must bind the exact approved Ticket."],"forbidden_behaviors":[],"implementation_obligations":[{"source_area":"internal/app/packages","obligation":"Preserve the selected package basis.","prerequisites":[]}],"proof_obligations":["Prove package preparation binds the approved Ticket."],"validation_commands":[{"working_directory":"","command":"go test ./internal/app/packages","expected":"all tests pass"}],"transition_applicability":"not_required","explicit_deferrals":[],"completion_criteria":["All tests pass."]}`, baseCommit))
+}
+
+// packageTicketDocumentWithDependency returns the canonical approved Delivery
+// Ticket bytes with one completed depends-on entry (P2-T1 revision 1), matching
+// the dependency rows seeded by the completed-dependency authority test.
+func packageTicketDocumentWithDependency(baseCommit string) []byte {
+	return []byte(strings.Replace(string(packageTicketDocument(baseCommit)), `"depends_on":[]`, `"depends_on":[{"ticket_id":"P2-T1","revision":1}]`, 1))
+}
+
 type packageServiceFixture struct {
-	store       *workflow.Store
-	service     *Service
-	selectionID string
-	brief       ArtifactInput
-	operations  ArtifactInput
-	baseCommit  string
-	sourcePath  string
+	store          *workflow.Store
+	service        *Service
+	selectionID    string
+	operations     ArtifactInput
+	ticketDocument []byte
+	ticketSHA256   string
+	sourcePath     string
+	baseCommit     string
+	closureID      string
+	workspaceID    string
+	ticketID       int64
+	revisionID     int64
+	approvalID     int64
+	selectionRowID int64
+	authorityRowID int64
 }
 
 func TestSelectedPackageOperationsDigestPartsBindTheOptionalIdentity(t *testing.T) {
@@ -47,23 +67,23 @@ func TestSelectedPackageOperationsDigestPartsBindTheOptionalIdentity(t *testing.
 	if !reflect.DeepEqual(present, want) {
 		t.Fatalf("present operations digest parts = %#v, want %#v", present, want)
 	}
-	if compoundSHA256(append([]string{"selected-package-v3", "basis"}, absent...)...) == compoundSHA256(append([]string{"selected-package-v3", "basis"}, present...)...) {
-		t.Fatal("brief-only and operations package digests matched")
+	if compoundSHA256(append([]string{"selected-package-v4", "basis"}, absent...)...) == compoundSHA256(append([]string{"selected-package-v4", "basis"}, present...)...) {
+		t.Fatal("absent and present operations package digests matched")
 	}
 
 	changedName := *operations
 	changedName.input.DisplayName = "checkout.ticket-P2-T2.r1.other-operations.json"
-	if compoundSHA256(append([]string{"selected-package-v3", "basis"}, present...)...) == compoundSHA256(append([]string{"selected-package-v3", "basis"}, selectedPackageOperationsDigestParts(&changedName)...)...) {
+	if compoundSHA256(append([]string{"selected-package-v4", "basis"}, present...)...) == compoundSHA256(append([]string{"selected-package-v4", "basis"}, selectedPackageOperationsDigestParts(&changedName)...)...) {
 		t.Fatal("changing the operations filename did not change the package digest")
 	}
 }
 
-func TestServicePrepareAndGetBriefOnlyPackage(t *testing.T) {
+func TestServicePrepareAndGetTicketOnlyPackage(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
 	prepared := preparePackage(t, fixture, false)
 
 	if prepared.Package.DeterministicOperationsSha256.Valid || prepared.Package.DeterministicOperationsCoverage.Valid {
-		t.Fatalf("brief-only package unexpectedly populated operations fields")
+		t.Fatalf("ticket-only package unexpectedly populated operations fields")
 	}
 	members, err := fixture.store.ListExecutionPackageMembers(context.Background(), prepared.Package.ID)
 	if err != nil {
@@ -72,41 +92,45 @@ func TestServicePrepareAndGetBriefOnlyPackage(t *testing.T) {
 	if len(members) != 1 {
 		t.Fatalf("package members = %d, want 1", len(members))
 	}
-	assertPackageFile(t, fixture, prepared.TicketDesignBrief, fixture.brief.Bytes)
-	operationsPath := filepath.Join(fixture.store.ArtifactStore().Root(), "packages", prepared.Package.PackageID, fixture.operations.DisplayName)
-	if _, err := os.Stat(operationsPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("placeholder operations artifact stat error = %v, want not exist", err)
+	if members[0].MemberSha256 != fixture.ticketSHA256 {
+		t.Fatalf("package member digest = %q, want exact Ticket source digest %q", members[0].MemberSha256, fixture.ticketSHA256)
+	}
+	if prepared.Ticket.TicketID != "P2-T2" || prepared.TicketRevision.RevisionNumber != 1 || prepared.TicketDocument.SHA256 != fixture.ticketSHA256 {
+		t.Fatalf("prepared Ticket basis = %#v", prepared)
+	}
+	if len(prepared.TicketProjection.ValidationCommands) != 1 || prepared.TicketProjection.ValidationCommands[0].Command != "go test ./internal/app/packages" {
+		t.Fatalf("prepared Ticket projection = %#v", prepared.TicketProjection)
 	}
 
 	detail, err := fixture.service.Get(context.Background(), prepared.Package.PackageID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.TicketDesignBrief.DisplayName != fixture.brief.DisplayName || detail.DeterministicOperations != nil || detail.Run != nil {
-		t.Fatalf("brief-only package detail = %#v", detail)
+	if detail.TicketDocument.SHA256 != fixture.ticketSHA256 || detail.DeterministicOperations != nil || detail.Run != nil {
+		t.Fatalf("ticket-only package detail = %#v", detail)
 	}
 	assertCount(t, fixture.store.DB(), "execution_package_approvals", 0)
 	assertCount(t, fixture.store.DB(), "runs", 0)
 }
 
 func TestServicePrepareAndGetPackageWithOperations(t *testing.T) {
-	briefOnly := newPackageServiceFixture(t)
-	briefPackage := preparePackage(t, briefOnly, false)
+	ticketOnly := newPackageServiceFixture(t)
+	ticketPackage := preparePackage(t, ticketOnly, false)
 
 	withOperations := newPackageServiceFixture(t)
 	prepared := preparePackage(t, withOperations, true)
-	if prepared.DeterministicOperations == nil {
+	if prepared.Operations == nil {
 		t.Fatal("operations artifact was not returned from Prepare")
 	}
-	if prepared.DeterministicOperations.DisplayName != withOperations.operations.DisplayName || prepared.DeterministicOperations.SHA256 != withOperations.operations.ExpectedSHA256 {
-		t.Fatalf("prepared operations artifact = %#v", prepared.DeterministicOperations)
+	if prepared.Operations.DisplayName != withOperations.operations.DisplayName || prepared.Operations.SHA256 != withOperations.operations.ExpectedSHA256 {
+		t.Fatalf("prepared operations artifact = %#v", prepared.Operations)
 	}
-	assertPackageFile(t, withOperations, *prepared.DeterministicOperations, withOperations.operations.Bytes)
+	assertPackageFile(t, withOperations, *prepared.Operations, withOperations.operations.Bytes)
 	if prepared.Package.DeterministicOperationsCoverage.String != "complete" || !prepared.Package.DeterministicOperationsCoverage.Valid {
 		t.Fatalf("operations coverage = %#v", prepared.Package.DeterministicOperationsCoverage)
 	}
-	if prepared.Package.PackageSha256 == briefPackage.Package.PackageSha256 {
-		t.Fatal("operations package reused the Brief-only package digest")
+	if prepared.Package.PackageSha256 == ticketPackage.Package.PackageSha256 {
+		t.Fatal("operations package reused the Ticket-only package digest")
 	}
 
 	detail, err := withOperations.service.Get(context.Background(), prepared.Package.PackageID)
@@ -124,35 +148,49 @@ func TestServicePrepareAndGetPackageWithOperations(t *testing.T) {
 	}
 	changed := *validated.operations
 	changed.input.DisplayName = "checkout.ticket-P2-T2.r1.changed-operations.json"
-	if compoundSHA256(append([]string{"selected-package-v3", "basis"}, selectedPackageOperationsDigestParts(validated.operations)...)...) == compoundSHA256(append([]string{"selected-package-v3", "basis"}, selectedPackageOperationsDigestParts(&changed)...)...) {
+	if compoundSHA256(append([]string{"selected-package-v4", "basis"}, selectedPackageOperationsDigestParts(validated.operations)...)...) == compoundSHA256(append([]string{"selected-package-v4", "basis"}, selectedPackageOperationsDigestParts(&changed)...)...) {
 		t.Fatal("changing the operations filename component did not change the digest")
 	}
 }
 
-func TestServiceDirectPrepareAndApproveRequireCurrentApprovedBrief(t *testing.T) {
+func TestServicePrepareAndApproveRejectBasisDrift(t *testing.T) {
 	ctx := context.Background()
+
+	// Ticket source drift: mutated selected Ticket bytes must reject approval
+	// revalidation with ErrPackageBasisChanged.
 	fixture := newPackageServiceFixture(t)
-	admitApprovedFixtureBrief(t, fixture)
-
-	rejectedBytes := append(append([]byte(nil), fixture.brief.Bytes...), '\n')
-	rejected := insertFixtureBriefAttempt(t, fixture, rejectedBytes, 2, "needs_revision", false)
-	if _, err := fixture.service.Prepare(ctx, PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: rejected}); !errors.Is(err, ErrPackageBasisChanged) {
-		t.Fatalf("direct prepare accepted historical rejected Brief: %v", err)
-	}
-
-	prepared, err := fixture.service.Prepare(ctx, fixture.input(false))
-	if err != nil {
-		t.Fatal(err)
-	}
-	currentRejected := insertFixtureBriefAttempt(t, fixture, rejectedBytes, 3, "needs_revision", true)
-	if _, err := fixture.service.Prepare(ctx, PrepareInput{SelectionID: fixture.selectionID, TicketDesignBrief: currentRejected}); err == nil {
-		t.Fatal("direct prepare unexpectedly accepted a second package for the selection")
-	}
-	if _, err := fixture.service.Approve(ctx, ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve stale package"}); !errors.Is(err, ErrPackageBasisChanged) {
-		t.Fatalf("direct approval accepted package after current Brief changed: %v", err)
+	prepared := preparePackage(t, fixture, false)
+	mutated := []byte(strings.Replace(string(fixture.ticketDocument), `"goal":"Package the selected ticket."`, `"goal":"Different goal."`, 1))
+	fixture.service.setSourceVaults(newPackageSourceVaultReader(fixture.sourcePath, mutated))
+	if _, err := fixture.service.Approve(ctx, ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve stale basis"}); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("approval after Ticket source drift error = %v, want ErrPackageBasisChanged", err)
 	}
 	assertCount(t, fixture.store.DB(), "execution_package_approvals", 0)
 	assertCount(t, fixture.store.DB(), "runs", 0)
+
+	// Repository target drift: a changed configured branch must reject
+	// preparation on a fresh fixture.
+	fixture2 := newPackageServiceFixture(t)
+	if _, err := fixture2.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = 'refs/heads/other' WHERE repo_target = 'relay'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture2.service.Prepare(ctx, fixture2.input(false)); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("prepare after repository target drift error = %v, want ErrPackageBasisChanged", err)
+	}
+	assertCount(t, fixture2.store.DB(), "execution_packages", 0)
+
+	// Approval of an already-prepared package whose repository target drifts
+	// must fail with ErrPackageBasisChanged and write nothing.
+	fixture3 := newPackageServiceFixture(t)
+	prepared3 := preparePackage(t, fixture3, false)
+	if _, err := fixture3.store.DB().Exec(`UPDATE repository_targets SET configured_branch_ref = 'refs/heads/other' WHERE repo_target = 'relay'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture3.service.Approve(ctx, ApproveInput{PackageID: prepared3.Package.PackageID, ExpectedPackageSha256: prepared3.Package.PackageSha256, OperatorConfirmationEvidence: "approve stale basis"}); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("approval after basis drift error = %v, want ErrPackageBasisChanged", err)
+	}
+	assertCount(t, fixture3.store.DB(), "execution_package_approvals", 0)
+	assertCount(t, fixture3.store.DB(), "runs", 0)
 }
 
 func TestServicePackageReadbackRejectsChangedOrMissingArtifacts(t *testing.T) {
@@ -162,17 +200,7 @@ func TestServicePackageReadbackRejectsChangedOrMissingArtifacts(t *testing.T) {
 		mutate     func(t *testing.T, fixture *packageServiceFixture, packageID string)
 	}{
 		{
-			name: "changed brief bytes",
-			mutate: func(t *testing.T, fixture *packageServiceFixture, packageID string) {
-				path := filepath.Join(fixture.store.ArtifactStore().Root(), "packages", packageID, fixture.brief.DisplayName)
-				if err := os.WriteFile(path, []byte("mutated brief"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			},
-		},
-		{
-			name:       "changed operations bytes",
-			operations: true,
+			name: "changed operations bytes",
 			mutate: func(t *testing.T, fixture *packageServiceFixture, packageID string) {
 				path := filepath.Join(fixture.store.ArtifactStore().Root(), "packages", packageID, fixture.operations.DisplayName)
 				if err := os.WriteFile(path, []byte("mutated operations"), 0o600); err != nil {
@@ -181,16 +209,7 @@ func TestServicePackageReadbackRejectsChangedOrMissingArtifacts(t *testing.T) {
 			},
 		},
 		{
-			name: "missing brief",
-			mutate: func(t *testing.T, fixture *packageServiceFixture, packageID string) {
-				if err := os.Remove(filepath.Join(fixture.store.ArtifactStore().Root(), "packages", packageID, fixture.brief.DisplayName)); err != nil {
-					t.Fatal(err)
-				}
-			},
-		},
-		{
-			name:       "missing operations",
-			operations: true,
+			name: "missing operations",
 			mutate: func(t *testing.T, fixture *packageServiceFixture, packageID string) {
 				if err := os.Remove(filepath.Join(fixture.store.ArtifactStore().Root(), "packages", packageID, fixture.operations.DisplayName)); err != nil {
 					t.Fatal(err)
@@ -208,16 +227,29 @@ func TestServicePackageReadbackRejectsChangedOrMissingArtifacts(t *testing.T) {
 			},
 		},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newPackageServiceFixture(t)
-			prepared := preparePackage(t, fixture, test.operations)
+			prepared := preparePackage(t, fixture, true)
 			test.mutate(t, fixture, prepared.Package.PackageID)
 			if _, err := fixture.service.Get(context.Background(), prepared.Package.PackageID); !errors.Is(err, ErrPackageBasisChanged) {
 				t.Fatalf("read-back error = %v, want ErrPackageBasisChanged", err)
 			}
 		})
+	}
+}
+
+func TestServiceGetRejectsChangedTicketSource(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageServiceFixture(t)
+	prepared := preparePackage(t, fixture, false)
+	// Swap the source vault reader to serve mutated Ticket bytes; Get must
+	// reject the package because its member digest no longer matches.
+	mutated := packageTicketDocument(fixture.baseCommit)
+	mutated = append([]byte(" "), mutated...)
+	fixture.service.setSourceVaults(newPackageSourceVaultReader(fixture.sourcePath, mutated))
+	if _, err := fixture.service.Get(ctx, prepared.Package.PackageID); !errors.Is(err, ErrPackageBasisChanged) {
+		t.Fatalf("read-back with changed Ticket source error = %v, want ErrPackageBasisChanged", err)
 	}
 }
 
@@ -262,7 +294,7 @@ func TestServiceApproveAtomicallyConsumesSelectionAndCreatesLinkedSetupReadyRun(
 	assertCount(t, fixture.store.DB(), "runs", 1)
 }
 
-func TestServiceLoadApprovedAuthorityForRunBriefOnly(t *testing.T) {
+func TestServiceLoadApprovedAuthorityForRunTicketOnly(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
 	prepared := preparePackage(t, fixture, false)
 	approved, err := fixture.service.Approve(context.Background(), ApproveInput{
@@ -284,8 +316,14 @@ func TestServiceLoadApprovedAuthorityForRunBriefOnly(t *testing.T) {
 	if len(loaded.AuthorityLayers) != 1 || string(loaded.AuthorityLayers[0].Bytes) != "authority" || loaded.AuthorityLayers[0].Kind != "requirements" {
 		t.Fatalf("loaded authority layers = %#v", loaded.AuthorityLayers)
 	}
-	if loaded.TicketDesignBrief.DisplayName != fixture.brief.DisplayName || len(loaded.BriefProjection.ValidationCommands) != 1 || loaded.DeterministicOperations != nil {
-		t.Fatalf("loaded Brief projection = %#v", loaded)
+	if loaded.DeliveryTicket.SHA256 != fixture.ticketSHA256 || len(loaded.TicketProjection.ValidationCommands) != 1 || loaded.TicketProjection.ValidationCommands[0].Command != "go test ./internal/app/packages" {
+		t.Fatalf("loaded Ticket bytes or projection = %#v", loaded)
+	}
+	if string(loaded.DeliveryTicket.Bytes) != string(fixture.ticketDocument) {
+		t.Fatalf("loaded Ticket exact bytes were not preserved")
+	}
+	if loaded.DeterministicOperations != nil {
+		t.Fatalf("ticket-only authority unexpectedly has operations")
 	}
 }
 
@@ -305,7 +343,7 @@ func TestServiceLoadApprovedAuthorityForRunWithOperations(t *testing.T) {
 	if loaded.DeterministicOperations == nil || loaded.DeterministicOperations.SHA256 != fixture.operations.ExpectedSHA256 || loaded.DeterministicOperations.Coverage != "complete" || loaded.DeterministicOperations.Document == nil {
 		t.Fatalf("loaded operations = %#v", loaded.DeterministicOperations)
 	}
-	if string(loaded.DeterministicOperations.Bytes) != string(fixture.operations.Bytes) || loaded.TicketDesignBrief.SHA256 != fixture.brief.ExpectedSHA256 {
+	if string(loaded.DeterministicOperations.Bytes) != string(fixture.operations.Bytes) || loaded.DeliveryTicket.SHA256 != fixture.ticketSHA256 {
 		t.Fatal("loader did not preserve exact package bytes")
 	}
 }
@@ -349,9 +387,9 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	if err := os.WriteFile(authorityPath, authorityBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	briefName := "checkout.ticket-P2-T2.r1.design-brief.md"
+	ticketDocument := packageTicketDocument(baseCommit)
+	ticketSHA := sha256Hex(ticketDocument)
 	operationsName := "checkout.ticket-P2-T2.r1.deterministic-operations.json"
-	briefBytes := []byte(testfixtures.TicketDesignBrief)
 	operationsBytes := packageOperationsWithBaseCommit(baseCommit)
 	var projectID, workspaceID, vaultID, closureID, authorityID, planID, ticketID, revisionID, approvalID, selectionRowID int64
 	db := store.DB()
@@ -424,19 +462,14 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 		t.Fatal(err)
 	}
 
-	reader := newPackageSourceVaultReader(sourcePath, packageDeliveryTicketBytes(baseCommit))
+	reader := newPackageSourceVaultReader(sourcePath, ticketDocument)
 	service, err := NewServiceWithSourceVaults(store, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	brief := ArtifactInput{DisplayName: briefName, Bytes: briefBytes, ExpectedSHA256: sha256Hex(briefBytes)}
 	operations := ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: sha256Hex(operationsBytes)}
-	return &packageServiceFixture{store: store, service: service, selectionID: "selection-package", brief: brief, operations: operations, baseCommit: baseCommit, sourcePath: sourcePath}
-}
-
-func packageDeliveryTicketBytes(baseCommit string) []byte {
-	return []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":"%s","goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, baseCommit))
+	return &packageServiceFixture{store: store, service: service, selectionID: "selection-package", operations: operations, ticketDocument: ticketDocument, ticketSHA256: ticketSHA, sourcePath: sourcePath, baseCommit: baseCommit, closureID: "closure-package", workspaceID: "workspace-package", ticketID: ticketID, revisionID: revisionID, approvalID: approvalID, selectionRowID: selectionRowID, authorityRowID: authorityID}
 }
 
 func packageOperationsWithBaseCommit(baseCommit string) []byte {
@@ -467,8 +500,14 @@ func (r *packageSourceVaultReader) WithErr(err error) *packageSourceVaultReader 
 	return &packageSourceVaultReader{path: r.path, bytes: r.bytes, err: err}
 }
 
+// setSourceVaults is an unexported test helper that swaps the source-vault
+// reader on the service. It is intentionally not an exported API surface.
+func (s *Service) setSourceVaults(reader SourceVaultReader) {
+	s.sourceVaults = reader
+}
+
 func (f *packageServiceFixture) input(withOperations bool) PrepareInput {
-	input := PrepareInput{SelectionID: f.selectionID, TicketDesignBrief: f.brief}
+	input := PrepareInput{SelectionID: f.selectionID}
 	if withOperations {
 		operations := f.operations
 		input.DeterministicOperations = &operations
@@ -478,71 +517,11 @@ func (f *packageServiceFixture) input(withOperations bool) PrepareInput {
 
 func preparePackage(t *testing.T, fixture *packageServiceFixture, withOperations bool) PrepareResult {
 	t.Helper()
-	admitApprovedFixtureBrief(t, fixture)
 	prepared, err := fixture.service.Prepare(context.Background(), fixture.input(withOperations))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return prepared
-}
-
-func admitApprovedFixtureBrief(t *testing.T, fixture *packageServiceFixture) {
-	t.Helper()
-	ctx := context.Background()
-	selection, err := fixture.store.GetDeliveryTicketSelectionBySelectionID(ctx, fixture.selectionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.CurrentTicketDesignBriefRowID.Valid {
-		return
-	}
-	owner, err := tickets.NewService(fixture.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admitted, err := owner.AdmitTicketDesignBrief(ctx, tickets.TicketDesignBriefAdmissionInput{WorkspaceID: "workspace-package", Bytes: fixture.brief.Bytes, CreatedIdentity: "planner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := fixture.store.GetFeatureWorkspaceByWorkspaceID(ctx, "workspace-package")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := owner.CompleteAndApproveTicketDesignBrief(ctx, tickets.CompleteBriefReviewInput{WorkspaceID: "workspace-package", BriefID: admitted.Brief.BriefID, ReviewerIdentity: "auditor", Disposition: tickets.TicketDesignBriefReviewReadyForApproval, ReviewedBytes: fixture.brief.Bytes}, tickets.TicketDesignBriefApprovalInput{WorkspaceID: "workspace-package", ExpectedVersion: workspace.Version, OperatorConfirmationEvidence: "approved fixture Brief", CreatedIdentity: "operator"}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func insertFixtureBriefAttempt(t *testing.T, fixture *packageServiceFixture, bytes []byte, attempt int64, disposition string, current bool) ArtifactInput {
-	t.Helper()
-	ctx := context.Background()
-	db := fixture.store.DB()
-	selection, err := fixture.store.GetDeliveryTicketSelectionBySelectionID(ctx, fixture.selectionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	members, err := fixture.store.ListDeliveryTicketSelectionMembers(ctx, selection.ID)
-	if err != nil || len(members) != 1 {
-		t.Fatalf("selection members = %#v, %v", members, err)
-	}
-	sha := sha256Hex(bytes)
-	name := fixture.brief.DisplayName
-	var artifactID, briefID int64
-	if err := db.QueryRowContext(ctx, `INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES (?, (SELECT workspace_row_id FROM delivery_ticket_selections WHERE id = ?), ?, ?, 'text/markdown', ?) RETURNING id`, fmt.Sprintf("discovery-artifact-package-brief-%d", attempt), selection.ID, fmt.Sprintf("feature-discovery/checkout/closure/brief-%d.md", attempt), sha, len(bytes)).Scan(&artifactID); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRowContext(ctx, `INSERT INTO ticket_design_briefs (brief_id, workspace_row_id, selection_row_id, attempt_number, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity) VALUES (?, (SELECT workspace_row_id FROM delivery_ticket_selections WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, 'planner') RETURNING id`, fmt.Sprintf("brief-package-attempt-%d", attempt), selection.ID, selection.ID, attempt, members[0].RevisionRowID, name, artifactID, sha, len(bytes)).Scan(&briefID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO ticket_design_brief_approvals (approval_id, brief_row_id, brief_artifact_row_id, brief_sha256, brief_size_bytes, operator_confirmation_evidence, created_identity) VALUES (?, ?, ?, ?, ?, 'fixture approval', 'operator')`, fmt.Sprintf("brief-approval-package-attempt-%d", attempt), briefID, artifactID, sha, len(bytes)); err != nil {
-		t.Fatal(err)
-	}
-	if current {
-		if _, err := db.ExecContext(ctx, `UPDATE delivery_ticket_selections SET current_ticket_design_brief_row_id = ? WHERE id = ?`, briefID, selection.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return ArtifactInput{DisplayName: name, Bytes: bytes, ExpectedSHA256: sha}
 }
 
 func assertPackageFile(t *testing.T, fixture *packageServiceFixture, artifact PackageArtifact, want []byte) {

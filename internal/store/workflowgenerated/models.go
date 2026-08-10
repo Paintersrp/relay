@@ -190,15 +190,14 @@ type DeliveryTicketRevisionSatisfaction struct {
 }
 
 type DeliveryTicketSelection struct {
-	ID                            int64         `json:"id"`
-	SelectionID                   string        `json:"selection_id"`
-	WorkspaceRowID                int64         `json:"workspace_row_id"`
-	State                         string        `json:"state"`
-	Rationale                     string        `json:"rationale"`
-	SourceClosureRowID            sql.NullInt64 `json:"source_closure_row_id"`
-	CreatedAt                     string        `json:"created_at"`
-	UpdatedAt                     string        `json:"updated_at"`
-	CurrentTicketDesignBriefRowID sql.NullInt64 `json:"current_ticket_design_brief_row_id"`
+	ID                 int64         `json:"id"`
+	SelectionID        string        `json:"selection_id"`
+	WorkspaceRowID     int64         `json:"workspace_row_id"`
+	State              string        `json:"state"`
+	Rationale          string        `json:"rationale"`
+	SourceClosureRowID sql.NullInt64 `json:"source_closure_row_id"`
+	CreatedAt          string        `json:"created_at"`
+	UpdatedAt          string        `json:"updated_at"`
 }
 
 type DeliveryTicketSelectionMember struct {
@@ -238,7 +237,6 @@ type ExecutionPackage struct {
 	PackageSha256                   string         `json:"package_sha256"`
 	AuthoritySha256                 string         `json:"authority_sha256"`
 	SourceSha256                    string         `json:"source_sha256"`
-	DesignBriefSha256               string         `json:"design_brief_sha256"`
 	DeterministicOperationsSha256   sql.NullString `json:"deterministic_operations_sha256"`
 	DeterministicOperationsCoverage sql.NullString `json:"deterministic_operations_coverage"`
 	CreatedAt                       string         `json:"created_at"`
@@ -1168,31 +1166,4 @@ type SourceVaultRetention struct {
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at"`
 	ReleasedAt    sql.NullString `json:"released_at"`
-}
-
-type TicketDesignBrief struct {
-	ID                int64  `json:"id"`
-	BriefID           string `json:"brief_id"`
-	WorkspaceRowID    int64  `json:"workspace_row_id"`
-	SelectionRowID    int64  `json:"selection_row_id"`
-	AttemptNumber     int64  `json:"attempt_number"`
-	RevisionRowID     int64  `json:"revision_row_id"`
-	Filename          string `json:"filename"`
-	ArtifactRowID     int64  `json:"artifact_row_id"`
-	ArtifactSha256    string `json:"artifact_sha256"`
-	ArtifactSizeBytes int64  `json:"artifact_size_bytes"`
-	CreatedIdentity   string `json:"created_identity"`
-	CreatedAt         string `json:"created_at"`
-}
-
-type TicketDesignBriefApproval struct {
-	ID                           int64  `json:"id"`
-	ApprovalID                   string `json:"approval_id"`
-	BriefRowID                   int64  `json:"brief_row_id"`
-	BriefArtifactRowID           int64  `json:"brief_artifact_row_id"`
-	BriefSha256                  string `json:"brief_sha256"`
-	BriefSizeBytes               int64  `json:"brief_size_bytes"`
-	OperatorConfirmationEvidence string `json:"operator_confirmation_evidence"`
-	CreatedIdentity              string `json:"created_identity"`
-	CreatedAt                    string `json:"created_at"`
 }

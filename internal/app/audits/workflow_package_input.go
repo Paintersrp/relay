@@ -10,7 +10,6 @@ import (
 
 	workflowpackages "relay/internal/app/packages"
 	"relay/internal/executor"
-	"relay/internal/planningartifacts"
 	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
@@ -161,15 +160,12 @@ func assemblePackageAuditInput(
 	}
 	sort.Strings(relevantPaths)
 
-	mode, adaptive, err := deriveWorkflowPackageEffectiveMode(evidence.Deterministic.Outcome.Outcome)
+	mode, adaptive, err := deriveWorkflowPackageExecutionMode(evidence.Deterministic.Outcome.Outcome)
 	if err != nil {
-		return WorkflowPackageAuditPacketInput{}, fmt.Errorf("derive effective mode: %w", err)
+		return WorkflowPackageAuditPacketInput{}, fmt.Errorf("derive execution mode: %w", err)
 	}
-	if evidence.EffectiveBrief.Mode != mode {
-		return WorkflowPackageAuditPacketInput{}, fmt.Errorf("effective brief mode %q does not match deterministic outcome mode %q", evidence.EffectiveBrief.Mode, mode)
-	}
-	if evidence.EffectiveBrief.AdaptiveDispatchRequired != adaptive {
-		return WorkflowPackageAuditPacketInput{}, fmt.Errorf("effective brief adaptive dispatch requirement does not match mode")
+	if evidence.Mode != mode {
+		return WorkflowPackageAuditPacketInput{}, fmt.Errorf("evidence execution mode %q does not match deterministic outcome mode %q", evidence.Mode, mode)
 	}
 
 	var completionSummary string
@@ -179,13 +175,13 @@ func assemblePackageAuditInput(
 		}
 		completionSummary = "The authorized adaptive Executor attempt completed successfully."
 	} else {
-		if mode != executor.EffectiveExecutorBriefDeterministicComplete {
+		if mode != executor.ExecutionModeCompleteApplied {
 			return WorkflowPackageAuditPacketInput{}, fmt.Errorf("unsupported non-adaptive mode %q", mode)
 		}
 		if evidence.Attempt != nil {
 			return WorkflowPackageAuditPacketInput{}, fmt.Errorf("deterministic-complete mode requires no execution attempt evidence")
 		}
-		completionSummary = "Deterministic Operations completely fulfilled the approved Brief; no adaptive Executor attempt was dispatched."
+		completionSummary = "Deterministic Operations completely fulfilled the approved Delivery Ticket; no adaptive Executor attempt was dispatched."
 	}
 
 	executionInput := WorkflowPackageAuditExecutionInput{
@@ -264,18 +260,17 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		copy(dst.Authority.TicketDependencies, src.Authority.TicketDependencies)
 	}
 
-	if src.Authority.BriefProjection.ValidationCommands != nil {
-		cmds := make([]planningartifacts.ValidationCommand, len(src.Authority.BriefProjection.ValidationCommands))
-		copy(cmds, src.Authority.BriefProjection.ValidationCommands)
-		dst.Authority.BriefProjection.ValidationCommands = cmds
+	if src.Authority.CompletedDependencies != nil {
+		dst.Authority.CompletedDependencies = make([]workflowpackages.ApprovedCompletedDependency, len(src.Authority.CompletedDependencies))
+		copy(dst.Authority.CompletedDependencies, src.Authority.CompletedDependencies)
+	}
+
+	if src.Authority.TicketProjection.ValidationCommands != nil || src.Authority.TicketProjection.DependsOn != nil {
+		dst.Authority.TicketProjection = cloneTicketProjection(src.Authority.TicketProjection)
 	}
 
 	if src.Authority.DeliveryTicket.Bytes != nil {
 		dst.Authority.DeliveryTicket.Bytes = cloneWorkflowPackageBytes(src.Authority.DeliveryTicket.Bytes)
-	}
-
-	if src.Authority.TicketDesignBrief.Bytes != nil {
-		dst.Authority.TicketDesignBrief.Bytes = cloneWorkflowPackageBytes(src.Authority.TicketDesignBrief.Bytes)
 	}
 
 	if src.Authority.DeterministicOperations != nil {
@@ -293,6 +288,12 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		layers := make([]executor.ExecutionAssignmentLayer, len(src.Assignment.Assignment.AuthorityLayers))
 		copy(layers, src.Assignment.Assignment.AuthorityLayers)
 		dst.Assignment.Assignment.AuthorityLayers = layers
+	}
+
+	if src.Assignment.Assignment.Dependencies != nil {
+		deps := make([]executor.ExecutionAssignmentDependency, len(src.Assignment.Assignment.Dependencies))
+		copy(deps, src.Assignment.Assignment.Dependencies)
+		dst.Assignment.Assignment.Dependencies = deps
 	}
 
 	if src.Assignment.Assignment.ValidationCommands != nil {
@@ -329,15 +330,6 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		dst.Deterministic.Outcome.Application = &app
 	}
 
-	if src.EffectiveBrief.Artifact != nil {
-		art := *src.EffectiveBrief.Artifact
-		dst.EffectiveBrief.Artifact = &art
-	}
-
-	if src.EffectiveBrief.Bytes != nil {
-		dst.EffectiveBrief.Bytes = cloneWorkflowPackageBytes(src.EffectiveBrief.Bytes)
-	}
-
 	if src.Attempt != nil {
 		att := *src.Attempt
 		if att.Bytes != nil {
@@ -354,6 +346,35 @@ func cloneWorkflowPackageBytes(src []byte) []byte {
 		return nil
 	}
 	return append(make([]byte, 0, len(src)), src...)
+}
+
+// cloneTicketProjection deep-copies the deterministic Delivery Ticket
+// projection carried by the approved authority so audit evidence never shares
+// mutable slice storage with the loaded authority. Nil and non-nil empty
+// slices are preserved.
+func cloneTicketProjection(projection speccompiler.DeliveryTicketProjection) speccompiler.DeliveryTicketProjection {
+	clone := projection
+	clone.DependsOn = make([]speccompiler.DeliveryTicketDependency, len(projection.DependsOn))
+	copy(clone.DependsOn, projection.DependsOn)
+	clone.RequiredInvariants = make([]string, len(projection.RequiredInvariants))
+	copy(clone.RequiredInvariants, projection.RequiredInvariants)
+	clone.ForbiddenBehaviors = make([]string, len(projection.ForbiddenBehaviors))
+	copy(clone.ForbiddenBehaviors, projection.ForbiddenBehaviors)
+	clone.ImplementationObligations = make([]speccompiler.DeliveryTicketObligation, len(projection.ImplementationObligations))
+	copy(clone.ImplementationObligations, projection.ImplementationObligations)
+	clone.ProofObligations = make([]string, len(projection.ProofObligations))
+	copy(clone.ProofObligations, projection.ProofObligations)
+	clone.ValidationCommands = make([]speccompiler.DeliveryTicketValidationCommand, len(projection.ValidationCommands))
+	copy(clone.ValidationCommands, projection.ValidationCommands)
+	clone.ExplicitDeferrals = make([]string, len(projection.ExplicitDeferrals))
+	copy(clone.ExplicitDeferrals, projection.ExplicitDeferrals)
+	clone.Completion = make([]string, len(projection.Completion))
+	copy(clone.Completion, projection.Completion)
+	if projection.Cancellation != nil {
+		cancellation := *projection.Cancellation
+		clone.Cancellation = &cancellation
+	}
+	return clone
 }
 
 func cloneDeterministicOperationsDocument(doc *speccompiler.DeterministicOperationsDocument) *speccompiler.DeterministicOperationsDocument {

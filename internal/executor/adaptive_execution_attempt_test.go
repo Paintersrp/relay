@@ -20,16 +20,16 @@ func TestPrepareAdaptiveExecutionAttemptModes(t *testing.T) {
 		operations bool
 		coverage   string
 		outcome    func() DeterministicOutcomeInput
-		mode       EffectiveExecutorBriefMode
+		mode       ExecutionMode
 		adaptive   bool
 	}{
 		{name: "operations absent", outcome: func() DeterministicOutcomeInput {
 			return DeterministicOutcomeInput{Preflight: DeterministicPreflightResult{Status: DeterministicPreflightNotPresent}}
-		}, mode: EffectiveExecutorBriefAdaptiveNoOperations, adaptive: true},
-		{name: "partial preflight failure", operations: true, coverage: "partial", outcome: func() DeterministicOutcomeInput { return failedOutcomeInput("partial") }, mode: EffectiveExecutorBriefAdaptivePreflightFailed, adaptive: true},
-		{name: "complete preflight failure", operations: true, coverage: "complete", outcome: func() DeterministicOutcomeInput { return failedOutcomeInput("complete") }, mode: EffectiveExecutorBriefAdaptivePreflightFailed, adaptive: true},
-		{name: "partial application", operations: true, coverage: "partial", outcome: func() DeterministicOutcomeInput { return appliedOutcomeInput("partial") }, mode: EffectiveExecutorBriefAdaptiveAfterPartialApplication, adaptive: true},
-		{name: "complete application", operations: true, coverage: "complete", outcome: func() DeterministicOutcomeInput { return appliedOutcomeInput("complete") }, mode: EffectiveExecutorBriefDeterministicComplete, adaptive: false},
+		}, mode: ExecutionModeAbsent, adaptive: true},
+		{name: "partial preflight failure", operations: true, coverage: "partial", outcome: func() DeterministicOutcomeInput { return failedOutcomeInput("partial") }, mode: ExecutionModePreflightFailed, adaptive: true},
+		{name: "complete preflight failure", operations: true, coverage: "complete", outcome: func() DeterministicOutcomeInput { return failedOutcomeInput("complete") }, mode: ExecutionModePreflightFailed, adaptive: true},
+		{name: "partial application", operations: true, coverage: "partial", outcome: func() DeterministicOutcomeInput { return appliedOutcomeInput("partial") }, mode: ExecutionModePartialApplied, adaptive: true},
+		{name: "complete application", operations: true, coverage: "complete", outcome: func() DeterministicOutcomeInput { return appliedOutcomeInput("complete") }, mode: ExecutionModeCompleteApplied, adaptive: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newExecutionAssignmentFixture(t, test.operations, test.coverage)
@@ -64,14 +64,14 @@ func TestPrepareAdaptiveExecutionAttemptModes(t *testing.T) {
 			if result.InputArtifact.Kind != adaptiveExecutionInputKind || result.InputArtifact.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt || result.InputArtifact.MediaType != adaptiveExecutionInputMediaType {
 				t.Fatalf("input artifact = %#v", result.InputArtifact)
 			}
-			if !strings.HasSuffix(string(result.InputBytes), "\n") || strings.HasSuffix(string(result.InputBytes), "\n\n") || bytes.Contains(result.InputBytes, []byte(testfixturesBrief(t))) {
+			if !strings.HasSuffix(string(result.InputBytes), "\n") || strings.HasSuffix(string(result.InputBytes), "\n\n") || bytes.Contains(result.InputBytes, []byte(testfixturesTicket(t))) {
 				t.Fatalf("unexpected input bytes: %q", result.InputBytes)
 			}
 			var decoded adaptiveExecutionInputDocument
 			if err := json.Unmarshal(result.InputBytes, &decoded); err != nil {
 				t.Fatal(err)
 			}
-			if decoded.EffectiveExecutorBrief.ArtifactID == "" || decoded.ExecutionAttempt.AttemptID != result.Attempt.AttemptID || decoded.Executor.Adapter != "codex" {
+			if decoded.ExecutionAssignment.ArtifactID == "" || decoded.ExecutionAttempt.AttemptID != result.Attempt.AttemptID || decoded.Executor.Adapter != "codex" {
 				t.Fatalf("input document = %#v", decoded)
 			}
 		})
@@ -85,24 +85,24 @@ func TestAdaptiveExecutionAttemptCompletePreparationAndReadbackOwnsNoAttemptOrIn
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.Mode != EffectiveExecutorBriefDeterministicComplete || prepared.AdaptiveDispatchRequired || prepared.Attempt != nil || prepared.InputArtifact != nil || len(prepared.InputBytes) != 0 {
+	if prepared.Mode != ExecutionModeCompleteApplied || prepared.AdaptiveDispatchRequired || prepared.Attempt != nil || prepared.InputArtifact != nil || len(prepared.InputBytes) != 0 {
 		t.Fatalf("complete prepared result = %#v", prepared)
 	}
 	artifacts, err := fixture.store.ListArtifactsByRun(context.Background(), fixture.run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var effectiveBriefs int
+	var assignments int
 	for _, artifact := range artifacts {
-		if artifact.Kind == effectiveExecutorBriefKind && artifact.OwnerType == workflowstore.ArtifactOwnerRun {
-			effectiveBriefs++
+		if artifact.Kind == executionAssignmentKind && artifact.OwnerType == workflowstore.ArtifactOwnerRun {
+			assignments++
 		}
 		if artifact.Kind == adaptiveExecutionInputKind {
 			t.Fatalf("complete run owns adaptive input artifact: %#v", artifact)
 		}
 	}
-	if effectiveBriefs != 1 {
-		t.Fatalf("effective brief artifacts = %d", effectiveBriefs)
+	if assignments != 1 {
+		t.Fatalf("execution assignment artifacts = %d", assignments)
 	}
 	attempts, err := fixture.store.ListExecutionAttemptsByRun(context.Background(), fixture.run.ID)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestAdaptiveExecutionAttemptCompletePreparationAndReadbackOwnsNoAttemptOrIn
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Mode != EffectiveExecutorBriefDeterministicComplete || loaded.AdaptiveDispatchRequired || loaded.Attempt != nil || loaded.InputArtifact != nil || len(loaded.InputBytes) != 0 {
+	if loaded.Mode != ExecutionModeCompleteApplied || loaded.AdaptiveDispatchRequired || loaded.Attempt != nil || loaded.InputArtifact != nil || len(loaded.InputBytes) != 0 {
 		t.Fatalf("complete loaded result = %#v", loaded)
 	}
 }

@@ -6,12 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
-func TestVerifyInvocationUsesEffectiveBriefAdapterTransports(t *testing.T) {
-	selected := testEffectiveBriefInput(t)
+func TestVerifyInvocationCarriesInputAdapterTransports(t *testing.T) {
+	selected := testSelectedInput(t)
 	for _, adapter := range []AdapterID{AdapterOpenCodeGo, AdapterCodex, AdapterKiroCLI} {
 		t.Run(string(adapter), func(t *testing.T) {
 			invocation := ExecutorInvocation{
@@ -20,7 +19,7 @@ func TestVerifyInvocationUsesEffectiveBriefAdapterTransports(t *testing.T) {
 				StdinSource: selected.Path,
 				StdinBytes:  len(selected.Content),
 			}
-			if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
+			if err := verifyInvocationCarriesInput(invocation, selected); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -35,27 +34,27 @@ func TestVerifyInvocationUsesEffectiveBriefAdapterTransports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err != nil {
+	if err := verifyInvocationCarriesInput(invocation, selected); err != nil {
 		t.Fatal(err)
 	}
-	invocation.StdinSource = filepath.Join(t.TempDir(), "alternate-brief.md")
-	if err := verifyInvocationUsesEffectiveBrief(invocation, selected); err == nil {
+	invocation.StdinSource = filepath.Join(t.TempDir(), "alternate-input.json")
+	if err := verifyInvocationCarriesInput(invocation, selected); err == nil {
 		t.Fatal("expected alternate path-based stdin source to be rejected")
 	}
 }
 
-func testEffectiveBriefInput(t *testing.T) effectiveBriefInput {
+func testSelectedInput(t *testing.T) selectedInput {
 	t.Helper()
-	content := []byte("# Executor Brief\n\nUse the selected effective input.\n")
+	content := []byte("{\"schema_version\":\"1.0\"}\n")
 	digest := sha256.Sum256(content)
-	return effectiveBriefInput{
-		Mode:    speccompiler.EffectiveBriefResidual,
+	return selectedInput{
+		Mode:    ExecutionModeAbsent,
 		Content: content,
 		Artifact: workflowstore.Artifact{
-			ArtifactID: "artifact-effective-brief",
+			ArtifactID: "artifact-selected-input",
 			SHA256:     hex.EncodeToString(digest[:]),
 			SizeBytes:  int64(len(content)),
 		},
-		Path: filepath.Join(t.TempDir(), "executor-residual-brief.md"),
+		Path: filepath.Join(t.TempDir(), "execution-assignment.json"),
 	}
 }

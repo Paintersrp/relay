@@ -4,30 +4,28 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"relay/internal/sourcevault"
+	workflowstore "relay/internal/store/workflow"
 )
 
 func createApprovedRun(t *testing.T, reader SourceVaultReader) (*packageServiceFixture, string) {
 	t.Helper()
 	fixture := newPackageServiceFixture(t)
-	if reader != nil {
-		svc, err := NewServiceWithSourceVaults(fixture.store, reader)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fixture.service = svc
-	}
 	prepared := preparePackage(t, fixture, false)
 	approved, err := fixture.service.Approve(context.Background(), ApproveInput{
 		PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve package",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if reader != nil {
+		// Swap the reader before the approved-authority load so the load
+		// re-resolves the selected Ticket source through the supplied reader.
+		fixture.service.setSourceVaults(reader)
 	}
 	return fixture, approved.Run.RunID
 }
@@ -46,26 +44,70 @@ func TestLoadApprovedAuthorityCanonicalDeliveryTicketSucceeds(t *testing.T) {
 	if doc.RelativePath != fixture.sourcePath {
 		t.Errorf("RelativePath = %q, want %q", doc.RelativePath, fixture.sourcePath)
 	}
+	if doc.SHA256 != fixture.ticketSHA256 || !bytes.Equal(doc.Bytes, fixture.ticketDocument) {
+		t.Errorf("exact Ticket bytes or digest were not preserved")
+	}
+	if len(authority.TicketProjection.ValidationCommands) != 1 || authority.TicketProjection.ValidationCommands[0].Command != "go test ./internal/app/packages" {
+		t.Errorf("Ticket projection = %#v", authority.TicketProjection)
+	}
+	if len(authority.CompletedDependencies) != 0 {
+		t.Errorf("ticket-only authority completed dependencies = %#v, want none", authority.CompletedDependencies)
+	}
 }
 
-func TestLoadApprovedAuthorityInsignificantSourceWhitespacePreserved(t *testing.T) {
-	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(" {\n  \"schema_version\": \"1.0\",\n  \"feature_slug\": \"checkout\",\n  \"ticket_id\": \"P2-T2\",\n  \"revision\": 1,\n  \"replaces_revision\": null,\n  \"repo_target\": \"relay\",\n  \"branch\": \"main\",\n  \"base_commit\": %q,\n  \"goal\": \"Package the selected ticket.\",\n  \"context\": \"Package basis context.\",\n  \"scope\": {\"in_scope\":[\"Package service.\"],\"out_of_scope\":[\"Unrelated work.\"]},\n  \"depends_on\": [],\n  \"implementation_obligations\": [{\"path\":\"internal/app/packages\",\"obligation\":\"Preserve the selected package basis.\"}],\n  \"validation_intent\": [\"Validate package creation.\"],\n  \"transition_applicability\": \"not_required\",\n  \"completion_criteria\": [\"All tests pass.\"]\n} ", fixture.baseCommit))
-	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
-	fixture, runID := createApprovedRun(t, reader)
+func TestLoadApprovedAuthorityCarriesCompletedDependencies(t *testing.T) {
 	ctx := context.Background()
-	authority, err := fixture.service.LoadApprovedAuthorityForRun(ctx, runID)
+	fixture := newPackageServiceFixture(t)
+	depDocument := packageTicketDocumentWithDependency(fixture.baseCommit)
+	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: depDocument}
+	fixture.service.setSourceVaults(reader)
+
+	db := fixture.store.DB()
+	var workspaceRowID, closureRowID int64
+	if err := db.QueryRowContext(ctx, `SELECT id FROM feature_workspaces WHERE workspace_id = ?`, fixture.workspaceID).Scan(&workspaceRowID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT id FROM source_vault_closures WHERE closure_id = ?`, fixture.closureID).Scan(&closureRowID); err != nil {
+		t.Fatal(err)
+	}
+	var dependencyTicketID, dependencyRevisionID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P2-T1', ?, 5) RETURNING id`, workspaceRowID).Scan(&dependencyTicketID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, ?, 'Dependency goal.', 'Dependency context.', 'not_required') RETURNING id`, dependencyTicketID, fixture.baseCommit, closureRowID, "tickets/checkout.ticket-P2-T1.r1.delivery-ticket.json").Scan(&dependencyRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, dependencyRevisionID, dependencyTicketID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO delivery_ticket_revision_dependencies (revision_row_id, sequence, depends_on_revision_row_id, outcome) VALUES (?, 1, ?, 'satisfied')`, fixture.revisionID, dependencyRevisionID); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := fixture.service.Prepare(ctx, PrepareInput{SelectionID: fixture.selectionID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(authority.DeliveryTicket.Bytes, rawBytes) {
-		t.Fatalf("whitespace bytes changed: got %q, want %q", authority.DeliveryTicket.Bytes, rawBytes)
+	approved, err := fixture.service.Approve(ctx, ApproveInput{PackageID: prepared.Package.PackageID, ExpectedPackageSha256: prepared.Package.PackageSha256, OperatorConfirmationEvidence: "approve package"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := fixture.service.LoadApprovedAuthorityForRun(ctx, approved.Run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ApprovedCompletedDependency{{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"}}
+	if !reflect.DeepEqual(authority.CompletedDependencies, want) {
+		t.Fatalf("completed dependencies = %#v, want %#v", authority.CompletedDependencies, want)
+	}
+	if len(authority.TicketDependencies) != 1 || authority.TicketDependencies[0].DependsOnRevisionRowID != dependencyRevisionID || authority.TicketDependencies[0].Outcome != "satisfied" {
+		t.Fatalf("raw TicketDependencies = %#v, want unchanged raw rows", authority.TicketDependencies)
 	}
 }
 
 func TestLoadApprovedAuthorityCompilerRejectsNoncanonicalPropertyOrder(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"feature_slug":"checkout","schema_version":"1.0","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `{"schema_version":"2.0","feature_slug":"checkout"`, `{"feature_slug":"checkout","schema_version":"2.0"`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -77,7 +119,7 @@ func TestLoadApprovedAuthorityCompilerRejectsNoncanonicalPropertyOrder(t *testin
 
 func TestLoadApprovedAuthorityCompilerRejectsMissingRequiredFields(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"explicit_deferrals":[],`, ``, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -89,7 +131,7 @@ func TestLoadApprovedAuthorityCompilerRejectsMissingRequiredFields(t *testing.T)
 
 func TestLoadApprovedAuthorityCompilerRejectsEmptyRequiredCollections(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":[],"out_of_scope":[]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":[],"transition_applicability":"not_required","completion_criteria":[]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"validation_commands":[{"working_directory":"","command":"go test ./internal/app/packages","expected":"all tests pass"}]`, `"validation_commands":[]`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -101,7 +143,7 @@ func TestLoadApprovedAuthorityCompilerRejectsEmptyRequiredCollections(t *testing
 
 func TestLoadApprovedAuthorityCompilerRejectsUnsafeObligationPaths(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"../unsafe","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"source_area":"internal/app/packages"`, `"source_area":"../unsafe"`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -113,7 +155,7 @@ func TestLoadApprovedAuthorityCompilerRejectsUnsafeObligationPaths(t *testing.T)
 
 func TestLoadApprovedAuthorityCanonicalFilenameMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := packageDeliveryTicketBytes(fixture.baseCommit)
+	rawBytes := append([]byte(nil), fixture.ticketDocument...)
 	reader := &customSourceVaultReader{path: "tickets/wrong.json", bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -125,7 +167,7 @@ func TestLoadApprovedAuthorityCanonicalFilenameMismatchIsRejected(t *testing.T) 
 
 func TestLoadApprovedAuthorityGoalMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Different goal.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"goal":"Package the selected ticket."`, `"goal":"Different goal."`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -137,7 +179,7 @@ func TestLoadApprovedAuthorityGoalMismatchIsRejected(t *testing.T) {
 
 func TestLoadApprovedAuthorityContextMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Different context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"context":"Package basis context."`, `"context":"Different context."`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -149,7 +191,7 @@ func TestLoadApprovedAuthorityContextMismatchIsRejected(t *testing.T) {
 
 func TestLoadApprovedAuthorityTransitionApplicabilityMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"transition_applicability":"not_required"`, `"transition_applicability":"required"`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -161,7 +203,7 @@ func TestLoadApprovedAuthorityTransitionApplicabilityMismatchIsRejected(t *testi
 
 func TestLoadApprovedAuthorityDependencyMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[{"ticket_id":"P2-T1","revision":1}],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"depends_on":[]`, `"depends_on":[{"ticket_id":"P2-T1","revision":1}]`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -173,7 +215,7 @@ func TestLoadApprovedAuthorityDependencyMismatchIsRejected(t *testing.T) {
 
 func TestLoadApprovedAuthorityImplementationObligationPathMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/other","obligation":"Preserve the selected package basis."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"source_area":"internal/app/packages"`, `"source_area":"internal/other"`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -185,7 +227,7 @@ func TestLoadApprovedAuthorityImplementationObligationPathMismatchIsRejected(t *
 
 func TestLoadApprovedAuthorityImplementationObligationTextMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[{"path":"internal/app/packages","obligation":"Different text."}],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"obligation":"Preserve the selected package basis."`, `"obligation":"Different text."`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -197,7 +239,7 @@ func TestLoadApprovedAuthorityImplementationObligationTextMismatchIsRejected(t *
 
 func TestLoadApprovedAuthorityMemberOrDependencyOrderingMismatchIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := []byte(fmt.Sprintf(`{"schema_version":"1.0","feature_slug":"checkout","ticket_id":"P2-T2","revision":1,"replaces_revision":null,"repo_target":"relay","branch":"main","base_commit":%q,"goal":"Package the selected ticket.","context":"Package basis context.","scope":{"in_scope":["Package service."],"out_of_scope":["Unrelated work."]},"depends_on":[],"implementation_obligations":[],"validation_intent":["Validate package creation."],"transition_applicability":"not_required","completion_criteria":["All tests pass."]}`, fixture.baseCommit))
+	rawBytes := []byte(strings.Replace(string(fixture.ticketDocument), `"implementation_obligations":[{"source_area":"internal/app/packages","obligation":"Preserve the selected package basis.","prerequisites":[]}]`, `"implementation_obligations":[]`, 1))
 	reader := &customSourceVaultReader{path: fixture.sourcePath, bytes: rawBytes}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
@@ -207,10 +249,46 @@ func TestLoadApprovedAuthorityMemberOrDependencyOrderingMismatchIsRejected(t *te
 	}
 }
 
+func TestResolveApprovedCompletedDependenciesRequiresCompletedOutcome(t *testing.T) {
+	ctx := context.Background()
+	fixture := newPackageServiceFixture(t)
+	db := fixture.store.DB()
+	var workspaceRowID, closureRowID int64
+	if err := db.QueryRowContext(ctx, `SELECT id FROM feature_workspaces WHERE workspace_id = ?`, fixture.workspaceID).Scan(&workspaceRowID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT id FROM source_vault_closures WHERE closure_id = ?`, fixture.closureID).Scan(&closureRowID); err != nil {
+		t.Fatal(err)
+	}
+	var dependencyTicketID, dependencyRevisionID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority) VALUES ('P2-T1', ?, 5) RETURNING id`, workspaceRowID).Scan(&dependencyTicketID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO delivery_ticket_revisions (delivery_ticket_row_id, revision_number, repo_target, branch, base_commit, source_closure_row_id, source_path, goal, context, transition_applicability) VALUES (?, 1, 'relay', 'main', ?, ?, ?, 'Dependency goal.', 'Dependency context.', 'not_required') RETURNING id`, dependencyTicketID, fixture.baseCommit, closureRowID, "tickets/checkout.ticket-P2-T1.r1.delivery-ticket.json").Scan(&dependencyRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE delivery_tickets SET current_revision_row_id = ? WHERE id = ?`, dependencyRevisionID, dependencyTicketID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO delivery_ticket_revision_dependencies (revision_row_id, sequence, depends_on_revision_row_id, outcome) VALUES (?, 1, ?, 'blocked')`, fixture.revisionID, dependencyRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	err := fixture.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		dependencies, err := tx.ListDeliveryTicketRevisionDependencies(ctx, fixture.revisionID)
+		if err != nil {
+			return err
+		}
+		_, err = resolveApprovedCompletedDependencies(ctx, tx, fixture.revisionID, dependencies)
+		return err
+	})
+	if err == nil || !errors.Is(err, ErrApprovedAuthorityInvalid) {
+		t.Fatalf("resolveApprovedCompletedDependencies error = %v, want ErrApprovedAuthorityInvalid", err)
+	}
+}
+
 func TestLoadApprovedAuthorityMalformedObjectOIDIsRejected(t *testing.T) {
 	fixture := newPackageServiceFixture(t)
-	rawBytes := packageDeliveryTicketBytes(fixture.baseCommit)
-	reader := &customSourceVaultReader{path: fixture.sourcePath, objectOID: "INVALID-OID", bytes: rawBytes}
+	reader := &customSourceVaultReader{path: fixture.sourcePath, objectOID: "INVALID-OID", bytes: append([]byte(nil), fixture.ticketDocument...)}
 	fixture, runID := createApprovedRun(t, reader)
 	ctx := context.Background()
 	_, err := fixture.service.LoadApprovedAuthorityForRun(ctx, runID)

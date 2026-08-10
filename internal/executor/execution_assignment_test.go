@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	executionpackages "relay/internal/app/packages"
-	"relay/internal/planningartifacts"
+	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
 
-func TestBuildExecutionAssignmentBriefOnlyCanonicalContract(t *testing.T) {
+func TestBuildExecutionAssignmentTicketOnlyCanonicalContract(t *testing.T) {
 	authority := executionAssignmentAuthority(nil)
 	_, content, filename, err := buildExecutionAssignment(authority)
 	if err != nil {
@@ -26,7 +26,7 @@ func TestBuildExecutionAssignmentBriefOnlyCanonicalContract(t *testing.T) {
 	if strings.Count(string(content), "\n") != 1 {
 		t.Fatal("assignment contains more than its trailing newline")
 	}
-	keys := []string{"schema_version", "run", "package", "package_approval", "ticket", "repository", "source", "authority", "authority_layers", "ticket_design_brief", "deterministic_operations", "validation_commands", "executor_instructions"}
+	keys := []string{"schema_version", "run", "package", "package_approval", "ticket", "dependencies", "repository", "source", "authority", "authority_layers", "delivery_ticket", "deterministic_operations", "validation_commands", "standing_role"}
 	last := -1
 	for _, key := range keys {
 		position := strings.Index(string(content), `"`+key+`"`)
@@ -42,9 +42,20 @@ func TestBuildExecutionAssignmentBriefOnlyCanonicalContract(t *testing.T) {
 	if got := decoded["deterministic_operations"]; !reflect.DeepEqual(got, map[string]any{"presence": "absent"}) {
 		t.Fatalf("operations = %#v, want explicit absence", got)
 	}
+	if got := decoded["dependencies"]; !reflect.DeepEqual(got, []any{}) {
+		t.Fatalf("dependencies = %#v, want explicit empty completed dependencies", got)
+	}
+	source, ok := decoded["source"].(map[string]any)
+	if !ok || source["commit_oid"] != strings.Repeat("a", 40) || source["tree_oid"] != strings.Repeat("b", 40) || source["generation"] != float64(1) || source["ref_name"] != "refs/relay/closures/closure-1" || source["state"] != "ready" {
+		t.Fatalf("source = %#v", source)
+	}
 	commands := decoded["validation_commands"].([]any)
 	if len(commands) != 2 || commands[0].(map[string]any)["command"] != "go test ./first" || commands[1].(map[string]any)["expected"] != "second exact result" {
 		t.Fatalf("validation commands lost order or text: %#v", commands)
+	}
+	role, ok := decoded["standing_role"].(map[string]any)
+	if !ok || role["authority_repository"] != "Paintersrp/relay-specs" || role["authority_commit"] != "590c4ba79e557e3957a80ad1fefe8698cef0219e" || role["source_path"] != "agents/orchestrator.md" {
+		t.Fatalf("standing role = %#v", role)
 	}
 }
 
@@ -78,7 +89,7 @@ func TestBuildExecutionAssignmentPreservesPartialOperationsAndLayerOrder(t *test
 
 func TestBuildExecutionAssignmentRejectsIncompleteProjection(t *testing.T) {
 	noCommands := executionAssignmentAuthority(nil)
-	noCommands.BriefProjection.ValidationCommands = nil
+	noCommands.TicketProjection.ValidationCommands = nil
 	if _, _, _, err := buildExecutionAssignment(noCommands); err == nil {
 		t.Fatal("empty validation commands succeeded")
 	}
@@ -97,20 +108,84 @@ func TestBuildExecutionAssignmentRejectsIncompleteProjection(t *testing.T) {
 	}
 }
 
+func TestBuildExecutionAssignmentCarriesCompletedDependenciesAndSourceIdentity(t *testing.T) {
+	authority := executionAssignmentAuthority(nil)
+	authority.CompletedDependencies = []executionpackages.ApprovedCompletedDependency{
+		{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"},
+		{Sequence: 2, TicketID: "P1-T7", Revision: 3, Outcome: "satisfied"},
+	}
+	assignment, content, _, err := buildExecutionAssignment(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDeps := []ExecutionAssignmentDependency{
+		{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"},
+		{Sequence: 2, TicketID: "P1-T7", Revision: 3, Outcome: "satisfied"},
+	}
+	if !reflect.DeepEqual(assignment.Dependencies, wantDeps) {
+		t.Fatalf("assignment dependencies = %#v, want %#v", assignment.Dependencies, wantDeps)
+	}
+	if assignment.Source.CommitOID != strings.Repeat("a", 40) || assignment.Source.TreeOID != strings.Repeat("b", 40) || assignment.Source.Generation != 1 || assignment.Source.RefName != "refs/relay/closures/closure-1" || assignment.Source.State != "ready" {
+		t.Fatalf("assignment source identity = %#v", assignment.Source)
+	}
+	if !strings.Contains(string(content), `"ticket_id":"P2-T1"`) || !strings.Contains(string(content), `"outcome":"satisfied"`) || !strings.Contains(string(content), `"commit_oid":"`+strings.Repeat("a", 40)+`"`) {
+		t.Fatal("completed dependency or source identity was not serialized")
+	}
+}
+
+func TestBuildExecutionAssignmentRejectsInconsistentCompletedDependencies(t *testing.T) {
+	reorder := executionAssignmentAuthority(nil)
+	reorder.CompletedDependencies = []executionpackages.ApprovedCompletedDependency{
+		{Sequence: 2, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"},
+		{Sequence: 1, TicketID: "P2-T1", Revision: 1, Outcome: "satisfied"},
+	}
+	if _, _, _, err := buildExecutionAssignment(reorder); err == nil {
+		t.Fatal("out-of-order completed dependency sequence succeeded")
+	}
+
+	missingTicket := executionAssignmentAuthority(nil)
+	missingTicket.CompletedDependencies = []executionpackages.ApprovedCompletedDependency{
+		{Sequence: 1, TicketID: "", Revision: 1, Outcome: "satisfied"},
+	}
+	if _, _, _, err := buildExecutionAssignment(missingTicket); err == nil {
+		t.Fatal("blank completed dependency Ticket ID succeeded")
+	}
+}
+
+func TestBuildExecutionAssignmentRejectsInconsistentSourceIdentity(t *testing.T) {
+	incomplete := executionAssignmentAuthority(nil)
+	incomplete.Source = workflowstore.SourceVaultClosure{ID: 61, ClosureID: "closure-1"}
+	if _, _, _, err := buildExecutionAssignment(incomplete); err == nil {
+		t.Fatal("incomplete source closure identity succeeded")
+	}
+
+	badOID := executionAssignmentAuthority(nil)
+	badOID.Source.CommitOID = "not-an-oid"
+	if _, _, _, err := buildExecutionAssignment(badOID); err == nil {
+		t.Fatal("invalid source commit OID succeeded")
+	}
+}
+
 func executionAssignmentAuthority(operations *executionpackages.ApprovedDeterministicOperations) executionpackages.ApprovedAuthority {
 	return executionpackages.ApprovedAuthority{
-		Run:                     workflowstore.Run{ID: 11, RunID: "run-1", Status: workflowstore.RunStatusSetupReady, FeatureSlug: "checkout", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40)},
-		Package:                 workflowstore.ExecutionPackage{ID: 21, PackageID: "package-1", PackageSha256: strings.Repeat("b", 64), AuthoritySha256: strings.Repeat("c", 64), SourceSha256: strings.Repeat("d", 64)},
-		PackageApproval:         workflowstore.ExecutionPackageApproval{ID: 31, ApprovalID: "pkg-approval-1", PackageSha256: strings.Repeat("b", 64)},
-		Workspace:               workflowstore.FeatureWorkspace{ID: 41, FeatureSlug: "checkout"},
-		Authority:               workflowstore.FeatureWorkspaceAuthorityRevision{ID: 51, AuthorityRevisionID: "authority-1", RevisionNumber: 3},
-		Source:                  workflowstore.SourceVaultClosure{ID: 61, ClosureID: "closure-1"},
-		Ticket:                  workflowstore.DeliveryTicket{ID: 71, TicketID: "P2-T2"},
-		TicketRevision:          workflowstore.DeliveryTicketRevision{ID: 81, RevisionNumber: 1},
-		TicketApproval:          workflowstore.DeliveryTicketRevisionApproval{ID: 91, ApprovalID: "approval-1"},
-		AuthorityLayers:         []executionpackages.ApprovedAuthorityLayer{{Kind: "requirements", Sequence: 1, RelativePath: "plans/checkout/requirements.json", MediaType: "application/json", SHA256: strings.Repeat("e", 64)}},
-		TicketDesignBrief:       executionpackages.ApprovedDocument{DisplayName: "checkout.ticket-P2-T2.r1.design-brief.md", RelativePath: "packages/package-1/checkout.ticket-P2-T2.r1.design-brief.md", MediaType: "text/markdown", SHA256: strings.Repeat("f", 64)},
-		BriefProjection:         planningartifacts.TicketDesignBriefProjection{ValidationCommands: []planningartifacts.ValidationCommand{{WorkingDirectory: ".", Command: "go test ./first", Expected: "first exact result"}, {WorkingDirectory: "internal", Command: "go test ./second", Expected: "second exact result"}}},
+		Run:             workflowstore.Run{ID: 11, RunID: "run-1", Status: workflowstore.RunStatusSetupReady, FeatureSlug: "checkout", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40)},
+		Package:         workflowstore.ExecutionPackage{ID: 21, PackageID: "package-1", PackageSha256: strings.Repeat("b", 64), AuthoritySha256: strings.Repeat("c", 64), SourceSha256: strings.Repeat("d", 64)},
+		PackageApproval: workflowstore.ExecutionPackageApproval{ID: 31, ApprovalID: "pkg-approval-1", PackageSha256: strings.Repeat("b", 64)},
+		Workspace:       workflowstore.FeatureWorkspace{ID: 41, FeatureSlug: "checkout"},
+		Authority:       workflowstore.FeatureWorkspaceAuthorityRevision{ID: 51, AuthorityRevisionID: "authority-1", RevisionNumber: 3},
+		Source:          workflowstore.SourceVaultClosure{ID: 61, ClosureID: "closure-1", CommitOID: strings.Repeat("a", 40), TreeOID: strings.Repeat("b", 40), Generation: 1, RefName: "refs/relay/closures/closure-1", State: "ready"},
+		Ticket:          workflowstore.DeliveryTicket{ID: 71, TicketID: "P2-T2"},
+		TicketRevision:  workflowstore.DeliveryTicketRevision{ID: 81, RevisionNumber: 1},
+		TicketApproval:  workflowstore.DeliveryTicketRevisionApproval{ID: 91, ApprovalID: "approval-1"},
+		AuthorityLayers: []executionpackages.ApprovedAuthorityLayer{{Kind: "requirements", Sequence: 1, RelativePath: "plans/checkout/requirements.json", MediaType: "application/json", SHA256: strings.Repeat("e", 64)}},
+		DeliveryTicket:  executionpackages.ApprovedSourceDocument{DisplayName: "checkout.ticket-P2-T2.r1.delivery-ticket.json", RelativePath: "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json", MediaType: "application/json", SHA256: strings.Repeat("f", 64)},
+		TicketProjection: speccompiler.DeliveryTicketProjection{
+			FeatureSlug: "checkout", TicketID: "P2-T2", Revision: 1,
+			ValidationCommands: []speccompiler.DeliveryTicketValidationCommand{
+				{WorkingDirectory: "", Command: "go test ./first", Expected: "first exact result"},
+				{WorkingDirectory: "internal", Command: "go test ./second", Expected: "second exact result"},
+			},
+		},
 		DeterministicOperations: operations,
 	}
 }

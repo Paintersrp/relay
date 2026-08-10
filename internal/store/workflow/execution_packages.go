@@ -171,13 +171,13 @@ func getExecutionPackageByRowID(ctx context.Context, queryer runExecutionPackage
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit,
        source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256,
-       source_sha256, design_brief_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
+       source_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
 FROM execution_packages
 WHERE id = ?`, packageRowID).Scan(
 		&value.ID, &value.PackageID, &value.SelectionRowID, &value.WorkspaceRowID,
 		&value.RepoTarget, &value.Branch, &value.BaseCommit, &value.SourceClosureRowID,
 		&value.AuthorityRevisionRowID, &value.PackageSha256, &value.AuthoritySha256,
-		&value.SourceSha256, &value.DesignBriefSha256, &value.DeterministicOperationsSha256, &value.DeterministicOperationsCoverage, &value.CreatedAt,
+		&value.SourceSha256, &value.DeterministicOperationsSha256, &value.DeterministicOperationsCoverage, &value.CreatedAt,
 	)
 	return value, err
 }

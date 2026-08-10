@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Delivery Ticket v1.0",
+  "title": "Delivery Ticket v2.0",
   "description": "Structural schema for the canonical Delivery Ticket artifact.",
   "type": "object",
   "additionalProperties": false,
@@ -17,28 +17,37 @@
     "context": { "$ref": "#/$defs/multiline_prose" },
     "scope": { "$ref": "#/$defs/scope" },
     "depends_on": { "type": "array", "items": { "$ref": "#/$defs/dependency_reference" } },
+    "required_invariants": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
+    "forbidden_behaviors": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
     "implementation_obligations": { "type": "array", "items": { "$ref": "#/$defs/implementation_obligation" } },
-    "validation_intent": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
+    "proof_obligations": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
+    "validation_commands": { "type": "array", "items": { "$ref": "#/$defs/validation_command" } },
     "transition_applicability": { "enum": [ "not_required", "required" ] },
+    "explicit_deferrals": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
     "cancellation": { "$ref": "#/$defs/cancellation" },
     "completion_criteria": { "$ref": "#/$defs/criteria_array" }
   },
-  "required": [ "feature_slug", "ticket_id", "revision", "replaces_revision", "repo_target", "branch", "base_commit", "goal", "context", "scope", "depends_on", "implementation_obligations", "validation_intent", "transition_applicability", "completion_criteria" ],
+  "required": [ "feature_slug", "ticket_id", "revision", "replaces_revision", "repo_target", "branch", "base_commit", "goal", "context", "scope", "depends_on", "required_invariants", "forbidden_behaviors", "implementation_obligations", "proof_obligations", "validation_commands", "transition_applicability", "explicit_deferrals", "completion_criteria" ],
   "allOf": [
     {
-      "if": { "properties": { "cancellation": { "type": "object" } }, "required": [ "cancellation" ] },
+      "if": { "required": [ "cancellation" ] },
       "then": {
         "properties": {
           "depends_on": { "maxItems": 0 },
+          "required_invariants": { "maxItems": 0 },
+          "forbidden_behaviors": { "maxItems": 0 },
           "implementation_obligations": { "maxItems": 0 },
-          "validation_intent": { "maxItems": 0 },
-          "transition_applicability": { "const": "not_required" }
+          "proof_obligations": { "maxItems": 0 },
+          "validation_commands": { "maxItems": 0 },
+          "transition_applicability": { "const": "not_required" },
+          "explicit_deferrals": { "maxItems": 0 }
         }
       },
       "else": {
         "properties": {
           "implementation_obligations": { "minItems": 1 },
-          "validation_intent": { "minItems": 1 }
+          "proof_obligations": { "minItems": 1 },
+          "validation_commands": { "minItems": 1 }
         }
       }
     }
@@ -52,7 +61,8 @@
     "machine_string": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!\\s*$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$" },
     "repository_key": { "$ref": "#/$defs/machine_string" },
     "commit_sha": { "type": "string", "pattern": "^(?!.*[\\r\\n])[0-9a-f]{40}$" },
-    "path": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$" },
+    "source_area": { "type": "string", "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$" },
+    "working_directory": { "type": "string", "pattern": "^(?:$|(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*)$" },
     "criteria_array": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/single_line_prose" } },
     "scope": {
       "type": "object",
@@ -69,8 +79,22 @@
     "implementation_obligation": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "path": { "$ref": "#/$defs/path" }, "obligation": { "$ref": "#/$defs/single_line_prose" } },
-      "required": [ "path", "obligation" ]
+      "properties": {
+        "source_area": { "oneOf": [ { "$ref": "#/$defs/source_area" }, { "type": "null" } ] },
+        "obligation": { "$ref": "#/$defs/single_line_prose" },
+        "prerequisites": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } }
+      },
+      "required": [ "source_area", "obligation", "prerequisites" ]
+    },
+    "validation_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "working_directory": { "$ref": "#/$defs/working_directory" },
+        "command": { "$ref": "#/$defs/single_line_prose" },
+        "expected": { "$ref": "#/$defs/single_line_prose" }
+      },
+      "required": [ "working_directory", "command", "expected" ]
     },
     "cancellation": {
       "type": "object",

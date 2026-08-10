@@ -2,9 +2,7 @@ package executor
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,7 +34,6 @@ type WorkflowStartResult struct {
 	Run       workflowstore.Run
 	Attempt   workflowstore.ExecutionAttempt
 	Preflight workflowrepos.ExecutionPreflightResult
-	Applier   *WorkflowApplierResult
 	Package   *PackageWorkflowDispatchResult
 }
 
@@ -149,7 +146,6 @@ type Execution struct {
 	preflight           func(context.Context, string, string, string) workflowrepos.ExecutionPreflightResult
 	invocationPreflight func(ExecutorInvocation) ExecutorPreflightResult
 	adapterFactory      func(string) (ExecutorAdapter, error)
-	applier             workflowApplierFunc
 	runner              WorkflowCommandRunner
 	launch              func(func())
 	mu                  sync.Mutex
@@ -201,7 +197,6 @@ func NewExecution(
 		preflight:           workflowrepos.VerifyExecutionPreflight,
 		invocationPreflight: ValidateInvocationPreflight,
 		adapterFactory:      NewAdapterFromID,
-		applier:             defaultWorkflowApplier(),
 		runner: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks, controller pipeline.ProcessController) pipeline.AgentCommandRunResult {
 			return pipeline.RunLocalAgentCommandArgsStreamingWithController(ctx, workDir, binary, args, stdin, timeout, callbacks, controller)
 		},
@@ -480,103 +475,79 @@ func (e *WorkflowPreflightError) Error() string {
 }
 
 type workflowAttemptRuntime struct {
-	OwnerInstanceID          string `json:"owner_instance_id,omitempty"`
-	CommandPreview           string `json:"command_preview,omitempty"`
-	ProcessIdentity          string `json:"process_identity,omitempty"`
-	MutationLeaseID          string `json:"mutation_lease_id,omitempty"`
-	SourceMutationStarted    bool   `json:"source_mutation_started,omitempty"`
-	LaunchDisposition        string `json:"launch_disposition,omitempty"`
-	ExitCode                 int    `json:"exit_code"`
-	TimedOut                 bool   `json:"timed_out"`
-	TerminationVerified      bool   `json:"termination_verified"`
-	CleanupPending           bool   `json:"cleanup_pending,omitempty"`
-	PendingTerminalStatus    string `json:"pending_terminal_status,omitempty"`
-	Error                    string `json:"error,omitempty"`
-	NormalizedStatus         string `json:"normalized_status,omitempty"`
-	BlockerText              string `json:"blocker_text,omitempty"`
-	EffectiveBriefArtifactID string `json:"effective_brief_artifact_id,omitempty"`
-	EffectiveBriefSHA256     string `json:"effective_brief_sha256,omitempty"`
-	EffectiveBriefMode       string `json:"effective_brief_mode,omitempty"`
-	StdoutTruncated          bool   `json:"stdout_truncated,omitempty"`
-	StderrTruncated          bool   `json:"stderr_truncated,omitempty"`
-	StdoutBytes              int64  `json:"stdout_bytes,omitempty"`
-	StderrBytes              int64  `json:"stderr_bytes,omitempty"`
+	OwnerInstanceID               string `json:"owner_instance_id,omitempty"`
+	CommandPreview                string `json:"command_preview,omitempty"`
+	ProcessIdentity               string `json:"process_identity,omitempty"`
+	MutationLeaseID               string `json:"mutation_lease_id,omitempty"`
+	SourceMutationStarted         bool   `json:"source_mutation_started,omitempty"`
+	LaunchDisposition             string `json:"launch_disposition,omitempty"`
+	ExitCode                      int    `json:"exit_code"`
+	TimedOut                      bool   `json:"timed_out"`
+	TerminationVerified           bool   `json:"termination_verified"`
+	CleanupPending                bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus         string `json:"pending_terminal_status,omitempty"`
+	Error                         string `json:"error,omitempty"`
+	NormalizedStatus              string `json:"normalized_status,omitempty"`
+	BlockerText                   string `json:"blocker_text,omitempty"`
+	ExecutionAssignmentArtifactID string `json:"execution_assignment_artifact_id,omitempty"`
+	ExecutionAssignmentSHA256     string `json:"execution_assignment_sha256,omitempty"`
+	ExecutionAssignmentMode       string `json:"execution_assignment_mode,omitempty"`
+	StdoutTruncated               bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated               bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes                   int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes                   int64  `json:"stderr_bytes,omitempty"`
 }
 
 type workflowExecutionEvidence struct {
-	OwnerInstanceID          string                     `json:"owner_instance_id,omitempty"`
-	CommandPreview           string                     `json:"command_preview,omitempty"`
-	ProcessIdentity          string                     `json:"process_identity,omitempty"`
-	MutationLeaseID          string                     `json:"mutation_lease_id,omitempty"`
-	SourceMutationStarted    bool                       `json:"source_mutation_started,omitempty"`
-	LaunchDisposition        string                     `json:"launch_disposition,omitempty"`
-	ExitCode                 int                        `json:"exit_code"`
-	TimedOut                 bool                       `json:"timed_out"`
-	TerminationVerified      bool                       `json:"termination_verified"`
-	CleanupPending           bool                       `json:"cleanup_pending,omitempty"`
-	PendingTerminalStatus    string                     `json:"pending_terminal_status,omitempty"`
-	Error                    string                     `json:"error,omitempty"`
-	NormalizedStatus         string                     `json:"normalized_status,omitempty"`
-	BlockerText              string                     `json:"blocker_text,omitempty"`
-	EffectiveBriefArtifactID string                     `json:"effective_brief_artifact_id,omitempty"`
-	EffectiveBriefSHA256     string                     `json:"effective_brief_sha256,omitempty"`
-	EffectiveBriefMode       string                     `json:"effective_brief_mode,omitempty"`
-	StdoutTruncated          bool                       `json:"stdout_truncated,omitempty"`
-	StderrTruncated          bool                       `json:"stderr_truncated,omitempty"`
-	StdoutBytes              int64                      `json:"stdout_bytes,omitempty"`
-	StderrBytes              int64                      `json:"stderr_bytes,omitempty"`
-	ValidationResults        []workflowValidationResult `json:"validation_results,omitempty"`
+	OwnerInstanceID               string                     `json:"owner_instance_id,omitempty"`
+	CommandPreview                string                     `json:"command_preview,omitempty"`
+	ProcessIdentity               string                     `json:"process_identity,omitempty"`
+	MutationLeaseID               string                     `json:"mutation_lease_id,omitempty"`
+	SourceMutationStarted         bool                       `json:"source_mutation_started,omitempty"`
+	LaunchDisposition             string                     `json:"launch_disposition,omitempty"`
+	ExitCode                      int                        `json:"exit_code"`
+	TimedOut                      bool                       `json:"timed_out"`
+	TerminationVerified           bool                       `json:"termination_verified"`
+	CleanupPending                bool                       `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus         string                     `json:"pending_terminal_status,omitempty"`
+	Error                         string                     `json:"error,omitempty"`
+	NormalizedStatus              string                     `json:"normalized_status,omitempty"`
+	BlockerText                   string                     `json:"blocker_text,omitempty"`
+	ExecutionAssignmentArtifactID string                     `json:"execution_assignment_artifact_id,omitempty"`
+	ExecutionAssignmentSHA256     string                     `json:"execution_assignment_sha256,omitempty"`
+	ExecutionAssignmentMode       string                     `json:"execution_assignment_mode,omitempty"`
+	StdoutTruncated               bool                       `json:"stdout_truncated,omitempty"`
+	StderrTruncated               bool                       `json:"stderr_truncated,omitempty"`
+	StdoutBytes                   int64                      `json:"stdout_bytes,omitempty"`
+	StderrBytes                   int64                      `json:"stderr_bytes,omitempty"`
+	ValidationResults             []workflowValidationResult `json:"validation_results,omitempty"`
 }
 
 func buildWorkflowExecutionEvidence(state workflowAttemptRuntime, parsed workflowValidationParseResult) workflowExecutionEvidence {
 	return workflowExecutionEvidence{
-		OwnerInstanceID:          state.OwnerInstanceID,
-		CommandPreview:           state.CommandPreview,
-		ProcessIdentity:          state.ProcessIdentity,
-		MutationLeaseID:          state.MutationLeaseID,
-		SourceMutationStarted:    state.SourceMutationStarted,
-		LaunchDisposition:        state.LaunchDisposition,
-		ExitCode:                 state.ExitCode,
-		TimedOut:                 state.TimedOut,
-		TerminationVerified:      state.TerminationVerified,
-		CleanupPending:           state.CleanupPending,
-		PendingTerminalStatus:    state.PendingTerminalStatus,
-		Error:                    state.Error,
-		NormalizedStatus:         state.NormalizedStatus,
-		BlockerText:              state.BlockerText,
-		EffectiveBriefArtifactID: state.EffectiveBriefArtifactID,
-		EffectiveBriefSHA256:     state.EffectiveBriefSHA256,
-		EffectiveBriefMode:       state.EffectiveBriefMode,
-		StdoutTruncated:          state.StdoutTruncated,
-		StderrTruncated:          state.StderrTruncated,
-		StdoutBytes:              state.StdoutBytes,
-		StderrBytes:              state.StderrBytes,
-		ValidationResults:        append([]workflowValidationResult(nil), parsed.Results...),
+		OwnerInstanceID:               state.OwnerInstanceID,
+		CommandPreview:                state.CommandPreview,
+		ProcessIdentity:               state.ProcessIdentity,
+		MutationLeaseID:               state.MutationLeaseID,
+		SourceMutationStarted:         state.SourceMutationStarted,
+		LaunchDisposition:             state.LaunchDisposition,
+		ExitCode:                      state.ExitCode,
+		TimedOut:                      state.TimedOut,
+		TerminationVerified:           state.TerminationVerified,
+		CleanupPending:                state.CleanupPending,
+		PendingTerminalStatus:         state.PendingTerminalStatus,
+		Error:                         state.Error,
+		NormalizedStatus:              state.NormalizedStatus,
+		BlockerText:                   state.BlockerText,
+		ExecutionAssignmentArtifactID: state.ExecutionAssignmentArtifactID,
+		ExecutionAssignmentSHA256:     state.ExecutionAssignmentSHA256,
+		ExecutionAssignmentMode:       state.ExecutionAssignmentMode,
+		StdoutTruncated:               state.StdoutTruncated,
+		StderrTruncated:               state.StderrTruncated,
+		StdoutBytes:                   state.StdoutBytes,
+		StderrBytes:                   state.StderrBytes,
+		ValidationResults:             append([]workflowValidationResult(nil), parsed.Results...),
 	}
-}
-
-func (s *Execution) recordEffectiveBriefIdentity(ctx context.Context, attempt workflowstore.ExecutionAttempt, selected effectiveBriefInput) error {
-	state := workflowAttemptRuntime{}
-	current, err := s.store.GetExecutionAttemptByAttemptID(ctx, attempt.AttemptID)
-	if err != nil {
-		return fmt.Errorf("load existing execution attempt runtime: %w", err)
-	}
-	if strings.TrimSpace(current.ResultJSON) != "" {
-		if err := json.Unmarshal([]byte(current.ResultJSON), &state); err != nil {
-			return fmt.Errorf("decode existing execution attempt runtime: %w", err)
-		}
-	}
-	state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
-	state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-	state.EffectiveBriefMode = selected.evidenceMode()
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("encode effective brief identity: %w", err)
-	}
-	if _, err := s.runs.UpdateExecutionAttemptResult(ctx, attempt.AttemptID, string(data)); err != nil {
-		return fmt.Errorf("record effective brief identity: %w", err)
-	}
-	return nil
 }
 
 func (s *Execution) execute(
@@ -584,7 +555,7 @@ func (s *Execution) execute(
 	run workflowstore.Run,
 	attempt workflowstore.ExecutionAttempt,
 	repository workflowstore.RepositoryTarget,
-	selected effectiveBriefInput,
+	selected selectedInput,
 	validationCommands []speccompiler.ProjectedValidationCommand,
 	invocation ExecutorInvocation,
 	adapter ExecutorAdapter,
@@ -600,9 +571,11 @@ func (s *Execution) execute(
 	}
 	state.OwnerInstanceID = s.ownerInstanceID
 	state.CommandPreview = redactSensitive(invocation.Preview)
-	state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
-	state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-	state.EffectiveBriefMode = selected.evidenceMode()
+	state.ExecutionAssignmentArtifactID = selected.Artifact.ArtifactID
+	state.ExecutionAssignmentSHA256 = selected.Artifact.SHA256
+	if wireMode, modeValid := workflowrunsModeString(selected.Mode); modeValid {
+		state.ExecutionAssignmentMode = wireMode
+	}
 	state.MutationLeaseID = lease.LeaseID
 	state.SourceMutationStarted = state.SourceMutationStarted || sourceMutationStarted
 	updateState := func() {
@@ -801,15 +774,17 @@ func (s *Execution) execute(
 	}
 }
 
-func (s *Execution) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, selected *effectiveBriefInput, message string) {
+func (s *Execution) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, selected *selectedInput, message string) {
 	state := workflowAttemptRuntime{}
 	if current, err := s.store.GetExecutionAttemptByAttemptID(context.Background(), attempt.AttemptID); err == nil && strings.TrimSpace(current.ResultJSON) != "" {
 		_ = json.Unmarshal([]byte(current.ResultJSON), &state)
 	}
 	if selected != nil {
-		state.EffectiveBriefArtifactID = selected.Artifact.ArtifactID
-		state.EffectiveBriefSHA256 = selected.Artifact.SHA256
-		state.EffectiveBriefMode = selected.evidenceMode()
+		state.ExecutionAssignmentArtifactID = selected.Artifact.ArtifactID
+		state.ExecutionAssignmentSHA256 = selected.Artifact.SHA256
+		if wireMode, modeValid := workflowrunsModeString(selected.Mode); modeValid {
+			state.ExecutionAssignmentMode = wireMode
+		}
 	}
 	state.TerminationVerified = true
 	state.Error = redactSensitive(message)
@@ -914,56 +889,6 @@ func (s *Execution) persistAttemptEvidence(
 			}
 		}
 		return nil
-	})
-}
-
-func (s *Execution) loadVerifiedBrief(ctx context.Context, run workflowstore.Run) ([]byte, workflowstore.Artifact, string, error) {
-	artifacts, err := s.store.ListArtifactsByRun(ctx, run.ID)
-	if err != nil {
-		return nil, workflowstore.Artifact{}, "", err
-	}
-	var briefArtifact workflowstore.Artifact
-	found := false
-	for _, artifact := range artifacts {
-		if artifact.Kind == "executor_brief" {
-			if found {
-				return nil, workflowstore.Artifact{}, "", fmt.Errorf("Run has multiple executor_brief artifacts")
-			}
-			briefArtifact = artifact
-			found = true
-		}
-	}
-	if !found {
-		return nil, workflowstore.Artifact{}, "", fmt.Errorf("Run executor_brief artifact is missing")
-	}
-	root := s.store.ArtifactStore().Root()
-	absolute := filepath.Clean(filepath.Join(root, filepath.FromSlash(briefArtifact.RelativePath)))
-	relative, err := filepath.Rel(root, absolute)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return nil, workflowstore.Artifact{}, "", fmt.Errorf("Run executor_brief artifact path is invalid")
-	}
-	data, err := os.ReadFile(absolute)
-	if err != nil {
-		return nil, workflowstore.Artifact{}, "", fmt.Errorf("read Run executor_brief artifact: %w", err)
-	}
-	sum := sha256.Sum256(data)
-	if hex.EncodeToString(sum[:]) != briefArtifact.SHA256 || int64(len(data)) != briefArtifact.SizeBytes {
-		return nil, workflowstore.Artifact{}, "", fmt.Errorf("Run executor_brief artifact integrity check failed")
-	}
-	return data, briefArtifact, absolute, nil
-}
-
-func verifyInvocationUsesBrief(invocation ExecutorInvocation, brief []byte, briefPath string) error {
-	digest := sha256.Sum256(brief)
-	return verifyInvocationUsesEffectiveBrief(invocation, effectiveBriefInput{
-		Mode:    "full",
-		Content: append([]byte(nil), brief...),
-		Artifact: workflowstore.Artifact{
-			ArtifactID: "verification",
-			SHA256:     hex.EncodeToString(digest[:]),
-			SizeBytes:  int64(len(brief)),
-		},
-		Path: briefPath,
 	})
 }
 

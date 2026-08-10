@@ -43,19 +43,16 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 		"wayfinder.workspace":                     "12f2376c3216084c19ca4d10cbcffc80612faecfd492fc89379241708abb7d6e",
 		"wayfinder.discovery":                     "f641316670fa8fd20c097b10cda24789917964370cc135c749df4b0df90bfd0d",
 		"wayfinder.investigation":                 "3bf06b1487f8293745b66d3c392dd2394f4c8f4eea0b2a57aa92e6bfb1a75892",
-		"planner.requirements":                    "1a93a39c76b23b6e97f5bed93ab6f417cfe74d7904341e2475a07a547f6ff56a",
-		"planner.shared_design":                   "614ec5e463328d41eaf7dd88760eac6316b79d896c6fdc3f73a34668c5005b35",
-		"planner.delivery_ticket":                 "ff5398edf99b1d3f777ed332314c6a2b543096dd9a8848855701dca45a406e2f",
-		"planner.transition_plan":                 "a9b62500699a4a698c01c82cde227fbc58218bff2bdc3f4d8209584df90eae4e",
-		"planner.ticket_design_brief":             "58aba60d602bce04c897df9e3a1a0ac85747c0f417f2a74cbb1467151d5ea6ae",
-		"planner.ticket_design_brief_remediation": "bdb3f92a845fc7cefb56316b9d18f7db61fc8f65c323f766b4c9cdc3e5ca7108",
-		"planner.delivery_ticket_remediation":     "548885cf95fad1d6d6a62d5e2fb01c0087361054ea9160ac4b6ec831a29b8f67",
+		"planner.requirements":                    "8b7ad4de3d363f49e231e701e4135582f34987fdf7d00862f9fc0d9d79562375",
+		"planner.shared_design":                   "a5ee42b5c3bff0181f28c2869f79ab6cfa3a06050efdd60eaf58fa638fd53e56",
+		"planner.delivery_ticket":                 "982ad28db908179041db19725161ca7f7ee4840106aa90ac2bc83d8332f6c742",
+		"planner.transition_plan":                 "c2f29f6c466b36cbf4d89103fb2cc36390cf0a99a533997b638f225dbc259ad6",
+		"planner.delivery_ticket_remediation":     "077d7103a3a2d7d61d4e29b75e54a97a35d4e56348d7a660c75b9bfab9fdd2e1",
 		"planner.ticket_frontier":                 "cc2543f6c137b72f02a10ede96a274eb040aa879cf813446d58a81e86934332a",
-		"auditor.requirements_review":             "6dc8b3ce1b0f986da3bf02e567722a85d51b1365d43c23b3ec85a380fbb00ed7",
-		"auditor.shared_design_review":            "d4e8083e5ef32b707cdf8c51b58393ad5b126cf064edcb086410b1fabbba2d54",
-		"auditor.delivery_ticket_review":          "a6c040fadad2b49e3e5216622ef5461f498328d95e6b8b358a6800d90f55901f",
-		"auditor.transition_plan_review":          "de2d11931658dde282c9ea4b9dbb4172b88ff7d6a2b66115bded7f4d645d9824",
-		"auditor.ticket_design_brief_review":      "89fe39f5d25e30d3034de3f398a0f8242af360200f37dc5cf400967a3f63ed40",
+		"auditor.requirements_review":             "a585502f3f9e3f8733e2ab31323ce83650f1ed4094eaa0ec8d7836862cb17fc7",
+		"auditor.shared_design_review":            "920438741d2a678c1304e41753e0a87287355050014bb3553ba5dd507dc8aede",
+		"auditor.delivery_ticket_review":          "ae39725988ce3dd256976d76e8dbdb21d3da522a5d8dc792f2d23d57a2f58b73",
+		"auditor.transition_plan_review":          "db9364ac9f610a181e77234b27e26a489fedf2061b8062f12aed4e237fdb937d",
 		"auditor.audit":                           "a9e055f4b9fde3e17f848309926937a9ffbf554cb80efeac7d5e6f9a71d4f0b3",
 	}
 
@@ -142,7 +139,7 @@ func TestPacketRevisionSourceCompatibility(t *testing.T) {
 }
 
 func TestDerivedInputSourceIntegrity(t *testing.T) {
-	for _, operationID := range []registry.OperationID{"auditor.audit", "planner.delivery_ticket_remediation", "planner.ticket_design_brief_remediation"} {
+	for _, operationID := range []registry.OperationID{"auditor.audit", "planner.delivery_ticket_remediation"} {
 		t.Run(string(operationID), func(t *testing.T) {
 			operation, ok := registry.Lookup(operationID)
 			if !ok {
@@ -152,11 +149,6 @@ func TestDerivedInputSourceIntegrity(t *testing.T) {
 			if operationID == "planner.delivery_ticket_remediation" {
 				if len(document.WorkflowReferences) != 1 || document.WorkflowReferences[0].Kind != "audit_decision" || len(operation.DerivedInputs) != 2 {
 					t.Fatalf("remediation packet authority = %#v, derived inputs = %d", document.WorkflowReferences, len(operation.DerivedInputs))
-				}
-			}
-			if operationID == "planner.ticket_design_brief_remediation" {
-				if len(document.WorkflowReferences) != 1 || document.WorkflowReferences[0].Kind != "audit_decision" || len(operation.DerivedInputs) != 4 {
-					t.Fatalf("remediation brief authority = %#v, derived inputs = %d", document.WorkflowReferences, len(operation.DerivedInputs))
 				}
 			}
 			if _, err := NewSnapshot(document); err != nil {
@@ -199,13 +191,13 @@ func TestRemediationHistoricalAuthorityPolicy(t *testing.T) {
 		t.Fatalf("unknown policy error = %v", err)
 	}
 
-	op, ok := registry.Lookup("planner.ticket_design_brief_remediation")
+	op, ok := registry.Lookup("planner.delivery_ticket_remediation")
 	if !ok {
-		t.Fatal("remediation brief operation is missing")
+		t.Fatal("remediation packet operation is missing")
 	}
 	document := goldenDocument(t, op)
 	if _, err := NewSnapshot(document); err != nil {
-		t.Fatalf("remediation brief without anchors rejected: %v", err)
+		t.Fatalf("remediation packet without anchors rejected: %v", err)
 	}
 	document.Repositories[0].Anchors = []Anchor{{AnchorName: "undeclared", Purpose: "reviewed_source_basis", CommitOID: strings.Repeat("3", 40), TreeOID: strings.Repeat("4", 40)}}
 	if _, err := NewSnapshot(document); validationCode(err) != "repository_anchor_purpose" {

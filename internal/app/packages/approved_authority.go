@@ -11,8 +11,6 @@ import (
 	"unicode/utf8"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
-	"relay/internal/planningartifacts"
-	"relay/internal/sourcevault"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -21,18 +19,17 @@ const approvedAuthorityReadLimit = 64 << 20
 
 type approvedPackageInput struct {
 	input          PrepareInput
-	briefFile      workflowartifacts.File
-	briefBytes     []byte
 	operations     *workflowartifacts.File
 	operationBytes []byte
 }
 
 type approvedAuthorityRows struct {
-	basis        packageBasis
-	members      []workflowstore.DeliveryTicketRevisionMember
-	dependencies []workflowstore.DeliveryTicketRevisionDependency
-	approvals    []workflowstore.DeliveryTicketRevisionApproval
-	layers       []ApprovedAuthorityLayer
+	basis                 packageBasis
+	members               []workflowstore.DeliveryTicketRevisionMember
+	dependencies          []workflowstore.DeliveryTicketRevisionDependency
+	completedDependencies []ApprovedCompletedDependency
+	approvals             []workflowstore.DeliveryTicketRevisionApproval
+	layers                []ApprovedAuthorityLayer
 }
 
 func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string) (ApprovedAuthority, error) {
@@ -84,7 +81,7 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 	}
 	validated, err := validateInput(input.input)
 	if err != nil {
-		return ApprovedAuthority{}, fmt.Errorf("%w: validate approved package bytes: %v", ErrApprovedAuthorityInvalid, err)
+		return ApprovedAuthority{}, fmt.Errorf("%w: validate approved package input: %v", ErrApprovedAuthorityInvalid, err)
 	}
 
 	var rows approvedAuthorityRows
@@ -104,6 +101,10 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 		if err != nil {
 			return err
 		}
+		completedDependencies, err := resolveApprovedCompletedDependencies(ctx, tx, basis.members[0].revision.ID, dependencies)
+		if err != nil {
+			return err
+		}
 		approvals, err := tx.ListDeliveryTicketRevisionApprovals(ctx, basis.members[0].revision.ID)
 		if err != nil {
 			return err
@@ -112,48 +113,42 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 		if err != nil {
 			return err
 		}
-		rows = approvedAuthorityRows{basis: basis, members: members, dependencies: dependencies, approvals: approvals, layers: layers}
+		rows = approvedAuthorityRows{basis: basis, members: members, dependencies: dependencies, completedDependencies: completedDependencies, approvals: approvals, layers: layers}
 		return nil
 	})
 	if err != nil {
-		return ApprovedAuthority{}, fmt.Errorf("%w: %v", ErrApprovedAuthorityInvalid, err)
+		return ApprovedAuthority{}, fmt.Errorf("%w: %w", ErrApprovedAuthorityInvalid, err)
 	}
 	if run.FeatureSlug != rows.basis.workspace.FeatureSlug {
 		return ApprovedAuthority{}, fmt.Errorf("%w: Run feature does not match package workspace", ErrApprovedAuthorityInvalid)
 	}
 
-	briefProjection, diagnostics := planningartifacts.ProjectTicketDesignBrief(input.briefBytes)
-	if len(diagnostics) != 0 {
-		return ApprovedAuthority{}, fmt.Errorf("%w: approved Ticket Design Brief projection failed: %v", ErrApprovedAuthorityInvalid, diagnostics)
-	}
-	deliveryTicketDocument, err := s.loadApprovedDeliveryTicketSource(ctx, rows.basis.closure, rows.basis.workspace, rows.basis.members[0].ticket, rows.basis.members[0].revision, rows)
-	if err != nil {
-		return ApprovedAuthority{}, err
+	selected := rows.basis.members[0].source
+	deliveryTicketDocument := ApprovedSourceDocument{
+		DisplayName:  filepath.Base(selected.revision.SourcePath),
+		RelativePath: selected.revision.SourcePath,
+		MediaType:    "application/json",
+		SHA256:       selected.sourceSHA256,
+		ObjectOID:    selected.objectOID,
+		SizeBytes:    int64(len(selected.sourceBytes)),
+		Bytes:        append([]byte(nil), selected.sourceBytes...),
 	}
 	result := ApprovedAuthority{
-		Run:                run,
-		Package:            packageRow,
-		PackageApproval:    packageApproval,
-		Workspace:          rows.basis.workspace,
-		Authority:          rows.basis.authority,
-		Source:             rows.basis.closure,
-		Ticket:             rows.basis.members[0].ticket,
-		TicketRevision:     rows.basis.members[0].revision,
-		TicketMembers:      append([]workflowstore.DeliveryTicketRevisionMember(nil), rows.members...),
-		TicketDependencies: append([]workflowstore.DeliveryTicketRevisionDependency(nil), rows.dependencies...),
-		TicketApproval:     rows.basis.members[0].approval,
-		AuthorityLayers:    cloneApprovedAuthorityLayers(rows.layers),
-		TicketDesignBrief: ApprovedDocument{
-			DisplayName:  filepath.Base(input.briefFile.RelativePath),
-			RelativePath: input.briefFile.RelativePath,
-			MediaType:    input.briefFile.MediaType,
-			SHA256:       input.briefFile.SHA256,
-			Bytes:        append([]byte(nil), input.briefBytes...),
-		},
-		DeliveryTicket: deliveryTicketDocument,
-		BriefProjection: planningartifacts.TicketDesignBriefProjection{
-			ValidationCommands: append([]planningartifacts.ValidationCommand(nil), briefProjection.ValidationCommands...),
-		},
+		Run:                   run,
+		Package:               packageRow,
+		PackageApproval:       packageApproval,
+		Workspace:             rows.basis.workspace,
+		Authority:             rows.basis.authority,
+		Source:                rows.basis.closure,
+		Ticket:                rows.basis.members[0].ticket,
+		TicketRevision:        rows.basis.members[0].revision,
+		TicketMembers:         append([]workflowstore.DeliveryTicketRevisionMember(nil), rows.members...),
+		TicketDependencies:    append([]workflowstore.DeliveryTicketRevisionDependency(nil), rows.dependencies...),
+		CompletedDependencies: append([]ApprovedCompletedDependency(nil), rows.completedDependencies...),
+		TicketApproval:        rows.basis.members[0].approval,
+		AuthorityLayers:       cloneApprovedAuthorityLayers(rows.layers),
+		DeliveryTicket:        deliveryTicketDocument,
+		TicketProjection:      selected.projection,
 	}
 	if input.operations != nil {
 		result.DeterministicOperations = &ApprovedDeterministicOperations{
@@ -203,12 +198,7 @@ func (s *Service) readApprovedPackageInput(ctx context.Context, packageRow workf
 	if err != nil {
 		return approvedPackageInput{}, fmt.Errorf("%w: load selected Ticket: %v", ErrApprovedAuthorityInvalid, err)
 	}
-	briefName := fmt.Sprintf("%s.ticket-%s.r%d.design-brief.md", workspace.FeatureSlug, ticket.TicketID, revision.RevisionNumber)
-	briefFile, briefBytes, err := s.readVerifiedPackageFile(packageRow.PackageID, briefName, "ticket_design_brief", "text/markdown", packageMember.MemberSha256)
-	if err != nil {
-		return approvedPackageInput{}, err
-	}
-	loaded := approvedPackageInput{input: PrepareInput{SelectionID: selection.SelectionID, TicketDesignBrief: ArtifactInput{DisplayName: briefName, ExpectedSHA256: packageMember.MemberSha256, Bytes: append([]byte(nil), briefBytes...)}}, briefFile: briefFile, briefBytes: briefBytes}
+	loaded := approvedPackageInput{input: PrepareInput{SelectionID: selection.SelectionID}}
 	if packageRow.DeterministicOperationsSha256.Valid != packageRow.DeterministicOperationsCoverage.Valid || !packageRow.DeterministicOperationsSha256.Valid {
 		if packageRow.DeterministicOperationsSha256.Valid != packageRow.DeterministicOperationsCoverage.Valid {
 			return approvedPackageInput{}, fmt.Errorf("%w: Deterministic Operations SHA and coverage must be both present or absent", ErrApprovedAuthorityInvalid)
@@ -257,13 +247,13 @@ func validateApprovedPackageBindings(ctx context.Context, tx *workflowstore.Tx, 
 	}
 	selectionMember, packageMember, binding := selectionMembers[0], packageMembers[0], bindings[0]
 	member := basis.members[0]
-	if selectionMember.ID != member.selectionMember.ID || packageMember.ID <= 0 || packageMember.PackageRowID != packageRow.ID || packageMember.SelectionMemberRowID != selectionMember.ID || packageMember.RevisionRowID != member.revision.ID || packageMember.Sequence != selectionMember.Sequence || packageMember.MemberSha256 != member.brief.sha256 {
+	if selectionMember.ID != member.selectionMember.ID || packageMember.ID <= 0 || packageMember.PackageRowID != packageRow.ID || packageMember.SelectionMemberRowID != selectionMember.ID || packageMember.RevisionRowID != member.revision.ID || packageMember.Sequence != selectionMember.Sequence || packageMember.MemberSha256 != member.source.sourceSHA256 {
 		return fmt.Errorf("%w: approved package member identity or digest is inconsistent", ErrApprovedAuthorityInvalid)
 	}
 	if binding.PackageRowID != packageRow.ID || binding.PackageMemberRowID != packageMember.ID || binding.ApprovalRowID != member.approval.ID || binding.AuthorityRevisionRowID != basis.authority.ID || binding.SourceClosureRowID != basis.closure.ID {
 		return fmt.Errorf("%w: approved package binding identity is inconsistent", ErrApprovedAuthorityInvalid)
 	}
-	wantBasis := compoundSHA256("approval-basis-v1", packageRow.PackageSha256, member.approval.ApprovalID, fmt.Sprint(packageMember.ID), member.brief.sha256, fmt.Sprint(member.approval.AuthorityRevisionRowID.Int64), fmt.Sprint(member.approval.SourceClosureRowID))
+	wantBasis := compoundSHA256("approval-basis-v1", packageRow.PackageSha256, member.approval.ApprovalID, fmt.Sprint(packageMember.ID), member.source.sourceSHA256, fmt.Sprint(member.approval.AuthorityRevisionRowID.Int64), fmt.Sprint(member.approval.SourceClosureRowID))
 	if binding.ApprovalBasisSha256 != wantBasis {
 		return fmt.Errorf("%w: approved package binding digest is inconsistent", ErrApprovedAuthorityInvalid)
 	}
@@ -338,121 +328,6 @@ func cloneDeterministicOperations(document *speccompiler.DeterministicOperations
 		clone.Operations[index].Implementation.Changes = append([]speccompiler.DeterministicChange(nil), document.Operations[index].Implementation.Changes...)
 	}
 	return &clone
-}
-
-func (s *Service) loadApprovedDeliveryTicketSource(
-	ctx context.Context,
-	closure workflowstore.SourceVaultClosure,
-	workspace workflowstore.FeatureWorkspace,
-	ticket workflowstore.DeliveryTicket,
-	revision workflowstore.DeliveryTicketRevision,
-	rows approvedAuthorityRows,
-) (ApprovedSourceDocument, error) {
-	if s.sourceVaults == nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: source-vault reader is not configured", ErrApprovedAuthorityInvalid)
-	}
-	if err := validateDeliveryTicketSourcePath(revision.SourcePath); err != nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: %v", ErrApprovedAuthorityInvalid, err)
-	}
-	if revision.SourceClosureRowID != closure.ID {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: selected Ticket revision source closure row ID does not match approved closure", ErrApprovedAuthorityInvalid)
-	}
-	result, err := s.sourceVaults.ReadPath(ctx, sourcevault.ReadPathRequest{
-		ClosureID: closure.ClosureID,
-		Path:      revision.SourcePath,
-		MaxBytes:  approvedAuthorityReadLimit,
-	})
-	if err != nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document is unavailable: %w", ErrApprovedAuthorityInvalid, err)
-	}
-	if !validOID(result.ObjectOID) {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document object OID is invalid", ErrApprovedAuthorityInvalid)
-	}
-
-	compileResult, document := speccompiler.CompileDeliveryTicket(
-		filepath.Base(revision.SourcePath),
-		result.Bytes,
-	)
-	if len(compileResult.Errors) != 0 || document == nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket compiler rejected document: %v", ErrApprovedAuthorityInvalid, compileResult.Errors)
-	}
-
-	if document.FeatureSlug != workspace.FeatureSlug ||
-		document.TicketID != ticket.TicketID ||
-		document.Revision != revision.RevisionNumber ||
-		document.RepoTarget != revision.RepoTarget ||
-		document.Branch != revision.Branch ||
-		document.BaseCommit != revision.BaseCommit ||
-		document.Goal != revision.Goal ||
-		document.Context != revision.Context ||
-		document.TransitionApplicability != revision.TransitionApplicability {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document identity does not match selected revision", ErrApprovedAuthorityInvalid)
-	}
-
-	if revision.ReplacesRevisionRowID.Valid {
-		replacesRev, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, revision.ReplacesRevisionRowID.Int64)
-		if err != nil {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: load replaced Ticket revision: %w", ErrApprovedAuthorityInvalid, err)
-		}
-		if document.ReplacesRevision == nil || *document.ReplacesRevision != replacesRev.RevisionNumber {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document replaces_revision does not match selected revision", ErrApprovedAuthorityInvalid)
-		}
-	} else if document.ReplacesRevision != nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document replaces_revision does not match selected revision", ErrApprovedAuthorityInvalid)
-	}
-
-	if revision.CancellationReason.Valid {
-		if document.Cancellation == nil || document.Cancellation.Reason != revision.CancellationReason.String {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document cancellation does not match selected revision", ErrApprovedAuthorityInvalid)
-		}
-	} else if document.Cancellation != nil {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document cancellation does not match selected revision", ErrApprovedAuthorityInvalid)
-	}
-
-	if len(document.DependsOn) != len(rows.dependencies) {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document dependencies count does not match selected revision", ErrApprovedAuthorityInvalid)
-	}
-	for i, dep := range rows.dependencies {
-		depRev, err := s.store.GetDeliveryTicketRevisionByRowID(ctx, dep.DependsOnRevisionRowID)
-		if err != nil {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: load dependency Ticket revision: %w", ErrApprovedAuthorityInvalid, err)
-		}
-		depTicket, err := s.store.GetDeliveryTicketByRowID(ctx, depRev.DeliveryTicketRowID)
-		if err != nil {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: load dependency Ticket: %w", ErrApprovedAuthorityInvalid, err)
-		}
-		if document.DependsOn[i].TicketID != depTicket.TicketID || document.DependsOn[i].Revision != depRev.RevisionNumber {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document dependency %d does not match stored revision", ErrApprovedAuthorityInvalid, i)
-		}
-	}
-
-	var storedObligations []workflowstore.DeliveryTicketRevisionMember
-	for _, member := range rows.members {
-		if member.MemberKind == "implementation_obligation" {
-			storedObligations = append(storedObligations, member)
-		}
-	}
-	if len(document.ImplementationObligations) != len(storedObligations) {
-		return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document implementation obligations count does not match selected revision", ErrApprovedAuthorityInvalid)
-	}
-	for i, obl := range storedObligations {
-		docObl := document.ImplementationObligations[i]
-		if !obl.MemberPath.Valid || docObl.Path != obl.MemberPath.String || docObl.Obligation != obl.MemberText {
-			return ApprovedSourceDocument{}, fmt.Errorf("%w: Delivery Ticket source document implementation obligation %d does not match stored revision", ErrApprovedAuthorityInvalid, i)
-		}
-	}
-
-	digest := sha256Hex(result.Bytes)
-	doc := ApprovedSourceDocument{
-		DisplayName:  filepath.Base(revision.SourcePath),
-		RelativePath: revision.SourcePath,
-		MediaType:    "application/json",
-		SHA256:       digest,
-		ObjectOID:    result.ObjectOID,
-		SizeBytes:    int64(len(result.Bytes)),
-		Bytes:        append([]byte(nil), result.Bytes...),
-	}
-	return doc, nil
 }
 
 func validOID(value string) bool {

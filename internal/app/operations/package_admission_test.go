@@ -8,7 +8,6 @@ import (
 	"relay/internal/app/packages"
 	"relay/internal/executor"
 	workflowstore "relay/internal/store/workflow"
-	"relay/internal/testfixtures"
 	"relay/internal/testsupport/workflowfixture"
 )
 
@@ -44,8 +43,7 @@ func TestPackageWorkflowPrepareDelegatesDirectly(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := packages.PrepareInput{
-		SelectionID:       "selection-1",
-		TicketDesignBrief: packages.ArtifactInput{DisplayName: "feature.ticket-T1.r1.design-brief.md", ExpectedSHA256: strings.Repeat("b", 64), Bytes: []byte(testfixtures.TicketDesignBrief)},
+		SelectionID: "selection-1",
 	}
 	if _, err := service.Prepare(context.Background(), input); err != nil {
 		t.Fatal(err)

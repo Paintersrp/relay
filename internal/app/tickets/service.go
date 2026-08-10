@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"relay/internal/app/approvals"
 
@@ -29,14 +28,6 @@ var (
 type Service struct {
 	store     *workflowstore.Store
 	approvals *approvals.Service
-
-	// reviewContinuations is the process-local, non-durable record of the most
-	// recent ready Ticket Design Brief review per workspace. Entries are never
-	// persisted and are not tokens; a needs_revision review or a new brief
-	// admission clears the owning workspace's entry, and the distinct explicit
-	// approval mutation consumes each entry exactly once per workspace.
-	reviewMutex         sync.Mutex
-	reviewContinuations map[string]*briefReviewContinuation
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
@@ -47,7 +38,7 @@ func NewService(store *workflowstore.Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, approvals: approvalService, reviewContinuations: make(map[string]*briefReviewContinuation)}, nil
+	return &Service{store: store, approvals: approvalService}, nil
 }
 
 type RevisionMemberInput struct {

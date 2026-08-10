@@ -13,21 +13,21 @@ import (
 
 func workflowAuditAttemptResult(raw string) WorkflowAuditAttemptResult {
 	var source struct {
-		ExitCode                 int    `json:"exit_code"`
-		TimedOut                 bool   `json:"timed_out"`
-		TerminationVerified      bool   `json:"termination_verified"`
-		CleanupPending           bool   `json:"cleanup_pending"`
-		PendingTerminalStatus    string `json:"pending_terminal_status"`
-		Error                    string `json:"error"`
-		NormalizedStatus         string `json:"normalized_status"`
-		BlockerText              string `json:"blocker_text"`
-		EffectiveBriefArtifactID string `json:"effective_brief_artifact_id"`
-		EffectiveBriefSHA256     string `json:"effective_brief_sha256"`
-		EffectiveBriefMode       string `json:"effective_brief_mode"`
-		StdoutTruncated          bool   `json:"stdout_truncated"`
-		StderrTruncated          bool   `json:"stderr_truncated"`
-		StdoutBytes              int64  `json:"stdout_bytes"`
-		StderrBytes              int64  `json:"stderr_bytes"`
+		ExitCode                      int    `json:"exit_code"`
+		TimedOut                      bool   `json:"timed_out"`
+		TerminationVerified           bool   `json:"termination_verified"`
+		CleanupPending                bool   `json:"cleanup_pending"`
+		PendingTerminalStatus         string `json:"pending_terminal_status"`
+		Error                         string `json:"error"`
+		NormalizedStatus              string `json:"normalized_status"`
+		BlockerText                   string `json:"blocker_text"`
+		ExecutionAssignmentArtifactID string `json:"execution_assignment_artifact_id"`
+		ExecutionAssignmentSHA256     string `json:"execution_assignment_sha256"`
+		ExecutionAssignmentMode       string `json:"execution_assignment_mode"`
+		StdoutTruncated               bool   `json:"stdout_truncated"`
+		StderrTruncated               bool   `json:"stderr_truncated"`
+		StdoutBytes                   int64  `json:"stdout_bytes"`
+		StderrBytes                   int64  `json:"stderr_bytes"`
 	}
 	if json.Unmarshal([]byte(raw), &source) != nil {
 		return WorkflowAuditAttemptResult{}
@@ -36,8 +36,8 @@ func workflowAuditAttemptResult(raw string) WorkflowAuditAttemptResult {
 		ExitCode: source.ExitCode, TimedOut: source.TimedOut, TerminationVerified: source.TerminationVerified,
 		CleanupPending: source.CleanupPending, PendingTerminalStatus: source.PendingTerminalStatus,
 		Error: executor.RedactSensitiveText(source.Error), NormalizedStatus: source.NormalizedStatus,
-		BlockerText: executor.RedactSensitiveText(source.BlockerText), EffectiveBriefArtifactID: source.EffectiveBriefArtifactID,
-		EffectiveBriefSHA256: source.EffectiveBriefSHA256, EffectiveBriefMode: source.EffectiveBriefMode,
+		BlockerText: executor.RedactSensitiveText(source.BlockerText), ExecutionAssignmentArtifactID: source.ExecutionAssignmentArtifactID,
+		ExecutionAssignmentSHA256: source.ExecutionAssignmentSHA256, ExecutionAssignmentMode: source.ExecutionAssignmentMode,
 		StdoutTruncated: source.StdoutTruncated, StderrTruncated: source.StderrTruncated,
 		StdoutBytes: source.StdoutBytes, StderrBytes: source.StderrBytes,
 	}

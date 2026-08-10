@@ -60,9 +60,6 @@ type TicketWorkflowOwner interface {
 	Read(context.Context, string) (tickets.TicketDetail, error)
 	ListFrontier(context.Context, string) (tickets.Frontier, error)
 	Select(context.Context, tickets.SelectInput) (tickets.SelectionResult, error)
-	AdmitTicketDesignBrief(context.Context, tickets.TicketDesignBriefAdmissionInput) (tickets.TicketDesignBriefAdmissionResult, error)
-	CompleteTicketDesignBriefReview(context.Context, tickets.CompleteBriefReviewInput) (tickets.TicketDesignBriefReviewResult, error)
-	ApproveTicketDesignBrief(context.Context, tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error)
 }
 
 // PacketReader is deliberately read-only. It exists solely to verify the
@@ -159,39 +156,6 @@ func (s *TicketWorkflowService) Select(ctx context.Context, input tickets.Select
 		return tickets.SelectionResult{}, ErrTicketAdmission
 	}
 	return s.owner.Select(ctx, input)
-}
-
-// AdmitTicketDesignBrief is a direct domain operation delegating the durable
-// Ticket Design Brief admission to the Ticket owner. The owner resolves the
-// current active selection server-side; the API supplies only the authored
-// Markdown and an identity.
-func (s *TicketWorkflowService) AdmitTicketDesignBrief(ctx context.Context, input tickets.TicketDesignBriefAdmissionInput) (tickets.TicketDesignBriefAdmissionResult, error) {
-	if s == nil || s.owner == nil {
-		return tickets.TicketDesignBriefAdmissionResult{}, ErrTicketAdmission
-	}
-	return s.owner.AdmitTicketDesignBrief(ctx, input)
-}
-
-// CompleteTicketDesignBriefReview is a direct domain operation recording the
-// narrow authoritative fact that the read-only auditor review completed. The
-// owner resolves the current brief server-side and accepts no review outcome,
-// verdict, or content.
-func (s *TicketWorkflowService) CompleteTicketDesignBriefReview(ctx context.Context, input tickets.CompleteBriefReviewInput) (tickets.TicketDesignBriefReviewResult, error) {
-	if s == nil || s.owner == nil {
-		return tickets.TicketDesignBriefReviewResult{}, ErrTicketAdmission
-	}
-	return s.owner.CompleteTicketDesignBriefReview(ctx, input)
-}
-
-// ApproveTicketDesignBrief is the distinct explicit approval transition. The
-// owner consumes the process-local ready-review continuation and accepts only
-// the workspace, expected version, confirmation evidence, and identity; no
-// brief ID or digest crosses this boundary.
-func (s *TicketWorkflowService) ApproveTicketDesignBrief(ctx context.Context, input tickets.TicketDesignBriefApprovalInput) (tickets.TicketDesignBriefApprovalResult, error) {
-	if s == nil || s.owner == nil {
-		return tickets.TicketDesignBriefApprovalResult{}, ErrTicketAdmission
-	}
-	return s.owner.ApproveTicketDesignBrief(ctx, input)
 }
 
 func ValidateTicketPublicationInput(input tickets.PublishInput, reference *RemediationAuthoringReference) error {

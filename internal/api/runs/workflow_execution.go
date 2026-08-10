@@ -101,17 +101,9 @@ func (h *WorkflowExecutionHandler) StartAttempt(w http.ResponseWriter, r *http.R
 		"success":   true,
 		"preflight": result.Preflight,
 	}
-	if result.Applier != nil {
-		response["applier"] = result.Applier
-	}
 	if result.Attempt.AttemptID == "" {
 		response["run"] = workflowStartedRunResponse{RunID: result.Run.RunID, Status: result.Run.Status}
-		status := http.StatusOK
-		if result.Applier != nil && result.Applier.Outcome == "blocked" {
-			response["success"] = false
-			status = http.StatusConflict
-		}
-		shared.JSON(w, status, response)
+		shared.JSON(w, http.StatusOK, response)
 		return
 	}
 	view, err := h.service.GetAttempt(r.Context(), runID, result.Attempt.AttemptID)

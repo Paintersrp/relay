@@ -611,11 +611,10 @@ INSERT INTO execution_packages (
     package_sha256,
     authority_sha256,
     source_sha256,
-    design_brief_sha256,
     deterministic_operations_sha256,
     deterministic_operations_coverage
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetExecutionPackageByPackageID :one
@@ -1065,64 +1064,3 @@ SELECT *
 FROM delivery_ticket_production_links
 WHERE candidate_row_id = ?
 ORDER BY created_at, id;
-
--- name: CreateTicketDesignBrief :one
-INSERT INTO ticket_design_briefs (
-    brief_id, workspace_row_id, selection_row_id, attempt_number, revision_row_id,
-    filename, artifact_row_id, artifact_sha256, artifact_size_bytes,
-    created_identity
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING *;
-
--- name: GetTicketDesignBriefByBriefID :one
-SELECT *
-FROM ticket_design_briefs
-WHERE brief_id = ?;
-
--- name: GetTicketDesignBriefByRowID :one
-SELECT *
-FROM ticket_design_briefs
-WHERE id = ?;
-
--- name: GetCurrentTicketDesignBriefBySelectionRowID :one
-SELECT brief.*
-FROM delivery_ticket_selections AS selection
-JOIN ticket_design_briefs AS brief ON brief.id = selection.current_ticket_design_brief_row_id
-WHERE selection.id = ?;
-
--- name: SetCurrentTicketDesignBrief :one
-UPDATE delivery_ticket_selections
-SET current_ticket_design_brief_row_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?
-RETURNING *;
-
--- name: ListTicketDesignBriefsByWorkspace :many
-SELECT *
-FROM ticket_design_briefs
-WHERE workspace_row_id = ?
-ORDER BY created_at, id;
-
--- name: CreateTicketDesignBriefApproval :one
-INSERT INTO ticket_design_brief_approvals (
-    approval_id, brief_row_id, brief_artifact_row_id,
-    brief_sha256, brief_size_bytes, operator_confirmation_evidence,
-    created_identity
-)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING *;
-
--- name: GetTicketDesignBriefApprovalByApprovalID :one
-SELECT *
-FROM ticket_design_brief_approvals
-WHERE approval_id = ?;
-
--- name: GetTicketDesignBriefApprovalByRowID :one
-SELECT *
-FROM ticket_design_brief_approvals
-WHERE id = ?;
-
--- name: GetTicketDesignBriefApprovalByBriefRowID :one
-SELECT *
-FROM ticket_design_brief_approvals
-WHERE brief_row_id = ?;

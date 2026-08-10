@@ -43,7 +43,7 @@ type AuditReadbackService interface {
 
 func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServices) (RouteDispatchers, error) {
 	handlers := make(map[string]map[string]SurfaceHandler, len(set.Manifests))
-	toolNames := make(map[string]struct{}, 39)
+	toolNames := make(map[string]struct{}, 37)
 	for _, manifest := range set.Manifests {
 		if _, exists := handlers[manifest.RoutePath]; exists {
 			return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate route %s", manifest.RoutePath)
@@ -62,7 +62,7 @@ func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServ
 		}
 		handlers[manifest.RoutePath] = routeHandlers
 	}
-	if len(toolNames) != 39 {
+	if len(toolNames) != 37 {
 		return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: got %d handlers", len(toolNames))
 	}
 	return RouteDispatchers{Handlers: handlers}, nil

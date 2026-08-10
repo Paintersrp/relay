@@ -70,7 +70,7 @@ func TestGuidedHandoffIsDistinctAndCarriesOwnerPreparationContext(t *testing.T) 
 	if handoff.Transfer == nil || handoff.Transfer.Ticket == nil || handoff.Transfer.Ticket.OperationID != plannerDeliveryTicketOperation {
 		t.Fatalf("delivery handoff does not transfer the owner operation: %+v", handoff.Transfer)
 	}
-	if strings.Contains(handoff.Summary, plannerTicketDesignBriefOperation) || strings.Contains(handoff.Summary, "ticket design brief") {
+	if strings.Contains(handoff.Summary, "ticket design brief") {
 		t.Fatalf("delivery handoff substituted ticket-design-brief operation: %q", handoff.Summary)
 	}
 }
@@ -207,8 +207,8 @@ func TestGuidedPlannerAndAuditorOperationMappingsArePublishedSourceOperations(t 
 		operation string
 		role      registry.Role
 	}{
-		{plannerRequirementsOperation, registry.Role("planner")}, {plannerSharedDesignOperation, registry.Role("planner")}, {plannerDeliveryTicketOperation, registry.Role("planner")}, {plannerTicketDesignBriefOperation, registry.Role("planner")},
-		{auditorRequirementsReviewOperation, registry.Role("auditor")}, {auditorSharedDesignReviewOperation, registry.Role("auditor")}, {auditorDeliveryTicketReviewOperation, registry.Role("auditor")}, {auditorTicketDesignBriefReviewOperation, registry.Role("auditor")},
+		{plannerRequirementsOperation, registry.Role("planner")}, {plannerSharedDesignOperation, registry.Role("planner")}, {plannerDeliveryTicketOperation, registry.Role("planner")},
+		{auditorRequirementsReviewOperation, registry.Role("auditor")}, {auditorSharedDesignReviewOperation, registry.Role("auditor")}, {auditorDeliveryTicketReviewOperation, registry.Role("auditor")},
 	} {
 		if !validGuidedOperation(tc.operation, tc.role) {
 			t.Fatalf("%s is not a published %s operation", tc.operation, tc.role)

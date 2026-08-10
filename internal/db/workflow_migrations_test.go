@@ -503,134 +503,51 @@ func TestPlanningCandidateMigrationFrom40PreservesLegacyWorkspacesWithoutCandida
 	}
 }
 
-func TestTicketDesignBriefMigrationFrom41AddsEmptyImmutableHistory(t *testing.T) {
-	db := openMigrationTestDB(t, "ticket-design-brief-upgrade")
+func TestTicketDesignBriefRemovalMigrationDropsBriefSurface(t *testing.T) {
+	db := openMigrationTestDB(t, "ticket-design-brief-removal")
 	defer db.Close()
-	goose.SetBaseFS(WorkflowMigrationsFS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.UpTo(db, "workflow_migrations", 41); err != nil {
-		t.Fatal(err)
-	}
-	var projectID, workspaceID int64
-	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-brief-migration', 'Brief Migration') RETURNING id`).Scan(&projectID); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-brief-migration', ?, 'legacy') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
-		t.Fatal(err)
-	}
 	if err := AutoMigrateWorkflow(db); err != nil {
 		t.Fatal(err)
 	}
-	var briefTables int
+	// The Ticket Design Brief is no longer an authority surface: its tables,
+	// the selection current-Brief pointer, and the package design-brief digest
+	// are all gone from the active schema.
 	for _, table := range []string{"ticket_design_briefs", "ticket_design_brief_approvals"} {
 		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
-		briefTables += count
+		if count != 0 {
+			t.Fatalf("brief table %q still exists", table)
+		}
 	}
-	if briefTables != 0 {
-		t.Fatalf("brief migration synthesized rows = %d", briefTables)
-	}
-	var briefSchema, selectionSchema string
-	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ticket_design_briefs'`).Scan(&briefSchema); err != nil {
+	var packageSchema string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'execution_packages'`).Scan(&packageSchema); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(packageSchema, "design_brief_sha256") {
+		t.Fatalf("execution_packages still carries design_brief_sha256: %s", packageSchema)
+	}
+	var selectionSchema string
 	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'delivery_ticket_selections'`).Scan(&selectionSchema); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(briefSchema, "attempt_number INTEGER NOT NULL") || !strings.Contains(briefSchema, "UNIQUE (selection_row_id, attempt_number)") || strings.Contains(briefSchema, "selection_row_id INTEGER NOT NULL UNIQUE") || !strings.Contains(selectionSchema, "current_ticket_design_brief_row_id") {
-		t.Fatalf("brief attempt migration schema is not current: briefs=%s selections=%s", briefSchema, selectionSchema)
+	if strings.Contains(selectionSchema, "current_ticket_design_brief_row_id") {
+		t.Fatalf("delivery_ticket_selections still carries the current Brief pointer: %s", selectionSchema)
 	}
-	for _, name := range []string{
-		"ticket_design_brief_basis_guard",
-		"ticket_design_brief_update_immutable",
-		"ticket_design_brief_delete_guard",
-		"ticket_design_brief_approval_binding_guard",
-		"ticket_design_brief_approval_update_immutable",
-		"ticket_design_brief_approval_delete_guard",
-		"delivery_ticket_selection_current_brief_insert_guard",
-		"delivery_ticket_selection_current_brief_guard",
-	} {
-		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = ?`, name).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		if count != 1 {
-			t.Fatalf("schema object %q count = %d", name, count)
-		}
+	var briefTriggers int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'ticket_design_brief%' OR name LIKE '%current_brief%'`).Scan(&briefTriggers); err != nil {
+		t.Fatal(err)
 	}
-	var reviewObjects int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%ticket_design_brief_review%'`).Scan(&reviewObjects); err != nil { t.Fatal(err) }
-	if reviewObjects != 0 { t.Fatalf("durable brief review objects = %d", reviewObjects) }
+	if briefTriggers != 0 {
+		t.Fatalf("brief schema objects = %d", briefTriggers)
+	}
 	var foreignKeyErrors int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyErrors); err != nil {
 		t.Fatal(err)
 	}
 	if foreignKeyErrors != 0 {
 		t.Fatalf("foreign key errors = %d", foreignKeyErrors)
-	}
-}
-
-func TestTicketDesignBriefAttemptMigrationRejectsCrossSelectionCurrentPointerInsert(t *testing.T) {
-	db := openMigrationTestDB(t, "ticket-design-brief-current-pointer-insert")
-	defer db.Close()
-	if err := AutoMigrateWorkflow(db); err != nil {
-		t.Fatal(err)
-	}
-	// This test isolates pointer ownership. The Brief basis guard is unrelated
-	// to the attempted selection insert and is removed only to construct a
-	// retained Brief without a complete Ticket lifecycle fixture.
-	for _, statement := range []string{
-		`PRAGMA foreign_keys=OFF`,
-		`DROP TRIGGER ticket_design_brief_basis_guard`,
-		`INSERT INTO delivery_ticket_selections (id, selection_id, workspace_row_id, state, rationale) VALUES (101, 'selection-pointer-owner', 101, 'active', 'owner')`,
-		`INSERT INTO ticket_design_briefs (id, brief_id, workspace_row_id, selection_row_id, attempt_number, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity) VALUES (201, 'brief-pointer-owner', 101, 101, 1, 101, 'owner.md', 101, '` + migrationTestHash + `', 0, 'planner')`,
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	_, err := db.Exec(`INSERT INTO delivery_ticket_selections (id, selection_id, workspace_row_id, state, rationale, current_ticket_design_brief_row_id) VALUES (102, 'selection-pointer-other', 102, 'active', 'other', 201)`)
-	if err == nil || !strings.Contains(err.Error(), "current ticket design brief must belong to its selection") {
-		t.Fatalf("cross-selection current Brief pointer insert error = %v", err)
-	}
-}
-
-func TestTicketDesignBriefAttemptMigrationBackfillsSelectionCurrentPointer(t *testing.T) {
-	db := openMigrationTestDB(t, "ticket-design-brief-attempt-upgrade")
-	defer db.Close()
-	goose.SetBaseFS(WorkflowMigrationsFS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.UpTo(db, "workflow_migrations", 45); err != nil {
-		t.Fatal(err)
-	}
-	// This fixture isolates the migration's retained parent/child identity
-	// mechanics; pre-46 guards are deliberately removed because the synthetic
-	// rows do not model a full source-backed Ticket lifecycle.
-	for _, statement := range []string{
-		`PRAGMA foreign_keys=OFF`,
-		`DROP TRIGGER ticket_design_brief_basis_guard`,
-		`INSERT INTO delivery_ticket_selections (id, selection_id, workspace_row_id, state, rationale) VALUES (101, 'selection-legacy-brief', 101, 'active', 'legacy brief selection')`,
-		`INSERT INTO ticket_design_briefs (id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity) VALUES (201, 'brief-legacy', 101, 101, 101, 'legacy.md', 101, '` + migrationTestHash + `', 0, 'planner')`,
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := AutoMigrateWorkflow(db); err != nil {
-		t.Fatal(err)
-	}
-	var attempt, current sql.NullInt64
-	if err := db.QueryRow(`SELECT brief.attempt_number, selection.current_ticket_design_brief_row_id FROM ticket_design_briefs AS brief JOIN delivery_ticket_selections AS selection ON selection.id = brief.selection_row_id WHERE brief.id = 201`).Scan(&attempt, &current); err != nil {
-		t.Fatal(err)
-	}
-	if !attempt.Valid || attempt.Int64 != 1 || !current.Valid || current.Int64 != 201 {
-		t.Fatalf("legacy brief attempt/current pointer = attempt=%v pointer=%v", attempt, current)
 	}
 }
 
@@ -677,100 +594,6 @@ func TestReviewDispositionMigrationPersistsNothing(t *testing.T) {
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('planning_candidate_reviews', 'ticket_design_brief_reviews')`).Scan(&count); err != nil { t.Fatal(err) }
 	if count != 0 { t.Fatalf("durable review objects = %d", count) }
-}
-
-func TestLegacyPlanningArtifactReviewSchemaUpgradeRemovesReviewResults(t *testing.T) {
-	db := openMigrationTestDB(t, "legacy-planning-artifact-review-upgrade")
-	defer db.Close()
-	goose.SetBaseFS(WorkflowMigrationsFS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.UpTo(db, "workflow_migrations", 42); err != nil {
-		t.Fatal(err)
-	}
-
-	// The retained rows need only be unrelated to reviews. Their source-backed
-	// lifecycle is outside this migration fixture.
-	for _, statement := range []string{
-		`PRAGMA foreign_keys=OFF`,
-		`DROP TRIGGER planning_candidate_basis_guard`,
-		`DROP TRIGGER ticket_design_brief_basis_guard`,
-		`INSERT INTO planning_candidates (id, candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, repo_target, branch, base_commit, destination, created_identity) VALUES (101, 'candidate-legacy-review', 101, 'requirements', 'candidate.md', 101, '` + migrationTestHash + `', 0, 101, 'legacy-review-target', 'main', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'requirements', 'planner')`,
-		`INSERT INTO ticket_design_briefs (id, brief_id, workspace_row_id, selection_row_id, revision_row_id, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, created_identity) VALUES (201, 'brief-legacy-review', 101, 101, 101, 'brief.md', 101, '` + migrationTestHash + `', 0, 'planner')`,
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	createLegacyPlanningArtifactReviewSchema(t, db)
-	for _, statement := range []string{
-		`INSERT INTO planning_candidate_reviews (review_id, candidate_row_id, reviewer_identity, disposition) VALUES ('candidate-review-legacy', 101, 'auditor', 'ready_for_approval')`,
-		`INSERT INTO ticket_design_brief_reviews (review_id, brief_row_id, reviewer_identity, disposition) VALUES ('brief-review-legacy', 201, 'auditor', 'needs_revision')`,
-		`PRAGMA foreign_keys=ON`,
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := AutoMigrateWorkflow(db); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, name := range []string{
-		"planning_candidate_reviews",
-		"ticket_design_brief_reviews",
-		"idx_planning_candidate_reviews_candidate",
-		"idx_ticket_design_brief_reviews_brief",
-		"planning_candidate_review_binding_guard",
-		"planning_candidate_review_update_immutable",
-		"planning_candidate_review_delete_guard",
-		"ticket_design_brief_review_binding_guard",
-		"ticket_design_brief_review_update_immutable",
-		"ticket_design_brief_review_delete_guard",
-	} {
-		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = ?`, name).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		if count != 0 {
-			t.Fatalf("legacy review schema object %q count = %d", name, count)
-		}
-	}
-
-	var candidateID, briefID string
-	if err := db.QueryRow(`SELECT candidate_id FROM planning_candidates WHERE id = 101`).Scan(&candidateID); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT brief_id FROM ticket_design_briefs WHERE id = 201`).Scan(&briefID); err != nil {
-		t.Fatal(err)
-	}
-	if candidateID != "candidate-legacy-review" || briefID != "brief-legacy-review" {
-		t.Fatalf("unrelated rows did not survive: candidate=%q brief=%q", candidateID, briefID)
-	}
-}
-
-func createLegacyPlanningArtifactReviewSchema(t *testing.T, db *sql.DB) {
-	t.Helper()
-	for _, statement := range []string{
-		`CREATE TABLE ticket_design_brief_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, brief_row_id INTEGER NOT NULL UNIQUE REFERENCES ticket_design_briefs(id) ON DELETE RESTRICT, reviewer_identity TEXT NOT NULL, completed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), CHECK (review_id GLOB 'brief-review-*' AND trim(review_id) = review_id), CHECK (reviewer_identity <> '' AND trim(reviewer_identity) = reviewer_identity))`,
-		`CREATE INDEX idx_ticket_design_brief_reviews_brief ON ticket_design_brief_reviews(brief_row_id, id)`,
-		`CREATE TRIGGER ticket_design_brief_review_binding_guard BEFORE INSERT ON ticket_design_brief_reviews FOR EACH ROW WHEN NOT EXISTS (SELECT 1 FROM ticket_design_briefs WHERE id = NEW.brief_row_id) BEGIN SELECT RAISE(ABORT, 'review must bind an existing brief'); END`,
-		`CREATE TRIGGER ticket_design_brief_review_update_immutable BEFORE UPDATE ON ticket_design_brief_reviews FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'brief reviews are immutable history'); END`,
-		`CREATE TRIGGER ticket_design_brief_review_delete_guard BEFORE DELETE ON ticket_design_brief_reviews FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'brief reviews are retained history'); END`,
-		`CREATE TABLE planning_candidate_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL UNIQUE, candidate_row_id INTEGER NOT NULL UNIQUE REFERENCES planning_candidates(id) ON DELETE RESTRICT, reviewer_identity TEXT NOT NULL, completed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), CHECK (review_id GLOB 'candidate-review-*' AND trim(review_id) = review_id), CHECK (reviewer_identity <> '' AND trim(reviewer_identity) = reviewer_identity))`,
-		`CREATE INDEX idx_planning_candidate_reviews_candidate ON planning_candidate_reviews(candidate_row_id, id)`,
-		`CREATE TRIGGER planning_candidate_review_binding_guard BEFORE INSERT ON planning_candidate_reviews FOR EACH ROW WHEN NOT EXISTS (SELECT 1 FROM planning_candidates WHERE id = NEW.candidate_row_id) BEGIN SELECT RAISE(ABORT, 'candidate review must bind an existing candidate'); END`,
-		`CREATE TRIGGER planning_candidate_review_update_immutable BEFORE UPDATE ON planning_candidate_reviews FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'candidate reviews are immutable history'); END`,
-		`CREATE TRIGGER planning_candidate_review_delete_guard BEFORE DELETE ON planning_candidate_reviews FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'candidate reviews are retained history'); END`,
-		`ALTER TABLE planning_candidate_reviews ADD COLUMN disposition TEXT NOT NULL DEFAULT 'needs_revision' CHECK (disposition IN ('ready_for_approval', 'needs_revision'))`,
-		`ALTER TABLE ticket_design_brief_reviews ADD COLUMN disposition TEXT NOT NULL DEFAULT 'needs_revision' CHECK (disposition IN ('ready_for_approval', 'needs_revision'))`,
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 // seedAuthorityClosingBasis creates the source-backed explicit authority basis

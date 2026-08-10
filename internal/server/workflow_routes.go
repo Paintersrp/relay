@@ -125,7 +125,9 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct feature completion workflow service: %w", err)
 	}
-	packageService, err := apppackages.NewService(workflowStore)
+	// The package owner resolves the selected approved Delivery Ticket's exact
+	// source-vault bytes server-side, so it requires the source-vault reader.
+	packageService, err := apppackages.NewServiceWithSourceVaults(workflowStore, sourceVaultReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct package service: %w", err)
 	}
