@@ -39,7 +39,10 @@ func NewServerForRoute(log *slog.Logger, manifest routecontracts.RouteManifest, 
 }
 
 // NewServerForAppSurface exposes one role-level catalog while every dispatch
-// remains bound to one immutable internal route registration.
+// remains bound to one immutable internal route registration. Public
+// definitions and route-bound input validation derive solely from the compiled
+// surface tool manifest; the registration contributes identity and authority
+// fields that must match that compiled manifest exactly.
 func NewServerForAppSurface(log *slog.Logger, surface routecontracts.AppSurfaceManifest, registrations []AppToolRegistration) (*Server, error) {
 	if len(surface.MemberRoutes) == 0 || len(surface.Tools) == 0 || len(registrations) != len(surface.Tools) || surface.ManifestSHA256 == "" {
 		return nil, fmt.Errorf("MCP_APP_SURFACE_SERVER_INVALID: %s", surface.Surface)
@@ -52,7 +55,7 @@ func NewServerForAppSurface(log *slog.Logger, surface routecontracts.AppSurfaceM
 			registration.PublicSurface != surface.Surface || registration.InternalToolName != compiled.InternalToolName ||
 			registration.InternalRoutePath != compiled.InternalRoutePath || registration.SurfaceContract != compiled.SurfaceContract ||
 			registration.RouteManifestSHA256 != compiled.RouteManifestSHA256 || registration.StandingAuthority != compiled.StandingAuthority ||
-			registration.Tool.SemanticToolID != compiled.SemanticToolID || registration.Tool.OperationID != compiled.OperationID ||
+			registration.SemanticToolID != compiled.SemanticToolID || registration.OperationID != compiled.OperationID ||
 			registration.Handler.Name != registration.InternalToolName || registration.Handler.Handle == nil {
 			return nil, fmt.Errorf("MCP_APP_SURFACE_REGISTRATION_INVALID: %s", registration.AdvertisedName)
 		}
@@ -65,10 +68,10 @@ func NewServerForAppSurface(log *slog.Logger, surface routecontracts.AppSurfaceM
 		}
 		dispatch[registration.AdvertisedName] = surfaceDispatch{
 			surface: registry.SurfaceContractID(registration.SurfaceContract), toolName: registration.InternalToolName,
-			routeBound: routeBoundInputSchema(registration.Tool.InputSchema), staticRoute: true, handle: registration.Handler.Handle,
+			routeBound: routeBoundInputSchema(compiled.Tool.InputSchema), staticRoute: true, handle: registration.Handler.Handle,
 		}
 		definitions = append(definitions, routeToolDefinition(
-			registration.AdvertisedName, descriptionPrefix+registration.Tool.Description, registration.Tool,
+			registration.AdvertisedName, descriptionPrefix+compiled.Tool.Description, compiled.Tool,
 			routecontracts.RouteManifest{
 				RoutePath: registration.InternalRoutePath, SurfaceContract: registration.SurfaceContract,
 				ManifestSHA256: registration.RouteManifestSHA256, StandingAuthority: registration.StandingAuthority,

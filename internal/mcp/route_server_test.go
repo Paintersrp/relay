@@ -244,12 +244,12 @@ func TestAppSurfaceServerRejectsSemanticAndOperationRegistrationMismatch(t *test
 	if len(registrations) == 0 {
 		t.Fatal("no app surface registrations")
 	}
-	for name, mutate := range map[string]func(*routecontracts.ToolManifest){
-		"semantic": func(tool *routecontracts.ToolManifest) { tool.SemanticToolID = "relay.unexpected.tool.v1" },
-		"operation": func(tool *routecontracts.ToolManifest) { tool.OperationID = "planner.requirements" },
+	for name, mutate := range map[string]func(*AppToolRegistration){
+		"semantic": func(registration *AppToolRegistration) { registration.SemanticToolID = "relay.unexpected.tool.v1" },
+		"operation": func(registration *AppToolRegistration) { registration.OperationID = "planner.requirements" },
 	} {
 		invalid := append([]AppToolRegistration(nil), registrations...)
-		mutate(&invalid[0].Tool)
+		mutate(&invalid[0])
 		if _, err := NewServerForAppSurface(nil, surface, invalid); err == nil {
 			t.Fatalf("server accepted %s registration mismatch", name)
 		}
@@ -263,6 +263,109 @@ func TestAppSurfaceServerRejectsSemanticAndOperationRegistrationMismatch(t *test
 		if definition.Meta["relay/semanticToolID"] != compiled.SemanticToolID || definition.Meta["relay/operationID"] != compiled.OperationID {
 			t.Fatalf("%s metadata does not equal compiled identity %q/%q", definition.Name, compiled.SemanticToolID, compiled.OperationID)
 		}
+	}
+}
+
+func TestAppSurfaceDefinitionsAndDispatchBindCompiledToolSchema(t *testing.T) {
+	routes, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces, err := routecontracts.BuildAppSurfaceManifests(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := fakeAppSurfaceDispatchers(routes)
+	expectedTools := 0
+	for _, manifest := range routes.Manifests {
+		expectedTools += len(manifest.Tools)
+	}
+	serversBySurface := make(map[routecontracts.AppSurface]*Server, len(surfaces.Surfaces))
+	registrationsBySurface := make(map[routecontracts.AppSurface][]AppToolRegistration, len(surfaces.Surfaces))
+	checked := 0
+	for _, surface := range surfaces.Surfaces {
+		registrations, err := BuildAppSurfaceHandlers(surface, owners)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server, err := NewServerForAppSurface(nil, surface, registrations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serversBySurface[surface.Surface] = server
+		registrationsBySurface[surface.Surface] = registrations
+		if len(server.tools) != len(surface.Tools) {
+			t.Fatalf("%s public definitions=%d, want %d", surface.Surface, len(server.tools), len(surface.Tools))
+		}
+		for index, definition := range server.tools {
+			compiled := surface.Tools[index]
+			checked++
+			if !bytes.Equal(definition.InputSchema, compiled.Tool.InputSchema) {
+				t.Fatalf("%s/%s input schema differs from compiled.Tool: advertised=%s compiled=%s", surface.Surface, definition.Name, definition.InputSchema, compiled.Tool.InputSchema)
+			}
+			if !bytes.Equal(definition.OutputSchema, compiled.Tool.OutputSchema) {
+				t.Fatalf("%s/%s output schema differs from compiled.Tool", surface.Surface, definition.Name)
+			}
+			if definition.Meta["relay/semanticToolID"] != compiled.SemanticToolID || definition.Meta["relay/operationID"] != compiled.OperationID {
+				t.Fatalf("%s/%s identity metadata=%q/%q, want compiled=%q/%q", surface.Surface, definition.Name, definition.Meta["relay/semanticToolID"], definition.Meta["relay/operationID"], compiled.SemanticToolID, compiled.OperationID)
+			}
+			dispatch, ok := server.surfaceHandlers[definition.Name]
+			if !ok {
+				t.Fatalf("%s/%s has no dispatch binding", surface.Surface, definition.Name)
+			}
+			if wantBound := routeBoundInputSchema(compiled.Tool.InputSchema); dispatch.routeBound != wantBound {
+				t.Fatalf("%s/%s route-bound validation=%v, want compiled schema=%v", surface.Surface, definition.Name, dispatch.routeBound, wantBound)
+			}
+		}
+	}
+	if checked == 0 || checked != expectedTools {
+		t.Fatalf("checked app-surface tools=%d, want %d", checked, expectedTools)
+	}
+
+	var routeBoundServer *Server
+	var routeBoundName string
+	for _, surface := range surfaces.Surfaces {
+		server := serversBySurface[surface.Surface]
+		for index, registration := range registrationsBySurface[surface.Surface] {
+			if registration.InternalToolName == "list_projects" && routeBoundInputSchema(surface.Tools[index].Tool.InputSchema) {
+				routeBoundServer, routeBoundName = server, registration.AdvertisedName
+				break
+			}
+		}
+		if routeBoundServer != nil {
+			break
+		}
+	}
+	if routeBoundServer == nil {
+		t.Fatal("no route-bound list_projects representative found")
+	}
+	var actionServer *Server
+	var actionName string
+	for _, surface := range surfaces.Surfaces {
+		server := serversBySurface[surface.Surface]
+		for index, registration := range registrationsBySurface[surface.Surface] {
+			if registration.InternalToolName == "create_workspace" && !routeBoundInputSchema(surface.Tools[index].Tool.InputSchema) {
+				actionServer, actionName = server, registration.AdvertisedName
+				break
+			}
+		}
+		if actionServer != nil {
+			break
+		}
+	}
+	if actionServer == nil {
+		t.Fatal("no action create_workspace representative found")
+	}
+
+	// Route-bound dispatch validates against the compiled route schema: a
+	// member outside that schema is rejected before the bound handler runs.
+	if _, err := routeBoundServer.dispatchSurfaceTool(routeBoundName, json.RawMessage(`{"status":"unsupported"}`)); err == nil {
+		t.Fatalf("route-bound dispatch accepted arguments outside the compiled input schema")
+	}
+	// Action dispatch validates against the compiled action schema: the
+	// surface_contract member is absent from that schema and is rejected.
+	if _, err := actionServer.dispatchSurfaceTool(actionName, json.RawMessage(`{"project_id":"project-test","feature_slug":"feature-test","surface_contract":"wayfinder-workspace.v1"}`)); err == nil {
+		t.Fatalf("action dispatch accepted surface_contract absent from its compiled input schema")
 	}
 }
 

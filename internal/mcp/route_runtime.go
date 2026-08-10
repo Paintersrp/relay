@@ -38,7 +38,10 @@ func bindToolToRoute(manifest routecontracts.RouteManifest, tool routecontracts.
 
 // AppToolRegistration binds one public catalog name to one immutable internal
 // route registration. The handler remains the route-bound handler selected from
-// the compiled manifest; no request field selects route authority.
+// the compiled manifest; no request field selects route authority. It carries
+// identity and authority fields only: the compiled AppToolManifest.Tool remains
+// the sole tool-definition and schema authority for public definitions and
+// route-bound input validation.
 type AppToolRegistration struct {
 	AdvertisedName      string
 	InternalToolName    string
@@ -47,7 +50,8 @@ type AppToolRegistration struct {
 	SurfaceContract     string
 	RouteManifestSHA256 string
 	StandingAuthority   routecontracts.StandingAuthorityIdentity
-	Tool                routecontracts.ToolManifest
+	SemanticToolID      string
+	OperationID         string
 	Aliased             bool
 	Handler             ToolHandler
 }
@@ -92,7 +96,8 @@ func BuildAppSurfaceHandlers(surface routecontracts.AppSurfaceManifest, owners R
 			AdvertisedName: tool.AdvertisedName, InternalToolName: tool.InternalToolName,
 			PublicSurface: surface.Surface, InternalRoutePath: tool.InternalRoutePath,
 			SurfaceContract: tool.SurfaceContract, RouteManifestSHA256: tool.RouteManifestSHA256,
-			StandingAuthority: tool.StandingAuthority, Tool: tool.Tool, Aliased: tool.Aliased, Handler: handler,
+			StandingAuthority: tool.StandingAuthority, SemanticToolID: tool.SemanticToolID, OperationID: tool.OperationID,
+			Aliased: tool.Aliased, Handler: handler,
 		})
 	}
 	if len(registrations) != len(surface.Tools) {
