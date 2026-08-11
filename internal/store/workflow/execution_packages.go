@@ -11,16 +11,18 @@ import (
 // ticket-oriented execution. Generated query types remain behind the store
 // boundary just like the delivery-ticket surface.
 type (
-	ExecutionPackage                = workflowgenerated.ExecutionPackage
-	ExecutionPackageMember          = workflowgenerated.ExecutionPackageMember
-	ExecutionPackageApprovalBinding = workflowgenerated.ExecutionPackageApprovalBinding
-	ExecutionPackageApproval        = workflowgenerated.ExecutionPackageApproval
+	ExecutionPackage                          = workflowgenerated.ExecutionPackage
+	ExecutionPackageMember                    = workflowgenerated.ExecutionPackageMember
+	ExecutionPackageRepositoryInstruction     = workflowgenerated.ExecutionPackageRepositoryInstruction
+	ExecutionPackageApprovalBinding           = workflowgenerated.ExecutionPackageApprovalBinding
+	ExecutionPackageApproval                  = workflowgenerated.ExecutionPackageApproval
 
-	CreateExecutionPackageParams                = workflowgenerated.CreateExecutionPackageParams
-	CreateExecutionPackageMemberParams          = workflowgenerated.CreateExecutionPackageMemberParams
-	CreateExecutionPackageApprovalBindingParams = workflowgenerated.CreateExecutionPackageApprovalBindingParams
-	CreateExecutionPackageApprovalParams        = workflowgenerated.CreateExecutionPackageApprovalParams
-	LinkRunToExecutionPackageApprovalParams     = workflowgenerated.LinkRunToExecutionPackageApprovalParams
+	CreateExecutionPackageParams                        = workflowgenerated.CreateExecutionPackageParams
+	CreateExecutionPackageMemberParams                  = workflowgenerated.CreateExecutionPackageMemberParams
+	CreateExecutionPackageRepositoryInstructionParams   = workflowgenerated.CreateExecutionPackageRepositoryInstructionParams
+	CreateExecutionPackageApprovalBindingParams         = workflowgenerated.CreateExecutionPackageApprovalBindingParams
+	CreateExecutionPackageApprovalParams                = workflowgenerated.CreateExecutionPackageApprovalParams
+	LinkRunToExecutionPackageApprovalParams             = workflowgenerated.LinkRunToExecutionPackageApprovalParams
 )
 
 func (s *Store) GetExecutionPackageByPackageID(ctx context.Context, packageID string) (ExecutionPackage, error) {
@@ -41,6 +43,10 @@ func (s *Store) ListExecutionPackagesByWorkspace(ctx context.Context, workspaceR
 
 func (s *Store) ListExecutionPackageMembers(ctx context.Context, packageRowID int64) ([]ExecutionPackageMember, error) {
 	return workflowgenerated.New(s.db).ListExecutionPackageMembers(ctx, packageRowID)
+}
+
+func (s *Store) ListExecutionPackageRepositoryInstructions(ctx context.Context, packageRowID int64) ([]ExecutionPackageRepositoryInstruction, error) {
+	return workflowgenerated.New(s.db).ListExecutionPackageRepositoryInstructions(ctx, packageRowID)
 }
 
 func (s *Store) ListExecutionPackageApprovalBindings(ctx context.Context, packageRowID int64) ([]ExecutionPackageApprovalBinding, error) {
@@ -85,6 +91,14 @@ func (tx *Tx) ListExecutionPackageMembers(ctx context.Context, packageRowID int6
 
 func (tx *Tx) CreateExecutionPackageMember(ctx context.Context, params CreateExecutionPackageMemberParams) (ExecutionPackageMember, error) {
 	return workflowgenerated.New(tx.tx).CreateExecutionPackageMember(ctx, params)
+}
+
+func (tx *Tx) CreateExecutionPackageRepositoryInstruction(ctx context.Context, params CreateExecutionPackageRepositoryInstructionParams) (ExecutionPackageRepositoryInstruction, error) {
+	return workflowgenerated.New(tx.tx).CreateExecutionPackageRepositoryInstruction(ctx, params)
+}
+
+func (tx *Tx) ListExecutionPackageRepositoryInstructions(ctx context.Context, packageRowID int64) ([]ExecutionPackageRepositoryInstruction, error) {
+	return workflowgenerated.New(tx.tx).ListExecutionPackageRepositoryInstructions(ctx, packageRowID)
 }
 
 func (tx *Tx) ListExecutionPackageApprovalBindings(ctx context.Context, packageRowID int64) ([]ExecutionPackageApprovalBinding, error) {
@@ -171,13 +185,15 @@ func getExecutionPackageByRowID(ctx context.Context, queryer runExecutionPackage
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, package_id, selection_row_id, workspace_row_id, repo_target, branch, base_commit,
        source_closure_row_id, authority_revision_row_id, package_sha256, authority_sha256,
-       source_sha256, deterministic_operations_sha256, deterministic_operations_coverage, created_at
+       source_sha256, repository_instructions_sha256,
+       deterministic_operations_sha256, deterministic_operations_coverage, created_at
 FROM execution_packages
 WHERE id = ?`, packageRowID).Scan(
 		&value.ID, &value.PackageID, &value.SelectionRowID, &value.WorkspaceRowID,
 		&value.RepoTarget, &value.Branch, &value.BaseCommit, &value.SourceClosureRowID,
 		&value.AuthorityRevisionRowID, &value.PackageSha256, &value.AuthoritySha256,
-		&value.SourceSha256, &value.DeterministicOperationsSha256, &value.DeterministicOperationsCoverage, &value.CreatedAt,
+		&value.SourceSha256, &value.RepositoryInstructionsSha256,
+		&value.DeterministicOperationsSha256, &value.DeterministicOperationsCoverage, &value.CreatedAt,
 	)
 	return value, err
 }

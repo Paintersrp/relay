@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	executionpackages "relay/internal/app/packages"
 	workflowartifacts "relay/internal/artifacts/workflow"
@@ -37,6 +38,42 @@ func validExecutionAssignmentOID(value string) bool {
 	return true
 }
 
+// validExecutionAssignmentSHA256 reports whether value is a 64-hex SHA-256.
+func validExecutionAssignmentSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		char := value[index]
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// validExecutionAssignmentInstructionPath reports whether value is a safe
+// repository-relative AGENTS.md path: no absolute, drive, or backslash
+// prefixes, no empty or dot path segments, and the basename is exactly
+// AGENTS.md.
+func validExecutionAssignmentInstructionPath(value string) bool {
+	if value == "" || strings.TrimSpace(value) != value || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "\\") || strings.Contains(value, "\\") {
+		return false
+	}
+	if len(value) >= 2 && value[1] == ':' {
+		c := value[0]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return false
+		}
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return filepath.Base(value) == "AGENTS.md"
+}
+
 type ExecutionAssignmentResult struct {
 	Artifact   workflowstore.Artifact
 	Assignment ExecutionAssignment
@@ -56,6 +93,7 @@ type ExecutionAssignment struct {
 	Source                  ExecutionAssignmentSource              `json:"source"`
 	Authority               ExecutionAssignmentAuthority           `json:"authority"`
 	AuthorityLayers         []ExecutionAssignmentLayer             `json:"authority_layers"`
+	RepositoryInstructions  []ExecutionAssignmentRepositoryInstruction `json:"repository_instructions"`
 	DeliveryTicket          ExecutionAssignmentDocument            `json:"delivery_ticket"`
 	DeterministicOperations ExecutionAssignmentOperations          `json:"deterministic_operations"`
 	ValidationCommands      []ExecutionAssignmentValidationCommand `json:"validation_commands"`
@@ -132,6 +170,17 @@ type ExecutionAssignmentLayer struct {
 	RelativePath string `json:"relative_path"`
 	MediaType    string `json:"media_type"`
 	SHA256       string `json:"sha256"`
+}
+
+// ExecutionAssignmentRepositoryInstruction is the immutable identity of one
+// bound repository instruction (an applicable AGENTS.md file) verified by the
+// approved package authority: its repository-relative path and the exact
+// SHA-256 of its bytes from the exact selected source closure. Execution knows
+// exactly which repository instructions are bound without reinterpreting
+// package authority.
+type ExecutionAssignmentRepositoryInstruction struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
 }
 
 type ExecutionAssignmentDocument struct {
@@ -347,6 +396,15 @@ func buildExecutionAssignment(authority executionpackages.ApprovedAuthority) (Ex
 		previousSequence = layer.Sequence
 		layers = append(layers, ExecutionAssignmentLayer{Sequence: layer.Sequence, LayerKind: layer.Kind, RelativePath: layer.RelativePath, MediaType: layer.MediaType, SHA256: layer.SHA256})
 	}
+	instructions := make([]ExecutionAssignmentRepositoryInstruction, 0, len(authority.RepositoryInstructions))
+	var previousInstructionPath string
+	for index, instruction := range authority.RepositoryInstructions {
+		if instruction.RelativePath == "" || (index > 0 && instruction.RelativePath <= previousInstructionPath) || !validExecutionAssignmentInstructionPath(instruction.RelativePath) || !validExecutionAssignmentSHA256(instruction.SHA256) {
+			return ExecutionAssignment{}, nil, "", fmt.Errorf("approved repository instruction identities are inconsistent")
+		}
+		previousInstructionPath = instruction.RelativePath
+		instructions = append(instructions, ExecutionAssignmentRepositoryInstruction{Path: instruction.RelativePath, SHA256: instruction.SHA256})
+	}
 	operations := ExecutionAssignmentOperations{Presence: "absent"}
 	if authority.DeterministicOperations != nil {
 		operation := authority.DeterministicOperations
@@ -374,6 +432,7 @@ func buildExecutionAssignment(authority executionpackages.ApprovedAuthority) (Ex
 		Source:                  ExecutionAssignmentSource{ClosureID: authority.Source.ClosureID, ClosureRowID: authority.Source.ID, SHA256: authority.Package.SourceSha256, CommitOID: authority.Source.CommitOID, TreeOID: authority.Source.TreeOID, Generation: authority.Source.Generation, RefName: authority.Source.RefName, State: authority.Source.State},
 		Authority:               ExecutionAssignmentAuthority{RevisionID: authority.Authority.AuthorityRevisionID, RevisionRowID: authority.Authority.ID, RevisionNumber: authority.Authority.RevisionNumber, AuthorityBasisSHA256: authority.Package.AuthoritySha256, Repository: artifactschema.AuthorityRepository, Commit: artifactschema.AuthorityCommit},
 		AuthorityLayers:         layers,
+		RepositoryInstructions:  instructions,
 		DeliveryTicket:          ExecutionAssignmentDocument{DisplayName: document.DisplayName, RelativePath: document.RelativePath, MediaType: document.MediaType, SHA256: document.SHA256},
 		DeterministicOperations: operations,
 		ValidationCommands:      commands,

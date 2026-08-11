@@ -290,6 +290,12 @@ func copyWorkflowPackageExecutionEvidence(src WorkflowPackageExecutionEvidence) 
 		dst.Assignment.Assignment.AuthorityLayers = layers
 	}
 
+	if src.Assignment.Assignment.RepositoryInstructions != nil {
+		instructions := make([]executor.ExecutionAssignmentRepositoryInstruction, len(src.Assignment.Assignment.RepositoryInstructions))
+		copy(instructions, src.Assignment.Assignment.RepositoryInstructions)
+		dst.Assignment.Assignment.RepositoryInstructions = instructions
+	}
+
 	if src.Assignment.Assignment.Dependencies != nil {
 		deps := make([]executor.ExecutionAssignmentDependency, len(src.Assignment.Assignment.Dependencies))
 		copy(deps, src.Assignment.Assignment.Dependencies)

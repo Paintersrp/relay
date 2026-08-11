@@ -147,6 +147,13 @@ type ApprovedAuthority struct {
 
 	AuthorityLayers []ApprovedAuthorityLayer
 
+	// RepositoryInstructions is the exact verified repository-instruction
+	// basis: every AGENTS.md applicable to the selected Ticket's inspected
+	// source paths, resolved from the exact selected source closure, in
+	// deterministic repository-relative-path order. The package identity and
+	// the compound approval bind the same ordered identities.
+	RepositoryInstructions []ApprovedRepositoryInstruction
+
 	DeliveryTicket   ApprovedSourceDocument
 	TicketProjection speccompiler.DeliveryTicketProjection
 

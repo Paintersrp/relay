@@ -26,7 +26,7 @@ func TestBuildExecutionAssignmentTicketOnlyCanonicalContract(t *testing.T) {
 	if strings.Count(string(content), "\n") != 1 {
 		t.Fatal("assignment contains more than its trailing newline")
 	}
-	keys := []string{"schema_version", "run", "package", "package_approval", "ticket", "dependencies", "repository", "source", "authority", "authority_layers", "delivery_ticket", "deterministic_operations", "validation_commands", "standing_role"}
+	keys := []string{"schema_version", "run", "package", "package_approval", "ticket", "dependencies", "repository", "source", "authority", "authority_layers", "repository_instructions", "delivery_ticket", "deterministic_operations", "validation_commands", "standing_role"}
 	last := -1
 	for _, key := range keys {
 		position := strings.Index(string(content), `"`+key+`"`)
@@ -44,6 +44,9 @@ func TestBuildExecutionAssignmentTicketOnlyCanonicalContract(t *testing.T) {
 	}
 	if got := decoded["dependencies"]; !reflect.DeepEqual(got, []any{}) {
 		t.Fatalf("dependencies = %#v, want explicit empty completed dependencies", got)
+	}
+	if got := decoded["repository_instructions"]; !reflect.DeepEqual(got, []any{}) {
+		t.Fatalf("repository_instructions = %#v, want explicit empty basis", got)
 	}
 	source, ok := decoded["source"].(map[string]any)
 	if !ok || source["commit_oid"] != strings.Repeat("a", 40) || source["tree_oid"] != strings.Repeat("b", 40) || source["generation"] != float64(1) || source["ref_name"] != "refs/relay/closures/closure-1" || source["state"] != "ready" {
@@ -130,6 +133,66 @@ func TestBuildExecutionAssignmentCarriesCompletedDependenciesAndSourceIdentity(t
 	}
 	if !strings.Contains(string(content), `"ticket_id":"P2-T1"`) || !strings.Contains(string(content), `"outcome":"satisfied"`) || !strings.Contains(string(content), `"commit_oid":"`+strings.Repeat("a", 40)+`"`) {
 		t.Fatal("completed dependency or source identity was not serialized")
+	}
+}
+
+func TestBuildExecutionAssignmentTransportsRepositoryInstructions(t *testing.T) {
+	authority := executionAssignmentAuthority(nil)
+	authority.RepositoryInstructions = []executionpackages.ApprovedRepositoryInstruction{
+		{RelativePath: "AGENTS.md", SHA256: strings.Repeat("a", 64), SizeBytes: 5, ObjectOID: strings.Repeat("b", 40)},
+		{RelativePath: "internal/AGENTS.md", SHA256: strings.Repeat("c", 64), SizeBytes: 7, ObjectOID: strings.Repeat("d", 40)},
+		{RelativePath: "internal/app/AGENTS.md", SHA256: strings.Repeat("e", 64), SizeBytes: 9, ObjectOID: strings.Repeat("f", 40)},
+	}
+	assignment, content, _, err := buildExecutionAssignment(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ExecutionAssignmentRepositoryInstruction{
+		{Path: "AGENTS.md", SHA256: strings.Repeat("a", 64)},
+		{Path: "internal/AGENTS.md", SHA256: strings.Repeat("c", 64)},
+		{Path: "internal/app/AGENTS.md", SHA256: strings.Repeat("e", 64)},
+	}
+	if !reflect.DeepEqual(assignment.RepositoryInstructions, want) {
+		t.Fatalf("assignment repository instructions = %#v, want %#v", assignment.RepositoryInstructions, want)
+	}
+	if !strings.Contains(string(content), `"repository_instructions"`) || !strings.Contains(string(content), `"path":"internal/AGENTS.md"`) || !strings.Contains(string(content), `"sha256":"`+strings.Repeat("e", 64)+`"`) {
+		t.Fatal("repository instruction identities were not serialized")
+	}
+}
+
+func TestBuildExecutionAssignmentRejectsInconsistentRepositoryInstructions(t *testing.T) {
+	reordered := executionAssignmentAuthority(nil)
+	reordered.RepositoryInstructions = []executionpackages.ApprovedRepositoryInstruction{
+		{RelativePath: "internal/AGENTS.md", SHA256: strings.Repeat("a", 64)},
+		{RelativePath: "AGENTS.md", SHA256: strings.Repeat("b", 64)},
+	}
+	if _, _, _, err := buildExecutionAssignment(reordered); err == nil {
+		t.Fatal("out-of-order repository instruction paths succeeded")
+	}
+
+	duplicate := executionAssignmentAuthority(nil)
+	duplicate.RepositoryInstructions = []executionpackages.ApprovedRepositoryInstruction{
+		{RelativePath: "AGENTS.md", SHA256: strings.Repeat("a", 64)},
+		{RelativePath: "AGENTS.md", SHA256: strings.Repeat("b", 64)},
+	}
+	if _, _, _, err := buildExecutionAssignment(duplicate); err == nil {
+		t.Fatal("duplicate repository instruction path succeeded")
+	}
+
+	badPath := executionAssignmentAuthority(nil)
+	badPath.RepositoryInstructions = []executionpackages.ApprovedRepositoryInstruction{
+		{RelativePath: "agents/orchestrator.md", SHA256: strings.Repeat("a", 64)},
+	}
+	if _, _, _, err := buildExecutionAssignment(badPath); err == nil {
+		t.Fatal("non-AGENTS.md repository instruction path succeeded")
+	}
+
+	badSHA := executionAssignmentAuthority(nil)
+	badSHA.RepositoryInstructions = []executionpackages.ApprovedRepositoryInstruction{
+		{RelativePath: "AGENTS.md", SHA256: "not-a-digest"},
+	}
+	if _, _, _, err := buildExecutionAssignment(badSHA); err == nil {
+		t.Fatal("malformed repository instruction SHA-256 succeeded")
 	}
 }
 

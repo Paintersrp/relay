@@ -60,6 +60,7 @@ ORDER BY name`)
 		"execution_package_approval_bindings",
 		"execution_package_approvals",
 		"execution_package_members",
+		"execution_package_repository_instructions",
 		"execution_packages",
 		"feature_workspace_admitted_inputs",
 		"feature_workspace_authority_layers",

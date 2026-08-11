@@ -13,10 +13,13 @@ import (
 // executionpackages.SourceVaultReader. By default it returns
 // sourcevault.CodeObjectUnavailable so tests that do not exercise retained
 // authority fail closed. When configured with a matching path and canonical
-// Delivery Ticket bytes it returns those bytes for source-vault reads.
+// Delivery Ticket bytes it returns those bytes for source-vault reads. The
+// optional paths map serves exact repository-instruction bytes for
+// instruction-basis tests.
 type stubSourceVaultReader struct {
 	path  string
 	bytes []byte
+	paths map[string][]byte
 	err   error
 }
 
@@ -28,6 +31,12 @@ func (r *stubSourceVaultReader) ReadPath(ctx context.Context, request sourcevaul
 		return sourcevault.ReadPathResult{
 			ObjectOID: strings.Repeat("d", 40),
 			Bytes:     append([]byte(nil), r.bytes...),
+		}, nil
+	}
+	if bytes, ok := r.paths[request.Path]; ok {
+		return sourcevault.ReadPathResult{
+			ObjectOID: strings.Repeat("e", 40),
+			Bytes:     append([]byte(nil), bytes...),
 		}, nil
 	}
 	return sourcevault.ReadPathResult{}, &sourcevault.Error{Code: sourcevault.CodeObjectUnavailable}

@@ -102,6 +102,60 @@ func TestPrepareExecutionAssignmentPersistsOperationsIdentity(t *testing.T) {
 	}
 }
 
+func TestPrepareExecutionAssignmentCarriesRepositoryInstructions(t *testing.T) {
+	fixture := newExecutionAssignmentFixtureWithInstructions(t, map[string]string{
+		"AGENTS.md":                "# root repository instructions\n",
+		"internal/AGENTS.md":       "# internal repository instructions\n",
+		"internal/app/AGENTS.md":   "# app repository instructions\n",
+		"tickets/AGENTS.md":        "# ticket repository instructions\n",
+		"internal/other/AGENTS.md": "# non-applicable repository instructions\n",
+		"agents/orchestrator.md":   "# standing execution-role procedure\n",
+	})
+	result := prepareExecutionAssignment(t, fixture)
+	var decoded ExecutionAssignment
+	if err := json.Unmarshal(result.Bytes, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	// The inspected source basis is the Ticket source path plus the obligation
+	// source area, so the applicable instructions are the root, internal,
+	// internal/app, and tickets AGENTS.md files in repository-relative-path
+	// order. The non-applicable nested file and agents/orchestrator.md are
+	// excluded.
+	want := []ExecutionAssignmentRepositoryInstruction{
+		{Path: "AGENTS.md", SHA256: sha256Hex([]byte("# root repository instructions\n"))},
+		{Path: "internal/AGENTS.md", SHA256: sha256Hex([]byte("# internal repository instructions\n"))},
+		{Path: "internal/app/AGENTS.md", SHA256: sha256Hex([]byte("# app repository instructions\n"))},
+		{Path: "tickets/AGENTS.md", SHA256: sha256Hex([]byte("# ticket repository instructions\n"))},
+	}
+	if !reflect.DeepEqual(decoded.RepositoryInstructions, want) {
+		t.Fatalf("assignment repository instructions = %#v, want %#v", decoded.RepositoryInstructions, want)
+	}
+	// The identity of the bound instructions is part of the immutable package
+	// basis: the assignment bytes stay stable across idempotent reload.
+	loaded, err := fixture.assignments.LoadExecutionAssignment(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loaded.Bytes, result.Bytes) {
+		t.Fatal("reloaded assignment bytes differ from prepared bytes")
+	}
+
+	// A package without applicable instructions binds an empty basis and the
+	// assignment serializes it explicitly.
+	plain := newExecutionAssignmentFixture(t, false, "")
+	plainResult := prepareExecutionAssignment(t, plain)
+	var plainDecoded ExecutionAssignment
+	if err := json.Unmarshal(plainResult.Bytes, &plainDecoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(plainDecoded.RepositoryInstructions) != 0 {
+		t.Fatalf("plain assignment repository instructions = %#v, want empty", plainDecoded.RepositoryInstructions)
+	}
+	if !strings.Contains(string(plainResult.Bytes), `"repository_instructions":[]`) {
+		t.Fatal("plain assignment does not serialize an explicit empty repository_instructions basis")
+	}
+}
+
 func TestPrepareExecutionAssignmentCarriesCompletedDependenciesAndSourceIdentity(t *testing.T) {
 	fixture := newExecutionAssignmentFixtureWithDependency(t)
 	result := prepareExecutionAssignment(t, fixture)
@@ -375,7 +429,19 @@ func newExecutionAssignmentFixture(t *testing.T, withOperations bool, coverage s
 }
 
 func newExecutionAssignmentFixtureWithOperations(t *testing.T, withOperations bool, coverage string, authoredOperations []byte, dependency *assignmentDependencySeed) *executionAssignmentFixture {
-	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, withOperations, coverage, authoredOperations, dependency)
+	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, withOperations, coverage, authoredOperations, dependency, nil)
+}
+
+func newExecutionAssignmentFixtureWithInstructions(t *testing.T, files map[string]string) *executionAssignmentFixture {
+	t.Helper()
+	baseCommit := strings.Repeat("a", 40)
+	sourcePath := "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json"
+	reader := newPackageSourceVaultReader(sourcePath, baseCommit)
+	reader.paths = make(map[string][]byte, len(files))
+	for path, content := range files {
+		reader.paths[path] = []byte(content)
+	}
+	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, false, "", []byte(executionAssignmentOperations), nil, reader)
 }
 
 // assignmentDependencySeed describes one completed dependency (P2-T1 revision 1)
@@ -388,10 +454,10 @@ type assignmentDependencySeed struct {
 }
 
 func newExecutionAssignmentFixtureWithDependency(t *testing.T) *executionAssignmentFixture {
-	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, false, "", []byte(executionAssignmentOperations), &assignmentDependencySeed{ticketID: "P2-T1", revisionNumber: 1, sourcePath: "tickets/checkout.ticket-P2-T1.r1.delivery-ticket.json"})
+	return newExecutionAssignmentFixtureWithOperationsAndDependency(t, false, "", []byte(executionAssignmentOperations), &assignmentDependencySeed{ticketID: "P2-T1", revisionNumber: 1, sourcePath: "tickets/checkout.ticket-P2-T1.r1.delivery-ticket.json"}, nil)
 }
 
-func newExecutionAssignmentFixtureWithOperationsAndDependency(t *testing.T, withOperations bool, coverage string, authoredOperations []byte, dependency *assignmentDependencySeed) *executionAssignmentFixture {
+func newExecutionAssignmentFixtureWithOperationsAndDependency(t *testing.T, withOperations bool, coverage string, authoredOperations []byte, dependency *assignmentDependencySeed, reader *stubSourceVaultReader) *executionAssignmentFixture {
 	t.Helper()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "repo")
@@ -403,7 +469,9 @@ func newExecutionAssignmentFixtureWithOperationsAndDependency(t *testing.T, with
 	baseCommit := strings.Repeat("a", 40)
 	treeOID := strings.Repeat("b", 40)
 	sourcePath := "tickets/checkout.ticket-P2-T2.r1.delivery-ticket.json"
-	reader := newPackageSourceVaultReader(sourcePath, baseCommit)
+	if reader == nil {
+		reader = newPackageSourceVaultReader(sourcePath, baseCommit)
+	}
 	if dependency != nil {
 		reader.bytes = packageDeliveryTicketBytesWithDependency(baseCommit)
 	}

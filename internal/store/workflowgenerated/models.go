@@ -240,6 +240,7 @@ type ExecutionPackage struct {
 	DeterministicOperationsSha256   sql.NullString `json:"deterministic_operations_sha256"`
 	DeterministicOperationsCoverage sql.NullString `json:"deterministic_operations_coverage"`
 	CreatedAt                       string         `json:"created_at"`
+	RepositoryInstructionsSha256    string         `json:"repository_instructions_sha256"`
 }
 
 type ExecutionPackageApproval struct {
@@ -270,6 +271,15 @@ type ExecutionPackageMember struct {
 	RevisionRowID        int64  `json:"revision_row_id"`
 	MemberSha256         string `json:"member_sha256"`
 	CreatedAt            string `json:"created_at"`
+}
+
+type ExecutionPackageRepositoryInstruction struct {
+	ID           int64  `json:"id"`
+	PackageRowID int64  `json:"package_row_id"`
+	Sequence     int64  `json:"sequence"`
+	Path         string `json:"path"`
+	Sha256       string `json:"sha256"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type FeatureWorkspace struct {

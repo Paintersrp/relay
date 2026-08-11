@@ -113,6 +113,13 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 		if err != nil {
 			return err
 		}
+		storedInstructions, err := tx.ListExecutionPackageRepositoryInstructions(ctx, packageRow.ID)
+		if err != nil {
+			return err
+		}
+		if err := verifyRepositoryInstructionRows(storedInstructions, basis.instructions); err != nil {
+			return fmt.Errorf("%w: %v", ErrApprovedAuthorityInvalid, err)
+		}
 		rows = approvedAuthorityRows{basis: basis, members: members, dependencies: dependencies, completedDependencies: completedDependencies, approvals: approvals, layers: layers}
 		return nil
 	})
@@ -147,6 +154,7 @@ func (s *Service) LoadApprovedAuthorityForRun(ctx context.Context, runID string)
 		CompletedDependencies: append([]ApprovedCompletedDependency(nil), rows.completedDependencies...),
 		TicketApproval:        rows.basis.members[0].approval,
 		AuthorityLayers:       cloneApprovedAuthorityLayers(rows.layers),
+		RepositoryInstructions: cloneApprovedRepositoryInstructions(rows.basis.instructions),
 		DeliveryTicket:        deliveryTicketDocument,
 		TicketProjection:      selected.projection,
 	}
@@ -253,7 +261,11 @@ func validateApprovedPackageBindings(ctx context.Context, tx *workflowstore.Tx, 
 	if binding.PackageRowID != packageRow.ID || binding.PackageMemberRowID != packageMember.ID || binding.ApprovalRowID != member.approval.ID || binding.AuthorityRevisionRowID != basis.authority.ID || binding.SourceClosureRowID != basis.closure.ID {
 		return fmt.Errorf("%w: approved package binding identity is inconsistent", ErrApprovedAuthorityInvalid)
 	}
-	wantBasis := compoundSHA256("approval-basis-v1", packageRow.PackageSha256, member.approval.ApprovalID, fmt.Sprint(packageMember.ID), member.source.sourceSHA256, fmt.Sprint(member.approval.AuthorityRevisionRowID.Int64), fmt.Sprint(member.approval.SourceClosureRowID))
+	wantBasis := packageApprovalBasisSHA256(
+		packageRow.PackageSha256, basis.instructionsSHA256, member.approval.ApprovalID,
+		packageMember.ID, member.source.sourceSHA256,
+		member.approval.AuthorityRevisionRowID.Int64, member.approval.SourceClosureRowID,
+	)
 	if binding.ApprovalBasisSha256 != wantBasis {
 		return fmt.Errorf("%w: approved package binding digest is inconsistent", ErrApprovedAuthorityInvalid)
 	}

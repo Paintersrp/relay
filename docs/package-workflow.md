@@ -18,6 +18,10 @@ Read the package from the outside in:
 
 The approved Delivery Ticket v2 is the complete semantic implementation authority. It must be sufficient for execution on its own. Deterministic Operations are exact-execution data only: they may perform a bounded set of mechanical writes, but they do not narrow, replace, or reinterpret the Ticket. Package approval derives the immutable ExecutionAssignment for the package-linked Run; the Orchestrator executes that assignment, which embeds the approved Delivery Ticket, verified authority layers, and required validation commands.
 
+## Repository Instructions
+
+The package also binds the exact repository-instruction basis. Repository instructions are `AGENTS.md` files: the repository-root `AGENTS.md` applies to every inspected source path, and a nested `AGENTS.md` applies to source paths inside its subtree, with the applicable chain running from the repository root toward each path. The inspected source basis is the selected approved Delivery Ticket's own source document path plus every non-null implementation-obligation source area. The package resolves the deduplicated, repository-relative-path-ordered union of applicable `AGENTS.md` files from the exact selected source closure/base commit and binds each instruction's exact bytes and SHA-256 into the package identity and compound approval. `agents/orchestrator.md` is standing execution-role procedure, never a repository instruction. The verified instruction identities travel through the immutable ExecutionAssignment so execution knows exactly which repository instructions are bound; a worker may receive the applicable subset for its derived source scope without changing package authority. A change in applicable instruction membership or in the exact bytes of a bound instruction invalidates the package.
+
 ## Responsibilities
 
 - The Planner authors the Delivery Ticket v2 revision and may provide zero or one Deterministic Operations artifact.

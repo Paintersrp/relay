@@ -611,10 +611,11 @@ INSERT INTO execution_packages (
     package_sha256,
     authority_sha256,
     source_sha256,
+    repository_instructions_sha256,
     deterministic_operations_sha256,
     deterministic_operations_coverage
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetExecutionPackageByPackageID :one
@@ -647,6 +648,22 @@ RETURNING *;
 -- name: ListExecutionPackageMembers :many
 SELECT *
 FROM execution_package_members
+WHERE package_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateExecutionPackageRepositoryInstruction :one
+INSERT INTO execution_package_repository_instructions (
+    package_row_id,
+    sequence,
+    path,
+    sha256
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListExecutionPackageRepositoryInstructions :many
+SELECT *
+FROM execution_package_repository_instructions
 WHERE package_row_id = ?
 ORDER BY sequence, id;
 

@@ -36,6 +36,7 @@ func packageTicketDocumentWithDependency(baseCommit string) []byte {
 type packageServiceFixture struct {
 	store          *workflow.Store
 	service        *Service
+	reader         *packageSourceVaultReader
 	selectionID    string
 	operations     ArtifactInput
 	ticketDocument []byte
@@ -469,7 +470,7 @@ func newPackageServiceFixture(t *testing.T) *packageServiceFixture {
 	}
 
 	operations := ArtifactInput{DisplayName: operationsName, Bytes: operationsBytes, ExpectedSHA256: sha256Hex(operationsBytes)}
-	return &packageServiceFixture{store: store, service: service, selectionID: "selection-package", operations: operations, ticketDocument: ticketDocument, ticketSHA256: ticketSHA, sourcePath: sourcePath, baseCommit: baseCommit, closureID: "closure-package", workspaceID: "workspace-package", ticketID: ticketID, revisionID: revisionID, approvalID: approvalID, selectionRowID: selectionRowID, authorityRowID: authorityID}
+	return &packageServiceFixture{store: store, service: service, reader: reader, selectionID: "selection-package", operations: operations, ticketDocument: ticketDocument, ticketSHA256: ticketSHA, sourcePath: sourcePath, baseCommit: baseCommit, closureID: "closure-package", workspaceID: "workspace-package", ticketID: ticketID, revisionID: revisionID, approvalID: approvalID, selectionRowID: selectionRowID, authorityRowID: authorityID}
 }
 
 func packageOperationsWithBaseCommit(baseCommit string) []byte {
@@ -479,6 +480,7 @@ func packageOperationsWithBaseCommit(baseCommit string) []byte {
 type packageSourceVaultReader struct {
 	path  string
 	bytes []byte
+	paths map[string][]byte
 	err   error
 }
 
@@ -490,10 +492,13 @@ func (r *packageSourceVaultReader) ReadPath(ctx context.Context, request sourcev
 	if r.err != nil {
 		return sourcevault.ReadPathResult{}, r.err
 	}
-	if request.Path != r.path {
-		return sourcevault.ReadPathResult{}, &sourcevault.Error{Code: sourcevault.CodeObjectUnavailable}
+	if request.Path == r.path {
+		return sourcevault.ReadPathResult{ObjectOID: strings.Repeat("d", 40), Bytes: append([]byte(nil), r.bytes...)}, nil
 	}
-	return sourcevault.ReadPathResult{ObjectOID: strings.Repeat("d", 40), Bytes: append([]byte(nil), r.bytes...)}, nil
+	if bytes, ok := r.paths[request.Path]; ok {
+		return sourcevault.ReadPathResult{ObjectOID: strings.Repeat("e", 40), Bytes: append([]byte(nil), bytes...)}, nil
+	}
+	return sourcevault.ReadPathResult{}, &sourcevault.Error{Code: sourcevault.CodeObjectUnavailable}
 }
 
 func (r *packageSourceVaultReader) WithErr(err error) *packageSourceVaultReader {

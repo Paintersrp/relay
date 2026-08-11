@@ -80,13 +80,15 @@ type packageBasis struct {
 	closure   workflowstore.SourceVaultClosure
 	members   []packageMemberBasis
 
-	sourceSHA256       string
-	authoritySHA256    string
-	ticketSHA256       string
-	dependenciesSHA256 string
-	operationsSHA256   string
-	operationsCoverage string
-	packageSHA256      string
+	sourceSHA256         string
+	authoritySHA256      string
+	ticketSHA256         string
+	dependenciesSHA256   string
+	instructions         []ApprovedRepositoryInstruction
+	instructionsSHA256   string
+	operationsSHA256     string
+	operationsCoverage   string
+	packageSHA256        string
 }
 
 func NewService(store *workflowstore.Store) (*Service, error) {
@@ -167,6 +169,7 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 			PackageSha256:                   basis.packageSHA256,
 			AuthoritySha256:                 basis.authoritySHA256,
 			SourceSha256:                    basis.sourceSHA256,
+			RepositoryInstructionsSha256:    basis.instructionsSHA256,
 			DeterministicOperationsSha256:   nullableString(validated.operationsSHA256),
 			DeterministicOperationsCoverage: nullableString(validated.operationsCoverage),
 		})
@@ -187,6 +190,16 @@ func (s *Service) Prepare(ctx context.Context, input PrepareInput) (PrepareResul
 				return fmt.Errorf("create execution package member: %w", memberErr)
 			}
 			result.Members = append(result.Members, packageMember)
+		}
+		for index, instruction := range basis.instructions {
+			if _, instructionErr := tx.CreateExecutionPackageRepositoryInstruction(ctx, workflowstore.CreateExecutionPackageRepositoryInstructionParams{
+				PackageRowID: packageRow.ID,
+				Sequence:     int64(index + 1),
+				Path:         instruction.RelativePath,
+				Sha256:       instruction.SHA256,
+			}); instructionErr != nil {
+				return fmt.Errorf("create execution package repository instruction: %w", instructionErr)
+			}
 		}
 		result.Ticket = basis.members[0].ticket
 		result.TicketRevision = basis.members[0].revision
@@ -307,11 +320,10 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (ApproveResul
 					return fmt.Errorf("%w: package member %d changed", ErrPackageBasisChanged, member.selectionMember.Sequence)
 				}
 				member.packageMember = packageMember
-				approvalBasis := compoundSHA256(
-					"approval-basis-v1", packageRow.PackageSha256, member.approval.ApprovalID,
-					strconv.FormatInt(member.packageMember.ID, 10), member.source.sourceSHA256,
-					strconv.FormatInt(member.approval.AuthorityRevisionRowID.Int64, 10),
-					strconv.FormatInt(member.approval.SourceClosureRowID, 10),
+				approvalBasis := packageApprovalBasisSHA256(
+					packageRow.PackageSha256, basis.instructionsSHA256, member.approval.ApprovalID,
+					member.packageMember.ID, member.source.sourceSHA256,
+					member.approval.AuthorityRevisionRowID.Int64, member.approval.SourceClosureRowID,
 				)
 				if _, createErr := tx.CreateExecutionPackageApprovalBinding(ctx, workflowstore.CreateExecutionPackageApprovalBindingParams{
 					PackageRowID:           packageRow.ID,
@@ -414,6 +426,9 @@ func (s *Service) Get(ctx context.Context, packageID string) (Detail, error) {
 			return Detail{}, fmt.Errorf("%w: selected Ticket source no longer matches its package member", ErrPackageBasisChanged)
 		}
 		ticketDocument = PackageArtifact{DisplayName: filepath.Base(memberRevision.SourcePath), RelativePath: memberRevision.SourcePath, SHA256: source.sha256, SizeBytes: int64(len(source.bytes))}
+	}
+	if err := s.revalidatePackageRepositoryInstructions(ctx, packageRow, closure, revision.ID); err != nil {
+		return Detail{}, err
 	}
 	var operationsArtifact *PackageArtifact
 	if packageRow.DeterministicOperationsSha256.Valid {
@@ -552,6 +567,12 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if err != nil {
 		return packageBasis{}, err
 	}
+	sourcePaths := inspectedSourcePathsFromProjection(revision.SourcePath, source.projection)
+	instructions, err := s.resolveRepositoryInstructions(ctx, closure, sourcePaths)
+	if err != nil {
+		return packageBasis{}, err
+	}
+	instructionsSHA := repositoryInstructionsBasisSHA256(instructions)
 	members := []packageMemberBasis{{selectionMember: selectionMember, revision: revision, ticket: source.ticket, approval: source.approval, source: source}}
 	sourceSHA := sourceBasisSHA256(closure)
 	authoritySHA, err := authorityBasisSHA256(ctx, tx, workspace, authority, closure)
@@ -562,12 +583,12 @@ func (s *Service) validateBasis(ctx context.Context, tx *workflowstore.Tx, input
 	if validated.operations != nil {
 		operationsSHA, operationsCoverage = validated.operations.sha256, validated.operations.document.Coverage
 	}
-	packageParts := []string{"selected-package-v4", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(source.approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, source.sourceSHA256, dependenciesSHA}
+	packageParts := []string{"selected-package-v5", input.SelectionID, strconv.FormatInt(selection.ID, 10), strconv.FormatInt(selectionMember.ID, 10), strconv.FormatInt(revision.ID, 10), strconv.FormatInt(source.approval.ID, 10), workspace.WorkspaceID, strconv.FormatInt(workspace.ID, 10), workspace.FeatureSlug, revision.RepoTarget, revision.Branch, revision.BaseCommit, strconv.FormatInt(authority.ID, 10), authoritySHA, sourceSHA, source.sourceSHA256, dependenciesSHA, instructionsSHA}
 	packageParts = append(packageParts, selectedPackageOperationsDigestParts(validated.operations)...)
 	packageSHA := compoundSHA256(packageParts...)
-	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, ticketSHA256: source.sourceSHA256, dependenciesSHA256: dependenciesSHA, operationsSHA256: operationsSHA, operationsCoverage: operationsCoverage, packageSHA256: packageSHA}
-	if packageRow != nil && (packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != revision.RepoTarget || packageRow.Branch != revision.Branch || packageRow.BaseCommit != revision.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || nullStringValue(packageRow.DeterministicOperationsSha256) != nullableValue(operationsSHA) || nullStringValue(packageRow.DeterministicOperationsCoverage) != nullableValue(operationsCoverage)) {
-		return packageBasis{}, fmt.Errorf("%w: immutable package identity no longer matches current Ticket, authority, source, or bytes", ErrPackageBasisChanged)
+	basis := packageBasis{selection: selection, workspace: workspace, authority: authority, closure: closure, members: members, sourceSHA256: sourceSHA, authoritySHA256: authoritySHA, ticketSHA256: source.sourceSHA256, dependenciesSHA256: dependenciesSHA, instructions: instructions, instructionsSHA256: instructionsSHA, operationsSHA256: operationsSHA, operationsCoverage: operationsCoverage, packageSHA256: packageSHA}
+	if packageRow != nil && (packageRow.SelectionRowID != selection.ID || packageRow.WorkspaceRowID != workspace.ID || packageRow.RepoTarget != revision.RepoTarget || packageRow.Branch != revision.Branch || packageRow.BaseCommit != revision.BaseCommit || packageRow.SourceClosureRowID != closure.ID || packageRow.AuthorityRevisionRowID != authority.ID || packageRow.PackageSha256 != packageSHA || packageRow.AuthoritySha256 != authoritySHA || packageRow.SourceSha256 != sourceSHA || packageRow.RepositoryInstructionsSha256 != instructionsSHA || nullStringValue(packageRow.DeterministicOperationsSha256) != nullableValue(operationsSHA) || nullStringValue(packageRow.DeterministicOperationsCoverage) != nullableValue(operationsCoverage)) {
+		return packageBasis{}, fmt.Errorf("%w: immutable package identity no longer matches current Ticket, authority, source, repository instructions, or bytes", ErrPackageBasisChanged)
 	}
 	return basis, nil
 }
@@ -697,6 +718,17 @@ func selectedPackageOperationsDigestParts(operations *validatedOperations) []str
 		return []string{"operations absent"}
 	}
 	return []string{"operations present", operations.input.DisplayName, operations.sha256, operations.document.Coverage}
+}
+
+// packageApprovalBasisSHA256 binds the compound package approval to the exact
+// package identity, the repository-instruction basis digest, the selected
+// Delivery Ticket approval, the package member, and the exact source bytes.
+func packageApprovalBasisSHA256(packageSHA256, instructionsSHA256, approvalID string, packageMemberID int64, sourceSHA256 string, authorityRevisionRowID, sourceClosureRowID int64) string {
+	return compoundSHA256(
+		"approval-basis-v2", packageSHA256, instructionsSHA256, approvalID,
+		strconv.FormatInt(packageMemberID, 10), sourceSHA256,
+		strconv.FormatInt(authorityRevisionRowID, 10), strconv.FormatInt(sourceClosureRowID, 10),
+	)
 }
 
 func sourceBasisSHA256(closure workflowstore.SourceVaultClosure) string {
