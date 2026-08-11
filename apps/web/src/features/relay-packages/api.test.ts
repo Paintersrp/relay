@@ -16,11 +16,10 @@ function packageResponse() {
       packageSha256: "package-sha",
       authoritySha256: "authority-sha",
       sourceSha256: "source-sha",
-      designBriefSha256: "brief-sha",
       createdAt: "",
       members: [],
       approvalBindings: [],
-      ticketDesignBrief: { displayName: "brief.md", relativePath: "brief.md", sha256: "brief-sha", sizeBytes: 1 },
+      ticketDocument: { displayName: "feature.ticket-T1.r1.delivery-ticket.md", relativePath: "tickets/P5-T1/feature.ticket-T1.r1.delivery-ticket.md", sha256: "ticket-sha", sizeBytes: 42 },
       run: null,
     },
   };
@@ -28,18 +27,20 @@ function packageResponse() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("execution package transport", () => {
-  it("prepares execution packages directly", async () => {
+  it("prepares execution packages directly with a Brief-free request and parses the Delivery Ticket document", async () => {
     const fetch = vi.fn().mockResolvedValue(response(packageResponse()));
     vi.stubGlobal("fetch", fetch);
     const request = {
       selectionId: "selection-1",
-      ticketDesignBrief: { displayName: "brief.md", expectedSha256: "brief-sha", bytesBase64: "Yg==" },
       deterministicOperations: { displayName: "operations.json", expectedSha256: "operations-sha", bytesBase64: "b3Bz" },
     };
 
-    await prepareExecutionPackage(request);
+    const result = await prepareExecutionPackage(request);
 
     expect(JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)).toEqual(request);
+    expect(result.ticketDocument).toMatchObject({ displayName: "feature.ticket-T1.r1.delivery-ticket.md", relativePath: "tickets/P5-T1/feature.ticket-T1.r1.delivery-ticket.md", sha256: "ticket-sha", sizeBytes: 42 });
+    expect(result).not.toHaveProperty("ticketDesignBrief");
+    expect(result).not.toHaveProperty("designBriefSha256");
   });
 
   it("approves execution packages directly", async () => {

@@ -23,9 +23,6 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "continue_established_route": return "Continue established route";
     case "legacy_recovery": return "Adopt discovery lifecycle";
     case "select_delivery_ticket": return "Select delivery ticket";
-    case "author_ticket_design_brief": return "Author Ticket Design Brief";
-    case "review_ticket_design_brief": return "Review Ticket Design Brief";
-    case "approve_ticket_design_brief": return "Approve Ticket Design Brief";
     case "prepare_package": return "Prepare package";
     case "approve_package": return "Approve package";
     case "launch_run": return "Launch run";
@@ -142,18 +139,6 @@ function IntegrityDeliverySection({ delivery }: { delivery: GuidedIntegrity["del
   if (delivery.audit) basis.push(["Audit", `packet ${delivery.audit.auditPacketId}; decision ${delivery.audit.auditDecisionId || "none"}; audited ${delivery.audit.auditedCommit || "none"}`]);
   if (delivery.remediation) basis.push(["Remediation", delivery.remediation.seedIds.join(", ")]);
   records.push(<div key="basis"><IntegritySubHeading>Delivery identities</IntegritySubHeading><dl className="mt-2 grid gap-2 sm:grid-cols-2">{basis.map(([label, value]) => <IntegrityField key={label} label={label} value={value} />)}</dl></div>);
-  if (delivery.briefs.length) {
-    records.push(<div key="briefs"><IntegritySubHeading>Ticket Design Briefs</IntegritySubHeading><div className="mt-2 space-y-2">{delivery.briefs.map((brief) => <IntegrityRecord key={brief.briefId} name={brief.briefId} detail={`${brief.historical ? "historical" : "current"}; ${brief.status || "status not recorded"}`}>
-      <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-        <IntegrityField label="Selection binding" value={`${brief.selectionId || "None"} (${brief.selectionState || "state not recorded"})`} />
-        <IntegrityField label="Ticket revision" value={`${brief.ticketId || "None"} v${brief.revisionNumber || "not recorded"}`} />
-        <IntegrityField label="Canonical filename" value={brief.filename} />
-        <IntegrityField label="Digest" value={brief.sha256} />
-        <IntegrityField label="Size (bytes)" value={brief.sizeBytes} />
-        <IntegrityField label="Approval identity" value={brief.approvalId} />
-      </dl>
-    </IntegrityRecord>)}</div></div>);
-  }
   return <IntegritySection title="Integrity delivery" records={records} />;
 }
 
@@ -327,7 +312,6 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
       </div> : null}
       {detail.delivery ? <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selection</dt><dd className="mt-1 text-sm">{detail.delivery.selectionState || "none"}</dd></div>
-        <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ticket Design Brief</dt><dd className="mt-1 text-sm">{detail.delivery.briefState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Package</dt><dd className="mt-1 text-sm">{detail.delivery.packageState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Run</dt><dd className="mt-1 text-sm">{detail.delivery.runState || "none"}</dd></div>
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Audit</dt><dd className="mt-1 text-sm">{detail.delivery.auditState || "none"}</dd></div>

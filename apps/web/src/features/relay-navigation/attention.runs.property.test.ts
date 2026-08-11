@@ -6,7 +6,7 @@
 // For any list of Runs, `selectAttentionRuns`:
 //   - returns only Runs whose canonical `status` is in the CLOSED blocked
 //     (`blocked`, `executor_blocked`) or awaiting-review (`intake_needs_review`,
-//     `brief_ready_for_review`, `audit_ready`, `audit_ready_for_review`,
+//     `audit_ready`, `audit_ready_for_review`,
 //     `revision_required`) set,
 //   - returns at most `MAX_ATTENTION_RUNS` (50) items,
 //   - reports `totalCount` equal to the full number of qualifying Runs in the

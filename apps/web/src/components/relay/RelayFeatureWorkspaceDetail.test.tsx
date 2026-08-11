@@ -29,7 +29,7 @@ const base: GuidedFeatureDetail = {
   authority: { currentRevisionNumber: 1, revisions: [{ revisionNumber: 1, layers: ["requirements", "design"], historical: false }] },
   planning: { readiness: "current", status: "ready", recoveryCategory: "" },
   completion: { gates: [{ name: "authority", ready: true }, { name: "audit", ready: false }], ready: false, recorded: false },
-  delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "none", briefState: "authored", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+  delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "none", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
   prototype: { runState: "none", cleanupState: "none", qaState: "prepared", evidenceState: "none", processOutcome: "" },
   ticketFrontier: { status: "blocked", summary: "Resolve the remaining discovery frontier.", blockers: ["missing evidence"], downstream: [] },
   downstream: { status: "delivery", summary: "Continue after discovery closure." },
@@ -56,7 +56,6 @@ const base: GuidedFeatureDetail = {
       delivery: {
         frontier: [{ ticketId: "P5-T1", revisionNumber: 2 }],
         selection: { selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 },
-        briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "sha-brief-1", sizeBytes: 24, status: "approved", approvalId: "brief-approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "sha-brief-0", sizeBytes: 12, status: "superseded", approvalId: "", historical: true }],
         package: { packageId: "package-1", sha256: "sha-package-1", approvalId: "pkg-approval-1" },
         run: { runId: "run-1", packageId: "package-1", repoTarget: "relay", branch: "main", baseCommit: "base-1" },
         audit: { auditPacketId: "packet-audit-1", auditDecisionId: "audit-1", auditedCommit: "commit-1" },
@@ -72,7 +71,7 @@ const base: GuidedFeatureDetail = {
         cleanup: [{ cleanupObligationId: "prototype-cleanup-1", kind: "worktree", status: "complete" }],
         qaPackets: [{ qaPacketId: "prototype-qa-packet-1", status: "admitted", admissionId: "prototype-qa-admission-1", evidence: [{ qaEvidenceId: "prototype-qa-evidence-1", semanticRole: "result-envelope", sha256: "sha-evidence-1", sizeBytes: 4, mediaType: "application/json" }] }],
       },
-      diagnostics: [{ domain: "delivery", condition: "unavailable" }, { domain: "delivery.brief", condition: "unreadable" }, { domain: "delivery.package", condition: "inconsistent" }],
+      diagnostics: [{ domain: "delivery", condition: "unavailable" }, { domain: "delivery.package", condition: "inconsistent" }],
     },
   },
   availableActions: [{ action: "continue_discovery", primary: true, enabled: true, requiresConfirmation: true }],
@@ -102,7 +101,6 @@ describe("RelayFeatureWorkspaceDetail", () => {
     // Server projection semantics render without client lifecycle derivation.
     expect(screen.getByText("closure packet verified")).toBeInTheDocument();
     expect(screen.getByText("P5-T1 v2 (priority 60, relay @ main)")).toBeInTheDocument();
-    expect(screen.getByText("authored")).toBeInTheDocument();
     expect(screen.getByText("historical_basis_requires_recovery")).toBeInTheDocument();
     expect(screen.getByText("remediation_open")).toBeInTheDocument();
     expect(screen.getByText("cleanup_pending")).toBeInTheDocument();
@@ -158,24 +156,24 @@ describe("RelayFeatureWorkspaceDetail", () => {
   it("renders the owner-composed operation transfer returned by a handoff action", () => {
     const handedOff = {
       ...base,
-      availableActions: [{ action: "prepare_package" as const, primary: true, enabled: true, requiresConfirmation: false, handoff: "Prepare the execution package using the selected Delivery Ticket." }],
-      primaryAction: "prepare_package" as const,
+      availableActions: [{ action: "author_delivery_ticket" as const, primary: true, enabled: true, requiresConfirmation: false, handoff: "Enter the Delivery Ticket authoring operation, then return here when the Ticket is ready for selection." }],
+      primaryAction: "author_delivery_ticket" as const,
       handoff: {
         available: true,
-        instruction: "The selected Delivery Ticket is identified through the delivery owner.",
-        returnGuidance: "Return here to approve it server-side.",
+        instruction: "Enter the Delivery Ticket authoring operation through the delivery owner.",
+        returnGuidance: "Return here when the resulting Ticket is ready for selection.",
         transfer: {
           frontier: [], members: [], authorityLayers: [],
-          ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" },
+          ticket: { ticketId: "", revisionNumber: 0, readiness: [], operationId: "planner.delivery_ticket" },
           package: undefined, run: undefined, audit: undefined, remediation: undefined, prototype: undefined,
         },
       },
     };
     render(<RelayFeatureWorkspaceDetail detail={handedOff} />, { wrapper });
     expect(screen.getByText("Operation transfer")).toBeInTheDocument();
-    expect(screen.getByText(/planner\.ticket_design_brief/)).toBeInTheDocument();
+    expect(screen.getByText(/planner\.delivery_ticket/)).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Prepare package" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Author Delivery Ticket" })).toBeEnabled();
   });
 
   it("hides non-primary action selectors and posts the primary action only", async () => {
@@ -209,14 +207,8 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(screen.getByText("candidate-1")).toBeInTheDocument();
     expect(screen.getByText("package-1 (sha-package-1)")).toBeInTheDocument();
     expect(screen.getByText("pkg-approval-1")).toBeInTheDocument();
-    expect(screen.getByText("brief-1")).toBeInTheDocument();
-    expect(screen.getByText("brief-0")).toBeInTheDocument();
-    expect(screen.getByText("payments.ticket-P5-T1.r2.design-brief.md")).toBeInTheDocument();
-    expect(screen.getByText("brief-approval-1")).toBeInTheDocument();
-    expect(screen.getByText(/historical; superseded/)).toBeInTheDocument();
     expect(screen.getByText(/selection-1 \(active; P5-T1 v2\)/)).toBeInTheDocument();
     expect(screen.getByText(/run-1 \(package package-1; relay @ main, base base-1\)/)).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.tagName === "LI" && element.textContent === "delivery.brief: inspection source unreadable.")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.tagName === "LI" && element.textContent === "delivery.package: inspection source inconsistent.")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.tagName === "LI" && element.textContent === "delivery: inspection source unavailable.")).toBeInTheDocument();
     expect(screen.getByText(/packet packet-audit-1; decision audit-1/)).toBeInTheDocument();
@@ -330,23 +322,24 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(JSON.stringify(mocks.action.mock.calls[0])).not.toMatch(/(candidateId|approvalId|reviewId|sha256|digest|rowId)/i);
   });
 
-  it("renders and confirms the distinct Ticket Design Brief approval action", async () => {
+  it("renders a selected Delivery Ticket projection with direct package preparation and no Brief UI", async () => {
     const user = userEvent.setup();
     mocks.action.mockClear();
     mocks.action.mockResolvedValueOnce(base);
-    const approve = {
+    const selected = {
       ...base,
-      availableActions: [{ action: "approve_ticket_design_brief" as const, primary: true, enabled: true, requiresConfirmation: true, handoff: "Explicitly approve the exact reviewed brief server-side." }],
-      primaryAction: "approve_ticket_design_brief" as const,
+      delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "active", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+      availableActions: [{ action: "prepare_package" as const, primary: true, enabled: true, requiresConfirmation: false }],
+      primaryAction: "prepare_package" as const,
     };
-    render(<RelayFeatureWorkspaceDetail detail={approve} />, { wrapper });
-    const button = screen.getByRole("button", { name: "Approve Ticket Design Brief" });
-    expect(button).toBeDisabled();
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-    await user.click(screen.getByRole("checkbox", { name: "Confirm guided action" }));
+    render(<RelayFeatureWorkspaceDetail detail={selected} />, { wrapper });
+    const button = screen.getByRole("button", { name: "Prepare package" });
     expect(button).toBeEnabled();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    // The retired Ticket Design Brief surface has no label, status, or control.
+    expect(screen.queryByText(/Ticket Design Brief/i)).not.toBeInTheDocument();
     await user.click(button);
-    await waitFor(() => expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "approve_ticket_design_brief", confirmation: true }));
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "prepare_package", confirmation: false }));
     expect(JSON.stringify(mocks.action.mock.calls[0])).not.toMatch(/(briefId|selectionId|approvalId|reviewId|sha256|digest|rowId)/i);
   });
 
@@ -362,7 +355,7 @@ describe("RelayFeatureWorkspaceDetail", () => {
     // identity from the integrity surface is accepted by the boundary.
     expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "continue_discovery", confirmation: true });
     const payload = JSON.stringify(mocks.action.mock.calls[0]);
-    for (const identity of ["candidate-1", "brief-1", "selection-1", "brief-review-1", "brief-approval-1", "package-1", "run-1", "packet-audit-1", "audit-1", "sha-package-1", "sha-brief-1", "remediation-1", "closure-1", "sha-candidate-1"]) {
+    for (const identity of ["candidate-1", "selection-1", "package-1", "run-1", "packet-audit-1", "audit-1", "sha-package-1", "remediation-1", "closure-1", "sha-candidate-1"]) {
       expect(payload).not.toContain(identity);
     }
   });

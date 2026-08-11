@@ -91,7 +91,7 @@ export interface AttentionRunSelection {
  *
  * Returns only Runs whose canonical `status` is in the closed blocked
  * (`blocked`, `executor_blocked`) or awaiting-review (`intake_needs_review`,
- * `brief_ready_for_review`, `audit_ready`, `audit_ready_for_review`,
+ * `audit_ready`, `audit_ready_for_review`,
  * `revision_required`) set, capped at {@link MAX_ATTENTION_RUNS} items, plus a
  * `totalCount` equal to the full number of qualifying Runs in the input.
  *

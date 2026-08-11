@@ -48,6 +48,8 @@ describe("feature workspace transport", () => {
     expect(detail.diagnostics.delivery).toContain("remediation_open");
     expect(detail.diagnostics.prototype).toContain("cleanup_pending");
     expect(detail.availableActions[0]).toEqual({ action: "select_delivery_ticket", primary: true, enabled: true, requiresConfirmation: true, handoff: "Select the current frontier Delivery Ticket server-side." });
+    // The retired Ticket Design Brief state is not part of the parsed model.
+    expect(JSON.stringify(detail)).not.toMatch(/briefState|ticket_design_brief/i);
   });
 
   it("preserves the backend planning needsRevision count", async () => {
@@ -84,7 +86,7 @@ describe("feature workspace transport", () => {
       discovery: { currentRevisionId: "", currentPacket: null, history: [], reopenEvents: [] },
       authority: [],
       planning: [],
-      delivery: { frontier: [], selection: null, briefs: [], package: null, run: null, audit: null, remediation: null },
+      delivery: { frontier: [], selection: null, package: null, run: null, audit: null, remediation: null },
       prototype: null,
       diagnostics: [],
     });
@@ -98,7 +100,7 @@ describe("feature workspace transport", () => {
     await expect(getGuidedFeatureWorkspace("workspace-1")).rejects.toMatchObject({ status: 502 });
   });
 
-  it("normalizes inspectable Ticket Design Brief lineage and typed integrity diagnostics", async () => {
+  it("ignores retired Ticket Design Brief integrity payloads and typed integrity diagnostics", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
       guided: {
         ...guidedBody.guided,
@@ -111,14 +113,14 @@ describe("feature workspace transport", () => {
             delivery: {
               frontier: [],
               selection: { selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 },
-              briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", approvalId: "approval-1", historical: false }, { briefId: "brief-0", selectionId: "selection-0", selectionState: "superseded", ticketId: "P5-T0", revisionNumber: 1, filename: "payments.ticket-P5-T0.r1.design-brief.md", sha256: "a".repeat(64), sizeBytes: 21, status: "superseded", approvalId: "", historical: true }],
+              briefs: [{ briefId: "brief-1", selectionId: "selection-1", selectionState: "active", ticketId: "P5-T1", revisionNumber: 2, filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", approvalId: "approval-1", historical: false }],
               package: { packageId: "package-1", sha256: "p".repeat(64), approvalId: "package-approval-1" },
               run: { runId: "run-1", packageId: "package-1", repoTarget: "relay", branch: "main", baseCommit: "c".repeat(40) },
               audit: null,
               remediation: null,
             },
             prototype: null,
-            diagnostics: [{ domain: "delivery.brief", condition: "unreadable" }, { domain: "delivery.package", condition: "inconsistent" }],
+            diagnostics: [{ domain: "delivery.package", condition: "inconsistent" }],
           },
         },
       },
@@ -126,12 +128,11 @@ describe("feature workspace transport", () => {
 
     const detail = await getGuidedFeatureWorkspace("workspace-1");
     expect(detail.diagnostics.integrity.delivery.selection).toEqual({ selectionId: "selection-1", state: "active", ticketId: "P5-T1", revisionNumber: 2 });
-    expect(detail.diagnostics.integrity.delivery.briefs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ briefId: "brief-1", filename: "payments.ticket-P5-T1.r2.design-brief.md", sha256: "b".repeat(64), sizeBytes: 42, status: "approved", approvalId: "approval-1", historical: false }),
-      expect.objectContaining({ briefId: "brief-0", selectionId: "selection-0", historical: true }),
-    ]));
     expect(detail.diagnostics.integrity.delivery.run).toEqual(expect.objectContaining({ runId: "run-1", packageId: "package-1" }));
-    expect(detail.diagnostics.integrity.diagnostics).toEqual([{ domain: "delivery.brief", condition: "unreadable" }, { domain: "delivery.package", condition: "inconsistent" }]);
+    expect(detail.diagnostics.integrity.diagnostics).toEqual([{ domain: "delivery.package", condition: "inconsistent" }]);
+    // The retired Ticket Design Brief surface is not part of the projection.
+    expect(detail.diagnostics.integrity.delivery).not.toHaveProperty("briefs");
+    expect(JSON.stringify(detail)).not.toMatch(/ticket_design_brief|design-brief/i);
   });
 
   it("posts only the server-selected primary action with expected version and confirmation", async () => {
@@ -146,25 +147,24 @@ describe("feature workspace transport", () => {
     expect(JSON.stringify(posted)).not.toMatch(/(ticketId|briefId|selectionId|packageId|runId|approvalId|reviewId|workspaceId|sha256|rowId)/i);
   });
 
-  it("parses the owner-composed handoff transfer after a handoff action", async () => {
+  it("parses the owner-composed handoff transfer after a delivery handoff action", async () => {
     const handoffBody = {
       guided: {
         ...guidedBody.guided,
-        delivery: { frontier: [], selectionState: "active", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
-        availableActions: [{ action: "prepare_package", primary: true, enabled: true, requiresConfirmation: false, handoff: "Prepare the execution package through the existing package owner." }],
-        primaryAction: "prepare_package",
+        availableActions: [{ action: "author_delivery_ticket", primary: true, enabled: true, requiresConfirmation: false, handoff: "Enter the Delivery Ticket authoring operation, then return here when the Ticket is ready for selection." }],
+        primaryAction: "author_delivery_ticket",
         handoff: {
-          role: "prepare_package", summary: "The selected Delivery Ticket is identified through the delivery owner.", resumeRoute: "/feature-workspaces/workspace-1/guided",
-          context: { owner: "execution_package_preparation" },
-          transfer: { frontier: [], members: [], authorityLayers: [], route: [], ticket: { ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" }, package: null, run: null, audit: null, remediation: null, prototype: null },
+          role: "author_delivery_ticket", summary: "Enter the Delivery Ticket authoring operation (planner.delivery_ticket).", resumeRoute: "/feature-workspaces/workspace-1/guided",
+          context: { owner: "delivery_ticket_authoring" },
+          transfer: { frontier: [], members: [], authorityLayers: [], route: [], ticket: { ticketId: "", revisionNumber: 0, readiness: [], operationId: "planner.delivery_ticket" }, package: null, run: null, audit: null, remediation: null, prototype: null },
         },
       },
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(handoffBody)));
     const detail = await getGuidedFeatureWorkspace("workspace-1");
     expect(detail.handoff.available).toBe(true);
-    expect(detail.handoff.instruction).toContain("selected Delivery Ticket");
-    expect(detail.handoff.transfer?.ticket).toEqual({ ticketId: "P5-T1", revisionNumber: 2, readiness: ["design_admitted"], operationId: "planner.ticket_design_brief" });
+    expect(detail.handoff.instruction).toContain("Delivery Ticket authoring");
+    expect(detail.handoff.transfer?.ticket).toEqual({ ticketId: "", revisionNumber: 0, readiness: [], operationId: "planner.delivery_ticket" });
     expect(detail.handoff.transfer?.package).toBeUndefined();
   });
 
@@ -183,13 +183,12 @@ describe("feature workspace transport", () => {
     expect(detail.availableActions[0]).toEqual({ action: "approve_planning_candidate", primary: true, enabled: true, requiresConfirmation: true });
   });
 
-  it("accepts the explicit Ticket Design Brief approval action from the projection", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
-      guided: { ...guidedBody.guided, availableActions: [{ action: "approve_ticket_design_brief", primary: true, enabled: true, requiresConfirmation: true }], primaryAction: "approve_ticket_design_brief" },
-    })));
-    const detail = await getGuidedFeatureWorkspace("workspace-1");
-    expect(detail.primaryAction).toBe("approve_ticket_design_brief");
-    expect(detail.availableActions[0]).toEqual({ action: "approve_ticket_design_brief", primary: true, enabled: true, requiresConfirmation: true });
+  it("rejects the retired Ticket Design Brief actions from the projection", async () => {
+    for (const action of ["author_ticket_design_brief", "review_ticket_design_brief", "approve_ticket_design_brief"]) {
+      const invalid = { guided: { ...guidedBody.guided, availableActions: [{ action, primary: true, enabled: true, requiresConfirmation: true }], primaryAction: action } };
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(invalid)));
+      await expect(getGuidedFeatureWorkspace("workspace-1")).rejects.toMatchObject({ status: 502 });
+    }
   });
 
   it("accepts the abandonment secondary action and projects the abandoned decision outcome", async () => {
