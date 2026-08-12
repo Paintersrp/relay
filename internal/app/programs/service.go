@@ -47,16 +47,28 @@ func (s *Service) ReadWorkspaceProgramState(c context.Context, workspaceID strin
 	for _, member := range prepared {
 		state.Prepared = append(state.Prepared, programMemberState(member))
 	}
+	if err := s.extendWorkspaceProgramIntegrationState(c, workspaceID, &state); err != nil {
+		return guidedapp.ProgramState{}, err
+	}
 	rows, err := s.store.DB().QueryContext(c, `SELECT d.dispatch_id FROM program_dispatches d JOIN feature_workspaces w ON w.id=d.workspace_row_id WHERE w.workspace_id=? ORDER BY d.id`, workspaceID)
 	if err != nil {
 		return guidedapp.ProgramState{}, err
 	}
-	defer rows.Close()
+	var dispatchIDs []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return guidedapp.ProgramState{}, err
 		}
+		dispatchIDs = append(dispatchIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return guidedapp.ProgramState{}, err
+	}
+	rows.Close()
+	for _, id := range dispatchIDs {
 		dispatch, err := s.Read(c, workspaceID, id)
 		if err != nil {
 			return guidedapp.ProgramState{}, err
@@ -67,11 +79,75 @@ func (s *Service) ReadWorkspaceProgramState(c context.Context, workspaceID strin
 		}
 		state.Dispatch = append(state.Dispatch, value)
 	}
-	return state, rows.Err()
+	return state, nil
 }
 
 func programMemberState(member PreparedMember) guidedapp.ProgramMember {
 	return guidedapp.ProgramMember{MemberID: member.ID, State: member.State, Outcome: member.Outcome, Branch: member.ResultBranch, BranchHeadSHA: member.BranchHeadSHA, Blocker: member.Blocker}
+}
+
+// extendWorkspaceProgramIntegrationState composes the descriptive guided
+// integration surface: eligible constituents not yet bound by a current
+// Assignment, and every Integration Assignment of the workspace's dispatches
+// with its recorded verification disposition. It only reads; it never creates
+// or mutates any delivery lifecycle state.
+func (s *Service) extendWorkspaceProgramIntegrationState(c context.Context, workspaceID string, state *guidedapp.ProgramState) error {
+	rows, err := s.store.DB().QueryContext(c, `SELECT m.prepared_member_id, t.ticket_id, tv.revision_number, e.audited_commit, e.pushed_branch FROM program_integration_eligibilities e JOIN program_dispatch_members dm ON dm.id=e.dispatch_member_row_id JOIN program_prepared_members m ON m.id=dm.prepared_member_row_id JOIN program_dispatches d ON d.id=dm.dispatch_row_id JOIN feature_workspaces w ON w.id=d.workspace_row_id JOIN delivery_ticket_revisions tv ON tv.id=e.delivery_ticket_revision_row_id JOIN delivery_tickets t ON t.id=tv.delivery_ticket_row_id WHERE w.workspace_id=? AND t.current_revision_row_id=e.delivery_ticket_revision_row_id AND NOT EXISTS (SELECT 1 FROM program_integration_assignment_constituents c2 JOIN program_integration_assignments a2 ON a2.id=c2.assignment_row_id WHERE c2.eligibility_row_id=e.id AND a2.status IN ('generated','admitted','verified')) ORDER BY d.id, dm.sequence`, workspaceID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var member guidedapp.ProgramEligibleMember
+		if err := rows.Scan(&member.MemberID, &member.TicketID, &member.TicketRevision, &member.AcceptedCommit, &member.PushedBranch); err != nil {
+			return err
+		}
+		state.Eligible = append(state.Eligible, member)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	rows, err = s.store.DB().QueryContext(c, `SELECT a.assignment_id, d.dispatch_id, a.status, a.repo_target, a.branch, a.base_commit, COALESCE(v.outcome,'none') FROM program_integration_assignments a JOIN program_dispatches d ON d.id=a.dispatch_row_id JOIN feature_workspaces w ON w.id=d.workspace_row_id LEFT JOIN program_integration_verifications v ON v.assignment_row_id=a.id WHERE w.workspace_id=? ORDER BY a.id`, workspaceID)
+	if err != nil {
+		return err
+	}
+	var assignments []guidedapp.ProgramIntegrationAssignment
+	for rows.Next() {
+		var assignment guidedapp.ProgramIntegrationAssignment
+		if err := rows.Scan(&assignment.AssignmentID, &assignment.DispatchID, &assignment.Status, &assignment.RepoTarget, &assignment.Branch, &assignment.BaseCommit, &assignment.Verification); err != nil {
+			rows.Close()
+			return err
+		}
+		assignments = append(assignments, assignment)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for index := range assignments {
+		assignment := &assignments[index]
+		members, err := s.store.DB().QueryContext(c, `SELECT m.prepared_member_id, t.ticket_id, tv.revision_number FROM program_integration_assignment_constituents c JOIN program_integration_eligibilities e ON e.id=c.eligibility_row_id JOIN program_dispatch_members dm ON dm.id=e.dispatch_member_row_id JOIN program_prepared_members m ON m.id=dm.prepared_member_row_id JOIN delivery_ticket_revisions tv ON tv.id=e.delivery_ticket_revision_row_id JOIN delivery_tickets t ON t.id=tv.delivery_ticket_row_id WHERE c.assignment_row_id=(SELECT id FROM program_integration_assignments WHERE assignment_id=?) ORDER BY c.sequence`, assignment.AssignmentID)
+		if err != nil {
+			return err
+		}
+		for members.Next() {
+			var member guidedapp.ProgramIntegrationMember
+			if err := members.Scan(&member.MemberID, &member.TicketID, &member.TicketRevision); err != nil {
+				members.Close()
+				return err
+			}
+			assignment.Members = append(assignment.Members, member)
+		}
+		if err := members.Err(); err != nil {
+			members.Close()
+			return err
+		}
+		members.Close()
+		state.Integration = append(state.Integration, *assignment)
+	}
+	return nil
 }
 
 func NewService(s *workflowstore.Store, v packages.SourceVaultReader) (*Service, error) {

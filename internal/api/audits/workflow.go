@@ -198,6 +198,15 @@ func workflowAuditDecisionResultDTO(result appaudits.RecordWorkflowAuditDecision
 			"auditedCommit":         seed.AuditedCommit,
 		})
 	}
+	eligibilities := make([]map[string]any, 0, len(result.IntegrationEligibilities))
+	for _, eligibility := range result.IntegrationEligibilities {
+		eligibilities = append(eligibilities, map[string]any{
+			"eligibilityId":       eligibility.EligibilityID,
+			"dispatchMemberRowId": eligibility.DispatchMemberRowID,
+			"auditedCommit":       eligibility.AuditedCommit,
+			"pushedBranch":        eligibility.PushedBranch,
+		})
+	}
 	return map[string]any{
 		"runId": result.Run.RunID, "runStatus": result.Run.Status,
 		"packet": workflowAuditPacketDTO(result.Packet),
@@ -208,6 +217,7 @@ func workflowAuditDecisionResultDTO(result appaudits.RecordWorkflowAuditDecision
 		},
 		"effects": map[string]any{
 			"ticketRevisionDecisions": decisions, "ticketSatisfactions": satisfactions, "remediationSeeds": seeds,
+			"integrationEligibilities": eligibilities,
 		},
 	}
 }

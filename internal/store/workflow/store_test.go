@@ -2,7 +2,9 @@ package workflowstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -126,6 +128,14 @@ ORDER BY name`)
 		"program_dispatch_results",
 		"program_dispatches",
 		"program_execution_results",
+		"program_integration_assignment_constituents",
+		"program_integration_assignments",
+		"program_integration_completions",
+		"program_integration_eligibilities",
+		"program_integration_evidence_outcomes",
+		"program_integration_merge_results",
+		"program_integration_validation_outcomes",
+		"program_integration_verifications",
 		"program_prepared_members",
 		"project_notes",
 		"project_repository_targets",
@@ -599,6 +609,73 @@ func prototypeRuntimeFixture(t *testing.T) (*Store, PrototypeRun, PrototypeRunti
 		t.Fatal(err)
 	}
 	return store, run, runtime, target, lease
+}
+
+func TestProgramIntegrationRuntimeMigrationAndGuards(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+	db := store.DB()
+	for _, table := range []string{
+		"program_integration_eligibilities", "program_integration_assignments",
+		"program_integration_assignment_constituents", "program_integration_merge_results",
+		"program_integration_validation_outcomes", "program_integration_evidence_outcomes",
+		"program_integration_verifications", "program_integration_completions",
+	} {
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("table %s count=%d err=%v", table, count, err)
+		}
+	}
+	for _, trigger := range []string{
+		"program_integration_eligibility_immutable", "program_integration_eligibility_delete_guard",
+		"program_integration_assignment_identity_immutable", "program_integration_assignment_transition_guard",
+		"program_integration_assignment_delete_guard", "program_integration_assignment_constituent_immutable",
+		"program_integration_merge_result_immutable", "program_integration_verification_immutable",
+		"program_integration_validation_outcome_immutable", "program_integration_evidence_outcome_immutable",
+		"program_integration_completion_immutable",
+	} {
+		var definition string
+		if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?`, trigger).Scan(&definition); err != nil || strings.TrimSpace(definition) == "" {
+			t.Fatalf("trigger %s missing: %v", trigger, err)
+		}
+	}
+	// The guards are exercised against a minimal chain (foreign keys off, as
+	// the retained-history triggers otherwise require the full dispatch seed).
+	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO program_dispatches(dispatch_id,workspace_row_id,repo_target,branch,base_commit,status) VALUES('dispatch-guard',1,'relay','main',?, 'reported')`, strings.Repeat("a", 40)); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"schema_version":"1.0"}` + "\n"
+	digest := sha256.Sum256([]byte(content))
+	if _, err := db.ExecContext(ctx, `INSERT INTO program_integration_assignments(assignment_id,dispatch_row_id,repo_target,branch,base_commit,content,content_sha256) VALUES('integration-assignment-guard',1,'relay','main',?,?,?)`, strings.Repeat("a", 40), content, hex.EncodeToString(digest[:])); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE program_integration_assignments SET status='verified' WHERE assignment_id='integration-assignment-guard'`); err == nil {
+		t.Fatal("assignment skipped the admitted transition")
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE program_integration_assignments SET status='admitted' WHERE assignment_id='integration-assignment-guard'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE program_integration_assignments SET status='failed' WHERE assignment_id='integration-assignment-guard'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE program_integration_assignments SET repo_target='other' WHERE assignment_id='integration-assignment-guard'`); err == nil {
+		t.Fatal("assignment identity mutation succeeded")
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM program_integration_assignments WHERE assignment_id='integration-assignment-guard'`); err == nil {
+		t.Fatal("assignment delete succeeded")
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO program_integration_eligibilities(eligibility_id,dispatch_member_row_id,audit_ticket_revision_decision_row_id,delivery_ticket_revision_row_id,audited_commit,pushed_branch,execution_package_row_id,assignment_artifact_row_id,authority_revision_row_id,source_closure_row_id) VALUES('integration-eligibility-guard',1,1,1,?, 'feature/one',1,1,1,1)`, strings.Repeat("b", 40)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE program_integration_eligibilities SET pushed_branch='feature/two' WHERE eligibility_id='integration-eligibility-guard'`); err == nil {
+		t.Fatal("eligibility mutation succeeded")
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM program_integration_eligibilities WHERE eligibility_id='integration-eligibility-guard'`); err == nil {
+		t.Fatal("eligibility delete succeeded")
+	}
 }
 
 func TestPrototypeRuntimeMigrationAndOwnership(t *testing.T) {

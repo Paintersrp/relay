@@ -1,7 +1,7 @@
 {
   "schema_version": "relay.mcp.authority-lock.v1",
   "repository": "Paintersrp/relay-specs",
-  "commit": "9ea40ac112d0683affc10ba6bad2d15efe9e59f4",
+  "commit": "c166ca6020e86dad50e68962d733c7c7eb996b5e",
   "standing_instructions": {
     "wayfinder": {
       "path": "agents/wayfinder.md",
@@ -9,15 +9,15 @@
     },
     "planner": {
       "path": "agents/planner.md",
-      "blob_oid": "2c6fa5c332d6b4a82948c5f8ef2673c0bbec2bad"
+      "blob_oid": "c495b1e62eeb6971a6b2e165d1695ad6e1ab7c88"
     },
     "auditor": {
       "path": "agents/auditor.md",
-      "blob_oid": "f767b7c8e4dcacef69f0c48455a429551aa4350a"
+      "blob_oid": "152c44a8d4c89c7dcc2dd5f867671c9cd351bead"
     },
     "orchestrator": {
       "path": "agents/orchestrator.md",
-      "blob_oid": "d2f3ade91ef03cc1d63e32ad7bc7705cbd63e16e"
+      "blob_oid": "fd30e9a2beffe2d78a697dc0a3e116e26dbaf4d6"
     }
   },
   "manifests": {
@@ -31,7 +31,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -48,7 +48,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -69,7 +69,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -90,7 +90,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -115,7 +115,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -136,7 +136,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -165,7 +165,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/delivery-plan.md",
@@ -193,7 +193,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -210,7 +210,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -231,7 +231,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -252,7 +252,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -277,7 +277,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -298,7 +298,7 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/planning-artifact-review.md",
@@ -327,11 +327,11 @@
           "members": [
             {
               "path": "contracts/cross-cutting.md",
-              "blob_oid": "5eff53808806b60f38f4ad0a0b59e9a8ff39ea08"
+              "blob_oid": "3e950ad5deded1b1c5d09174279162a2fe25c606"
             },
             {
               "path": "contracts/audit.md",
-              "blob_oid": "6bab80b589f53ffa67583487f0c65374b14317b3"
+              "blob_oid": "ad0c03624b47463b84161e035033d63af28a2da1"
             },
             {
               "path": "schemas/audit-packet.schema.json",

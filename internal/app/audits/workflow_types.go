@@ -159,4 +159,28 @@ type RecordWorkflowAuditDecisionResult struct {
 	TicketRevisionDecisions []workflowstore.AuditTicketRevisionDecision
 	TicketSatisfactions     []workflowstore.DeliveryTicketRevisionSatisfaction
 	RemediationSeeds        []workflowstore.AuditRemediationSeed
+	// IntegrationEligibilities records the durable eligibility disposition of
+	// an accepted isolated audit of a Program Dispatch member. It is empty for
+	// standalone audits and for program-bound audits whose exact recorded
+	// eligibility facts are missing, stale, or mismatched; eligibility never
+	// completes the Ticket revision, satisfies a dependency, or advances
+	// workspace completion.
+	IntegrationEligibilities []ProgramIntegrationEligibility
+}
+
+// ProgramIntegrationEligibility is the durable binding of every exact recorded
+// eligibility fact of one accepted isolated audit of a Program Dispatch member.
+// It is eligibility only: it never records completion and is never re-approval,
+// re-audit, or dependency satisfaction.
+type ProgramIntegrationEligibility struct {
+	EligibilityID                    string
+	DispatchMemberRowID              int64
+	AuditTicketRevisionDecisionRowID int64
+	DeliveryTicketRevisionRowID      int64
+	AuditedCommit                    string
+	PushedBranch                     string
+	ExecutionPackageRowID            int64
+	AssignmentArtifactRowID          int64
+	AuthorityRevisionRowID           int64
+	SourceClosureRowID               int64
 }

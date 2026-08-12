@@ -107,11 +107,22 @@ The Feature Workspace delivery surface can prepare eligible approved current pac
 
 The external Program Orchestrator reports exactly one terminal `done` or `blocked` result for every Dispatch member, plus any later integration risks. This handoff records runtime execution state only. It neither merges branches nor performs, stops, or replaces the ordinary audit and remediation journey.
 
+### Program Integration Assignments
+
+An accepted Program-bound isolated audit is eligibility only: it records durable integration eligibility but never completes the audited Ticket revision, satisfies a dependency, or advances workspace completion on its own. The ordinary completed outcome of a Program-bound constituent's Ticket revision is recorded only by Relay verification of the integrated result.
+
+After the dispatch is reported, Relay can generate the one immutable Integration Assignment for any exact nonempty subset of the dispatch's integration-eligible constituents. A subset is valid when every selected constituent's recorded eligibility facts are still exact and current — the approved Ticket revision, the accepted commit and pushed branch matching the recorded dispatch result, the selected package identity, the executed authority lineage, and the exact dispatch repository basis — and when the dependency closure of both selected and omitted members, including Ticket-carried Shared Design constraints, never requires a missing Program member. Omitted members remain eligible and unbound. A missing, stale, or mismatched fact blocks the whole Assignment; no partial subset is emitted.
+
+The Assignment is immutable transport state, never a second lifecycle and never a competing authority: it binds the exact combined validation commands and required evidence the external Merge must execute against the integrated result, and it does not link to, narrow, or substitute for Delivery Plan authority or the ordinary audit journey. The external Merge executes those bound combined validation commands and required evidence and returns exactly one Merge result, with a `passed` or `failed` status and outcome evidence for every bound item. The admitted result is immutable evidence.
+
+Relay then verifies the returned evidence without rerunning the combined validation: it re-verifies the bound authority and recorded evidence, and only a passing verification records the ordinary completed outcome of each bound constituent whose Ticket revision is still current. A failed verification records immutable failure evidence and creates no completion; the failed Assignment is never patched or reused, and retry always generates a fresh Assignment from the same recorded facts, with the failed Assignment's constituents becoming eligible again.
+
 Failure-path callouts:
 
 - Deterministic preflight failure: no deterministic writes occurred; the Orchestrator receives the immutable ExecutionAssignment and failure evidence. No revision is created automatically.
 - Partial deterministic application: applied writes remain; the Orchestrator receives exact applied and residual evidence and completes the remaining Delivery Ticket obligations without repeating those writes.
 - Stale audit packet: do not decide it; prepare a new packet against current evidence and the exact audited commit. The old packet remains immutable.
 - Package-attributed finding: attribute the finding to `governing_package`; `needs_revision` creates remediation evidence and returns through a fresh Delivery Ticket revision.
+- Failed integration verification: the Assignment is immutable failure evidence and is never patched or reused; retry by generating a fresh Assignment from the same recorded facts. The ordinary completed outcome appears only after Relay verification passes.
 
 See the [Delivery Ticket v2 example](examples/package-workflow/delivery-ticket.json), the [deterministic-operations example](examples/package-workflow/deterministic-operations.json), and the [needs-revision example](examples/package-workflow/audit-needs-revision.json).

@@ -13,6 +13,7 @@ import (
 	featureapp "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	wayfinder "relay/internal/app/wayfinder"
+	"relay/internal/guidedapp"
 	"relay/internal/prototypeexecution"
 	workflowstore "relay/internal/store/workflow"
 
@@ -858,6 +859,106 @@ func TestGuidedProjectionDTOProjectsTypedIntegrityIdentities(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("integrity DTO exposed row identifier %q: %s", forbidden, body)
 		}
+	}
+}
+
+// TestGuidedProjectionDTOProjectsProgramEligibleAndIntegration asserts the
+// guided Feature Workspace response serializes the already-implemented
+// program-owner backend state: integration-eligible dispatch constituents and
+// every immutable Integration Assignment with its recorded verification
+// disposition. The existing prepared/dispatches/available/handoff program shape
+// is preserved exactly, and the program section carries no Delivery Plan
+// linkage.
+func TestGuidedProjectionDTOProjectsProgramEligibleAndIntegration(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-program-guided", FeatureSlug: "payments", Version: 8}}
+	projection := featureapp.GuidedFeatureProjection{
+		Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version},
+		Program: featureapp.GuidedProgramSection{
+			Prepared: []guidedapp.ProgramMember{{MemberID: "program-member-prepared", State: "prepared"}},
+			Dispatch: []guidedapp.ProgramDispatch{{DispatchID: "dispatch-1", Status: "reported"}},
+			Eligible: []guidedapp.ProgramEligibleMember{
+				{MemberID: "program-member-two", TicketID: "T-TWO", TicketRevision: 1, AcceptedCommit: strings.Repeat("c", 40), PushedBranch: "feature/two"},
+			},
+			Integration: []guidedapp.ProgramIntegrationAssignment{
+				{AssignmentID: "integration-assignment-1", DispatchID: "dispatch-1", Status: "verified", RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40), Verification: "passed", Members: []guidedapp.ProgramIntegrationMember{{MemberID: "program-member-one", TicketID: "T-ONE", TicketRevision: 1}}},
+			},
+			Available: true,
+			Handoff:   "Prepare eligible approved current packages, then use the Program Orchestrator for a multi-member dispatch.",
+		},
+		PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionPreparePackage, Primary: true, Enabled: true},
+	}
+	guided := &richFakeGuided{projection: projection, result: featureapp.GuidedActionResult{Projection: projection}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-program-guided/guided", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Guided struct {
+			Program map[string]json.RawMessage `json:"program"`
+		} `json:"guided"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	program := body.Guided.Program
+	// The existing backward-compatible program shape (prepared, dispatches,
+	// available, handoff) is preserved exactly and the two new transport keys
+	// are added; the section carries no Delivery Plan linkage (no plan
+	// identity, digest, or plan authority key).
+	for _, key := range []string{"prepared", "dispatches", "eligible", "integration", "available", "handoff"} {
+		if program[key] == nil {
+			t.Fatalf("program missing %q: %s", key, response.Body.String())
+		}
+	}
+	if len(program) != 6 {
+		t.Fatalf("program section shape changed: %v body=%s", program, response.Body.String())
+	}
+	var prepared, dispatches, eligible, integration []map[string]any
+	var available bool
+	var handoff string
+	if err := json.Unmarshal(program["prepared"], &prepared); err != nil || len(prepared) != 1 {
+		t.Fatalf("prepared = %#v err=%v body=%s", prepared, err, response.Body.String())
+	}
+	if err := json.Unmarshal(program["dispatches"], &dispatches); err != nil || len(dispatches) != 1 {
+		t.Fatalf("dispatches = %#v err=%v body=%s", dispatches, err, response.Body.String())
+	}
+	if err := json.Unmarshal(program["available"], &available); err != nil || !available {
+		t.Fatalf("available = %v err=%v body=%s", available, err, response.Body.String())
+	}
+	if err := json.Unmarshal(program["handoff"], &handoff); err != nil || handoff == "" {
+		t.Fatalf("handoff = %q err=%v body=%s", handoff, err, response.Body.String())
+	}
+	if err := json.Unmarshal(program["eligible"], &eligible); err != nil || len(eligible) != 1 {
+		t.Fatalf("eligible = %#v err=%v body=%s", eligible, err, response.Body.String())
+	}
+	for _, key := range []string{"MemberID", "TicketID", "TicketRevision", "AcceptedCommit", "PushedBranch"} {
+		if eligible[0][key] == nil {
+			t.Fatalf("eligible missing %q: %s", key, response.Body.String())
+		}
+	}
+	if eligible[0]["MemberID"] != "program-member-two" || eligible[0]["TicketID"] != "T-TWO" || eligible[0]["AcceptedCommit"] != strings.Repeat("c", 40) || eligible[0]["PushedBranch"] != "feature/two" {
+		t.Fatalf("eligible = %#v", eligible)
+	}
+	if err := json.Unmarshal(program["integration"], &integration); err != nil || len(integration) != 1 {
+		t.Fatalf("integration = %#v err=%v body=%s", integration, err, response.Body.String())
+	}
+	assignment := integration[0]
+	for _, key := range []string{"AssignmentID", "DispatchID", "Status", "RepoTarget", "Branch", "BaseCommit", "Verification", "Members"} {
+		if assignment[key] == nil {
+			t.Fatalf("integration missing %q: %s", key, response.Body.String())
+		}
+	}
+	if assignment["AssignmentID"] != "integration-assignment-1" || assignment["Verification"] != "passed" {
+		t.Fatalf("integration = %#v", assignment)
+	}
+	members, ok := assignment["Members"].([]any)
+	if !ok || len(members) != 1 {
+		t.Fatalf("integration members = %#v", assignment["Members"])
+	}
+	member, ok := members[0].(map[string]any)
+	if !ok || member["MemberID"] != "program-member-one" || member["TicketID"] != "T-ONE" || member["TicketRevision"] != float64(1) {
+		t.Fatalf("integration member = %#v", members[0])
 	}
 }
 

@@ -91,6 +91,10 @@ func NewPlanningCandidateApprovalID() string    { return "candidate-approval-" +
 func NewDeliveryTicketProductionLinkID() string { return "production-link-" + uuid.NewString() }
 func NewDeliveryPlanID() string                 { return "delivery-plan-" + uuid.NewString() }
 func NewDeliveryPlanUnitLinkID() string         { return "plan-unit-link-" + uuid.NewString() }
+func NewIntegrationEligibilityID() string       { return "integration-eligibility-" + uuid.NewString() }
+func NewIntegrationAssignmentID() string        { return "integration-assignment-" + uuid.NewString() }
+func NewIntegrationMergeResultID() string       { return "integration-merge-result-" + uuid.NewString() }
+func NewIntegrationVerificationID() string      { return "integration-verification-" + uuid.NewString() }
 
 func NewFeatureWorkspaceDiscoveryRevisionID() string {
 	return "discovery-revision-" + uuid.NewString()

@@ -21,6 +21,7 @@ Composition roots wire dependencies. They do not own feature behavior.
 | `internal/api/features`, `internal/api/tickets`, `internal/api/packages` | Feature Workspace, Ticket, selection, and execution-package transport |
 | `internal/api/artifacts` | Bounded workflow artifact transport |
 | `internal/api/audits` | Audit readiness and packet preparation/read transport |
+| `internal/api/programs` | Program dispatch, handoff, Integration Assignment, Merge-result, and verification transport |
 | `internal/api/shared` | Shared HTTP decoding, response, and error helpers |
 
 Handlers translate HTTP requests and responses. They delegate business rules to application services and must not duplicate store transactions or MCP behavior.
@@ -35,6 +36,7 @@ Handlers translate HTTP requests and responses. They delegate business rules to 
 | Ticket, selection, and package workflow | `internal/app/tickets`, `internal/app/packages`, `internal/app/operations` |
 | Package-linked Run lifecycle | `internal/app/runs/workflow` |
 | Audit packet preparation, readback, and decisions | `internal/app/audits` |
+| Program dispatch preparation, immutable dispatch, handoff projection, and Integration Assignment runtime | `internal/app/programs` |
 | Execution attempts, cancellation, and reconciliation | `internal/executor` |
 | Deterministic source application | `internal/applier` |
 

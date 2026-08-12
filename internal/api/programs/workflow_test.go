@@ -14,10 +14,16 @@ import (
 )
 
 type fakeService struct {
-	prepared []app.PreparedMember
-	dispatch app.Dispatch
-	handoff  app.Handoff
-	result   app.DispatchResultInput
+	prepared     []app.PreparedMember
+	dispatch     app.Dispatch
+	handoff      app.Handoff
+	result       app.DispatchResultInput
+	assignment   app.IntegrationAssignmentResult
+	merge        app.IntegrationMergeResult
+	verification app.IntegrationVerification
+	failure      app.IntegrationFailure
+	admitted     app.IntegrationMergeResultInput
+	verified     app.IntegrationVerification
 }
 
 func (f *fakeService) Prepare(context.Context, string, string, int64) (app.PreparedMember, error) {
@@ -39,6 +45,28 @@ func (f *fakeService) ReadHandoff(context.Context, string, string) (app.Handoff,
 }
 func (f *fakeService) ListPrepared(context.Context, string) ([]app.PreparedMember, error) {
 	return f.prepared, nil
+}
+func (f *fakeService) GenerateIntegrationAssignment(context.Context, string, string, int64, []string) (app.IntegrationAssignmentResult, error) {
+	return f.assignment, nil
+}
+func (f *fakeService) ReadIntegrationAssignment(context.Context, string, string, string) (app.IntegrationAssignmentResult, error) {
+	return f.assignment, nil
+}
+func (f *fakeService) AdmitIntegrationMergeResult(_ context.Context, _, _, _ string, _ int64, in app.IntegrationMergeResultInput) (app.IntegrationMergeResult, error) {
+	f.admitted = in
+	return f.merge, nil
+}
+func (f *fakeService) ReadIntegrationMergeResult(context.Context, string, string, string) (app.IntegrationMergeResult, error) {
+	return f.merge, nil
+}
+func (f *fakeService) VerifyIntegration(context.Context, string, string, string, int64) (app.IntegrationVerification, error) {
+	return f.verified, nil
+}
+func (f *fakeService) ReadIntegrationVerification(context.Context, string, string, string) (app.IntegrationVerification, error) {
+	return f.verification, nil
+}
+func (f *fakeService) ReadIntegrationFailure(context.Context, string, string, string) (app.IntegrationFailure, error) {
+	return f.failure, nil
 }
 
 func programRouter(service Service) http.Handler {

@@ -225,26 +225,26 @@ func validateWorkflowPackageAuditDecisionInput(input RecordWorkflowAuditDecision
 	return nil
 }
 
-func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *workflowstore.Tx, run workflowstore.Run, packet workflowstore.AuditPacket, decision workflowstore.AuditDecision, document WorkflowPackageAuditPacket, input RecordWorkflowAuditDecisionInput) ([]workflowstore.AuditTicketRevisionDecision, []workflowstore.DeliveryTicketRevisionSatisfaction, []workflowstore.AuditRemediationSeed, error) {
+func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *workflowstore.Tx, run workflowstore.Run, packet workflowstore.AuditPacket, decision workflowstore.AuditDecision, document WorkflowPackageAuditPacket, input RecordWorkflowAuditDecisionInput) ([]workflowstore.AuditTicketRevisionDecision, []workflowstore.DeliveryTicketRevisionSatisfaction, []workflowstore.AuditRemediationSeed, []ProgramIntegrationEligibility, error) {
 	obligations, err := tx.ListAuditPacketTicketObligations(ctx, packet.ID)
 	if err != nil || len(obligations) == 0 {
-		return nil, nil, nil, ErrWorkflowAuditPacketStale
+		return nil, nil, nil, nil, ErrWorkflowAuditPacketStale
 	}
 	decisions := make([]workflowstore.AuditTicketRevisionDecision, 0, len(obligations))
 	for _, obligation := range obligations {
 		if err := verifyWorkflowPackageAuditTicketDecisionEligibility(ctx, tx, run, packet, obligation); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		approval, err := tx.GetRunExecutionPackageApproval(ctx, run.ID)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		if !obligation.PackageApprovalRowID.Valid || !obligation.ApprovedPackageSha256.Valid || obligation.PackageApprovalRowID.Int64 != approval.ID || obligation.ApprovedPackageSha256.String != approval.PackageSha256 {
-			return nil, nil, nil, ErrWorkflowAuditTicketIneligible
+			return nil, nil, nil, nil, ErrWorkflowAuditTicketIneligible
 		}
 		d, err := tx.CreateAuditTicketRevisionDecision(ctx, workflowstore.CreateAuditTicketRevisionDecisionParams{AuditDecisionRowID: decision.ID, AuditPacketTicketObligationRowID: obligation.ID, PackageApprovalRowID: sql.NullInt64{Int64: approval.ID, Valid: true}, ApprovedPackageSha256: sql.NullString{String: approval.PackageSha256, Valid: true}})
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		decisions = append(decisions, d)
 	}
@@ -260,7 +260,7 @@ func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *wor
 				DecisionRationale:                decision.Rationale,
 			})
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 			for sequence, finding := range input.MaterialFindings {
 				if _, err := tx.CreateAuditRemediationSeedFinding(ctx, workflowstore.CreateAuditRemediationSeedFindingParams{
@@ -271,29 +271,49 @@ func applyWorkflowPackageAuditTicketDecisionEffects(ctx context.Context, tx *wor
 					Evidence:               finding.Evidence,
 					RequiredRemediation:    finding.RequiredRemediation,
 				}); err != nil {
-					return nil, nil, nil, err
+					return nil, nil, nil, nil, err
 				}
 			}
 			seeds = append(seeds, seed)
 		}
-		return decisions, []workflowstore.DeliveryTicketRevisionSatisfaction{}, seeds, nil
+		return decisions, []workflowstore.DeliveryTicketRevisionSatisfaction{}, seeds, nil, nil
 	}
 	satisfactions := make([]workflowstore.DeliveryTicketRevisionSatisfaction, 0, len(obligations))
+	if lineage, e := programDispatchMemberLineage(ctx, tx, run.ID); e != nil {
+		return nil, nil, nil, nil, e
+	} else if lineage != nil {
+		// A Program-bound accepted isolated audit is eligibility only. The
+		// exact recorded facts are bound into a durable eligibility record
+		// when every one holds; a missing, stale, or mismatched fact blocks
+		// eligibility and creates no completed outcome. The decision itself
+		// remains immutable evidence either way.
+		eligibilities := make([]ProgramIntegrationEligibility, 0, len(obligations))
+		for i, obligation := range obligations {
+			eligibility, e := recordProgramIntegrationEligibility(ctx, tx, decision, decisions[i], obligation, *lineage)
+			if e != nil {
+				return nil, nil, nil, nil, e
+			}
+			if eligibility != nil {
+				eligibilities = append(eligibilities, *eligibility)
+			}
+		}
+		return decisions, []workflowstore.DeliveryTicketRevisionSatisfaction{}, nil, eligibilities, nil
+	}
 	for i, obligation := range obligations {
 		revision, err := tx.GetDeliveryTicketRevisionByRowID(ctx, obligation.DeliveryTicketRevisionRowID)
 		if err != nil {
-			return nil, nil, nil, ErrWorkflowAuditTicketIneligible
+			return nil, nil, nil, nil, ErrWorkflowAuditTicketIneligible
 		}
 		if revision.TransitionApplicability == "required" && !workflowPackageAuditTransitionProof(document, tx, ctx, obligation.AuthorityRevisionRowID) {
-			return nil, nil, nil, ErrWorkflowAuditTicketIneligible
+			return nil, nil, nil, nil, ErrWorkflowAuditTicketIneligible
 		}
 		s, err := tx.CreateDeliveryTicketRevisionSatisfaction(ctx, workflowstore.CreateDeliveryTicketRevisionSatisfactionParams{DeliveryTicketRevisionRowID: obligation.DeliveryTicketRevisionRowID, AuditTicketRevisionDecisionRowID: decisions[i].ID})
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		satisfactions = append(satisfactions, s)
 	}
-	return decisions, satisfactions, nil, nil
+	return decisions, satisfactions, nil, nil, nil
 }
 
 // verifyWorkflowPackageDecisionAuthority reloads all decision authority using
@@ -458,4 +478,97 @@ func workflowPackageAuditTransitionProof(document WorkflowPackageAuditPacket, tx
 		}
 	}
 	return true
+}
+
+// programDispatchLineage is the exact Program Dispatch member/run lineage of a
+// committed Run: the prepared member bound to the Run and the dispatch member
+// that bound it to one immutable Program dispatch.
+type programDispatchLineage struct {
+	dispatchMemberRowID int64
+	dispatchRowID       int64
+	executionPackageID  int64
+	assignmentArtifact  int64
+	preparedRepo        string
+	preparedBranch      string
+	preparedBase        string
+	dispatchRepo        string
+	dispatchBranch      string
+	dispatchBase        string
+}
+
+// programDispatchMemberLineage resolves the exact dispatch lineage for a Run,
+// or nil when the Run is not a Program Dispatch member. A lineage that binds
+// the Run to several prepared members or dispatches is an integrity conflict.
+func programDispatchMemberLineage(ctx context.Context, tx *workflowstore.Tx, runRowID int64) (*programDispatchLineage, error) {
+	var lineage programDispatchLineage
+	err := tx.DB().QueryRowContext(ctx, `
+SELECT dm.id, d.id, m.execution_package_row_id, m.assignment_artifact_row_id,
+       m.repo_target, m.branch, m.base_commit, d.repo_target, d.branch, d.base_commit
+FROM program_dispatch_members dm
+JOIN program_prepared_members m ON m.id = dm.prepared_member_row_id
+JOIN program_dispatches d ON d.id = dm.dispatch_row_id
+WHERE m.run_row_id = ?`, runRowID).Scan(
+		&lineage.dispatchMemberRowID, &lineage.dispatchRowID, &lineage.executionPackageID, &lineage.assignmentArtifact,
+		&lineage.preparedRepo, &lineage.preparedBranch, &lineage.preparedBase,
+		&lineage.dispatchRepo, &lineage.dispatchBranch, &lineage.dispatchBase)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &lineage, nil
+}
+
+// recordProgramIntegrationEligibility durably binds every exact recorded
+// eligibility fact of one accepted isolated audit when all of them hold. A
+// missing, stale, or mismatched fact blocks eligibility by returning nil
+// without creating any record; the accepted decision remains immutable
+// historical evidence and creates no completed outcome.
+func recordProgramIntegrationEligibility(ctx context.Context, tx *workflowstore.Tx, decision workflowstore.AuditDecision, revisionDecision workflowstore.AuditTicketRevisionDecision, obligation workflowstore.AuditPacketTicketObligation, lineage programDispatchLineage) (*ProgramIntegrationEligibility, error) {
+	if lineage.preparedRepo != lineage.dispatchRepo || lineage.preparedBranch != lineage.dispatchBranch || lineage.preparedBase != lineage.dispatchBase {
+		return nil, nil
+	}
+	if obligation.ExecutionPackageRowID != lineage.executionPackageID {
+		return nil, nil
+	}
+	var outcome, pushedBranch, headSHA string
+	if err := tx.DB().QueryRowContext(ctx, `SELECT outcome, branch, branch_head_sha FROM program_dispatch_results WHERE dispatch_member_row_id = ?`, lineage.dispatchMemberRowID).Scan(&outcome, &pushedBranch, &headSHA); errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if outcome != "done" || headSHA == "" || headSHA != decision.AuditedCommit {
+		return nil, nil
+	}
+	var current int64
+	if err := tx.DB().QueryRowContext(ctx, `SELECT current_revision_row_id FROM delivery_tickets WHERE id = (SELECT delivery_ticket_row_id FROM delivery_ticket_revisions WHERE id = ?)`, obligation.DeliveryTicketRevisionRowID).Scan(&current); err != nil || current != obligation.DeliveryTicketRevisionRowID {
+		return nil, nil
+	}
+	eligibility := ProgramIntegrationEligibility{
+		EligibilityID:                    workflowstore.NewIntegrationEligibilityID(),
+		DispatchMemberRowID:              lineage.dispatchMemberRowID,
+		AuditTicketRevisionDecisionRowID: revisionDecision.ID,
+		DeliveryTicketRevisionRowID:      obligation.DeliveryTicketRevisionRowID,
+		AuditedCommit:                    decision.AuditedCommit,
+		PushedBranch:                     pushedBranch,
+		ExecutionPackageRowID:            obligation.ExecutionPackageRowID,
+		AssignmentArtifactRowID:          lineage.assignmentArtifact,
+		AuthorityRevisionRowID:           obligation.AuthorityRevisionRowID,
+		SourceClosureRowID:               obligation.SourceClosureRowID,
+	}
+	if _, err := tx.DB().ExecContext(ctx, `
+INSERT INTO program_integration_eligibilities(
+    eligibility_id, dispatch_member_row_id, audit_ticket_revision_decision_row_id,
+    delivery_ticket_revision_row_id, audited_commit, pushed_branch,
+    execution_package_row_id, assignment_artifact_row_id,
+    authority_revision_row_id, source_closure_row_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		eligibility.EligibilityID, eligibility.DispatchMemberRowID, eligibility.AuditTicketRevisionDecisionRowID,
+		eligibility.DeliveryTicketRevisionRowID, eligibility.AuditedCommit, eligibility.PushedBranch,
+		eligibility.ExecutionPackageRowID, eligibility.AssignmentArtifactRowID,
+		eligibility.AuthorityRevisionRowID, eligibility.SourceClosureRowID); err != nil {
+		return nil, err
+	}
+	return &eligibility, nil
 }

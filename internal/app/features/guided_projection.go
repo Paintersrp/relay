@@ -161,10 +161,12 @@ type GuidedPrototypeSection struct {
 	Diagnostics                                                    []string
 }
 type GuidedProgramSection struct {
-	Prepared  []guidedapp.ProgramMember
-	Dispatch  []guidedapp.ProgramDispatch
-	Available bool
-	Handoff   string
+	Prepared    []guidedapp.ProgramMember
+	Dispatch    []guidedapp.ProgramDispatch
+	Eligible    []guidedapp.ProgramEligibleMember
+	Integration []guidedapp.ProgramIntegrationAssignment
+	Available   bool
+	Handoff     string
 }
 type GuidedCompletionSection struct {
 	Gates    []GuidedCompletionGate
@@ -476,6 +478,7 @@ func (s *Service) ReadGuidedProjection(ctx context.Context, workspaceID string) 
 			return GuidedFeatureProjection{}, programErr
 		}
 		program.Prepared, program.Dispatch = state.Prepared, state.Dispatch
+		program.Eligible, program.Integration = state.Eligible, state.Integration
 	}
 	projection := composeGuidedFeatureProjection(workspace, project, assessment, currentness, authority, completion, planning, delivery, prototype, program)
 	projection.Diagnostics.Integrity = guidedIntegrity(ctx, s, workspace, assessment, authority, delivery, prototype)

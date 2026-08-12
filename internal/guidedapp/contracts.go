@@ -86,6 +86,15 @@ type AuditOwner interface {
 type ProgramState struct {
 	Prepared []ProgramMember
 	Dispatch []ProgramDispatch
+	// Eligible are the Program Dispatch members whose accepted isolated audit
+	// recorded durable integration eligibility and which no current Assignment
+	// binds yet. They are the exact constituents available for a next
+	// Integration Assignment subset.
+	Eligible []ProgramEligibleMember
+	// Integration are the immutable Relay-generated Integration Assignments of
+	// the workspace's Program dispatches with their recorded verification
+	// disposition. They are transport state only and never a second lifecycle.
+	Integration []ProgramIntegrationAssignment
 }
 type ProgramMember struct {
 	MemberID, State, Outcome, Branch, BranchHeadSHA, Blocker string
@@ -94,6 +103,40 @@ type ProgramDispatch struct {
 	DispatchID, Status, RepoTarget, Branch, BaseCommit, LaterIntegrationRisks string
 	Members                                                                   []ProgramMember
 }
+
+// ProgramEligibleMember is one integration-eligible Program Dispatch member:
+// the exact recorded accepted commit and pushed branch of its isolated audit,
+// and the exact approved Ticket revision the audit audited.
+type ProgramEligibleMember struct {
+	MemberID       string
+	TicketID       string
+	TicketRevision int64
+	AcceptedCommit string
+	PushedBranch   string
+}
+
+// ProgramIntegrationAssignment is one immutable Integration Assignment with
+// its exact bound constituents and recorded verification disposition
+// (none | passed | failed).
+type ProgramIntegrationAssignment struct {
+	AssignmentID string
+	DispatchID   string
+	Status       string
+	RepoTarget   string
+	Branch       string
+	BaseCommit   string
+	Verification string
+	Members      []ProgramIntegrationMember
+}
+
+// ProgramIntegrationMember is one exact bound constituent of an Integration
+// Assignment: the dispatch member, its Ticket identity and revision.
+type ProgramIntegrationMember struct {
+	MemberID       string
+	TicketID       string
+	TicketRevision int64
+}
+
 type ProgramOwner interface {
 	ReadWorkspaceProgramState(context.Context, string) (ProgramState, error)
 }

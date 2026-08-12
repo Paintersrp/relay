@@ -48,6 +48,16 @@ If the packet is stale or superseded, do not decide it. Prepare a fresh packet a
 
 See the [package-native workflow](package-workflow.md) for the authority chain, mode evidence, freshness rules, and [schema-grounded examples](examples/package-workflow/).
 
+## Program integration
+
+The Feature Workspace program section runs the visible Program dispatch and integration journey. Prepare one eligible approved current package at a time, select at least two members of a common repository, branch, and base commit, and create the immutable dispatch. Copy the Program handoff for the external Program Orchestrator, then record each member's terminal result (`done` with its pushed branch and 40-hex branch head SHA, or `blocked` with a reason).
+
+An accepted Program-bound isolated audit is eligibility only: it never completes the Ticket revision by itself. Once the dispatch is reported, the section lists the accepted constituents eligible for integration, visibly distinct from integrated completion. Select any nonempty valid subset — Relay re-verifies every exact recorded fact and blocks the whole Assignment when any selected or omitted Ticket dependency or Shared Design constraint would require a missing member.
+
+Generate the Integration Assignment, copy its exact payload, and run the external Merge against it. Record the returned Merge result exactly: the outcome list must be precisely the Assignment's combined validation commands and required evidence (same count, same order, identical identities), each with a passed/failed status and outcome evidence. Then run Relay verification. Relay never reruns the combined validation; it re-verifies the bound authority and recorded evidence, and only a passing verification records the ordinary completed outcome of each bound constituent whose Ticket revision is still current.
+
+If verification fails, the failed Assignment is immutable evidence and is never patched or reused: retry by generating a fresh Assignment from the recorded facts. You see the ordinary completed outcome only after Relay verification passes.
+
 ## Local ChatGPT registrations
 
 Register Wayfinder, Planner, and Auditor independently:
