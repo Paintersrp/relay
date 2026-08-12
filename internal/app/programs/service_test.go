@@ -360,7 +360,9 @@ func newProgramRuntimeFixture(t *testing.T) *programRuntimeFixture {
 	closure := q("INSERT INTO source_vault_closures(closure_id,vault_row_id,commit_oid,tree_oid,generation,ref_name,state,import_started_at,verified_at) VALUES('closure-program',?,?,?,1,'refs/relay/closures/program','ready','2026-01-01T00:00:00Z','2026-01-01T00:00:01Z') RETURNING id", vault, programSHA, strings.Repeat("b", 40))
 	workspace := q("INSERT INTO feature_workspaces(workspace_id,project_row_id,feature_slug) VALUES('workspace-program',?,'program') RETURNING id", project)
 	authority := q("INSERT INTO feature_workspace_authority_revisions(authority_revision_id,workspace_row_id,revision_number,source_closure_row_id) VALUES('authority-program',?,1,?) RETURNING id", workspace, closure)
-	svc := &Service{store: s, repositoryVerifier: func(context.Context, string, string, string, string, []string, []string, string) error { return nil }}
+	svc := &Service{store: s, repositoryVerifier: func(context.Context, string, string, string, string, []string, []string, string, string) error {
+		return nil
+	}}
 	return &programRuntimeFixture{store: s, svc: svc, workspace: "workspace-program", workspaceRow: workspace, closure: closure, authority: authority, base: programSHA}
 }
 

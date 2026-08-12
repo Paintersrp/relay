@@ -106,7 +106,7 @@ func InspectAuditCommit(ctx context.Context, localPath, expectedBranch, baseComm
 
 // VerifyIntegrationRepository grounds an external Merge claim in the target
 // repository rather than trusting caller-supplied preservation text.
-func VerifyIntegrationRepository(ctx context.Context, localPath, branch, base, integrated string, bound, omitted []string, conflictEvidence string) (string, error) {
+func VerifyIntegrationRepository(ctx context.Context, localPath, branch, base, integrated string, bound, omitted []string, conflictResolution, conflictEvidence string) (string, error) {
 	runner := boundedGitRunner{}
 	check := func(args ...string) error {
 		_, err := runner.Run(ctx, localPath, 64*1024, args...)
@@ -138,15 +138,16 @@ func VerifyIntegrationRepository(ctx context.Context, localPath, branch, base, i
 			return "integrated commit includes an omitted Program constituent", fmt.Errorf("omitted commit %s is an ancestor", commit)
 		}
 	}
-	parents, err := runner.Run(ctx, localPath, 64*1024, "rev-list", "--parents", "-n", "1", integrated)
-	if err != nil {
-		return "integrated commit parents cannot be inspected", err
+	if conflictResolution == "material_conflict" {
+		return "material merge conflict cannot be admitted", fmt.Errorf("material conflict")
 	}
-	parentCount := len(strings.Fields(string(parents))) - 1
-	if parentCount > 1 && strings.TrimSpace(conflictEvidence) == "" {
-		return "conflict-resolution evidence is required for a merge commit", fmt.Errorf("missing conflict evidence")
+	if conflictResolution == "mechanically_resolved" && conflictEvidence != "mechanically_resolved:"+integrated {
+		return "mechanically resolved conflict evidence does not bind the integrated commit", fmt.Errorf("invalid conflict evidence")
 	}
-	return strings.TrimSpace(string(parents)), nil
+	if conflictResolution != "clean" && conflictResolution != "mechanically_resolved" {
+		return "merge conflict resolution state is invalid", fmt.Errorf("invalid conflict resolution")
+	}
+	return "repository preservation verified", nil
 }
 
 func InspectAuditCommitWithRunner(ctx context.Context, localPath, expectedBranch, baseCommit, auditedCommit string, runner AuditGitRunner) (AuditCommitEvidence, error) {

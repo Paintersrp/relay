@@ -60,6 +60,7 @@ type mergeResultRequest struct {
 	ExpectedVersion      int64                      `json:"expectedVersion"`
 	IntegratedCommit     string                     `json:"integratedCommit"`
 	PreservationIdentity string                     `json:"preservationIdentity"`
+	ConflictResolution   string                     `json:"conflictResolution"`
 	ConflictEvidence     string                     `json:"conflictEvidence"`
 	Validations          []validationOutcomeRequest `json:"validations"`
 	Evidence             []evidenceOutcomeRequest   `json:"evidence"`
@@ -192,7 +193,7 @@ func (h *Handler) AdmitMergeResult(w http.ResponseWriter, r *http.Request) {
 	for _, outcome := range q.Evidence {
 		evidence = append(evidence, app.IntegrationEvidenceOutcomeInput{Kind: outcome.Kind, Obligation: outcome.Obligation, Status: outcome.Status, Evidence: outcome.Evidence})
 	}
-	x, e := h.service.AdmitIntegrationMergeResult(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "dispatchID"), chi.URLParam(r, "assignmentID"), q.ExpectedVersion, app.IntegrationMergeResultInput{IntegratedCommit: q.IntegratedCommit, PreservationIdentity: q.PreservationIdentity, ConflictEvidence: q.ConflictEvidence, Validations: validations, Evidence: evidence})
+	x, e := h.service.AdmitIntegrationMergeResult(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "dispatchID"), chi.URLParam(r, "assignmentID"), q.ExpectedVersion, app.IntegrationMergeResultInput{IntegratedCommit: q.IntegratedCommit, PreservationIdentity: q.PreservationIdentity, ConflictResolution: q.ConflictResolution, ConflictEvidence: q.ConflictEvidence, Validations: validations, Evidence: evidence})
 	reply(w, x, e, 201)
 }
 func (h *Handler) GetMergeResult(w http.ResponseWriter, r *http.Request) {

@@ -81,7 +81,7 @@ func TestIntegrationMergeResultAdmitVerifyAndFailureRoutes(t *testing.T) {
 	router := programRouter(service)
 	validations, _ := json.Marshal([]map[string]string{{"command": "go test ./internal/example", "expected": "Tests pass.", "status": "passed", "evidence": "verified"}})
 	evidence, _ := json.Marshal([]map[string]string{{"kind": "proof_obligation", "obligation": "Prove it.", "status": "passed", "evidence": "evidence recorded"}})
-	body := `{"expectedVersion":1,"integratedCommit":"` + strings.Repeat("d", 40) + `","preservationIdentity":"preservation:parents","conflictEvidence":"","validations":` + string(validations) + `,"evidence":` + string(evidence) + `}`
+	body := `{"expectedVersion":1,"integratedCommit":"` + strings.Repeat("d", 40) + `","preservationIdentity":"preservation:parents","conflictResolution":"clean","conflictEvidence":"","validations":` + string(validations) + `,"evidence":` + string(evidence) + `}`
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/feature-workspaces/workspace-1/program-dispatches/dispatch-1/integration-assignments/integration-assignment-1/merge-results", strings.NewReader(body)))
 	if response.Code != http.StatusCreated {

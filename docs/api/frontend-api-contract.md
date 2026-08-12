@@ -95,7 +95,7 @@ A standalone accepted isolated audit records the ordinary completion of the audi
 
 ### Merge-owned combined validation
 
-The Assignment's `combined_validation` and `required_evidence` are the exact bound commands and obligations the external Merge must execute against the integrated result. `POST .../merge-results` admits the one external Merge result: `{ "expectedVersion", "integratedCommit", "preservationIdentity", "conflictEvidence", "validations", "evidence" }`. The admitted outcomes must be exactly the bound combined validation commands and required evidence — same count, same order, and identical `command`/`expected` and `kind`/`obligation` identities — with a `passed` or `failed` status and outcome evidence per item. The admitted result is immutable evidence.
+The Assignment's `combined_validation` and `required_evidence` are the exact bound commands and obligations the external Merge must execute against the integrated result. `POST .../merge-results` admits the one external Merge result: `{ "expectedVersion", "integratedCommit", "preservationIdentity", "conflictResolution", "conflictEvidence", "validations", "evidence" }`. `conflictResolution` is factual runtime evidence: `clean` requires empty conflict evidence, `mechanically_resolved` requires `mechanically_resolved:<integratedCommit>`, and `material_conflict` remains blocked. The admitted outcomes must be exactly the bound combined validation commands and required evidence — same count, same order, and identical `command`/`expected` and `kind`/`obligation` identities — with a `passed` or `failed` status and outcome evidence per item. The admitted result is immutable evidence.
 
 ### Relay evidence verification, no rerun
 

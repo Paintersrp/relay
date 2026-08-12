@@ -32,7 +32,7 @@ type Service struct {
 	repositoryVerifier integrationRepositoryVerifier
 }
 
-type integrationRepositoryVerifier func(context.Context, string, string, string, string, []string, []string, string) error
+type integrationRepositoryVerifier func(context.Context, string, string, string, string, []string, []string, string, string) error
 
 type assignmentPreparer interface {
 	PrepareExecutionAssignment(context.Context, string) (executor.ExecutionAssignmentResult, error)

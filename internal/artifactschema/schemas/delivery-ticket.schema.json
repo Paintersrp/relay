@@ -17,7 +17,6 @@
     "context": { "$ref": "#/$defs/multiline_prose" },
     "scope": { "$ref": "#/$defs/scope" },
     "depends_on": { "type": "array", "items": { "$ref": "#/$defs/dependency_reference" } },
-    "shared_design_constraints": { "type": "array", "items": { "$ref": "#/$defs/shared_design_constraint" } },
     "required_invariants": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
     "forbidden_behaviors": { "type": "array", "items": { "$ref": "#/$defs/single_line_prose" } },
     "implementation_obligations": { "type": "array", "items": { "$ref": "#/$defs/implementation_obligation" } },
@@ -76,15 +75,6 @@
       "additionalProperties": false,
       "properties": { "ticket_id": { "$ref": "#/$defs/ticket_id" }, "revision": { "$ref": "#/$defs/revision" } },
       "required": [ "ticket_id", "revision" ]
-    },
-    "shared_design_constraint": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "kind": { "enum": [ "atomicity", "valid_intermediate_state", "compatibility", "required_invariant", "forbidden_intermediate_state" ] },
-        "requires": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dependency_reference" } }
-      },
-      "required": [ "kind", "requires" ]
     },
     "implementation_obligation": {
       "type": "object",

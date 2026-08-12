@@ -59,6 +59,7 @@ export interface ProgramIntegrationMergeResult {
   dispatchId: string;
   integratedCommit: string;
   preservationIdentity: string;
+  conflictResolution: "clean" | "mechanically_resolved" | "material_conflict";
   conflictEvidence: string;
   validations: ProgramIntegrationValidationOutcome[];
   evidence: ProgramIntegrationEvidenceOutcome[];
@@ -98,6 +99,7 @@ export interface AdmitIntegrationMergeResultRequest {
   expectedVersion: number;
   integratedCommit: string;
   preservationIdentity: string;
+  conflictResolution: "clean" | "mechanically_resolved" | "material_conflict";
   conflictEvidence: string;
   validations: MergeOutcomeInput[];
   evidence: EvidenceOutcomeInput[];

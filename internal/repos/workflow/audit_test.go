@@ -155,14 +155,36 @@ func TestVerifyIntegrationRepositoryRequiresExactPreservation(t *testing.T) {
 	git("add", ".")
 	git("commit", "-m", "two")
 	two := git("rev-parse", "HEAD")
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, two, []string{two}, nil, ""); err != nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, two, []string{two}, nil, "clean", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, strings.Repeat("f", 40), []string{two}, nil, "opaque"); err == nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, strings.Repeat("f", 40), []string{two}, nil, "clean", ""); err == nil {
 		t.Fatal("unknown integrated commit passed")
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, base, []string{two}, nil, "opaque"); err == nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, base, []string{two}, nil, "clean", ""); err == nil {
 		t.Fatal("non-preserving integrated commit passed")
+	}
+	git("checkout", "-b", "feature", base)
+	if err := os.WriteFile(filepath.Join(root, "feature.txt"), []byte("feature\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-m", "feature")
+	feature := git("rev-parse", "HEAD")
+	git("checkout", "main")
+	git("merge", "--no-ff", "feature", "-m", "merge feature")
+	merge := git("rev-parse", "HEAD")
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "clean", ""); err != nil {
+		t.Fatalf("clean multi-parent merge failed: %v", err)
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "mechanically_resolved", "arbitrary"); err == nil {
+		t.Fatal("arbitrary conflict evidence passed")
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "mechanically_resolved", "mechanically_resolved:"+merge); err != nil {
+		t.Fatalf("exact mechanical conflict evidence failed: %v", err)
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "material_conflict", "material conflict"); err == nil {
+		t.Fatal("material conflict passed")
 	}
 }
 

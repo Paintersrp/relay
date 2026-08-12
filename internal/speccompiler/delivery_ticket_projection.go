@@ -15,7 +15,6 @@ type DeliveryTicketProjection struct {
 	Context                   string
 	Scope                     scopeModel
 	DependsOn                 []DeliveryTicketDependency
-	SharedDesignConstraints   []DeliveryTicketCrossMemberConstraint
 	RequiredInvariants        []string
 	ForbiddenBehaviors        []string
 	ImplementationObligations []DeliveryTicketObligation
@@ -48,7 +47,6 @@ func ProjectDeliveryTicket(document *DeliveryTicketDocument) (DeliveryTicketProj
 		Context:                   document.Context,
 		Scope:                     document.Scope,
 		DependsOn:                 append([]DeliveryTicketDependency(nil), document.DependsOn...),
-		SharedDesignConstraints:   append([]DeliveryTicketCrossMemberConstraint(nil), document.SharedDesignConstraints...),
 		RequiredInvariants:        append([]string(nil), document.RequiredInvariants...),
 		ForbiddenBehaviors:        append([]string(nil), document.ForbiddenBehaviors...),
 		ImplementationObligations: append([]DeliveryTicketObligation(nil), document.ImplementationObligations...),
@@ -66,19 +64,6 @@ func ProjectDeliveryTicket(document *DeliveryTicketDocument) (DeliveryTicketProj
 }
 
 func validateDeliveryTicketProjection(projection DeliveryTicketProjection) []Diagnostic {
-	for _, constraint := range projection.SharedDesignConstraints {
-		if constraint.Kind != "atomicity" && constraint.Kind != "valid_intermediate_state" && constraint.Kind != "compatibility" && constraint.Kind != "required_invariant" && constraint.Kind != "forbidden_intermediate_state" {
-			return []Diagnostic{{Code: "projection_invariant", Path: "/shared_design_constraints", Message: "Shared Design constraint kind is not supported."}}
-		}
-		if len(constraint.Requires) == 0 {
-			return []Diagnostic{{Code: "projection_invariant", Path: "/shared_design_constraints", Message: "Shared Design constraints must require at least one Ticket."}}
-		}
-		for _, required := range constraint.Requires {
-			if required.TicketID == "" || required.Revision < 1 {
-				return []Diagnostic{{Code: "projection_invariant", Path: "/shared_design_constraints", Message: "Shared Design constraint references must identify a Ticket revision."}}
-			}
-		}
-	}
 	if projection.Cancellation != nil {
 		var diagnostics []Diagnostic
 		if len(projection.DependsOn) != 0 {
