@@ -10,6 +10,7 @@ import (
 
 	appaudits "relay/internal/app/audits"
 	"relay/internal/app/mcpcomposition"
+	appoperations "relay/internal/app/operations"
 	workflowprojects "relay/internal/app/projects/workflow"
 	apptickets "relay/internal/app/tickets"
 	appwayfinder "relay/internal/app/wayfinder"
@@ -43,6 +44,14 @@ func BuildHandlers(store *workflowstore.Store, policy mcpcomposition.Services, l
 	if err != nil {
 		return nil, err
 	}
+	frontierAdmissionService, err := appoperations.NewTicketFrontierAdmissionService(policy.Packets)
+	if err != nil {
+		return nil, err
+	}
+	frontierAdmitter, err := mcp.NewTicketFrontierAdmitter(frontierAdmissionService)
+	if err != nil {
+		return nil, err
+	}
 	routes, err := routecontracts.BuildMCPRouteManifests()
 	if err != nil {
 		return nil, err
@@ -51,7 +60,7 @@ func BuildHandlers(store *workflowstore.Store, policy mcpcomposition.Services, l
 	if err != nil {
 		return nil, err
 	}
-	owners, err := mcp.NewRouteDispatchers(routes, mcp.RouteDispatchServices{Projects: projects, Packets: policy.Packets, Lifecycle: lifecycle, Source: policy.Source, Wayfinder: wayfinder, Tickets: tickets, Audits: audits, AuditReadback: audits})
+	owners, err := mcp.NewRouteDispatchers(routes, mcp.RouteDispatchServices{Projects: projects, Packets: policy.Packets, Lifecycle: lifecycle, Source: policy.Source, Wayfinder: wayfinder, Tickets: tickets, TicketFrontierAdmitter: frontierAdmitter, Audits: audits, AuditReadback: audits})
 	if err != nil {
 		return nil, err
 	}

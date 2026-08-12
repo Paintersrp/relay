@@ -104,6 +104,36 @@ type AuditTicketRevisionDecision struct {
 	ApprovedPackageSha256            sql.NullString `json:"approved_package_sha256"`
 }
 
+type DeliveryPlan struct {
+	ID                int64  `json:"id"`
+	PlanID            string `json:"plan_id"`
+	WorkspaceRowID    int64  `json:"workspace_row_id"`
+	CandidateRowID    int64  `json:"candidate_row_id"`
+	ArtifactRowID     int64  `json:"artifact_row_id"`
+	ArtifactSha256    string `json:"artifact_sha256"`
+	ArtifactSizeBytes int64  `json:"artifact_size_bytes"`
+	FeatureSlug       string `json:"feature_slug"`
+	Goal              string `json:"goal"`
+	Context           string `json:"context"`
+	CreatedIdentity   string `json:"created_identity"`
+	CreatedAt         string `json:"created_at"`
+}
+
+type DeliveryPlanUnit struct {
+	ID        int64  `json:"id"`
+	PlanRowID int64  `json:"plan_row_id"`
+	Sequence  int64  `json:"sequence"`
+	UnitID    string `json:"unit_id"`
+	Goal      string `json:"goal"`
+}
+
+type DeliveryPlanUnitDependency struct {
+	ID                 int64 `json:"id"`
+	UnitRowID          int64 `json:"unit_row_id"`
+	Sequence           int64 `json:"sequence"`
+	DependsOnUnitRowID int64 `json:"depends_on_unit_row_id"`
+}
+
 type DeliveryTicket struct {
 	ID                   int64         `json:"id"`
 	TicketID             string        `json:"ticket_id"`
@@ -112,6 +142,15 @@ type DeliveryTicket struct {
 	CurrentRevisionRowID sql.NullInt64 `json:"current_revision_row_id"`
 	CreatedAt            string        `json:"created_at"`
 	UpdatedAt            string        `json:"updated_at"`
+}
+
+type DeliveryTicketPlanUnitLink struct {
+	ID                  int64  `json:"id"`
+	LinkID              string `json:"link_id"`
+	PlanRowID           int64  `json:"plan_row_id"`
+	UnitRowID           int64  `json:"unit_row_id"`
+	DeliveryTicketRowID int64  `json:"delivery_ticket_row_id"`
+	CreatedAt           string `json:"created_at"`
 }
 
 type DeliveryTicketProductionLink struct {
@@ -296,6 +335,7 @@ type FeatureWorkspace struct {
 	DiscoveryCapabilityEnabled         int64         `json:"discovery_capability_enabled"`
 	CurrentDiscoveryRevisionRowID      sql.NullInt64 `json:"current_discovery_revision_row_id"`
 	CurrentDiscoveryClosurePacketRowID sql.NullInt64 `json:"current_discovery_closure_packet_row_id"`
+	CurrentDeliveryPlanRowID           sql.NullInt64 `json:"current_delivery_plan_row_id"`
 }
 
 type FeatureWorkspaceAdmittedInput struct {

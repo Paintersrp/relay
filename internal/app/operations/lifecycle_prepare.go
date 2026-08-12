@@ -676,7 +676,7 @@ func (s *LifecycleService) materializeDerivedInputs(ctx context.Context, operati
 		return derivedPreparation{}, nil
 	}
 	switch operation.OperationID {
-	case "planner.delivery_ticket", "planner.ticket_frontier":
+	case "planner.delivery_ticket", "planner.delivery_plan", "planner.ticket_frontier":
 		return s.materializeCurrentPlannerDerivedInput(ctx, operation, workflow, builder, "current_feature_workspace_route", s.loadCurrentFeatureWorkspaceRoute)
 	case "planner.transition_plan":
 		return s.materializeCurrentPlannerDerivedInput(ctx, operation, workflow, builder, "current_transition_applicability", s.loadCurrentTransitionApplicability)
@@ -879,7 +879,7 @@ func (s *LifecycleService) revalidateCurrentPlannerDerivedInput(ctx context.Cont
 	}
 	var loader currentPlannerDerivedLoader
 	switch operation.OperationID {
-	case "planner.delivery_ticket", "planner.ticket_frontier":
+	case "planner.delivery_ticket", "planner.delivery_plan", "planner.ticket_frontier":
 		loader = s.loadCurrentFeatureWorkspaceRoute
 	case "planner.transition_plan":
 		loader = s.loadCurrentTransitionApplicability

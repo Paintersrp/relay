@@ -16,6 +16,7 @@ function actionLabel(action: GuidedFeatureAction): string {
     case "reopen_discovery": return "Reopen discovery";
     case "author_requirements": return "Author Requirements";
     case "author_shared_design": return "Author Shared Design";
+    case "author_delivery_plan": return "Author Delivery Plan";
     case "author_delivery_ticket": return "Author Delivery Ticket";
     case "review_planning_candidate": return "Review planning candidate";
     case "approve_planning_candidate": return "Approve planning candidate";
@@ -306,6 +307,18 @@ export function RelayFeatureWorkspaceDetail({ detail }: { detail: GuidedFeatureD
         <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Downstream</dt><dd className="mt-1 text-sm">{detail.downstream.summary || "No downstream guidance recorded."}</dd></div>
       </dl>
       <p className="mt-3 text-sm text-muted-foreground">{detail.ticketFrontier.summary || "No ticket frontier guidance recorded."}</p>
+      {detail.delivery?.frontierV2?.length ? <div className="mt-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Planned delivery frontier</h3>
+        {detail.delivery.planSha256 ? <p className="mt-1 text-xs text-muted-foreground">Current approved Delivery Plan digest: {detail.delivery.planSha256}</p> : null}
+        <ul className="mt-2 space-y-2 text-sm">{detail.delivery.frontierV2.map((entry) => <li key={entry.ticketId ?? entry.unitId ?? `${entry.state}-${entry.dependsOn.join("+")}`} className="rounded border p-2">
+          <span className="font-medium">{entry.ticketId ?? entry.unitId}</span><span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs">{entry.state}</span>
+          {entry.revision ? <span className="ml-2 text-muted-foreground">revision {entry.revision}</span> : null}
+          {entry.blockReason ? <span className="ml-2 text-destructive">{entry.blockReason}</span> : null}
+          {entry.dependsOn.length ? <span className="mt-1 block text-muted-foreground">depends on {entry.dependsOn.join(", ")}</span> : null}
+          {entry.unmetDependencies.length ? <span className="mt-1 block text-muted-foreground">unmet dependencies: {entry.unmetDependencies.join(", ")}</span> : null}
+          {entry.downstreamUnits.length ? <span className="mt-1 block text-muted-foreground">downstream: {entry.downstreamUnits.join(", ")}</span> : null}
+        </li>)}</ul>
+      </div> : null}
       {detail.delivery?.frontier.length ? <div className="mt-4">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Frontier tickets</h3>
         <ul className="mt-2 space-y-1 text-sm">{detail.delivery.frontier.map((entry) => <li key={entry.ticketId}>{entry.ticketId} v{entry.revisionNumber} (priority {entry.externalPriority}{entry.repoTarget ? `, ${entry.repoTarget}` : ""}{entry.branch ? ` @ ${entry.branch}` : ""})</li>)}</ul>

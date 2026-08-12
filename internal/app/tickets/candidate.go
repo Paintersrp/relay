@@ -25,6 +25,8 @@ var (
 	ErrCandidateVersionConflict   = errors.New("planning candidate workspace version conflict")
 	ErrHistoricalBasis            = errors.New("historical candidate basis cannot produce a delivery ticket")
 	ErrStaleCandidateBasis        = errors.New("delivery ticket candidate basis is stale")
+	ErrPlanUnitUnbound            = errors.New("delivery ticket does not bind a current planned unit")
+	ErrPlanTopologyDivergence     = errors.New("delivery ticket dependency topology diverges from the current Plan")
 )
 
 type CandidateProductionInput struct {
@@ -141,6 +143,15 @@ func (s *Service) PromoteApprovedDeliveryTicketCandidate(ctx context.Context, in
 		if document.FeatureSlug != workspace.FeatureSlug || candidate.RepoTarget != document.RepoTarget || candidate.Branch != document.Branch || candidate.BaseCommit != document.BaseCommit {
 			return ErrCandidateCompilation
 		}
+		boundPlan := workflowstore.DeliveryPlan{}
+		boundUnit := workflowstore.DeliveryPlanUnit{}
+		bound := false
+		if workspace.CurrentDeliveryPlanRowID.Valid {
+			boundPlan, boundUnit, bound, err = planGroundedUnitBinding(ctx, tx, workspace, document)
+			if err != nil {
+				return err
+			}
+		}
 
 		sourceClosure, err := candidateSourceClosure(ctx, tx, candidate, document.BaseCommit)
 		if err != nil {
@@ -230,6 +241,11 @@ func (s *Service) PromoteApprovedDeliveryTicketCandidate(ctx context.Context, in
 		ticket, err = tx.SetDeliveryTicketCurrentRevision(ctx, ticket.TicketID, revision.ID)
 		if err != nil {
 			return err
+		}
+		if bound {
+			if err := createOrVerifyPlanUnitLink(ctx, tx, boundPlan, boundUnit, ticket); err != nil {
+				return err
+			}
 		}
 		if err := reopenCurrentFeatureCompletionForTicket(ctx, tx, ticket, revision); err != nil {
 			return err
@@ -350,4 +366,97 @@ func equalCandidateBytes(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// planGroundedUnitBinding validates that a normally authored Delivery Ticket
+// realizes one current planned unit of the workspace's current approved
+// Delivery Plan and that its executable depends_on is a validated realization
+// of the planned semantic dependency topology. A Ticket whose ticket_id names
+// no current planned unit is rejected, and any dependency set or order that
+// diverges from the bound unit's planned dependencies is rejected as a
+// material topology change.
+func planGroundedUnitBinding(ctx context.Context, tx *workflowstore.Tx, workspace workflowstore.FeatureWorkspace, document *speccompiler.DeliveryTicketDocument) (workflowstore.DeliveryPlan, workflowstore.DeliveryPlanUnit, bool, error) {
+	plan, err := tx.GetDeliveryPlanByRowID(ctx, workspace.CurrentDeliveryPlanRowID.Int64)
+	if err != nil || plan.WorkspaceRowID != workspace.ID {
+		return workflowstore.DeliveryPlan{}, workflowstore.DeliveryPlanUnit{}, false, ErrPlanUnitUnbound
+	}
+	units, err := tx.ListDeliveryPlanUnitsByPlan(ctx, plan.ID)
+	if err != nil {
+		return workflowstore.DeliveryPlan{}, workflowstore.DeliveryPlanUnit{}, false, err
+	}
+	unitByName := make(map[string]workflowstore.DeliveryPlanUnit, len(units))
+	for _, unit := range units {
+		unitByName[unit.UnitID] = unit
+	}
+	unit, ok := unitByName[document.TicketID]
+	if !ok {
+		return workflowstore.DeliveryPlan{}, workflowstore.DeliveryPlanUnit{}, false, ErrPlanUnitUnbound
+	}
+	dependencies, err := tx.ListDeliveryPlanUnitDependenciesByUnit(ctx, unit.ID)
+	if err != nil {
+		return workflowstore.DeliveryPlan{}, workflowstore.DeliveryPlanUnit{}, false, err
+	}
+	planned := make([]string, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		dependencyUnit, exists := unitByName[unitIDByRowID(units, dependency.DependsOnUnitRowID)]
+		if !exists {
+			return workflowstore.DeliveryPlan{}, workflowstore.DeliveryPlanUnit{}, false, ErrPlanTopologyDivergence
+		}
+		planned = append(planned, dependencyUnit.UnitID)
+	}
+	realized := make([]string, 0, len(document.DependsOn))
+	for _, dependency := range document.DependsOn {
+		realized = append(realized, dependency.TicketID)
+	}
+	if !sameOrderedStrings(realized, planned) {
+		return workflowstore.DeliveryPlan{}, workflowstore.DeliveryPlanUnit{}, false, ErrPlanTopologyDivergence
+	}
+	return plan, unit, true, nil
+}
+
+func unitIDByRowID(units []workflowstore.DeliveryPlanUnit, rowID int64) string {
+	for _, unit := range units {
+		if unit.ID == rowID {
+			return unit.UnitID
+		}
+	}
+	return ""
+}
+
+func sameOrderedStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+// createOrVerifyPlanUnitLink records the plan-unit-to-authored-Ticket
+// association after a plan-grounded Ticket is produced. A replacement revision
+// of an already-realized Ticket must bind the same planned unit; a planned
+// unit is realized by exactly one Ticket.
+func createOrVerifyPlanUnitLink(ctx context.Context, tx *workflowstore.Tx, plan workflowstore.DeliveryPlan, unit workflowstore.DeliveryPlanUnit, ticket workflowstore.DeliveryTicket) error {
+	existing, err := tx.GetDeliveryTicketPlanUnitLinkByTicketRowID(ctx, ticket.ID)
+	if err == nil {
+		if existing.PlanRowID != plan.ID || existing.UnitRowID != unit.ID {
+			return ErrPlanUnitUnbound
+		}
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.GetDeliveryTicketPlanUnitLinkByUnitRowID(ctx, unit.ID); err == nil {
+		return ErrPlanUnitUnbound
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = tx.CreateDeliveryTicketPlanUnitLink(ctx, workflowstore.CreateDeliveryTicketPlanUnitLinkParams{
+		LinkID: workflowstore.NewDeliveryPlanUnitLinkID(), PlanRowID: plan.ID, UnitRowID: unit.ID, DeliveryTicketRowID: ticket.ID,
+	})
+	return err
 }

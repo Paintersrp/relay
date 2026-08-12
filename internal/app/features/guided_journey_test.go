@@ -157,10 +157,40 @@ func TestDecideGuidedFeatureActionSequencesIntermediatePlanningStates(t *testing
 			Requirements: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
 			SharedDesign: GuidedPlanningFamilySection{Count: 1, AwaitingReview: 1, State: "admitted"},
 		}}, GuidedActionReviewPlanningCandidate, 1},
-		{"requirements then design both promoted advances to ticket", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirementsThenSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+		{"requirements then design both promoted authors delivery plan", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirementsThenSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
 			Status: "promoted", CandidateCount: 2, Promoted: 2, CandidateState: "promoted", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "promoted",
 			Requirements: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
 			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+		}}, GuidedActionAuthorDeliveryPlan, 1},
+		{"requirements then design then delivery plan promoted advances to ticket", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationRequirementsThenSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+			Status: "promoted", CandidateCount: 3, Promoted: 3, CandidateState: "promoted", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "promoted",
+			Requirements: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+			DeliveryPlan: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+		}}, GuidedActionAuthorDeliveryTicket, 1},
+		{"shared design promoted authors delivery plan", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+			Status: "promoted", CandidateCount: 1, Promoted: 1, CandidateState: "promoted", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "promoted",
+			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+		}}, GuidedActionAuthorDeliveryPlan, 1},
+		{"shared design promoted delivery plan admitted reviews", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+			Status: "in_progress", CandidateCount: 2, Promoted: 1, AwaitingReview: 1, CandidateState: "admitted", ReviewState: "awaiting_review", ApprovalState: "approved", PromotionState: "awaiting_promotion",
+			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+			DeliveryPlan: GuidedPlanningFamilySection{Count: 1, AwaitingReview: 1, State: "admitted"},
+		}}, GuidedActionReviewPlanningCandidate, 1},
+		{"shared design promoted delivery plan reviewed approves", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+			Status: "in_progress", CandidateCount: 2, Promoted: 1, AwaitingApproval: 1, CandidateState: "reviewed", ReviewState: "reviewed", ApprovalState: "awaiting_approval", PromotionState: "none",
+			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+			DeliveryPlan: GuidedPlanningFamilySection{Count: 1, AwaitingApproval: 1, State: "reviewed"},
+		}}, GuidedActionApprovePlanningCandidate, 1},
+		{"shared design promoted delivery plan approved promotes", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+			Status: "in_progress", CandidateCount: 2, Promoted: 1, AwaitingPromotion: 1, CandidateState: "reviewed", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "awaiting_promotion",
+			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+			DeliveryPlan: GuidedPlanningFamilySection{Count: 1, AwaitingPromotion: 1, State: "approved"},
+		}}, GuidedActionPromotePlanningCandidate, 1},
+		{"shared design and delivery plan promoted advances to ticket", GuidedJourneyState{State: DiscoveryStateClosed, Destination: DiscoveryDestinationSharedDesign, HasCurrentRevision: true, Planning: GuidedPlanningSection{
+			Status: "promoted", CandidateCount: 2, Promoted: 2, CandidateState: "promoted", ReviewState: "reviewed", ApprovalState: "approved", PromotionState: "promoted",
+			SharedDesign: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
+			DeliveryPlan: GuidedPlanningFamilySection{Count: 1, Promoted: 1, State: "promoted"},
 		}}, GuidedActionAuthorDeliveryTicket, 1},
 	}
 	for _, tc := range cases {

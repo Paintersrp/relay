@@ -512,6 +512,7 @@ func TestGuidedActionHTTPAllowsTicketActionsToReachDispatch(t *testing.T) {
 		action, runState string
 	}{
 		{action: "approve_planning_candidate"},
+		{action: "author_delivery_plan"},
 		{action: "continue_run", runState: "executing"},
 		{action: "recover_run", runState: "execution_failed"},
 		{action: "abandon_feature"},
@@ -576,6 +577,45 @@ func TestGuidedProjectionProjectsAbandonedDecisionOutcome(t *testing.T) {
 	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, completion, guided).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-guided/guided", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"decision":"abandoned"`) || !strings.Contains(response.Body.String(), `"recorded":true`) || !strings.Contains(response.Body.String(), `"primaryAction":"reopen_discovery"`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+// TestGuidedProjectionProjectsEnrichedTicketFrontierV2 asserts the guided
+// operator projection serializes the enriched workspace Ticket Frontier v2
+// entries (planned-only/authored delivery state with the current Plan digest)
+// alongside the selectable v1 frontier, without exposing any row identity.
+func TestGuidedProjectionProjectsEnrichedTicketFrontierV2(t *testing.T) {
+	detail := wayfinder.WorkspaceDetail{Workspace: workflowstore.FeatureWorkspace{WorkspaceID: "workspace-guided", FeatureSlug: "payments", Version: 8}}
+	unitID := "P6-T1"
+	ticketID := "P6-T2"
+	revision := int64(1)
+	blockReason := "dependency_unmet"
+	projection := featureapp.GuidedFeatureProjection{
+		Workspace: featureapp.GuidedWorkspaceSection{WorkspaceID: detail.Workspace.WorkspaceID, Version: detail.Workspace.Version},
+		Delivery: featureapp.GuidedDeliverySection{
+			Frontier: []featureapp.GuidedFrontierEntry{{TicketID: "P6-T2", RevisionNumber: 1, ExternalPriority: 40}},
+			FrontierV2: []featureapp.GuidedFrontierV2Entry{
+				{UnitID: &unitID, State: "planned", DependsOn: []string{}, UnmetDependencies: []string{}, DownstreamUnits: []string{"P6-T2"}},
+				{TicketID: &ticketID, Revision: &revision, State: "blocked", BlockReason: &blockReason, DependsOn: []string{"P6-T1"}, UnmetDependencies: []string{"P6-T1"}, DownstreamUnits: []string{}},
+			},
+			PlanSHA256: strings.Repeat("c", 64),
+		},
+		PrimaryAction: featureapp.GuidedFeatureActionAvailability{Action: featureapp.GuidedActionAuthorDeliveryTicket, Primary: true, Enabled: true},
+	}
+	guided := &richFakeGuided{projection: projection, result: featureapp.GuidedActionResult{Projection: projection}}
+	response := httptest.NewRecorder()
+	guidedRouter(&fakeWayfinder{detail: detail}, &fakeAuthority{}, &fakeCompletion{}, guided).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-guided/guided", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"frontierV2"`) || !strings.Contains(body, `"unitId":"P6-T1"`) || !strings.Contains(body, `"state":"planned"`) || !strings.Contains(body, `"state":"blocked"`) || !strings.Contains(body, `"blockReason":"dependency_unmet"`) || !strings.Contains(body, `"planSha256":"`+strings.Repeat("c", 64)+`"`) {
+		t.Fatalf("enriched frontier v2 missing from body=%s", body)
+	}
+	for _, forbidden := range []string{"workspaceRowId", "candidateId", "planRowId"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("body exposed %q: %s", forbidden, body)
+		}
 	}
 }
 

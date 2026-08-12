@@ -19,8 +19,8 @@ func TestRegistryMatchesPublicContractAndPinnedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(operations) != 14 {
-		t.Fatalf("operation count = %d, want 14", len(operations))
+	if len(operations) != 16 {
+		t.Fatalf("operation count = %d, want 16", len(operations))
 	}
 	if operations[0].OperationID != "wayfinder.workspace" {
 		t.Fatalf("first operation = %q", operations[0].OperationID)

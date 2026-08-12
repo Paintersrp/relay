@@ -21,7 +21,7 @@ func (f *fakeMCPTicketPacketAuthorizer) AuthorizeMutation(_ context.Context, req
 func TestTicketFrontierIdentityAcceptsOnlyPlannerFrontierRead(t *testing.T) {
 	identity := TicketFrontierOperationIdentity{
 		ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID),
-		Action: string(registry.TicketActionReadFrontier), TicketID: "workspace-1",
+		Action: string(registry.TicketActionReadFrontier), FeatureSlug: "checkout", RequestedUnitID: "P4-T1",
 	}
 	if err := identity.Validate(); err != nil {
 		t.Fatalf("valid frontier identity rejected: %v", err)
@@ -37,19 +37,36 @@ func TestTicketFrontierIdentityAcceptsOnlyPlannerFrontierRead(t *testing.T) {
 }
 
 func TestTicketFrontierIdentityStrictDecode(t *testing.T) {
-	raw := json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","ticket_id":"ticket-1"}`)
+	raw := json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","feature_slug":"checkout","requested_unit_id":"P4-T1"}`)
 	identity, err := DecodeTicketFrontierOperationIdentity(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.TicketID != "ticket-1" {
-		t.Fatalf("ticket ID = %q", identity.TicketID)
+	if identity.FeatureSlug != "checkout" || identity.RequestedUnitID != "P4-T1" {
+		t.Fatalf("frontier identity = %#v", identity)
 	}
-	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","workspace_id":"workspace-1"}`)); err == nil {
-		t.Fatal("legacy workspace_id field was accepted")
+	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","ticket_id":"ticket-1"}`)); err == nil {
+		t.Fatal("legacy ticket_id field was accepted")
 	}
-	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","ticket_id":"ticket-1","unknown":true}`)); err == nil {
+	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","feature_slug":"Checkout"}`)); err == nil {
+		t.Fatal("invalid feature_slug was accepted")
+	}
+	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","feature_slug":"checkout","requested_unit_id":"ticket-1"}`)); err == nil {
+		t.Fatal("invalid requested_unit_id was accepted")
+	}
+	if _, err := DecodeTicketFrontierOperationIdentity(json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","feature_slug":"checkout","unknown":true}`)); err == nil {
 		t.Fatal("unknown field was accepted")
+	}
+}
+
+func TestTicketFrontierIdentityAcceptsAbsentFilter(t *testing.T) {
+	raw := json.RawMessage(`{"expected_packet_id":"packet-1","operation_id":"planner.ticket_frontier","action":"read_ticket_frontier","feature_slug":"checkout","requested_unit_id":null}`)
+	identity, err := DecodeTicketFrontierOperationIdentity(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.RequestedUnitID != "" {
+		t.Fatalf("null requested_unit_id = %q", identity.RequestedUnitID)
 	}
 }
 
@@ -63,7 +80,7 @@ func TestTicketFrontierAdmitterForwardsExactPlannerRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := TicketFrontierOperationIdentity{ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID), Action: string(registry.TicketActionReadFrontier), TicketID: "workspace-1"}
+	identity := TicketFrontierOperationIdentity{ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID), Action: string(registry.TicketActionReadFrontier), FeatureSlug: "checkout", RequestedUnitID: "P4-T1"}
 	authorization, fingerprint, err := admitter.Admit(context.Background(), identity)
 	if err != nil || !authorization.Allowed || fingerprint == "" {
 		t.Fatalf("admission = %#v, %q, %v", authorization, fingerprint, err)

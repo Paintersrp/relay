@@ -59,7 +59,7 @@ func (s *Store) ListFeatureWorkspacesByProject(ctx context.Context, projectRowID
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, workspace_id, project_row_id, feature_slug, state, version,
        current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
-       current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at
+       current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id, created_at, updated_at
 FROM feature_workspaces
 WHERE project_row_id = ?
 ORDER BY updated_at DESC, id DESC
@@ -75,7 +75,7 @@ LIMIT ?`, projectRowID, normalizeWorkflowListLimit(limit))
 		if err := rows.Scan(
 			&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
 			&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
-			&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,
+			&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CurrentDeliveryPlanRowID, &value.CreatedAt, &value.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -310,10 +310,10 @@ SET version = version + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
 RETURNING id, workspace_id, project_row_id, feature_slug, state, version,
            current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
-            current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at`, workspaceID, expectedVersion).Scan(
+            current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id, created_at, updated_at`, workspaceID, expectedVersion).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
 		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
-		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,
+		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CurrentDeliveryPlanRowID, &value.CreatedAt, &value.UpdatedAt,
 	)
 	return value, err
 }
@@ -330,11 +330,11 @@ SET current_discovery_revision_row_id = ?, current_discovery_closure_packet_row_
 WHERE workspace_id = ? AND version = ?
 RETURNING id, workspace_id, project_row_id, feature_slug, state, version,
           current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
-          current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at`,
+          current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id, created_at, updated_at`,
 		revisionRowID, packetRowID, routeRowID, workspaceID, expectedVersion).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
 		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
-		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,
+		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CurrentDeliveryPlanRowID, &value.CreatedAt, &value.UpdatedAt,
 	)
 	return value, err
 }
@@ -348,12 +348,12 @@ func getFeatureWorkspaceByRowID(ctx context.Context, queryer featureWorkspaceQue
 	err := queryer.QueryRowContext(ctx, `
 SELECT id, workspace_id, project_row_id, feature_slug, state, version,
        current_route_state_row_id, current_authority_revision_row_id, discovery_capability_enabled,
-        current_discovery_revision_row_id, current_discovery_closure_packet_row_id, created_at, updated_at
+        current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id, created_at, updated_at
 FROM feature_workspaces
 WHERE id = ?`, rowID).Scan(
 		&value.ID, &value.WorkspaceID, &value.ProjectRowID, &value.FeatureSlug, &value.State, &value.Version,
 		&value.CurrentRouteStateRowID, &value.CurrentAuthorityRevisionRowID, &value.DiscoveryCapabilityEnabled,
-		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CreatedAt, &value.UpdatedAt,
+		&value.CurrentDiscoveryRevisionRowID, &value.CurrentDiscoveryClosurePacketRowID, &value.CurrentDeliveryPlanRowID, &value.CreatedAt, &value.UpdatedAt,
 	)
 	return value, err
 }

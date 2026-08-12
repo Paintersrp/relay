@@ -118,7 +118,7 @@ export interface ProjectFeatureWorkspaceListResponse {
   items: ProjectFeatureWorkspaceSummary[];
 }
 
-export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "abandon_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
+export type GuidedFeatureAction = "continue_discovery" | "close_discovery" | "author_requirements" | "author_shared_design" | "author_delivery_plan" | "author_delivery_ticket" | "review_planning_candidate" | "approve_planning_candidate" | "promote_planning_candidate" | "continue_established_route" | "complete_feature" | "abandon_feature" | "legacy_recovery" | "reopen_discovery" | "select_delivery_ticket" | "prepare_package" | "approve_package" | "launch_run" | "continue_run" | "recover_run" | "prepare_audit" | "record_audit_decision" | "remediate" | "prototype_execute" | "prototype_cleanup" | "prototype_qa";
 
 export interface GuidedFrontierEntry {
   ticketId: string;
@@ -126,6 +126,22 @@ export interface GuidedFrontierEntry {
   externalPriority: number;
   repoTarget: string;
   branch: string;
+}
+
+/** One enriched workspace Ticket Frontier v2 entry: a planned unit, an active
+ * authored Ticket, or a planned unit realized by an authored Ticket. State is
+ * the exact server v2 state vocabulary (planned, authored, blocked, eligible,
+ * selected, prepared, executing, audit, remediation, completed). */
+export interface GuidedFrontierV2Entry {
+  unitId?: string;
+  ticketId?: string;
+  revision?: number;
+  sha256?: string;
+  state: string;
+  blockReason?: string;
+  dependsOn: string[];
+  unmetDependencies: string[];
+  downstreamUnits: string[];
 }
 
 export interface GuidedTicketTransfer {
@@ -311,7 +327,7 @@ export interface GuidedFeatureDetail {
   };
   currentness?: { readiness: string; owner: string; blockedOperation: string; effect: string; recoveryCategory: string };
   planning: { readiness: string; status: string; recoveryCategory: string; candidateState?: string; reviewState?: string; approvalState?: string; promotionState?: string; candidateCount?: number; awaitingReview?: number; awaitingApproval?: number; awaitingPromotion?: number; needsRevision?: number; promoted?: number; historicalCount?: number };
-  delivery?: { frontier: GuidedFrontierEntry[]; selectionState: string; packageState: string; runState: string; auditState: string; remediationState: string };
+  delivery?: { frontier: GuidedFrontierEntry[]; frontierV2: GuidedFrontierV2Entry[]; planSha256: string; selectionState: string; packageState: string; runState: string; auditState: string; remediationState: string };
   prototype?: { runState: string; cleanupState: string; qaState: string; evidenceState: string; processOutcome: string };
   completion: { gates: Array<{ name: string; ready: boolean }>; ready: boolean; recorded: boolean; decision?: "completed" | "abandoned" };
   ticketFrontier: { status: string; summary: string; blockers: string[]; downstream: string[] };

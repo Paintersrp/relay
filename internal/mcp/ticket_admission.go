@@ -8,17 +8,21 @@ import (
 	"errors"
 
 	appoperations "relay/internal/app/operations"
+	apptickets "relay/internal/app/tickets"
 	"relay/internal/operations/registry"
 )
 
 // TicketFrontierOperationIdentity is the strict, transport-independent
 // identity for the only active Ticket MCP operation. It binds a Planner
 // frontier read to the published semantic identity and exact active packet.
+// FeatureSlug is required; RequestedUnitID narrows the projection and is
+// optional.
 type TicketFrontierOperationIdentity struct {
 	ExpectedPacketID string `json:"expected_packet_id"`
 	OperationID      string `json:"operation_id"`
 	Action           string `json:"action"`
-	TicketID         string `json:"ticket_id"`
+	FeatureSlug      string `json:"feature_slug"`
+	RequestedUnitID  string `json:"requested_unit_id"`
 }
 
 func (v TicketFrontierOperationIdentity) SemanticIdentityVersion() string {
@@ -66,8 +70,11 @@ func (v TicketFrontierOperationIdentity) Validate() error {
 	if v.OperationID != string(registry.PlannerTicketFrontierOperationID) {
 		return errors.New("ticket frontier identity must use the planner frontier operation")
 	}
-	if v.ExpectedPacketID == "" || v.TicketID == "" {
-		return errors.New("ticket frontier identity requires expected_packet_id and ticket_id")
+	if v.ExpectedPacketID == "" || !apptickets.ValidFrontierFeatureSlug(v.FeatureSlug) {
+		return errors.New("ticket frontier identity requires expected_packet_id and a valid feature_slug")
+	}
+	if v.RequestedUnitID != "" && !apptickets.ValidFrontierUnitTicketID(v.RequestedUnitID) {
+		return errors.New("ticket frontier identity requested_unit_id must be a valid uppercase unit/ticket identity")
 	}
 	if v.SemanticIdentityVersion() == "" {
 		return errors.New("unregistered ticket frontier operation identity")
@@ -89,7 +96,7 @@ func DecodeTicketFrontierOperationIdentity(raw json.RawMessage) (TicketFrontierO
 }
 
 func (v TicketFrontierOperationIdentity) admissionRequest() appoperations.TicketFrontierReadRequest {
-	return appoperations.TicketFrontierReadRequest{PacketID: v.ExpectedPacketID, TicketID: v.TicketID}
+	return appoperations.TicketFrontierReadRequest{PacketID: v.ExpectedPacketID, FeatureSlug: v.FeatureSlug, RequestedUnitID: v.RequestedUnitID}
 }
 
 // TicketRoleSurface exposes only published Planner frontier authority. It

@@ -104,7 +104,7 @@ func createPlannerDerivedPacket(t *testing.T, f plannerDerivedFixture, operation
 	}
 	identity := semanticidentity.CreateOperationPacket{SurfaceContract: operation.SurfaceContract, OperationID: operationID, ProjectID: f.projectID, WorkflowReferences: f.workflowReferences(t, ticketID)}
 	switch operationID {
-	case "planner.delivery_ticket":
+	case "planner.delivery_ticket", "planner.delivery_plan":
 		input, attestations := plannerDerivedInlineInput("confirmed_delivery_boundary", "Author the exact delivery boundary.")
 		identity.Inputs, identity.Attestations = []semanticidentity.InputBinding{input}, attestations
 	case "planner.transition_plan":
@@ -184,6 +184,23 @@ func readPlannerDerivedInput(t *testing.T, f plannerDerivedFixture, result Creat
 func TestLifecycleDeliveryTicketMaterializesCurrentFeatureWorkspaceRoute(t *testing.T) {
 	f := newPlannerDerivedFixture(t, false)
 	result := createPlannerDerivedPacket(t, f, "planner.delivery_ticket", "")
+	data, input, _ := readPlannerDerivedInput(t, f, result, "current_feature_workspace_route")
+	expected, _ := canonicalJSON(featureWorkspaceRouteInput{f.workspace.WorkspaceID, f.workspace.FeatureSlug, f.workspace.Version, "open", f.route.RouteStateID, f.route.Sequence, f.route.WorkspaceVersion, "ready"})
+	if !bytes.Equal(data, expected) || input.SourceKind != packet.InputSourceInlineText || input.InputRole != "evidence" || input.AttestationKind != "derived_authority" {
+		t.Fatalf("input=%#v data=%s", input, data)
+	}
+}
+
+// TestLifecycleDeliveryPlanMaterializesCurrentFeatureWorkspaceRoute admits one
+// planner.delivery_plan operation packet through the published registry and
+// verifies its exact operation identity, surface, role, and the derived
+// current_feature_workspace_route input bound by the packet lifecycle.
+func TestLifecycleDeliveryPlanMaterializesCurrentFeatureWorkspaceRoute(t *testing.T) {
+	f := newPlannerDerivedFixture(t, false)
+	result := createPlannerDerivedPacket(t, f, "planner.delivery_plan", "")
+	if result.Packet.Summary.OperationID != "planner.delivery_plan" || result.Packet.Summary.SurfaceContract != "planner-authoring.v1" || result.Packet.Summary.Role != "planner" {
+		t.Fatalf("delivery plan packet = %#v", result.Packet.Summary)
+	}
 	data, input, _ := readPlannerDerivedInput(t, f, result, "current_feature_workspace_route")
 	expected, _ := canonicalJSON(featureWorkspaceRouteInput{f.workspace.WorkspaceID, f.workspace.FeatureSlug, f.workspace.Version, "open", f.route.RouteStateID, f.route.Sequence, f.route.WorkspaceVersion, "ready"})
 	if !bytes.Equal(data, expected) || input.SourceKind != packet.InputSourceInlineText || input.InputRole != "evidence" || input.AttestationKind != "derived_authority" {

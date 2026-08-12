@@ -105,8 +105,9 @@ func openLifecycleFixture(t *testing.T) lifecycleFixture {
 
 	projectRepo := makeLifecycleGitRepo(t, filepath.Join(root, "project-repo"), map[string]string{"README.md": "project source\n"})
 	specsRepo := makeLifecycleGitRepo(t, filepath.Join(root, "relay-specs"), map[string]string{
-		"planner-source-manifest.json":        `{"manifest_version":"1.0","domains":{"requirements":["contracts/cross-cutting.md","contracts/requirements.md"],"design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"shared_design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"delivery_ticket":["contracts/cross-cutting.md","contracts/delivery-ticket.md"],"transition_plan":["contracts/cross-cutting.md","contracts/transition-plan.md"]}}` + "\n",
+		"planner-source-manifest.json":        `{"manifest_version":"1.0","domains":{"requirements":["contracts/cross-cutting.md","contracts/requirements.md"],"design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"shared_design":["contracts/cross-cutting.md","contracts/requirements-to-design.md","contracts/design.md"],"delivery_plan":["contracts/cross-cutting.md","contracts/delivery-plan.md"],"delivery_ticket":["contracts/cross-cutting.md","contracts/delivery-ticket.md"],"transition_plan":["contracts/cross-cutting.md","contracts/transition-plan.md"]}}` + "\n",
 		"contracts/cross-cutting.md":          "# Cross-cutting\n",
+		"contracts/delivery-plan.md":           "# Delivery Plan\n",
 		"contracts/delivery-ticket.md":        "# Delivery Ticket\n",
 		"contracts/transition-plan.md":        "# Transition Plan\n",
 		"contracts/requirements.md":           "# Requirements\n",

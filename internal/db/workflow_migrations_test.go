@@ -852,3 +852,81 @@ func TestNoDeliveryFeatureClosingMigrationPreservesHistoryAndGuards(t *testing.T
 		}
 	})
 }
+
+func TestDeliveryPlanMigrationAddsDurableSurfaceAndExtendsCandidateFamilies(t *testing.T) {
+	db := openMigrationTestDB(t, "delivery-plan-surface")
+	defer db.Close()
+	if err := AutoMigrateWorkflow(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"delivery_plans", "delivery_plan_units", "delivery_plan_unit_dependencies", "delivery_ticket_plan_unit_links"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("delivery plan table %q missing", table)
+		}
+	}
+	// The planning candidate family vocabulary now admits delivery_plan.
+	var projectID, workspaceID int64
+	if err := db.QueryRow(`INSERT INTO projects (project_id, name) VALUES ('project-plan-migration', 'Plan Migration') RETURNING id`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug) VALUES ('workspace-plan-migration', ?, 'plan-migration') RETURNING id`, projectID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO repository_targets (repo_target, local_path, configured_branch_ref, configuration_version) VALUES ('plan-migration-repo', 'C:/plan-migration-repo', 'refs/heads/main', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	var artifactID, manifestID, revisionID, packetID int64
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-migration-plan', ?, 'feature-discovery/workspace-plan-migration/plan/plan.json', ?, 'application/json', 4) RETURNING id`, workspaceID, migrationTestHash).Scan(&artifactID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_artifacts (discovery_artifact_id, workspace_row_id, relative_path, sha256, media_type, size_bytes) VALUES ('discovery-artifact-migration-manifest', ?, 'feature-discovery/workspace-plan-migration/plan/manifest.json', ?, 'application/vnd.relay.feature-discovery-closure+json', 4) RETURNING id`, workspaceID, migrationTestHash).Scan(&manifestID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_integrated_discovery_revisions (discovery_revision_id, workspace_row_id, revision_number, artifact_row_id, created_identity) VALUES ('discovery-revision-migration-plan', ?, 1, ?, 'migration') RETURNING id`, workspaceID, artifactID).Scan(&revisionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO feature_workspace_discovery_closure_packets (closure_packet_id, workspace_row_id, closing_revision_row_id, destination, manifest_artifact_row_id, manifest_sha256, manifest_size_bytes, manifest_media_type) VALUES ('discovery-packet-migration-plan', ?, ?, 'shared_design', ?, ?, 4, 'application/vnd.relay.feature-discovery-closure+json') RETURNING id`, workspaceID, revisionID, manifestID, migrationTestHash).Scan(&packetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_discovery_revision_row_id = ?, current_discovery_closure_packet_row_id = ?, version = version + 1 WHERE id = ?`, revisionID, packetID, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	var candidateID int64
+	if err := db.QueryRow(`INSERT INTO planning_candidates (candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, repo_target, branch, base_commit, destination, created_identity) VALUES ('candidate-migration-plan', ?, 'delivery_plan', 'plan-migration.delivery-plan.json', ?, ?, 4, ?, 'plan-migration-repo', 'main', ?, 'shared_design', 'migration') RETURNING id`, workspaceID, artifactID, migrationTestHash, packetID, strings.Repeat("b", 40)).Scan(&candidateID); err != nil {
+		t.Fatal(err)
+	}
+	var planRowID int64
+	if err := db.QueryRow(`INSERT INTO delivery_plans (plan_id, workspace_row_id, candidate_row_id, artifact_row_id, artifact_sha256, artifact_size_bytes, feature_slug, goal, context, created_identity) VALUES ('delivery-plan-migration', ?, ?, ?, ?, 4, 'plan-migration', 'Goal', 'Context', 'migration') RETURNING id`, workspaceID, candidateID, artifactID, migrationTestHash).Scan(&planRowID); err != nil {
+		t.Fatal(err)
+	}
+	var unitRowID int64
+	if err := db.QueryRow(`INSERT INTO delivery_plan_units (plan_row_id, sequence, unit_id, goal) VALUES (?, 1, 'P1-T1', 'Unit goal') RETURNING id`, planRowID).Scan(&unitRowID); err != nil {
+		t.Fatal(err)
+	}
+	// A planned dependency must reference a unit of the same Plan.
+	if _, err := db.Exec(`INSERT INTO delivery_plan_unit_dependencies (unit_row_id, sequence, depends_on_unit_row_id) VALUES (?, 1, ?)`, unitRowID, unitRowID+999); err == nil {
+		t.Fatal("planned dependency accepted across plans")
+	}
+	// The current-plan pointer must reference a Plan of the workspace.
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_delivery_plan_row_id = ?, version = version + 1 WHERE id = ?`, int64(999999), workspaceID); err == nil {
+		t.Fatal("current delivery plan pointer accepted a non-plan row")
+	}
+	if _, err := db.Exec(`UPDATE feature_workspaces SET current_delivery_plan_row_id = ?, version = version + 1 WHERE id = ?`, planRowID, workspaceID); err != nil {
+		t.Fatalf("current delivery plan pointer rejected: %v", err)
+	}
+	// The delivery plan surface is immutable retained history.
+	if _, err := db.Exec(`UPDATE delivery_plans SET goal = 'mutated' WHERE id = ?`, planRowID); err == nil {
+		t.Fatal("delivery plan was mutable")
+	}
+	if _, err := db.Exec(`DELETE FROM delivery_plans WHERE id = ?`, planRowID); err == nil {
+		t.Fatal("delivery plan was deletable")
+	}
+	// Unknown candidate families remain rejected.
+	if _, err := db.Exec(`INSERT INTO planning_candidates (candidate_id, workspace_row_id, family, filename, artifact_row_id, artifact_sha256, artifact_size_bytes, discovery_closure_packet_row_id, repo_target, branch, base_commit, destination, created_identity) VALUES ('candidate-migration-invalid', ?, 'unknown_family', 'x.json', ?, ?, 4, ?, 'plan-migration-repo', 'main', ?, 'shared_design', 'migration')`, workspaceID, artifactID, migrationTestHash, packetID, strings.Repeat("b", 40)); err == nil {
+		t.Fatal("unknown candidate family was accepted")
+	}
+}

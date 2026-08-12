@@ -15,6 +15,7 @@ import (
 const (
 	CandidateFamilyRequirements   = "requirements"
 	CandidateFamilySharedDesign   = "shared_design"
+	CandidateFamilyDeliveryPlan   = "delivery_plan"
 	CandidateFamilyDeliveryTicket = "delivery_ticket"
 )
 
@@ -85,10 +86,11 @@ type CandidateApprovalResult struct {
 }
 
 type CandidatePromotionResult struct {
-	Detail    AuthorityRevisionDetail
-	Workspace workflowstore.FeatureWorkspace
-	Candidate workflowstore.PlanningCandidate
-	Approval  workflowstore.PlanningCandidateApproval
+	Detail       AuthorityRevisionDetail
+	Workspace    workflowstore.FeatureWorkspace
+	Candidate    workflowstore.PlanningCandidate
+	Approval     workflowstore.PlanningCandidateApproval
+	DeliveryPlan workflowstore.DeliveryPlan
 }
 
 type PlanningCandidateReviewDisposition string
@@ -197,6 +199,10 @@ func candidateDestinationAllowed(family string, destination DiscoveryDestination
 		return destination == DiscoveryDestinationRequirements || destination == DiscoveryDestinationRequirementsThenSharedDesign
 	case CandidateFamilySharedDesign:
 		return destination == DiscoveryDestinationSharedDesign || destination == DiscoveryDestinationRequirementsThenSharedDesign
+	case CandidateFamilyDeliveryPlan:
+		// Delivery Plan authoring is selected after an approved Shared Design
+		// on routes that pass through Shared Design as governing authority.
+		return destination == DiscoveryDestinationSharedDesign || destination == DiscoveryDestinationRequirementsThenSharedDesign
 	case CandidateFamilyDeliveryTicket:
 		return destination == DiscoveryDestinationDirectDeliveryTicket || destination == DiscoveryDestinationRequirements || destination == DiscoveryDestinationSharedDesign || destination == DiscoveryDestinationRequirementsThenSharedDesign || destination == DiscoveryDestinationExistingRouteContinuation
 	default:
@@ -212,6 +218,9 @@ func candidateFilenameAllowed(family, filename, featureSlug string) bool {
 		return featureSlug != "" && filename == featureSlug+".requirements.md"
 	case CandidateFamilySharedDesign:
 		return featureSlug != "" && filename == featureSlug+".design.md"
+	case CandidateFamilyDeliveryPlan:
+		info, diagnostics := speccompiler.ParseFilename(filename)
+		return len(diagnostics) == 0 && info.Kind == speccompiler.ArtifactDeliveryPlan && strings.HasSuffix(filename, ".delivery-plan.json")
 	case CandidateFamilyDeliveryTicket:
 		info, diagnostics := speccompiler.ParseFilename(filename)
 		return len(diagnostics) == 0 && info.Kind == speccompiler.ArtifactDeliveryTicket && strings.HasSuffix(filename, ".delivery-ticket.json")
@@ -224,11 +233,11 @@ func candidateFilenameAllowed(family, filename, featureSlug string) bool {
 // exact bytes to one current closure and authority basis before durable insert.
 func (s *Service) AdmitPlanningCandidate(ctx context.Context, input CandidateAdmissionInput) (CandidateAdmissionResult, error) {
 	if strings.TrimSpace(input.WorkspaceID) == "" || input.ExpectedVersion < 1 || len(input.Bytes) == 0 ||
-		!oneOf(input.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) ||
+		!oneOf(input.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket) ||
 		!candidateDestinationAllowed(input.Family, input.Destination) ||
 		strings.TrimSpace(input.RepoTarget) == "" || strings.TrimSpace(input.Branch) == "" || !validBaseCommit(input.BaseCommit) ||
 		strings.TrimSpace(input.CreatedIdentity) == "" {
-		if !oneOf(input.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) {
+		if !oneOf(input.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket) {
 			return CandidateAdmissionResult{}, ErrInvalidCandidateFamily
 		}
 		if !candidateDestinationAllowed(input.Family, input.Destination) {
@@ -243,7 +252,7 @@ func (s *Service) AdmitPlanningCandidate(ctx context.Context, input CandidateAdm
 	mediaType := input.MediaType
 	if mediaType == "" {
 		mediaType = "application/json"
-		if input.Family != CandidateFamilyDeliveryTicket {
+		if !oneOf(input.Family, CandidateFamilyDeliveryTicket, CandidateFamilyDeliveryPlan) {
 			mediaType = "text/markdown"
 		}
 	}
@@ -467,7 +476,7 @@ func (s *Service) ApprovePlanningCandidate(ctx context.Context, input CandidateA
 		if err != nil {
 			return err
 		}
-		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) {
+		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket) {
 			return ErrInvalidCandidateFamily
 		}
 		if candidate.WorkspaceRowID != workspace.ID {
@@ -579,7 +588,7 @@ func (s *Service) CompletePlanningCandidateReview(ctx context.Context, input Com
 		if candidate.WorkspaceRowID != workspace.ID {
 			return fmt.Errorf("%w: planning candidate does not belong to this workspace", ErrCandidateReview)
 		}
-		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) {
+		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket) {
 			return ErrInvalidCandidateFamily
 		}
 		// The immutable candidate must carry the family and destination the
@@ -633,6 +642,8 @@ func planningRefreshOperation(family string) string {
 		return "planner.requirements"
 	case CandidateFamilySharedDesign:
 		return "planner.shared_design"
+	case CandidateFamilyDeliveryPlan:
+		return "planner.delivery_plan"
 	case CandidateFamilyDeliveryTicket:
 		return "planner.delivery_ticket"
 	default:
@@ -653,7 +664,7 @@ func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input Ca
 		if err != nil {
 			return err
 		}
-		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket) {
+		if !oneOf(candidate.Family, CandidateFamilyRequirements, CandidateFamilySharedDesign, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket) {
 			return ErrInvalidCandidateFamily
 		}
 		workspace, err := tx.GetFeatureWorkspaceByRowID(ctx, candidate.WorkspaceRowID)
@@ -684,6 +695,14 @@ func (s *Service) PromoteApprovedPlanningCandidate(ctx context.Context, input Ca
 		}
 		if approval.CandidateRowID != candidate.ID || approval.CandidateArtifactRowID != candidate.ArtifactRowID || approval.CandidateSha256 != candidate.ArtifactSha256 || approval.CandidateSizeBytes != candidate.ArtifactSizeBytes {
 			return ErrCandidateApprovalInvalid
+		}
+		if candidate.Family == CandidateFamilyDeliveryPlan {
+			updated, plan, err := promoteApprovedDeliveryPlan(ctx, tx, candidate, approval, workspace)
+			if err != nil {
+				return err
+			}
+			result = CandidatePromotionResult{Detail: AuthorityRevisionDetail{}, Workspace: updated, Candidate: candidate, Approval: approval, DeliveryPlan: plan}
+			return nil
 		}
 		priorLayers := []workflowstore.FeatureWorkspaceAuthorityLayer{}
 		if workspace.CurrentAuthorityRevisionRowID.Valid {
@@ -787,6 +806,64 @@ func planningCandidateSourceClosure(ctx context.Context, tx *workflowstore.Tx, c
 
 func (s *Service) PromoteCandidate(ctx context.Context, input CandidatePromotionInput) (CandidatePromotionResult, error) {
 	return s.PromoteApprovedPlanningCandidate(ctx, input)
+}
+
+// promoteApprovedDeliveryPlan promotes one exact approved delivery_plan
+// candidate to the workspace's current approved Delivery Plan. The candidate
+// bytes are recompiled and the planned units and planned semantic dependencies
+// are durably recorded in Plan source order before currentness is recorded.
+// Plan promotion never creates an authority layer, never joins a selected
+// package, and leaves existing approved Tickets and packages current; it
+// governs future planning only.
+func promoteApprovedDeliveryPlan(ctx context.Context, tx *workflowstore.Tx, candidate workflowstore.PlanningCandidate, approval workflowstore.PlanningCandidateApproval, workspace workflowstore.FeatureWorkspace) (workflowstore.FeatureWorkspace, workflowstore.DeliveryPlan, error) {
+	if _, err := tx.GetDeliveryPlanByCandidateRowID(ctx, candidate.ID); err == nil {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, ErrCandidateApprovalInvalid
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, err
+	}
+	bytes, err := tx.ReadPlanningCandidateBytes(ctx, candidate.CandidateID, int(candidate.ArtifactSizeBytes))
+	if err != nil {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, ErrCandidateBytesMismatch
+	}
+	compiled, document := speccompiler.CompileDeliveryPlan(candidate.Filename, bytes)
+	if len(compiled.Errors) != 0 || document == nil || compiled.OutputFilename == nil || compiled.Markdown == nil {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, fmt.Errorf("%w: delivery plan candidate compilation failed: %v", ErrCandidateApprovalInvalid, compiled.Errors)
+	}
+	if document.FeatureSlug != workspace.FeatureSlug || len(document.Units) == 0 {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, ErrCandidateApprovalInvalid
+	}
+	plan, err := tx.CreateDeliveryPlan(ctx, workflowstore.CreateDeliveryPlanParams{
+		PlanID: workflowstore.NewDeliveryPlanID(), WorkspaceRowID: workspace.ID, CandidateRowID: candidate.ID,
+		ArtifactRowID: candidate.ArtifactRowID, ArtifactSha256: candidate.ArtifactSha256, ArtifactSizeBytes: candidate.ArtifactSizeBytes,
+		FeatureSlug: document.FeatureSlug, Goal: document.Goal, Context: document.Context, CreatedIdentity: approval.CreatedIdentity,
+	})
+	if err != nil {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, err
+	}
+	unitRowIDs := make(map[string]int64, len(document.Units))
+	for index, unit := range document.Units {
+		created, err := tx.CreateDeliveryPlanUnit(ctx, workflowstore.CreateDeliveryPlanUnitParams{PlanRowID: plan.ID, Sequence: int64(index + 1), UnitID: unit.UnitID, Goal: unit.Goal})
+		if err != nil {
+			return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, err
+		}
+		unitRowIDs[unit.UnitID] = created.ID
+	}
+	for _, unit := range document.Units {
+		unitRowID := unitRowIDs[unit.UnitID]
+		for sequence, dependencyID := range unit.DependsOn {
+			if _, err := tx.CreateDeliveryPlanUnitDependency(ctx, workflowstore.CreateDeliveryPlanUnitDependencyParams{UnitRowID: unitRowID, Sequence: int64(sequence + 1), DependsOnUnitRowID: unitRowIDs[dependencyID]}); err != nil {
+				return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, err
+			}
+		}
+	}
+	updated, err := tx.SetCurrentDeliveryPlan(ctx, plan.ID, workspace.WorkspaceID, workspace.Version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, ErrVersionConflict
+	}
+	if err != nil {
+		return workflowstore.FeatureWorkspace{}, workflowstore.DeliveryPlan{}, err
+	}
+	return updated, plan, nil
 }
 
 // PlannerAuthoringEnvelope and AuditorReviewEnvelope are immutable read-only

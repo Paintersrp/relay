@@ -135,8 +135,33 @@ describe("feature workspace transport", () => {
     expect(JSON.stringify(detail)).not.toMatch(/ticket_design_brief|design-brief/i);
   });
 
-  it("posts only the server-selected primary action with expected version and confirmation", async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(response(guidedBody)).mockResolvedValueOnce(response(guidedBody));
+  it("parses the enriched Ticket Frontier v2 entries and current Plan digest", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      guided: {
+        ...guidedBody.guided,
+        delivery: {
+          frontier: [],
+          frontierV2: [
+            { unitId: "P6-T1", state: "planned", dependsOn: [], unmetDependencies: [], downstreamUnits: ["P6-T2"] },
+            { ticketId: "P6-T2", revision: 1, state: "blocked", blockReason: "dependency_unmet", dependsOn: ["P6-T1"], unmetDependencies: ["P6-T1"], downstreamUnits: [] },
+          ],
+          planSha256: "c".repeat(64),
+          selectionState: "none", packageState: "none", runState: "none", auditState: "none", remediationState: "none",
+        },
+        availableActions: [{ action: "author_delivery_plan", primary: true, enabled: true, requiresConfirmation: false, handoff: "Author the Delivery Plan." }],
+        primaryAction: "author_delivery_plan",
+      },
+    })));
+    const detail = await getGuidedFeatureWorkspace("workspace-1");
+    expect(detail.delivery?.frontierV2).toEqual([
+      { unitId: "P6-T1", ticketId: "", revision: undefined, sha256: "", state: "planned", blockReason: undefined, dependsOn: [], unmetDependencies: [], downstreamUnits: ["P6-T2"] },
+      { unitId: "", ticketId: "P6-T2", revision: 1, sha256: "", state: "blocked", blockReason: "dependency_unmet", dependsOn: ["P6-T1"], unmetDependencies: ["P6-T1"], downstreamUnits: [] },
+    ]);
+    expect(detail.delivery?.planSha256).toBe("c".repeat(64));
+    expect(detail.primaryAction).toBe("author_delivery_plan");
+  });
+
+  it("posts only the server-selected primary action with expected version and confirmation", async () => {    const fetch = vi.fn().mockResolvedValueOnce(response(guidedBody)).mockResolvedValueOnce(response(guidedBody));
     vi.stubGlobal("fetch", fetch);
     await getGuidedFeatureWorkspace("workspace-1");
     await guidedFeatureWorkspaceAction("workspace-1", { expectedVersion: 2, action: "select_delivery_ticket", confirmation: true });

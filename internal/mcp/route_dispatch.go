@@ -31,9 +31,10 @@ type RouteDispatchServices struct {
 }
 
 // TicketFrontierReader is the owner read boundary reached only after packet
-// admission succeeds for the published Planner frontier route.
+// admission succeeds for the published Planner frontier route. It projects the
+// exact workspace Ticket Frontier v2 surface for one Feature Workspace.
 type TicketFrontierReader interface {
-	Read(context.Context, string) (apptickets.TicketDetail, error)
+	ReadFrontier(context.Context, apptickets.FrontierV2Input) (apptickets.FrontierV2, error)
 }
 
 type AuditReadbackService interface {
@@ -43,7 +44,7 @@ type AuditReadbackService interface {
 
 func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServices) (RouteDispatchers, error) {
 	handlers := make(map[string]map[string]SurfaceHandler, len(set.Manifests))
-	toolNames := make(map[string]struct{}, 37)
+	toolNames := make(map[string]struct{}, 39)
 	for _, manifest := range set.Manifests {
 		if _, exists := handlers[manifest.RoutePath]; exists {
 			return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: duplicate route %s", manifest.RoutePath)
@@ -62,7 +63,7 @@ func NewRouteDispatchers(set routecontracts.RouteSet, services RouteDispatchServ
 		}
 		handlers[manifest.RoutePath] = routeHandlers
 	}
-	if len(toolNames) != 37 {
+	if len(toolNames) != 39 {
 		return RouteDispatchers{}, fmt.Errorf("MCP_DISPATCHER_MISSING: got %d handlers", len(toolNames))
 	}
 	return RouteDispatchers{Handlers: handlers}, nil
@@ -707,8 +708,9 @@ func newWayfinderHandler(name string, services RouteDispatchServices) SurfaceHan
 func newTicketFrontierHandler(manifest routecontracts.RouteManifest, tool routecontracts.ToolManifest, admitter *TicketFrontierAdmitter, tickets TicketFrontierReader) SurfaceHandler {
 	return func(raw json.RawMessage) ToolCallResult {
 		var in struct {
-			PacketID string `json:"packet_id"`
-			TicketID string `json:"ticket_id"`
+			PacketID        string `json:"packet_id"`
+			FeatureSlug     string `json:"feature_slug"`
+			RequestedUnitID string `json:"requested_unit_id"`
 		}
 		if err := brokerDecodeStrict(raw, &in); err != nil {
 			return toolErr(err.Error())
@@ -723,7 +725,8 @@ func newTicketFrontierHandler(manifest routecontracts.RouteManifest, tool routec
 			ExpectedPacketID: in.PacketID,
 			OperationID:      tool.OperationID,
 			Action:           string(registry.TicketActionReadFrontier),
-			TicketID:         in.TicketID,
+			FeatureSlug:      in.FeatureSlug,
+			RequestedUnitID:  in.RequestedUnitID,
 		}
 		authorization, semanticRequestSHA256, err := admitter.Admit(context.Background(), identity)
 		if err != nil {
@@ -732,7 +735,9 @@ func newTicketFrontierHandler(manifest routecontracts.RouteManifest, tool routec
 		if !authorization.Allowed || semanticRequestSHA256 == "" {
 			return toolErr("MCP_TICKET_FRONTIER_ADMISSION_DENIED")
 		}
-		value, err := tickets.Read(context.Background(), in.TicketID)
+		value, err := tickets.ReadFrontier(context.Background(), apptickets.FrontierV2Input{
+			ProjectID: authorization.Summary.ProjectID, FeatureSlug: in.FeatureSlug, RequestedUnitID: in.RequestedUnitID,
+		})
 		if err != nil {
 			return toolErr(err.Error())
 		}

@@ -12,10 +12,12 @@ import (
 
 // TicketFrontierReadRequest is the only packet-authorized Ticket request.
 // Ticket mutations are direct domain operations and never pass through this
-// boundary.
+// boundary. FeatureSlug is required; RequestedUnitID narrows the projection
+// and is empty when no filter is supplied.
 type TicketFrontierReadRequest struct {
-	PacketID string
-	TicketID string
+	PacketID        string
+	FeatureSlug     string
+	RequestedUnitID string
 }
 
 // TicketFrontierAdmissionService verifies the exact active Planner frontier
@@ -31,7 +33,10 @@ func NewTicketFrontierAdmissionService(packets PacketMutationAuthorizer) (*Ticke
 }
 
 func ValidateTicketFrontierReadRequest(request TicketFrontierReadRequest) error {
-	if !exactNonBlank(request.PacketID) || !exactNonBlank(request.TicketID) {
+	if !exactNonBlank(request.PacketID) || !tickets.ValidFrontierFeatureSlug(request.FeatureSlug) {
+		return ErrTicketAdmission
+	}
+	if request.RequestedUnitID != "" && !tickets.ValidFrontierUnitTicketID(request.RequestedUnitID) {
 		return ErrTicketAdmission
 	}
 	operation, ok := registry.TicketOperationForAction(registry.TicketActionReadFrontier)

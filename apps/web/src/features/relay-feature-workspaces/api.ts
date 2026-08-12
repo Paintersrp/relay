@@ -1,5 +1,5 @@
 import { asWorkflowRecord, RelayApiError, requestWorkflowJson, requiredWorkflowArray, requiredWorkflowInteger, requiredWorkflowString, type WorkflowHttpMethod, type WorkflowJsonRecord } from "@/features/workflow-api";
-import type { AuthorityRevision, CompleteFeatureWorkspaceRequest, CreateDiscoveryTicketRequest, CreateFeatureWorkspaceRequest, FeatureCompletionStatus, FeatureWorkspace, FeatureWorkspaceDetail, GoverningArtifactApproval, GuidedFeatureAction, GuidedFeatureActionRequest, GuidedFeatureDetail, GuidedFrontierEntry, GuidedIntegrity, GuidedOperationTransfer, ProjectFeatureWorkspaceListResponse, ProjectFeatureWorkspaceSummary, PublishAuthorityRequest, RecordAuthorityApprovalRequest, ResolveDiscoveryTicketRequest, RouteFeatureWorkspaceRequest } from "./types";
+import type { AuthorityRevision, CompleteFeatureWorkspaceRequest, CreateDiscoveryTicketRequest, CreateFeatureWorkspaceRequest, FeatureCompletionStatus, FeatureWorkspace, FeatureWorkspaceDetail, GoverningArtifactApproval, GuidedFeatureAction, GuidedFeatureActionRequest, GuidedFeatureDetail, GuidedFrontierEntry, GuidedFrontierV2Entry, GuidedIntegrity, GuidedOperationTransfer, ProjectFeatureWorkspaceListResponse, ProjectFeatureWorkspaceSummary, PublishAuthorityRequest, RecordAuthorityApprovalRequest, ResolveDiscoveryTicketRequest, RouteFeatureWorkspaceRequest } from "./types";
 
 function record(value: unknown, method: WorkflowHttpMethod, path: string, context: string): WorkflowJsonRecord { return asWorkflowRecord(value, method, path, context); }
 function nullableInteger(value: unknown, method: WorkflowHttpMethod, path: string, field: string): number | null { if (value === null || value === undefined) return null; if (!Number.isInteger(value)) throw new RelayApiError(`Malformed JSON response from ${method} ${path}: ${field} must be an integer or null`, 502, path, method); return value as number; }
@@ -12,7 +12,7 @@ function workspaceProject(value: unknown, method: WorkflowHttpMethod, path: stri
 function detail(value: unknown, method: WorkflowHttpMethod, path: string): FeatureWorkspaceDetail { const item = record(value, method, path, "workspace detail"); const sourceBasis = record(item.sourceBasis, method, path, "sourceBasis"); return { workspace: workspace(item.workspace, method, path), project: workspaceProject(item.project, method, path), inputs: requiredWorkflowArray(item, "inputs", method, path, "workspace detail"), destinations: requiredWorkflowArray(item, "destinations", method, path, "workspace detail"), tickets: requiredWorkflowArray(item, "tickets", method, path, "workspace detail").map((ticket) => { const value = record(ticket, method, path, "ticket"); return { ticketId: requiredWorkflowString(value, "ticketId", method, path, "ticket"), ticketKey: requiredWorkflowString(value, "ticketKey", method, path, "ticket"), subject: requiredWorkflowString(value, "subject", method, path, "ticket"), state: requiredWorkflowString(value, "state", method, path, "ticket") as FeatureWorkspaceDetail["tickets"][number]["state"], version: requiredWorkflowInteger(value, "version", method, path, "ticket", 1), dependencies: requiredWorkflowArray(value, "dependencies", method, path, "ticket").map((dependency) => { const item = record(dependency, method, path, "ticket dependency"); return { dependsOnTicketRowId: requiredWorkflowInteger(item, "dependsOnTicketRowId", method, path, "ticket dependency", 1), kind: requiredWorkflowString(item, "kind", method, path, "ticket dependency") as "blocks" | "informs" }; }), resolutions: requiredWorkflowArray(value, "resolutions", method, path, "ticket").map((resolution) => { const item = record(resolution, method, path, "resolution"); return { resolutionId: requiredWorkflowString(item, "resolutionId", method, path, "resolution"), sequence: requiredWorkflowInteger(item, "sequence", method, path, "resolution", 1), kind: requiredWorkflowString(item, "kind", method, path, "resolution") as "resolved" | "rejected" | "deferred", artifactRowId: nullableInteger(item.artifactRowId, method, path, "artifactRowId"), retainedArtifactRowId: nullableInteger(item.retainedArtifactRowId, method, path, "retainedArtifactRowId"), artifactSha256: requiredWorkflowString(item, "artifactSha256", method, path, "resolution"), sourceClosureRowId: nullableInteger(item.sourceClosureRowId, method, path, "sourceClosureRowId"), createdAt: requiredWorkflowString(item, "createdAt", method, path, "resolution", true) }; }), createdAt: requiredWorkflowString(value, "createdAt", method, path, "ticket", true), updatedAt: requiredWorkflowString(value, "updatedAt", method, path, "ticket", true) }; }), routes: requiredWorkflowArray(item, "routes", method, path, "workspace detail").map((route) => { const value = record(route, method, path, "route"); return { routeId: requiredWorkflowString(value, "routeId", method, path, "route"), sequence: requiredWorkflowInteger(value, "sequence", method, path, "route", 1), workspaceVersion: requiredWorkflowInteger(value, "workspaceVersion", method, path, "route", 1), state: requiredWorkflowString(value, "state", method, path, "route") as FeatureWorkspaceDetail["routes"][number]["state"], createdAt: requiredWorkflowString(value, "createdAt", method, path, "route", true) }; }), authorityRevisions: requiredWorkflowArray(item, "authorityRevisions", method, path, "workspace detail").map((revision) => authority(revision, method, path)), sourceBasis: { status: requiredWorkflowString(sourceBasis, "status", method, path, "sourceBasis") as "retained" | "not_recorded", investigationCount: requiredWorkflowInteger(sourceBasis, "investigationCount", method, path, "sourceBasis", 0) } }; }
 function guidedAction(value: unknown, method: WorkflowHttpMethod, path: string, context: string): GuidedFeatureAction {
   const action = typeof value === "string" ? value : "";
-  if (!["continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "abandon_feature", "legacy_recovery", "reopen_discovery", "select_delivery_ticket", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa"].includes(action)) {
+  if (!["continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_plan", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "abandon_feature", "legacy_recovery", "reopen_discovery", "select_delivery_ticket", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa"].includes(action)) {
     throw new RelayApiError(`Malformed JSON response from ${method} ${path}: ${context}.action is invalid`, 502, path, method);
   }
   return action as GuidedFeatureAction;
@@ -46,6 +46,23 @@ function guidedFrontierEntries(value: unknown, method: WorkflowHttpMethod, path:
       externalPriority: requiredWorkflowInteger(item, "externalPriority", method, path, "guided frontier entry", 0),
       repoTarget: guidedOptionalString(item, "repoTarget"),
       branch: guidedOptionalString(item, "branch"),
+    };
+  });
+}
+
+function guidedFrontierV2Entries(value: unknown, method: WorkflowHttpMethod, path: string, context: string): GuidedFrontierV2Entry[] {
+  return guidedArrayOrEmpty(value, method, path, context).map((entry) => {
+    const item = record(entry, method, path, "guided frontier v2 entry");
+    return {
+      unitId: guidedOptionalString(item, "unitId"),
+      ticketId: guidedOptionalString(item, "ticketId"),
+      revision: typeof item.revision === "number" ? item.revision : undefined,
+      sha256: guidedOptionalString(item, "sha256"),
+      state: requiredWorkflowString(item, "state", method, path, "guided frontier v2 entry"),
+      blockReason: typeof item.blockReason === "string" ? item.blockReason : undefined,
+      dependsOn: guidedStringArrayOrEmpty(item.dependsOn, method, path, "guided frontier v2 entry.dependsOn"),
+      unmetDependencies: guidedStringArrayOrEmpty(item.unmetDependencies, method, path, "guided frontier v2 entry.unmetDependencies"),
+      downstreamUnits: guidedStringArrayOrEmpty(item.downstreamUnits, method, path, "guided frontier v2 entry.downstreamUnits"),
     };
   });
 }
@@ -176,6 +193,8 @@ function guided(value: unknown, method: WorkflowHttpMethod, path: string): Guide
   });
   const parsedDelivery = item.delivery === undefined ? undefined : {
     frontier: guidedFrontierEntries(delivery.frontier, method, path, "guided delivery.frontier"),
+    frontierV2: guidedFrontierV2Entries(delivery.frontierV2, method, path, "guided delivery.frontierV2"),
+    planSha256: guidedOptionalString(delivery, "planSha256"),
     selectionState: requiredWorkflowString(delivery, "selectionState", method, path, "guided delivery", true),
     packageState: requiredWorkflowString(delivery, "packageState", method, path, "guided delivery", true),
     runState: requiredWorkflowString(delivery, "runState", method, path, "guided delivery", true),

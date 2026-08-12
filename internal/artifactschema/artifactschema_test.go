@@ -7,7 +7,7 @@ import (
 )
 
 func TestPinnedCurrentAuthorityCatalog(t *testing.T) {
-	if AuthorityRepository != "Paintersrp/relay-specs" || AuthorityCommit != "590c4ba79e557e3957a80ad1fefe8698cef0219e" {
+	if AuthorityRepository != "Paintersrp/relay-specs" || AuthorityCommit != "9ea40ac112d0683affc10ba6bad2d15efe9e59f4" {
 		t.Fatalf("authority = %s@%s", AuthorityRepository, AuthorityCommit)
 	}
 	want := []struct {
@@ -19,6 +19,7 @@ func TestPinnedCurrentAuthorityCatalog(t *testing.T) {
 		{KindAuditPacket, "4.0", "schemas/audit-packet.schema.json", "2fdf6769701c937c83869a2ec656146ce6b3cc75f3918ae38c42f01336071dcf"},
 		{KindDeliveryTicket, "2.0", "schemas/delivery-ticket.schema.json", "681f0b9fa9ce60fb6d6f325426fc1d935385de63ea74324606fc7858dd5a9b0b"},
 		{KindTransitionPlan, "1.0", "schemas/transition-plan.schema.json", "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
+		{KindDeliveryPlan, "1.0", "schemas/delivery-plan.schema.json", "bafc8d30d67cd6c15181a65e6e69d0c384d1372aa13c2ad873298d3bfba0f18e"},
 	}
 	got := Definitions()
 	if len(got) != len(want) {

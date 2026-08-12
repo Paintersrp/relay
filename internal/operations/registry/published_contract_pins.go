@@ -1,10 +1,10 @@
 package registry
 
 const (
-	publishedOperationsSizeBytes      = 18033
-	publishedOperationsSHA256         = "011173417467ab10f2d5b0c94decb0f0117fac6aa86106e4f51e1e214731d491"
-	publishedPublicContractSizeBytes  = 185757
-	publishedPublicContractSHA256     = "38478f1637563a1e7af23d53961ad883c66621de44b045fe596898d06ed51026"
-	publishedRuntimeBindingsSizeBytes = 10003
-	publishedRuntimeBindingsSHA256    = "dc881c77a47647e5a892552ac6a9f064b4fea9d8d9b6cd5186b23ff1d8341761"
+	publishedOperationsSizeBytes      = 21603
+	publishedOperationsSHA256         = "7efc3d6439fe4f398f5ee9cb56ee5a134a01acc60ee94221db5503af73687165"
+	publishedPublicContractSizeBytes  = 215411
+	publishedPublicContractSHA256     = "963d99b65f64603fb02223cf0ec80b39ac49792369e7ddc800b0b6c9db85b287"
+	publishedRuntimeBindingsSizeBytes = 10669
+	publishedRuntimeBindingsSHA256    = "a78edefa698a175def20bf50bcf67c274344dec0c118cdbc150354e895aa23ea"
 )

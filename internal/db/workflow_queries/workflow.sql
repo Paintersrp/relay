@@ -1081,3 +1081,85 @@ SELECT *
 FROM delivery_ticket_production_links
 WHERE candidate_row_id = ?
 ORDER BY created_at, id;
+
+-- name: CreateDeliveryPlan :one
+INSERT INTO delivery_plans (
+    plan_id, workspace_row_id, candidate_row_id, artifact_row_id,
+    artifact_sha256, artifact_size_bytes, feature_slug, goal, context,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetDeliveryPlanByPlanID :one
+SELECT *
+FROM delivery_plans
+WHERE plan_id = ?;
+
+-- name: GetDeliveryPlanByRowID :one
+SELECT *
+FROM delivery_plans
+WHERE id = ?;
+
+-- name: GetDeliveryPlanByCandidateRowID :one
+SELECT *
+FROM delivery_plans
+WHERE candidate_row_id = ?;
+
+-- name: ListDeliveryPlansByWorkspace :many
+SELECT *
+FROM delivery_plans
+WHERE workspace_row_id = ?
+ORDER BY created_at, id;
+
+-- name: CreateDeliveryPlanUnit :one
+INSERT INTO delivery_plan_units (plan_row_id, sequence, unit_id, goal)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListDeliveryPlanUnitsByPlan :many
+SELECT *
+FROM delivery_plan_units
+WHERE plan_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateDeliveryPlanUnitDependency :one
+INSERT INTO delivery_plan_unit_dependencies (unit_row_id, sequence, depends_on_unit_row_id)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: ListDeliveryPlanUnitDependenciesByUnit :many
+SELECT *
+FROM delivery_plan_unit_dependencies
+WHERE unit_row_id = ?
+ORDER BY sequence, id;
+
+-- name: CreateDeliveryTicketPlanUnitLink :one
+INSERT INTO delivery_ticket_plan_unit_links (
+    link_id, plan_row_id, unit_row_id, delivery_ticket_row_id
+)
+VALUES (?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetDeliveryTicketPlanUnitLinkByUnitRowID :one
+SELECT *
+FROM delivery_ticket_plan_unit_links
+WHERE unit_row_id = ?;
+
+-- name: GetDeliveryTicketPlanUnitLinkByTicketRowID :one
+SELECT *
+FROM delivery_ticket_plan_unit_links
+WHERE delivery_ticket_row_id = ?;
+
+-- name: ListDeliveryTicketPlanUnitLinksByPlan :many
+SELECT *
+FROM delivery_ticket_plan_unit_links
+WHERE plan_row_id = ?
+ORDER BY id;
+
+-- name: SetFeatureWorkspaceCurrentDeliveryPlan :one
+UPDATE feature_workspaces
+SET current_delivery_plan_row_id = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING *;

@@ -596,7 +596,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 	workspaceID := workspaceID(r)
 	action := strings.TrimSpace(request.Action)
 	switch action {
-	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "abandon_feature", "legacy_recovery",
+	case "continue_discovery", "close_discovery", "author_requirements", "author_shared_design", "author_delivery_plan", "author_delivery_ticket", "review_planning_candidate", "approve_planning_candidate", "promote_planning_candidate", "continue_established_route", "complete_feature", "abandon_feature", "legacy_recovery",
 		"reopen_discovery", "select_delivery_ticket", "prepare_package", "approve_package", "launch_run", "continue_run", "recover_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 	default:
 		badRequest(w, "Unsupported guided feature action")
@@ -693,7 +693,7 @@ func (h *WorkspaceHandler) GuidedAction(w http.ResponseWriter, r *http.Request) 
 			writeWorkspaceError(w, err)
 			return
 		}
-	case "author_requirements", "author_shared_design", "author_delivery_ticket", "continue_established_route",
+	case "author_requirements", "author_shared_design", "author_delivery_plan", "author_delivery_ticket", "continue_established_route",
 		"reopen_discovery", "prepare_package", "launch_run", "prepare_audit", "record_audit_decision", "remediate", "prototype_execute", "prototype_cleanup", "prototype_qa":
 		guidedHandoff = map[string]any{
 			"role":        action,
@@ -923,6 +923,14 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 	for _, entry := range value.Delivery.Frontier {
 		frontier = append(frontier, map[string]any{"ticketId": entry.TicketID, "revisionNumber": entry.RevisionNumber, "externalPriority": entry.ExternalPriority, "repoTarget": entry.RepoTarget, "branch": entry.Branch})
 	}
+	frontierV2 := make([]map[string]any, 0, len(value.Delivery.FrontierV2))
+	for _, entry := range value.Delivery.FrontierV2 {
+		frontierV2 = append(frontierV2, map[string]any{
+			"unitId": entry.UnitID, "ticketId": entry.TicketID, "revision": entry.Revision, "sha256": entry.SHA256,
+			"state": entry.State, "blockReason": entry.BlockReason, "dependsOn": entry.DependsOn,
+			"unmetDependencies": entry.UnmetDependencies, "downstreamUnits": entry.DownstreamUnits,
+		})
+	}
 	return map[string]any{
 		"workspace":        workspaceDTO(Workspace{WorkspaceID: value.Workspace.WorkspaceID, FeatureSlug: value.Workspace.FeatureSlug, State: value.Workspace.State, Version: value.Workspace.Version, CreatedAt: value.Workspace.CreatedAt, UpdatedAt: value.Workspace.UpdatedAt}),
 		"project":          map[string]any{"projectId": value.Project.ProjectID, "name": value.Project.Name},
@@ -930,7 +938,7 @@ func guidedFeatureProjectionDTO(value featureapp.GuidedFeatureProjection) map[st
 		"authority":        map[string]any{"currentRevisionNumber": value.Authority.CurrentRevisionNumber, "layers": value.Authority.Layers},
 		"currentness":      map[string]any{"readiness": value.Currentness.Readiness, "owner": value.Currentness.Owner, "blockedOperation": value.Currentness.BlockedOperation, "effect": value.Currentness.Effect, "recoveryCategory": value.Currentness.RecoveryCategory},
 		"planning":         map[string]any{"status": value.Planning.Status, "candidateState": value.Planning.CandidateState, "reviewState": value.Planning.ReviewState, "approvalState": value.Planning.ApprovalState, "promotionState": value.Planning.PromotionState, "candidateCount": value.Planning.CandidateCount, "awaitingReview": value.Planning.AwaitingReview, "awaitingApproval": value.Planning.AwaitingApproval, "awaitingPromotion": value.Planning.AwaitingPromotion, "needsRevision": value.Planning.NeedsRevision, "promoted": value.Planning.Promoted, "historicalCount": value.Planning.HistoricalCount},
-		"delivery":         map[string]any{"frontier": frontier, "selectionState": value.Delivery.SelectionState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
+		"delivery":         map[string]any{"frontier": frontier, "frontierV2": frontierV2, "planSha256": value.Delivery.PlanSHA256, "selectionState": value.Delivery.SelectionState, "packageState": value.Delivery.PackageState, "runState": value.Delivery.RunState, "auditState": value.Delivery.AuditState, "remediationState": value.Delivery.RemediationState},
 		"prototype":        map[string]any{"runState": value.Prototype.RunState, "cleanupState": value.Prototype.CleanupState, "qaState": value.Prototype.QAState, "evidenceState": value.Prototype.EvidenceState, "processOutcome": value.Prototype.ProcessOutcome},
 		"completion":       map[string]any{"gates": guidedCompletionGatesDTO(value.Completion.Gates), "ready": value.Completion.Ready, "recorded": value.Completion.Recorded, "decision": value.Completion.Decision},
 		"recovery":         map[string]any{"state": value.Recovery.State, "category": value.Recovery.Category, "available": value.Recovery.Available},

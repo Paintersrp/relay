@@ -89,6 +89,8 @@ func NewFeatureWorkspaceDiscoveryArtifactID() string {
 func NewPlanningCandidateID() string            { return "candidate-" + uuid.NewString() }
 func NewPlanningCandidateApprovalID() string    { return "candidate-approval-" + uuid.NewString() }
 func NewDeliveryTicketProductionLinkID() string { return "production-link-" + uuid.NewString() }
+func NewDeliveryPlanID() string                 { return "delivery-plan-" + uuid.NewString() }
+func NewDeliveryPlanUnitLinkID() string         { return "plan-unit-link-" + uuid.NewString() }
 
 func NewFeatureWorkspaceDiscoveryRevisionID() string {
 	return "discovery-revision-" + uuid.NewString()

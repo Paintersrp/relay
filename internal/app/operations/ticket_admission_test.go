@@ -75,12 +75,29 @@ func TestTicketFrontierReadRequiresOnlyPlannerPacketAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Admit(context.Background(), TicketFrontierReadRequest{PacketID: "packet-1", TicketID: "ticket-1"}); err != nil {
+	if _, err := service.Admit(context.Background(), TicketFrontierReadRequest{PacketID: "packet-1", FeatureSlug: "checkout", RequestedUnitID: "P4-T1"}); err != nil {
 		t.Fatal(err)
 	}
 	if packet.request.SurfaceContract != registry.PlannerTicketFrontierSurface ||
 		packet.request.OperationID != registry.PlannerTicketFrontierOperationID ||
 		packet.request.Action != registry.TicketActionReadFrontier || len(packet.request.RequiredDependencies) != 0 {
 		t.Fatalf("packet request = %#v", packet.request)
+	}
+}
+
+func TestTicketFrontierReadRequestRejectsMalformedIdentity(t *testing.T) {
+	service, err := NewTicketFrontierAdmissionService(&fakeTicketPacketAuthorizer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []TicketFrontierReadRequest{
+		{PacketID: "packet-1", FeatureSlug: ""},
+		{PacketID: "packet-1", FeatureSlug: "Checkout"},
+		{PacketID: "", FeatureSlug: "checkout"},
+		{PacketID: "packet-1", FeatureSlug: "checkout", RequestedUnitID: "lower"},
+	} {
+		if _, err := service.Admit(context.Background(), request); err == nil {
+			t.Fatalf("malformed frontier request was admitted: %#v", request)
+		}
 	}
 }

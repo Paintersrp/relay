@@ -10,6 +10,7 @@ const (
 	GuidedActionCloseDiscovery           GuidedFeatureAction = "close_discovery"
 	GuidedActionAuthorRequirements       GuidedFeatureAction = "author_requirements"
 	GuidedActionAuthorSharedDesign       GuidedFeatureAction = "author_shared_design"
+	GuidedActionAuthorDeliveryPlan       GuidedFeatureAction = "author_delivery_plan"
 	GuidedActionAuthorDeliveryTicket     GuidedFeatureAction = "author_delivery_ticket"
 	GuidedActionReviewPlanningCandidate  GuidedFeatureAction = "review_planning_candidate"
 	GuidedActionApprovePlanningCandidate GuidedFeatureAction = "approve_planning_candidate"
@@ -172,6 +173,13 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 			if steps := guidedPlanningStep(state.Planning.SharedDesign, GuidedActionAuthorSharedDesign, "Shared Design", "Author Shared Design, complete its read-only review, explicitly approve the exact reviewed candidate, then return to promote it."); steps != nil {
 				return steps
 			}
+			// An approved Shared Design is followed by the Delivery Plan family
+			// on the shared-design routes. The Plan is promoted into the
+			// workspace's current approved Delivery Plan and then governs the
+			// Delivery Ticket frontier.
+			if steps := guidedPlanningStep(state.Planning.DeliveryPlan, GuidedActionAuthorDeliveryPlan, "Delivery Plan", "Author the Delivery Plan, complete its read-only review, explicitly approve the exact reviewed candidate, then return to promote it into the workspace's current approved Plan."); steps != nil {
+				return steps
+			}
 			return guidedDeliveryAvailability(state, completion)
 		}
 		if hasGuidedLayer(state.AuthorityLayers, "shared_design") {
@@ -183,6 +191,12 @@ func guidedClosedDestinationAvailability(state GuidedJourneyState, completion Gu
 			switch {
 			case state.Planning.SharedDesign.Count > 0:
 				if steps := guidedPlanningStep(state.Planning.SharedDesign, GuidedActionAuthorSharedDesign, "Shared Design", "Author Shared Design, then explicitly approve and promote it."); steps != nil {
+					return steps
+				}
+				// After Shared Design is promoted the Delivery Plan family is
+				// the next planning family on this route; its promotion records
+				// the workspace's current approved Delivery Plan.
+				if steps := guidedPlanningStep(state.Planning.DeliveryPlan, GuidedActionAuthorDeliveryPlan, "Delivery Plan", "Author the Delivery Plan, then explicitly approve and promote it before Delivery Ticket authoring."); steps != nil {
 					return steps
 				}
 				return guidedDeliveryAvailability(state, completion)
@@ -399,9 +413,9 @@ func guidedCandidateFamiliesForDestination(destination DiscoveryDestination) []s
 	case DiscoveryDestinationRequirements:
 		return []string{CandidateFamilyRequirements, CandidateFamilyDeliveryTicket}
 	case DiscoveryDestinationSharedDesign:
-		return []string{CandidateFamilySharedDesign, CandidateFamilyDeliveryTicket}
+		return []string{CandidateFamilySharedDesign, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket}
 	case DiscoveryDestinationRequirementsThenSharedDesign:
-		return []string{CandidateFamilySharedDesign, CandidateFamilyRequirements, CandidateFamilyDeliveryTicket}
+		return []string{CandidateFamilySharedDesign, CandidateFamilyRequirements, CandidateFamilyDeliveryPlan, CandidateFamilyDeliveryTicket}
 	case DiscoveryDestinationDirectDeliveryTicket, DiscoveryDestinationExistingRouteContinuation:
 		return []string{CandidateFamilyDeliveryTicket}
 	default:

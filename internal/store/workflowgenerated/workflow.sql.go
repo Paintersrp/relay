@@ -15,7 +15,7 @@ UPDATE feature_workspaces
 SET current_route_state_row_id = ?, state = ?, version = version + 1,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
-RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id
 `
 
 type AdvanceFeatureWorkspaceRouteStateParams struct {
@@ -47,6 +47,7 @@ func (q *Queries) AdvanceFeatureWorkspaceRouteState(ctx context.Context, arg Adv
 		&i.DiscoveryCapabilityEnabled,
 		&i.CurrentDiscoveryRevisionRowID,
 		&i.CurrentDiscoveryClosurePacketRowID,
+		&i.CurrentDeliveryPlanRowID,
 	)
 	return i, err
 }
@@ -450,6 +451,115 @@ func (q *Queries) CreateAuditTicketRevisionDecision(ctx context.Context, arg Cre
 	return i, err
 }
 
+const createDeliveryPlan = `-- name: CreateDeliveryPlan :one
+INSERT INTO delivery_plans (
+    plan_id, workspace_row_id, candidate_row_id, artifact_row_id,
+    artifact_sha256, artifact_size_bytes, feature_slug, goal, context,
+    created_identity
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, plan_id, workspace_row_id, candidate_row_id, artifact_row_id, artifact_sha256, artifact_size_bytes, feature_slug, goal, context, created_identity, created_at
+`
+
+type CreateDeliveryPlanParams struct {
+	PlanID            string `json:"plan_id"`
+	WorkspaceRowID    int64  `json:"workspace_row_id"`
+	CandidateRowID    int64  `json:"candidate_row_id"`
+	ArtifactRowID     int64  `json:"artifact_row_id"`
+	ArtifactSha256    string `json:"artifact_sha256"`
+	ArtifactSizeBytes int64  `json:"artifact_size_bytes"`
+	FeatureSlug       string `json:"feature_slug"`
+	Goal              string `json:"goal"`
+	Context           string `json:"context"`
+	CreatedIdentity   string `json:"created_identity"`
+}
+
+func (q *Queries) CreateDeliveryPlan(ctx context.Context, arg CreateDeliveryPlanParams) (DeliveryPlan, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryPlan,
+		arg.PlanID,
+		arg.WorkspaceRowID,
+		arg.CandidateRowID,
+		arg.ArtifactRowID,
+		arg.ArtifactSha256,
+		arg.ArtifactSizeBytes,
+		arg.FeatureSlug,
+		arg.Goal,
+		arg.Context,
+		arg.CreatedIdentity,
+	)
+	var i DeliveryPlan
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.WorkspaceRowID,
+		&i.CandidateRowID,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.FeatureSlug,
+		&i.Goal,
+		&i.Context,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryPlanUnit = `-- name: CreateDeliveryPlanUnit :one
+INSERT INTO delivery_plan_units (plan_row_id, sequence, unit_id, goal)
+VALUES (?, ?, ?, ?)
+RETURNING id, plan_row_id, sequence, unit_id, goal
+`
+
+type CreateDeliveryPlanUnitParams struct {
+	PlanRowID int64  `json:"plan_row_id"`
+	Sequence  int64  `json:"sequence"`
+	UnitID    string `json:"unit_id"`
+	Goal      string `json:"goal"`
+}
+
+func (q *Queries) CreateDeliveryPlanUnit(ctx context.Context, arg CreateDeliveryPlanUnitParams) (DeliveryPlanUnit, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryPlanUnit,
+		arg.PlanRowID,
+		arg.Sequence,
+		arg.UnitID,
+		arg.Goal,
+	)
+	var i DeliveryPlanUnit
+	err := row.Scan(
+		&i.ID,
+		&i.PlanRowID,
+		&i.Sequence,
+		&i.UnitID,
+		&i.Goal,
+	)
+	return i, err
+}
+
+const createDeliveryPlanUnitDependency = `-- name: CreateDeliveryPlanUnitDependency :one
+INSERT INTO delivery_plan_unit_dependencies (unit_row_id, sequence, depends_on_unit_row_id)
+VALUES (?, ?, ?)
+RETURNING id, unit_row_id, sequence, depends_on_unit_row_id
+`
+
+type CreateDeliveryPlanUnitDependencyParams struct {
+	UnitRowID          int64 `json:"unit_row_id"`
+	Sequence           int64 `json:"sequence"`
+	DependsOnUnitRowID int64 `json:"depends_on_unit_row_id"`
+}
+
+func (q *Queries) CreateDeliveryPlanUnitDependency(ctx context.Context, arg CreateDeliveryPlanUnitDependencyParams) (DeliveryPlanUnitDependency, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryPlanUnitDependency, arg.UnitRowID, arg.Sequence, arg.DependsOnUnitRowID)
+	var i DeliveryPlanUnitDependency
+	err := row.Scan(
+		&i.ID,
+		&i.UnitRowID,
+		&i.Sequence,
+		&i.DependsOnUnitRowID,
+	)
+	return i, err
+}
+
 const createDeliveryTicket = `-- name: CreateDeliveryTicket :one
 INSERT INTO delivery_tickets (ticket_id, workspace_row_id, external_priority)
 VALUES (?, ?, ?)
@@ -473,6 +583,40 @@ func (q *Queries) CreateDeliveryTicket(ctx context.Context, arg CreateDeliveryTi
 		&i.CurrentRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createDeliveryTicketPlanUnitLink = `-- name: CreateDeliveryTicketPlanUnitLink :one
+INSERT INTO delivery_ticket_plan_unit_links (
+    link_id, plan_row_id, unit_row_id, delivery_ticket_row_id
+)
+VALUES (?, ?, ?, ?)
+RETURNING id, link_id, plan_row_id, unit_row_id, delivery_ticket_row_id, created_at
+`
+
+type CreateDeliveryTicketPlanUnitLinkParams struct {
+	LinkID              string `json:"link_id"`
+	PlanRowID           int64  `json:"plan_row_id"`
+	UnitRowID           int64  `json:"unit_row_id"`
+	DeliveryTicketRowID int64  `json:"delivery_ticket_row_id"`
+}
+
+func (q *Queries) CreateDeliveryTicketPlanUnitLink(ctx context.Context, arg CreateDeliveryTicketPlanUnitLinkParams) (DeliveryTicketPlanUnitLink, error) {
+	row := q.db.QueryRowContext(ctx, createDeliveryTicketPlanUnitLink,
+		arg.LinkID,
+		arg.PlanRowID,
+		arg.UnitRowID,
+		arg.DeliveryTicketRowID,
+	)
+	var i DeliveryTicketPlanUnitLink
+	err := row.Scan(
+		&i.ID,
+		&i.LinkID,
+		&i.PlanRowID,
+		&i.UnitRowID,
+		&i.DeliveryTicketRowID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1106,7 +1250,7 @@ func (q *Queries) CreateExecutionPackageRepositoryInstruction(ctx context.Contex
 const createFeatureWorkspace = `-- name: CreateFeatureWorkspace :one
 INSERT INTO feature_workspaces (workspace_id, project_row_id, feature_slug)
 VALUES (?, ?, ?)
-RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id
 `
 
 type CreateFeatureWorkspaceParams struct {
@@ -1132,6 +1276,7 @@ func (q *Queries) CreateFeatureWorkspace(ctx context.Context, arg CreateFeatureW
 		&i.DiscoveryCapabilityEnabled,
 		&i.CurrentDiscoveryRevisionRowID,
 		&i.CurrentDiscoveryClosurePacketRowID,
+		&i.CurrentDeliveryPlanRowID,
 	)
 	return i, err
 }
@@ -2257,6 +2402,84 @@ func (q *Queries) GetCurrentFeatureWorkspaceCompletionDecision(ctx context.Conte
 	return i, err
 }
 
+const getDeliveryPlanByCandidateRowID = `-- name: GetDeliveryPlanByCandidateRowID :one
+SELECT id, plan_id, workspace_row_id, candidate_row_id, artifact_row_id, artifact_sha256, artifact_size_bytes, feature_slug, goal, context, created_identity, created_at
+FROM delivery_plans
+WHERE candidate_row_id = ?
+`
+
+func (q *Queries) GetDeliveryPlanByCandidateRowID(ctx context.Context, candidateRowID int64) (DeliveryPlan, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryPlanByCandidateRowID, candidateRowID)
+	var i DeliveryPlan
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.WorkspaceRowID,
+		&i.CandidateRowID,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.FeatureSlug,
+		&i.Goal,
+		&i.Context,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryPlanByPlanID = `-- name: GetDeliveryPlanByPlanID :one
+SELECT id, plan_id, workspace_row_id, candidate_row_id, artifact_row_id, artifact_sha256, artifact_size_bytes, feature_slug, goal, context, created_identity, created_at
+FROM delivery_plans
+WHERE plan_id = ?
+`
+
+func (q *Queries) GetDeliveryPlanByPlanID(ctx context.Context, planID string) (DeliveryPlan, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryPlanByPlanID, planID)
+	var i DeliveryPlan
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.WorkspaceRowID,
+		&i.CandidateRowID,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.FeatureSlug,
+		&i.Goal,
+		&i.Context,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryPlanByRowID = `-- name: GetDeliveryPlanByRowID :one
+SELECT id, plan_id, workspace_row_id, candidate_row_id, artifact_row_id, artifact_sha256, artifact_size_bytes, feature_slug, goal, context, created_identity, created_at
+FROM delivery_plans
+WHERE id = ?
+`
+
+func (q *Queries) GetDeliveryPlanByRowID(ctx context.Context, id int64) (DeliveryPlan, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryPlanByRowID, id)
+	var i DeliveryPlan
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.WorkspaceRowID,
+		&i.CandidateRowID,
+		&i.ArtifactRowID,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.FeatureSlug,
+		&i.Goal,
+		&i.Context,
+		&i.CreatedIdentity,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getDeliveryTicketByTicketID = `-- name: GetDeliveryTicketByTicketID :one
 SELECT id, ticket_id, workspace_row_id, external_priority, current_revision_row_id, created_at, updated_at
 FROM delivery_tickets
@@ -2274,6 +2497,46 @@ func (q *Queries) GetDeliveryTicketByTicketID(ctx context.Context, ticketID stri
 		&i.CurrentRevisionRowID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketPlanUnitLinkByTicketRowID = `-- name: GetDeliveryTicketPlanUnitLinkByTicketRowID :one
+SELECT id, link_id, plan_row_id, unit_row_id, delivery_ticket_row_id, created_at
+FROM delivery_ticket_plan_unit_links
+WHERE delivery_ticket_row_id = ?
+`
+
+func (q *Queries) GetDeliveryTicketPlanUnitLinkByTicketRowID(ctx context.Context, deliveryTicketRowID int64) (DeliveryTicketPlanUnitLink, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketPlanUnitLinkByTicketRowID, deliveryTicketRowID)
+	var i DeliveryTicketPlanUnitLink
+	err := row.Scan(
+		&i.ID,
+		&i.LinkID,
+		&i.PlanRowID,
+		&i.UnitRowID,
+		&i.DeliveryTicketRowID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryTicketPlanUnitLinkByUnitRowID = `-- name: GetDeliveryTicketPlanUnitLinkByUnitRowID :one
+SELECT id, link_id, plan_row_id, unit_row_id, delivery_ticket_row_id, created_at
+FROM delivery_ticket_plan_unit_links
+WHERE unit_row_id = ?
+`
+
+func (q *Queries) GetDeliveryTicketPlanUnitLinkByUnitRowID(ctx context.Context, unitRowID int64) (DeliveryTicketPlanUnitLink, error) {
+	row := q.db.QueryRowContext(ctx, getDeliveryTicketPlanUnitLinkByUnitRowID, unitRowID)
+	var i DeliveryTicketPlanUnitLink
+	err := row.Scan(
+		&i.ID,
+		&i.LinkID,
+		&i.PlanRowID,
+		&i.UnitRowID,
+		&i.DeliveryTicketRowID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -2557,7 +2820,7 @@ func (q *Queries) GetExecutionPackageBySelectionRowID(ctx context.Context, selec
 }
 
 const getFeatureWorkspaceByWorkspaceID = `-- name: GetFeatureWorkspaceByWorkspaceID :one
-SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id
+SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id
 FROM feature_workspaces
 WHERE workspace_id = ?
 `
@@ -2579,6 +2842,7 @@ func (q *Queries) GetFeatureWorkspaceByWorkspaceID(ctx context.Context, workspac
 		&i.DiscoveryCapabilityEnabled,
 		&i.CurrentDiscoveryRevisionRowID,
 		&i.CurrentDiscoveryClosurePacketRowID,
+		&i.CurrentDeliveryPlanRowID,
 	)
 	return i, err
 }
@@ -3612,6 +3876,157 @@ func (q *Queries) ListAuditTicketRevisionDecisions(ctx context.Context, auditDec
 	return items, nil
 }
 
+const listDeliveryPlanUnitDependenciesByUnit = `-- name: ListDeliveryPlanUnitDependenciesByUnit :many
+SELECT id, unit_row_id, sequence, depends_on_unit_row_id
+FROM delivery_plan_unit_dependencies
+WHERE unit_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListDeliveryPlanUnitDependenciesByUnit(ctx context.Context, unitRowID int64) ([]DeliveryPlanUnitDependency, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryPlanUnitDependenciesByUnit, unitRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryPlanUnitDependency{}
+	for rows.Next() {
+		var i DeliveryPlanUnitDependency
+		if err := rows.Scan(
+			&i.ID,
+			&i.UnitRowID,
+			&i.Sequence,
+			&i.DependsOnUnitRowID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryPlanUnitsByPlan = `-- name: ListDeliveryPlanUnitsByPlan :many
+SELECT id, plan_row_id, sequence, unit_id, goal
+FROM delivery_plan_units
+WHERE plan_row_id = ?
+ORDER BY sequence, id
+`
+
+func (q *Queries) ListDeliveryPlanUnitsByPlan(ctx context.Context, planRowID int64) ([]DeliveryPlanUnit, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryPlanUnitsByPlan, planRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryPlanUnit{}
+	for rows.Next() {
+		var i DeliveryPlanUnit
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanRowID,
+			&i.Sequence,
+			&i.UnitID,
+			&i.Goal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryPlansByWorkspace = `-- name: ListDeliveryPlansByWorkspace :many
+SELECT id, plan_id, workspace_row_id, candidate_row_id, artifact_row_id, artifact_sha256, artifact_size_bytes, feature_slug, goal, context, created_identity, created_at
+FROM delivery_plans
+WHERE workspace_row_id = ?
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListDeliveryPlansByWorkspace(ctx context.Context, workspaceRowID int64) ([]DeliveryPlan, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryPlansByWorkspace, workspaceRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryPlan{}
+	for rows.Next() {
+		var i DeliveryPlan
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.WorkspaceRowID,
+			&i.CandidateRowID,
+			&i.ArtifactRowID,
+			&i.ArtifactSha256,
+			&i.ArtifactSizeBytes,
+			&i.FeatureSlug,
+			&i.Goal,
+			&i.Context,
+			&i.CreatedIdentity,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeliveryTicketPlanUnitLinksByPlan = `-- name: ListDeliveryTicketPlanUnitLinksByPlan :many
+SELECT id, link_id, plan_row_id, unit_row_id, delivery_ticket_row_id, created_at
+FROM delivery_ticket_plan_unit_links
+WHERE plan_row_id = ?
+ORDER BY id
+`
+
+func (q *Queries) ListDeliveryTicketPlanUnitLinksByPlan(ctx context.Context, planRowID int64) ([]DeliveryTicketPlanUnitLink, error) {
+	rows, err := q.db.QueryContext(ctx, listDeliveryTicketPlanUnitLinksByPlan, planRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeliveryTicketPlanUnitLink{}
+	for rows.Next() {
+		var i DeliveryTicketPlanUnitLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.LinkID,
+			&i.PlanRowID,
+			&i.UnitRowID,
+			&i.DeliveryTicketRowID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDeliveryTicketProductionLinksByCandidate = `-- name: ListDeliveryTicketProductionLinksByCandidate :many
 SELECT id, production_link_id, delivery_ticket_row_id, candidate_row_id, candidate_artifact_row_id, candidate_sha256, candidate_size_bytes, canonical_json_artifact_row_id, canonical_json_sha256, canonical_json_size_bytes, rendered_markdown_artifact_row_id, rendered_markdown_sha256, rendered_markdown_size_bytes, produced_revision_row_id, produced_revision_identity, created_identity, created_at
 FROM delivery_ticket_production_links
@@ -4619,7 +5034,7 @@ func (q *Queries) ListFeatureWorkspaceTicketResolutions(ctx context.Context, tic
 }
 
 const listFeatureWorkspacesByProject = `-- name: ListFeatureWorkspacesByProject :many
-SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id
+SELECT id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id
 FROM feature_workspaces
 WHERE project_row_id = ?
 ORDER BY feature_slug, id
@@ -4648,6 +5063,7 @@ func (q *Queries) ListFeatureWorkspacesByProject(ctx context.Context, projectRow
 			&i.DiscoveryCapabilityEnabled,
 			&i.CurrentDiscoveryRevisionRowID,
 			&i.CurrentDiscoveryClosurePacketRowID,
+			&i.CurrentDeliveryPlanRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -5153,7 +5569,7 @@ UPDATE feature_workspaces
 SET current_authority_revision_row_id = ?, version = version + 1,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE workspace_id = ? AND version = ?
-RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id
 `
 
 type SetFeatureWorkspaceAuthorityRevisionParams struct {
@@ -5179,6 +5595,43 @@ func (q *Queries) SetFeatureWorkspaceAuthorityRevision(ctx context.Context, arg 
 		&i.DiscoveryCapabilityEnabled,
 		&i.CurrentDiscoveryRevisionRowID,
 		&i.CurrentDiscoveryClosurePacketRowID,
+		&i.CurrentDeliveryPlanRowID,
+	)
+	return i, err
+}
+
+const setFeatureWorkspaceCurrentDeliveryPlan = `-- name: SetFeatureWorkspaceCurrentDeliveryPlan :one
+UPDATE feature_workspaces
+SET current_delivery_plan_row_id = ?, version = version + 1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE workspace_id = ? AND version = ?
+RETURNING id, workspace_id, project_row_id, feature_slug, state, version, current_route_state_row_id, current_authority_revision_row_id, created_at, updated_at, discovery_capability_enabled, current_discovery_revision_row_id, current_discovery_closure_packet_row_id, current_delivery_plan_row_id
+`
+
+type SetFeatureWorkspaceCurrentDeliveryPlanParams struct {
+	CurrentDeliveryPlanRowID sql.NullInt64 `json:"current_delivery_plan_row_id"`
+	WorkspaceID              string        `json:"workspace_id"`
+	Version                  int64         `json:"version"`
+}
+
+func (q *Queries) SetFeatureWorkspaceCurrentDeliveryPlan(ctx context.Context, arg SetFeatureWorkspaceCurrentDeliveryPlanParams) (FeatureWorkspace, error) {
+	row := q.db.QueryRowContext(ctx, setFeatureWorkspaceCurrentDeliveryPlan, arg.CurrentDeliveryPlanRowID, arg.WorkspaceID, arg.Version)
+	var i FeatureWorkspace
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectRowID,
+		&i.FeatureSlug,
+		&i.State,
+		&i.Version,
+		&i.CurrentRouteStateRowID,
+		&i.CurrentAuthorityRevisionRowID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DiscoveryCapabilityEnabled,
+		&i.CurrentDiscoveryRevisionRowID,
+		&i.CurrentDiscoveryClosurePacketRowID,
+		&i.CurrentDeliveryPlanRowID,
 	)
 	return i, err
 }

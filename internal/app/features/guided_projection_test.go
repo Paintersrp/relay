@@ -207,8 +207,8 @@ func TestGuidedPlannerAndAuditorOperationMappingsArePublishedSourceOperations(t 
 		operation string
 		role      registry.Role
 	}{
-		{plannerRequirementsOperation, registry.Role("planner")}, {plannerSharedDesignOperation, registry.Role("planner")}, {plannerDeliveryTicketOperation, registry.Role("planner")},
-		{auditorRequirementsReviewOperation, registry.Role("auditor")}, {auditorSharedDesignReviewOperation, registry.Role("auditor")}, {auditorDeliveryTicketReviewOperation, registry.Role("auditor")},
+		{plannerRequirementsOperation, registry.Role("planner")}, {plannerSharedDesignOperation, registry.Role("planner")}, {plannerDeliveryPlanOperation, registry.Role("planner")}, {plannerDeliveryTicketOperation, registry.Role("planner")},
+		{auditorRequirementsReviewOperation, registry.Role("auditor")}, {auditorSharedDesignReviewOperation, registry.Role("auditor")}, {auditorDeliveryPlanReviewOperation, registry.Role("auditor")}, {auditorDeliveryTicketReviewOperation, registry.Role("auditor")},
 	} {
 		if !validGuidedOperation(tc.operation, tc.role) {
 			t.Fatalf("%s is not a published %s operation", tc.operation, tc.role)

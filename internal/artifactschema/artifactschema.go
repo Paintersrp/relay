@@ -14,7 +14,7 @@ import (
 
 const (
 	AuthorityRepository = "Paintersrp/relay-specs"
-	AuthorityCommit     = "590c4ba79e557e3957a80ad1fefe8698cef0219e"
+	AuthorityCommit     = "9ea40ac112d0683affc10ba6bad2d15efe9e59f4"
 )
 
 type Kind string
@@ -25,6 +25,7 @@ const (
 	KindAuditPacket             Kind = "audit_packet"
 	KindDeliveryTicket          Kind = "delivery_ticket"
 	KindTransitionPlan          Kind = "transition_plan"
+	KindDeliveryPlan            Kind = "delivery_plan"
 )
 
 type Definition struct {
@@ -52,6 +53,7 @@ var authoritativeCatalog = []catalogEntry{
 	{Kind: KindAuditPacket, ProducerVersion: "4.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "2fdf6769701c937c83869a2ec656146ce6b3cc75f3918ae38c42f01336071dcf"},
 	{Kind: KindDeliveryTicket, ProducerVersion: "2.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "681f0b9fa9ce60fb6d6f325426fc1d935385de63ea74324606fc7858dd5a9b0b"},
 	{Kind: KindTransitionPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/transition-plan.schema.json", Filename: "transition-plan.schema.json", SHA256: "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
+	{Kind: KindDeliveryPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/delivery-plan.schema.json", Filename: "delivery-plan.schema.json", SHA256: "bafc8d30d67cd6c15181a65e6e69d0c384d1372aa13c2ad873298d3bfba0f18e"},
 }
 
 func Current(kind Kind) (Definition, bool) {

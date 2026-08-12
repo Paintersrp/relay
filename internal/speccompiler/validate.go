@@ -515,6 +515,7 @@ const (
 	stringMultiline
 	stringFeatureSlug
 	stringTicketID
+	stringUnitID
 	stringRepositoryKey
 	stringBranch
 	stringCommit
@@ -555,6 +556,10 @@ func (v *validator) stringNode(node *jsonNode, path string, kind stringKind) (st
 	case stringTicketID:
 		if !ticketIDPattern.MatchString(value) {
 			v.add("invalid_ticket_id", path, "Value must use uppercase canonical ticket syntax.")
+		}
+	case stringUnitID:
+		if !ticketIDPattern.MatchString(value) {
+			v.add("invalid_unit_id", path, "Value must use uppercase canonical planned-unit syntax.")
 		}
 	case stringRepositoryKey:
 		if !validMachineString(value) {

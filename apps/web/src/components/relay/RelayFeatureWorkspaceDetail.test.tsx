@@ -29,7 +29,7 @@ const base: GuidedFeatureDetail = {
   authority: { currentRevisionNumber: 1, revisions: [{ revisionNumber: 1, layers: ["requirements", "design"], historical: false }] },
   planning: { readiness: "current", status: "ready", recoveryCategory: "" },
   completion: { gates: [{ name: "authority", ready: true }, { name: "audit", ready: false }], ready: false, recorded: false },
-  delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "none", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+  delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], frontierV2: [], planSha256: "", selectionState: "none", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
   prototype: { runState: "none", cleanupState: "none", qaState: "prepared", evidenceState: "none", processOutcome: "" },
   ticketFrontier: { status: "blocked", summary: "Resolve the remaining discovery frontier.", blockers: ["missing evidence"], downstream: [] },
   downstream: { status: "delivery", summary: "Continue after discovery closure." },
@@ -322,13 +322,48 @@ describe("RelayFeatureWorkspaceDetail", () => {
     expect(JSON.stringify(mocks.action.mock.calls[0])).not.toMatch(/(candidateId|approvalId|reviewId|sha256|digest|rowId)/i);
   });
 
+  it("renders the Delivery Plan author action and the enriched planned-only frontier", async () => {
+    const user = userEvent.setup();
+    mocks.action.mockClear();
+    mocks.action.mockResolvedValueOnce(base);
+    const planning = {
+      ...base,
+      planning: { ...base.planning, status: "promoted", candidateCount: 1, promoted: 1 },
+      delivery: {
+        frontier: [],
+        frontierV2: [
+          { unitId: "P6-T1", state: "planned", dependsOn: [], unmetDependencies: [], downstreamUnits: ["P6-T2"] },
+          { ticketId: "P6-T2", revision: 1, state: "blocked", blockReason: "dependency_unmet", dependsOn: ["P6-T1"], unmetDependencies: ["P6-T1"], downstreamUnits: [] },
+        ],
+        planSha256: "c".repeat(64),
+        selectionState: "none", packageState: "none", runState: "none", auditState: "none", remediationState: "none",
+      },
+      availableActions: [{ action: "author_delivery_plan" as const, primary: true, enabled: true, requiresConfirmation: false, handoff: "Author the Delivery Plan, then explicitly approve and promote it." }],
+      primaryAction: "author_delivery_plan" as const,
+      ticketFrontier: { ...base.ticketFrontier, status: "current", blockers: [], downstream: [] },
+    };
+    render(<RelayFeatureWorkspaceDetail detail={planning} />, { wrapper });
+    const button = screen.getByRole("button", { name: "Author Delivery Plan" });
+    expect(button).toBeEnabled();
+    const deliverySection = screen.getByRole("region", { name: "Delivery" });
+    expect(within(deliverySection).getByText("Planned delivery frontier")).toBeInTheDocument();
+    expect(within(deliverySection).getByText("P6-T1")).toBeInTheDocument();
+    expect(within(deliverySection).getByText("P6-T2")).toBeInTheDocument();
+    expect(within(deliverySection).getByText("planned")).toBeInTheDocument();
+    expect(within(deliverySection).getByText("blocked")).toBeInTheDocument();
+    expect(within(deliverySection).getByText(/dependency_unmet/)).toBeInTheDocument();
+    expect(within(deliverySection).getByText(/Current approved Delivery Plan digest: c{64}/)).toBeInTheDocument();
+    await user.click(button);
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledWith("workspace-1", { expectedVersion: 2, action: "author_delivery_plan", confirmation: false }));
+  });
+
   it("renders a selected Delivery Ticket projection with direct package preparation and no Brief UI", async () => {
     const user = userEvent.setup();
     mocks.action.mockClear();
     mocks.action.mockResolvedValueOnce(base);
     const selected = {
       ...base,
-      delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], selectionState: "active", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
+      delivery: { frontier: [{ ticketId: "P5-T1", revisionNumber: 2, externalPriority: 60, repoTarget: "relay", branch: "main" }], frontierV2: [], planSha256: "", selectionState: "active", packageState: "none", runState: "none", auditState: "none", remediationState: "none" },
       availableActions: [{ action: "prepare_package" as const, primary: true, enabled: true, requiresConfirmation: false }],
       primaryAction: "prepare_package" as const,
     };

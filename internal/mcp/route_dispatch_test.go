@@ -205,18 +205,22 @@ type routeFrontierPacketAuthorizer struct {
 func (a *routeFrontierPacketAuthorizer) AuthorizeMutation(_ context.Context, request appoperations.MutationRequest) (appoperations.MutationAuthorization, error) {
 	a.request = request
 	*a.events = append(*a.events, "admit")
-	return appoperations.MutationAuthorization{Allowed: true}, nil
+	return appoperations.MutationAuthorization{Allowed: true, Summary: appoperations.PacketSummary{ProjectID: "project-packet"}}, nil
 }
 
 type routeFrontierReader struct {
-	events   *[]string
-	ticketID string
+	events    *[]string
+	feature   string
+	unitID    string
+	projectID string
 }
 
-func (r *routeFrontierReader) Read(_ context.Context, ticketID string) (apptickets.TicketDetail, error) {
-	r.ticketID = ticketID
+func (r *routeFrontierReader) ReadFrontier(_ context.Context, input apptickets.FrontierV2Input) (apptickets.FrontierV2, error) {
+	r.feature = input.FeatureSlug
+	r.unitID = input.RequestedUnitID
+	r.projectID = input.ProjectID
 	*r.events = append(*r.events, "read")
-	return apptickets.TicketDetail{}, nil
+	return apptickets.FrontierV2{FeatureSlug: input.FeatureSlug, Entries: []apptickets.FrontierV2Entry{}, ProgramCandidates: []string{}}, nil
 }
 
 func TestTicketFrontierDispatchAdmitsPublishedPlannerIdentityBeforeRead(t *testing.T) {
@@ -258,7 +262,7 @@ func TestTicketFrontierDispatchAdmitsPublishedPlannerIdentityBeforeRead(t *testi
 		t.Fatal("Planner frontier handler is missing")
 	}
 
-	input, err := json.Marshal(map[string]string{"packet_id": "planner-packet", "ticket_id": "ticket-1"})
+	input, err := json.Marshal(map[string]string{"packet_id": "planner-packet", "feature_slug": "checkout", "requested_unit_id": "P4-T1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,14 +272,53 @@ func TestTicketFrontierDispatchAdmitsPublishedPlannerIdentityBeforeRead(t *testi
 	if strings.Join(events, ",") != "admit,read" {
 		t.Fatalf("call order = %v", events)
 	}
-	if reader.ticketID != "ticket-1" {
-		t.Fatalf("read ticket ID = %q", reader.ticketID)
+	if reader.feature != "checkout" || reader.unitID != "P4-T1" || reader.projectID != "project-packet" {
+		t.Fatalf("frontier read input = %#v", reader)
 	}
 	if packets.request.PacketID != "planner-packet" ||
 		packets.request.SurfaceContract != registry.PlannerTicketFrontierSurface ||
 		packets.request.OperationID != registry.PlannerTicketFrontierOperationID ||
 		packets.request.Action != registry.TicketActionReadFrontier {
 		t.Fatalf("packet admission request = %#v", packets.request)
+	}
+}
+
+func TestTicketFrontierDispatchRejectsLegacyTicketIDRequest(t *testing.T) {
+	set, err := routecontracts.BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := []string{}
+	packets := &routeFrontierPacketAuthorizer{events: &events}
+	admissionService, err := appoperations.NewTicketFrontierAdmissionService(packets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitter, err := NewTicketFrontierAdmitter(admissionService)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchers, err := NewRouteDispatchers(set, RouteDispatchServices{TicketFrontierAdmitter: admitter, Tickets: &routeFrontierReader{events: &events}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frontierRoute string
+	for _, manifest := range set.Manifests {
+		if manifest.SurfaceContract == string(registry.PlannerTicketFrontierSurface) {
+			frontierRoute = manifest.RoutePath
+			break
+		}
+	}
+	handler := dispatchers.Handlers[frontierRoute]["read_ticket_frontier"]
+	input, err := json.Marshal(map[string]string{"packet_id": "planner-packet", "ticket_id": "ticket-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := handler(input); !result.IsError {
+		t.Fatal("legacy ticket_id request was accepted")
+	}
+	if strings.Join(events, "") != "" {
+		t.Fatalf("legacy request reached admission = %v", events)
 	}
 }
 

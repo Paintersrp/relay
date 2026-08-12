@@ -27,6 +27,7 @@ var (
 // author/review/approve lifecycle is not part of this contract.
 type GuidedTicketOwner interface {
 	ListFrontier(context.Context, string) (apptickets.Frontier, error)
+	ReadFrontier(context.Context, apptickets.FrontierV2Input) (apptickets.FrontierV2, error)
 	ReadWorkspaceSelection(context.Context, string) (apptickets.WorkspaceSelection, error)
 	Read(context.Context, string) (apptickets.TicketDetail, error)
 	Select(context.Context, apptickets.SelectInput) (apptickets.SelectionResult, error)
@@ -39,10 +40,12 @@ type GuidedTicketOwner interface {
 const (
 	plannerRequirementsOperation              = "planner.requirements"
 	plannerSharedDesignOperation              = "planner.shared_design"
+	plannerDeliveryPlanOperation              = "planner.delivery_plan"
 	plannerDeliveryTicketOperation            = "planner.delivery_ticket"
 	plannerDeliveryTicketRemediationOperation = "planner.delivery_ticket_remediation"
 	auditorRequirementsReviewOperation        = "auditor.requirements_review"
 	auditorSharedDesignReviewOperation        = "auditor.shared_design_review"
+	auditorDeliveryPlanReviewOperation        = "auditor.delivery_plan_review"
 	auditorDeliveryTicketReviewOperation      = "auditor.delivery_ticket_review"
 )
 
@@ -92,7 +95,7 @@ type GuidedPlanningSection struct {
 	Status, CandidateState, ReviewState, ApprovalState, PromotionState                           string
 	CandidateCount, AwaitingReview, AwaitingApproval, AwaitingPromotion, NeedsRevision, Promoted int
 	HistoricalCount                                                                              int
-	Requirements, SharedDesign, DeliveryTicket                                                   GuidedPlanningFamilySection
+	Requirements, SharedDesign, DeliveryPlan, DeliveryTicket                                      GuidedPlanningFamilySection
 }
 
 // GuidedPlanningFamilySection carries the semantic progression of one planning
@@ -114,12 +117,32 @@ type GuidedFrontierEntry struct {
 	Branch           string
 }
 
+// GuidedFrontierV2Entry is one enriched workspace Ticket Frontier v2 entry
+// projected by the ticket owner: a planned unit, an active authored Ticket, or
+// a planned unit realized by an authored Ticket. State is the exact v2 state
+// vocabulary (planned, authored, blocked, eligible, selected, prepared,
+// executing, audit, remediation, completed); block_reason, unmet dependencies,
+// and downstream units are the exact owner-resolved facts.
+type GuidedFrontierV2Entry struct {
+	UnitID            *string
+	TicketID          *string
+	Revision          *int64
+	SHA256            *string
+	State             string
+	BlockReason       *string
+	DependsOn         []string
+	UnmetDependencies []string
+	DownstreamUnits   []string
+}
+
 // GuidedDeliverySection is the delivery-owner semantic read state consumed by
 // the guided decision. Frontier, selection, package, Run, audit, and
 // remediation states are composed from the tickets, packages, and audits
 // owners; the Feature layer never re-derives lifecycle strings from rows.
 type GuidedDeliverySection struct {
 	Frontier         []GuidedFrontierEntry
+	FrontierV2       []GuidedFrontierV2Entry
+	PlanSHA256       string
 	SelectionState   string // none | active | consumed | superseded
 	PackageState     string // none | prepared | approved
 	PackageID        string
@@ -837,6 +860,7 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 	result := GuidedPlanningSection{Status: "not_started", CandidateState: "none", ReviewState: "none", ApprovalState: "none", PromotionState: "none"}
 	requirements := GuidedPlanningFamilySection{}
 	sharedDesign := GuidedPlanningFamilySection{}
+	deliveryPlan := GuidedPlanningFamilySection{}
 	deliveryTicket := GuidedPlanningFamilySection{}
 	// Candidates are immutable. Within one current basis, only the most recent
 	// candidate in each family is progression authority; earlier replacements
@@ -845,7 +869,7 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 	seenCurrent := map[string]bool{}
 	for index := len(candidates) - 1; index >= 0; index-- {
 		candidate := candidates[index]
-		promoted := candidatePromotedInCurrentAuthority(candidate, authority)
+		promoted := candidatePromotedInCurrentAuthority(candidate, authority) || s.deliveryPlanPromoted(ctx, candidate)
 		historical := s.planningCandidateHistorical(ctx, workspace, candidate)
 		if historical && !(promoted && workspace.CurrentDiscoveryClosurePacketRowID.Valid && candidate.DiscoveryClosurePacketRowID == workspace.CurrentDiscoveryClosurePacketRowID.Int64) {
 			result.HistoricalCount++
@@ -857,6 +881,8 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 			family = &requirements
 		case CandidateFamilySharedDesign:
 			family = &sharedDesign
+		case CandidateFamilyDeliveryPlan:
+			family = &deliveryPlan
 		case CandidateFamilyDeliveryTicket:
 			family = &deliveryTicket
 		default:
@@ -922,11 +948,24 @@ func (s *Service) guidedPlanning(ctx context.Context, workspace workflowstore.Fe
 	}
 	requirements.State = guidedPlanningFamilyState(requirements)
 	sharedDesign.State = guidedPlanningFamilyState(sharedDesign)
+	deliveryPlan.State = guidedPlanningFamilyState(deliveryPlan)
 	deliveryTicket.State = guidedPlanningFamilyState(deliveryTicket)
 	result.Requirements = requirements
 	result.SharedDesign = sharedDesign
+	result.DeliveryPlan = deliveryPlan
 	result.DeliveryTicket = deliveryTicket
 	return result, nil
+}
+
+// deliveryPlanPromoted reports whether the immutable candidate has already been
+// promoted to a durable Delivery Plan record. A promoted delivery_plan
+// candidate must never be reviewed, approved, or promoted again.
+func (s *Service) deliveryPlanPromoted(ctx context.Context, candidate workflowstore.PlanningCandidate) bool {
+	if candidate.Family != CandidateFamilyDeliveryPlan {
+		return false
+	}
+	_, err := s.store.GetDeliveryPlanByCandidateRowID(ctx, candidate.ID)
+	return err == nil
 }
 
 func guidedPlanningFamilyState(family GuidedPlanningFamilySection) string {
@@ -964,6 +1003,29 @@ func (s *Service) guidedDelivery(ctx context.Context, workspace workflowstore.Fe
 	}
 	for _, entry := range frontier.Entries {
 		result.Frontier = append(result.Frontier, GuidedFrontierEntry{TicketID: entry.TicketID, RevisionNumber: entry.RevisionNumber, ExternalPriority: entry.ExternalPriority, RepoTarget: entry.RepoTarget, Branch: entry.Branch})
+	}
+	// The enriched workspace Ticket Frontier v2 is the whole-workspace
+	// planned-only/authored projection: current Plan units plus authored
+	// Tickets with their exact v2 states. It is a pure owner read over the
+	// same ticket Service instance and carries no row identities.
+	project, err := s.store.GetProjectByRowID(ctx, workspace.ProjectRowID)
+	if err != nil {
+		return result, err
+	}
+	frontierV2, err := tickets.ReadFrontier(ctx, apptickets.FrontierV2Input{ProjectID: project.ProjectID, FeatureSlug: workspace.FeatureSlug})
+	if err != nil {
+		return result, err
+	}
+	for _, entry := range frontierV2.Entries {
+		result.FrontierV2 = append(result.FrontierV2, GuidedFrontierV2Entry{
+			UnitID: entry.UnitID, TicketID: entry.TicketID, Revision: entry.Revision, SHA256: entry.SHA256,
+			State: entry.State, BlockReason: entry.BlockReason,
+			DependsOn: append([]string(nil), entry.DependsOn...), UnmetDependencies: append([]string(nil), entry.UnmetDependencies...),
+			DownstreamUnits: append([]string(nil), entry.DownstreamUnits...),
+		})
+	}
+	if frontierV2.CurrentPlan != nil {
+		result.PlanSHA256 = frontierV2.CurrentPlan.SHA256
 	}
 	selection, err := tickets.ReadWorkspaceSelection(ctx, workspace.WorkspaceID)
 	if err != nil {
@@ -1097,7 +1159,7 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 		_, _, err = s.guidedReopenDiscovery(ctx, input)
 	case GuidedActionLegacyRecovery:
 		_, _, err = s.AdoptFeatureDiscoveryLifecycle(ctx, AdoptFeatureDiscoveryLifecycleInput{WorkspaceID: input.WorkspaceID, ExpectedVersion: input.ExpectedVersion, OperatorIdentity: "guided-operator"})
-	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate,
+	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryPlan, GuidedActionContinueEstablishedRoute, GuidedActionReviewPlanningCandidate,
 		GuidedActionAuthorDeliveryTicket,
 		GuidedActionLaunchRun, GuidedActionContinueRun, GuidedActionRecoverRun, GuidedActionPrepareAudit, GuidedActionRecordAuditDecision,
 		GuidedActionRemediate, GuidedActionPrototypeExecute, GuidedActionPrototypeCleanup, GuidedActionPrototypeQA:
@@ -1148,7 +1210,7 @@ func (s *Service) ExecuteGuidedAction(ctx context.Context, input GuidedActionInp
 func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action GuidedFeatureAction, projection GuidedFeatureProjection) (GuidedHandoff, error) {
 	handoff := GuidedHandoff{Role: string(action), ResumeRoute: "/feature-workspaces/" + workspaceID + "/guided", Context: map[string]string{"destination": projection.Discovery.Destination, "currentness": projection.Currentness.Readiness}}
 	switch action {
-	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionContinueEstablishedRoute:
+	case GuidedActionAuthorRequirements, GuidedActionAuthorSharedDesign, GuidedActionAuthorDeliveryPlan, GuidedActionContinueEstablishedRoute:
 		// Compose the existing planner authoring and auditor review envelopes with
 		// workspace context only. The guided handoff prepares the owner surface;
 		// it never authors, reviews, approves, or promotes a candidate or ticket.
@@ -1222,17 +1284,15 @@ func (s *Service) guidedHandoff(ctx context.Context, workspaceID string, action 
 			if !validGuidedOperation(operationID, registry.Role("auditor")) {
 				return GuidedHandoff{}, ErrGuidedActionBlocked
 			}
-			handoff.Context["owner"] = "auditor_review"
-		} else {
-			return GuidedHandoff{}, ErrGuidedActionBlocked
 		}
+		handoff.Context["owner"] = "auditor_review"
 		if operationID != "" {
 			handoff.Context["operationId"] = operationID
 		}
 		handoff.Context["candidateState"] = candidateState
 		handoff.Transfer = &GuidedOperationTransfer{Members: closureMemberRoles(review.Members), AuthorityLayers: authorityLayerKinds(review.Authority)}
 		if operationID != "" {
-			handoff.Summary = "The current Delivery Ticket candidate is prepared for the exact read-only auditor.delivery_ticket_review handoff. Record its bounded disposition through the planning candidate owner, then explicitly approve the exact reviewed candidate server-side before production."
+			handoff.Summary = "The current " + guidedReviewFamilyName(candidate.Family) + " candidate is prepared for the exact read-only " + operationID + " handoff. Record its bounded disposition through the planning candidate owner, then explicitly approve the exact reviewed candidate server-side before production."
 		} else {
 			handoff.Summary = "The auditor review surface is prepared through its existing owner envelope. A ready completion arms the distinct explicit approval action; approve the exact reviewed candidate server-side before resuming here to promote it."
 		}
@@ -1330,6 +1390,8 @@ func guidedPlannerOperationForAction(action GuidedFeatureAction) string {
 		return plannerRequirementsOperation
 	case GuidedActionAuthorSharedDesign:
 		return plannerSharedDesignOperation
+	case GuidedActionAuthorDeliveryPlan:
+		return plannerDeliveryPlanOperation
 	default:
 		return ""
 	}
@@ -1341,10 +1403,29 @@ func guidedAuditorReviewOperation(family string) string {
 		return auditorRequirementsReviewOperation
 	case CandidateFamilySharedDesign:
 		return auditorSharedDesignReviewOperation
+	case CandidateFamilyDeliveryPlan:
+		return auditorDeliveryPlanReviewOperation
 	case CandidateFamilyDeliveryTicket:
 		return auditorDeliveryTicketReviewOperation
 	default:
 		return ""
+	}
+}
+
+// guidedReviewFamilyName is the user-facing family name paired with the exact
+// review operation identity in the guided review handoff summary.
+func guidedReviewFamilyName(family string) string {
+	switch family {
+	case CandidateFamilyRequirements:
+		return "Requirements"
+	case CandidateFamilySharedDesign:
+		return "Shared Design"
+	case CandidateFamilyDeliveryPlan:
+		return "Delivery Plan"
+	case CandidateFamilyDeliveryTicket:
+		return "Delivery Ticket"
+	default:
+		return "planning"
 	}
 }
 
@@ -1473,7 +1554,7 @@ func (s *Service) guidedFamilyCandidateState(ctx context.Context, workspace work
 	for _, family := range guidedCandidateFamiliesForDestination(destination) {
 		for index := len(candidates) - 1; index >= 0; index-- {
 			candidate := candidates[index]
-			promoted := candidatePromotedInCurrentAuthorityLayers(candidate, layers)
+			promoted := candidatePromotedInCurrentAuthorityLayers(candidate, layers) || s.deliveryPlanPromoted(ctx, candidate)
 			historical := s.planningCandidateHistorical(ctx, workspace, candidate)
 			if candidate.Family != family || (historical && !(promoted && workspace.CurrentDiscoveryClosurePacketRowID.Valid && candidate.DiscoveryClosurePacketRowID == workspace.CurrentDiscoveryClosurePacketRowID.Int64)) {
 				continue
@@ -1533,7 +1614,7 @@ func (s *Service) guidedCurrentPlanningCandidateWithState(ctx context.Context, w
 	for _, family := range guidedCandidateFamiliesForDestination(destination) {
 		for index := len(candidates) - 1; index >= 0; index-- {
 			candidate := candidates[index]
-			if candidate.Family != family || s.planningCandidateHistorical(ctx, workspace, candidate) || candidatePromotedInCurrentAuthority(candidate, authority) {
+			if candidate.Family != family || s.planningCandidateHistorical(ctx, workspace, candidate) || candidatePromotedInCurrentAuthority(candidate, authority) || s.deliveryPlanPromoted(ctx, candidate) {
 				continue
 			}
 			if candidate.Family == CandidateFamilyDeliveryTicket {

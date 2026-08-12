@@ -20,6 +20,8 @@ const (
 	deliveryTicketMarkdownSuffix  = ".delivery-ticket.md"
 	transitionPlanJSONSuffix      = ".transition-plan.json"
 	transitionPlanMarkdownSuffix  = ".transition-plan.md"
+	deliveryPlanJSONSuffix        = ".delivery-plan.json"
+	deliveryPlanMarkdownSuffix    = ".delivery-plan.md"
 	requirementsSuffix            = ".requirements.md"
 	sharedDesignSuffix            = ".design.md"
 )
@@ -31,6 +33,7 @@ const (
 	ArtifactDeterministicOperations ArtifactKind = "deterministic_operations"
 	ArtifactDeliveryTicket          ArtifactKind = "delivery_ticket"
 	ArtifactTransitionPlan          ArtifactKind = "transition_plan"
+	ArtifactDeliveryPlan            ArtifactKind = "delivery_plan"
 	ArtifactRequirements            ArtifactKind = "requirements"
 	ArtifactSharedDesign            ArtifactKind = "shared_design"
 )
@@ -49,6 +52,8 @@ var canonicalFilenameRules = []filenameRule{
 	{suffix: deliveryTicketMarkdownSuffix, kind: ArtifactDeliveryTicket, ticketQualified: true},
 	{suffix: transitionPlanJSONSuffix, kind: ArtifactTransitionPlan, ticketQualified: true},
 	{suffix: transitionPlanMarkdownSuffix, kind: ArtifactTransitionPlan, ticketQualified: true},
+	{suffix: deliveryPlanJSONSuffix, kind: ArtifactDeliveryPlan},
+	{suffix: deliveryPlanMarkdownSuffix, kind: ArtifactDeliveryPlan},
 	{suffix: requirementsSuffix, kind: ArtifactRequirements},
 	{suffix: sharedDesignSuffix, kind: ArtifactSharedDesign},
 }
@@ -75,6 +80,8 @@ func currentDefinition(kind ArtifactKind) (currentArtifactDefinition, bool) {
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "2.0", SchemaKind: artifactschema.KindDeliveryTicket}, true
 	case ArtifactTransitionPlan:
 		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindTransitionPlan}, true
+	case ArtifactDeliveryPlan:
+		return currentArtifactDefinition{Kind: kind, ProducerVersion: "1.0", SchemaKind: artifactschema.KindDeliveryPlan}, true
 	default:
 		return currentArtifactDefinition{}, false
 	}
@@ -117,8 +124,8 @@ type Provenance struct {
 }
 
 func SourceProvenance() Provenance {
-	schemas := make([]SchemaProvenance, 0, 4)
-	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactDeterministicOperations, ArtifactDeliveryTicket, ArtifactTransitionPlan} {
+	schemas := make([]SchemaProvenance, 0, 5)
+	for _, kind := range []ArtifactKind{ArtifactPlan, ArtifactDeterministicOperations, ArtifactDeliveryTicket, ArtifactTransitionPlan, ArtifactDeliveryPlan} {
 		definition, _ := currentDefinition(kind)
 		shared, _ := artifactschema.Current(definition.SchemaKind)
 		schemas = append(schemas, SchemaProvenance{ArtifactKind: kind, Version: definition.ProducerVersion, Path: shared.AuthorityPath})
@@ -148,6 +155,12 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 			return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
 		}
 		result, _ := CompileTransitionPlan(filenameBasename, rawJSON)
+		return result
+	case ArtifactDeliveryPlan:
+		if !strings.HasSuffix(filenameBasename, deliveryPlanJSONSuffix) {
+			return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
+		}
+		result, _ := CompileDeliveryPlan(filenameBasename, rawJSON)
 		return result
 	default:
 		return failed([]Diagnostic{{Code: "unsupported_artifact_kind", Path: "", Message: fmt.Sprintf("Artifact kind %q is recognized by filename dispatch but has no current compiler implementation.", filename.Kind)}}, nil)
