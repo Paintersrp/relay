@@ -80,3 +80,20 @@ type AuditOwner interface {
 	ReadRunAuditState(context.Context, string) (RunAuditState, error)
 	ReadWorkspaceRemediationState(context.Context, string) (RemediationState, error)
 }
+
+// ProgramState is the program-owner read used by the guided workspace. It is
+// descriptive only: recording a program result does not advance delivery.
+type ProgramState struct {
+	Prepared []ProgramMember
+	Dispatch []ProgramDispatch
+}
+type ProgramMember struct {
+	MemberID, State, Outcome, Branch, BranchHeadSHA, Blocker string
+}
+type ProgramDispatch struct {
+	DispatchID, Status, RepoTarget, Branch, BaseCommit, LaterIntegrationRisks string
+	Members                                                                   []ProgramMember
+}
+type ProgramOwner interface {
+	ReadWorkspaceProgramState(context.Context, string) (ProgramState, error)
+}

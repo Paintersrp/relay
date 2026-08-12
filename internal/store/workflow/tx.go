@@ -14,6 +14,10 @@ type Tx struct {
 	artifacts *workflowartifacts.Store
 }
 
+// DB exposes this transaction for aggregate admissions that need a single
+// atomic read/write boundary.
+func (tx *Tx) DB() *sql.Tx { return tx.tx }
+
 func (tx *Tx) CreateOperationPacketArtifact(ctx context.Context, params CreateOperationPacketArtifactParams) (OperationPacketArtifact, error) {
 	return scanOperationPacketArtifact(tx.tx.QueryRowContext(ctx, `
 INSERT INTO operation_packet_artifacts (

@@ -1,0 +1,2 @@
+export interface ProgramMember { id: string; packageId: string; runId: string; assignmentArtifactId: string; repoTarget: string; branch: string; baseCommit: string; state: string; outcome: string; resultBranch: string; branchHeadSha: string; blocker: string; ticketRevisionRowId: number; }
+export interface ProgramDispatch { id: string; workspaceId: string; repoTarget: string; branch: string; baseCommit: string; status: string; laterIntegrationRisks: string; members: ProgramMember[]; }

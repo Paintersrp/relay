@@ -101,6 +101,12 @@ Each role app exposes only its compiled role-specific catalog. `/mcp/v1/...` val
 8. The Auditor accepts the implementation or records `needs_revision` with material findings.
 9. Revision-required work returns to a fresh Planner context through an ordinary Delivery Ticket revision.
 
+## Program Workspace Handoff
+
+The Feature Workspace delivery surface can prepare eligible approved current packages sequentially, one package at a time. It displays the accumulated prepared members and their common repository, branch, and base-commit baseline. After selecting at least two compatible members, the operator creates and reads an exact immutable Dispatch and can copy its identifier for the external Program Orchestrator.
+
+The external Program Orchestrator reports exactly one terminal `done` or `blocked` result for every Dispatch member, plus any later integration risks. This handoff records runtime execution state only. It neither merges branches nor performs, stops, or replaces the ordinary audit and remediation journey.
+
 Failure-path callouts:
 
 - Deterministic preflight failure: no deterministic writes occurred; the Orchestrator receives the immutable ExecutionAssignment and failure evidence. No revision is created automatically.

@@ -27,7 +27,7 @@ func TestComposeGuidedFeatureProjectionCoversAllDestinationsAndOnePrimary(t *tes
 	for _, tc := range cases {
 		t.Run(string(tc.destination), func(t *testing.T) {
 			assessment := DiscoveryAssessment{State: DiscoveryStateClosed, Destination: tc.destination, Currentness: DiscoveryCurrent, Revision: &workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: "revision"}}
-			projection := composeGuidedFeatureProjection(workflowstore.FeatureWorkspace{WorkspaceID: "workspace", FeatureSlug: "payments", Version: 4}, workflowstore.Project{ProjectID: "project", Name: "Relay"}, assessment, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil, CompletionStatus{Gates: []CompletionGate{{Name: "closure", Ready: true}, {Name: "authority", Ready: true}}}, GuidedPlanningSection{}, GuidedDeliverySection{}, GuidedPrototypeSection{})
+			projection := composeGuidedFeatureProjection(workflowstore.FeatureWorkspace{WorkspaceID: "workspace", FeatureSlug: "payments", Version: 4}, workflowstore.Project{ProjectID: "project", Name: "Relay"}, assessment, FeatureCurrentnessDecision{Readiness: FeatureCurrent}, nil, CompletionStatus{Gates: []CompletionGate{{Name: "closure", Ready: true}, {Name: "authority", Ready: true}}}, GuidedPlanningSection{}, GuidedDeliverySection{}, GuidedPrototypeSection{}, GuidedProgramSection{})
 			if projection.PrimaryAction.Action != tc.want || !projection.PrimaryAction.Primary {
 				t.Fatalf("primary=%+v", projection.PrimaryAction)
 			}
@@ -76,7 +76,7 @@ func TestGuidedHandoffIsDistinctAndCarriesOwnerPreparationContext(t *testing.T) 
 }
 
 func TestGuidedProjectionSeparatesRecoveryAndDiagnostics(t *testing.T) {
-	projection := composeGuidedFeatureProjection(workflowstore.FeatureWorkspace{WorkspaceID: "workspace", Version: 9}, workflowstore.Project{}, DiscoveryAssessment{State: DiscoveryStateClosed, Currentness: DiscoveryCurrent, Revision: &workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: "revision"}}, FeatureCurrentnessDecision{Readiness: FeatureStale, StaleOwner: "authority", RecoveryCategory: "publish_current_authority", BlockedOperation: "promotion", Effect: "no mutation", Basis: "authority mismatch", HistoricalIdentity: "historical"}, nil, CompletionStatus{}, GuidedPlanningSection{}, GuidedDeliverySection{}, GuidedPrototypeSection{})
+	projection := composeGuidedFeatureProjection(workflowstore.FeatureWorkspace{WorkspaceID: "workspace", Version: 9}, workflowstore.Project{}, DiscoveryAssessment{State: DiscoveryStateClosed, Currentness: DiscoveryCurrent, Revision: &workflowstore.IntegratedDiscoveryRevision{DiscoveryRevisionID: "revision"}}, FeatureCurrentnessDecision{Readiness: FeatureStale, StaleOwner: "authority", RecoveryCategory: "publish_current_authority", BlockedOperation: "promotion", Effect: "no mutation", Basis: "authority mismatch", HistoricalIdentity: "historical"}, nil, CompletionStatus{}, GuidedPlanningSection{}, GuidedDeliverySection{}, GuidedPrototypeSection{}, GuidedProgramSection{})
 	if projection.Recovery.State != "required" || projection.Recovery.Category != "publish_current_authority" || len(projection.Diagnostics.Stale) != 3 || len(projection.Diagnostics.Historical) != 1 {
 		t.Fatalf("recovery=%+v diagnostics=%+v", projection.Recovery, projection.Diagnostics)
 	}

@@ -16,6 +16,7 @@ import (
 	featuresapi "relay/internal/api/features"
 	packagesapi "relay/internal/api/packages"
 	plansapi "relay/internal/api/plans"
+	programsapi "relay/internal/api/programs"
 	projectsapi "relay/internal/api/projects"
 	repositoriesapi "relay/internal/api/repositories"
 	runsapi "relay/internal/api/runs"
@@ -25,6 +26,7 @@ import (
 	appfeatures "relay/internal/app/features"
 	appoperations "relay/internal/app/operations"
 	apppackages "relay/internal/app/packages"
+	appprograms "relay/internal/app/programs"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowsubmissions "relay/internal/app/submissions"
 	apptickets "relay/internal/app/tickets"
@@ -145,6 +147,13 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct package workflow service: %w", err)
 	}
+	programService, err := appprograms.NewService(workflowStore, sourceVaultReader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("construct program dispatch service: %w", err)
+	}
+	if err := featureAuthorityService.SetGuidedProgramOwner(programService); err != nil {
+		return nil, nil, fmt.Errorf("bind guided program owner: %w", err)
+	}
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService, log)
 	projectHandler := projectsapi.NewWorkflowHandler(projectService)
@@ -157,6 +166,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 	featureWorkspaceHandler := featuresapi.NewWorkspaceHandlerFromServices(wayfinderService, featureAuthorityService, featureCompletionWorkflowService)
 	ticketHandler := ticketsapi.NewWorkflowHandlerFromServices(ticketWorkflowService, ticketReadService{service: ticketService, store: workflowStore})
 	packageHandler := packagesapi.NewWorkflowHandler(packageWorkflowService)
+	programHandler := programsapi.NewHandler(programService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -185,6 +195,7 @@ func buildWorkflowRuntime(workflowStore *workflowstore.Store, log *slog.Logger, 
 		featuresapi.MountWorkspaceRoutes(api, featureWorkspaceHandler)
 		ticketsapi.MountWorkflowRoutes(api, ticketHandler)
 		packagesapi.MountWorkflowRoutes(api, packageHandler)
+		programsapi.MountRoutes(api, programHandler)
 		api.HandleFunc("/*", workflowJSONNotFound)
 	})
 

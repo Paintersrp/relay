@@ -51,6 +51,7 @@ type Service struct {
 	prototypeCleaner  prototypeexecution.Cleaner
 	guidedPackages    guidedapp.PackageOwner
 	guidedAudit       guidedapp.AuditOwner
+	guidedPrograms    guidedapp.ProgramOwner
 	guidedTickets     GuidedTicketOwner
 
 	// reviewContinuations holds the process-local, non-durable planning review
@@ -104,6 +105,15 @@ func (s *Service) SetGuidedAuditOwner(v guidedapp.AuditOwner) error {
 	return nil
 }
 func (s *Service) SetGuidedAuditOwnerForTest(v guidedapp.AuditOwner) { s.guidedAudit = v }
+
+func (s *Service) SetGuidedProgramOwner(v guidedapp.ProgramOwner) error {
+	if v == nil {
+		return fmt.Errorf("guided program owner is required")
+	}
+	s.guidedPrograms = v
+	return nil
+}
+func (s *Service) SetGuidedProgramOwnerForTest(v guidedapp.ProgramOwner) { s.guidedPrograms = v }
 
 // SetGuidedTicketOwner binds the ticket owner used by the guided delivery
 // projection, selection, and production dispatch. The owner must be the exact

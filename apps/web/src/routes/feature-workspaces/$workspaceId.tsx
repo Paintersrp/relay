@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RelayFeatureWorkspaceDetail } from "@/components/relay/RelayFeatureWorkspaceDetail";
+import { RelayFeatureWorkspaceProgram } from "@/components/relay/RelayFeatureWorkspaceProgram";
 import { Button } from "@/components/ui/button";
 import { featureWorkspaceGuidedQueryOptions } from "@/features/relay-feature-workspaces";
 
@@ -27,6 +28,7 @@ function FeatureWorkspacePage() {
       ) : (
         <div className="mx-auto w-full max-w-5xl p-6">
           <RelayFeatureWorkspaceDetail detail={query.data} />
+          <div className="mt-6"><RelayFeatureWorkspaceProgram workspaceId={workspaceId} expectedVersion={query.data.workspace.version} /></div>
         </div>
       )}
     </section>

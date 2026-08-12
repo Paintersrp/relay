@@ -61,6 +61,7 @@ type GuidedFeatureProjection struct {
 	Planning         GuidedPlanningSection
 	Delivery         GuidedDeliverySection
 	Prototype        GuidedPrototypeSection
+	Program          GuidedProgramSection
 	Completion       GuidedCompletionSection
 	Recovery         GuidedRecoverySection
 	Diagnostics      GuidedDiagnosticsSection
@@ -95,7 +96,7 @@ type GuidedPlanningSection struct {
 	Status, CandidateState, ReviewState, ApprovalState, PromotionState                           string
 	CandidateCount, AwaitingReview, AwaitingApproval, AwaitingPromotion, NeedsRevision, Promoted int
 	HistoricalCount                                                                              int
-	Requirements, SharedDesign, DeliveryPlan, DeliveryTicket                                      GuidedPlanningFamilySection
+	Requirements, SharedDesign, DeliveryPlan, DeliveryTicket                                     GuidedPlanningFamilySection
 }
 
 // GuidedPlanningFamilySection carries the semantic progression of one planning
@@ -158,6 +159,12 @@ type GuidedPrototypeSection struct {
 	RunState, CleanupState, QAState, EvidenceState, ProcessOutcome string
 	RunID                                                          string
 	Diagnostics                                                    []string
+}
+type GuidedProgramSection struct {
+	Prepared  []guidedapp.ProgramMember
+	Dispatch  []guidedapp.ProgramDispatch
+	Available bool
+	Handoff   string
 }
 type GuidedCompletionSection struct {
 	Gates    []GuidedCompletionGate
@@ -272,8 +279,8 @@ type GuidedIntegrityPlanningCandidate struct {
 // Delivery Ticket frontier, current selection, execution package and its
 // approval, the linked Run, the workflow audit, and audit remediation seeds.
 type GuidedIntegrityDeliverySection struct {
-	Frontier    []GuidedIntegrityTicket   // AC17
-	Selection   *GuidedIntegritySelection // AC18
+	Frontier    []GuidedIntegrityTicket     // AC17
+	Selection   *GuidedIntegritySelection   // AC18
 	Package     *GuidedIntegrityPackage     // AC19/AC20
 	Run         *GuidedIntegrityRun         // AC21
 	Audit       *GuidedIntegrityAudit       // AC22
@@ -462,7 +469,15 @@ func (s *Service) ReadGuidedProjection(ctx context.Context, workspaceID string) 
 	if err != nil {
 		return GuidedFeatureProjection{}, err
 	}
-	projection := composeGuidedFeatureProjection(workspace, project, assessment, currentness, authority, completion, planning, delivery, prototype)
+	program := GuidedProgramSection{Available: s.guidedPrograms != nil, Handoff: "Prepare eligible approved current packages, then use the Program Orchestrator for a multi-member dispatch."}
+	if s.guidedPrograms != nil {
+		state, programErr := s.guidedPrograms.ReadWorkspaceProgramState(ctx, workspace.WorkspaceID)
+		if programErr != nil {
+			return GuidedFeatureProjection{}, programErr
+		}
+		program.Prepared, program.Dispatch = state.Prepared, state.Dispatch
+	}
+	projection := composeGuidedFeatureProjection(workspace, project, assessment, currentness, authority, completion, planning, delivery, prototype, program)
 	projection.Diagnostics.Integrity = guidedIntegrity(ctx, s, workspace, assessment, authority, delivery, prototype)
 	return projection, nil
 }
@@ -740,7 +755,7 @@ func integrityReadCondition(err error) string {
 	return "unreadable"
 }
 
-func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, project workflowstore.Project, assessment DiscoveryAssessment, currentness FeatureCurrentnessDecision, authority []AuthorityRevisionDetail, completion CompletionStatus, planning GuidedPlanningSection, delivery GuidedDeliverySection, prototype GuidedPrototypeSection) GuidedFeatureProjection {
+func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, project workflowstore.Project, assessment DiscoveryAssessment, currentness FeatureCurrentnessDecision, authority []AuthorityRevisionDetail, completion CompletionStatus, planning GuidedPlanningSection, delivery GuidedDeliverySection, prototype GuidedPrototypeSection, program GuidedProgramSection) GuidedFeatureProjection {
 	layers := make([]string, 0)
 	currentRevisionNumber := 0
 	for _, revision := range authority {
@@ -779,7 +794,7 @@ func composeGuidedFeatureProjection(workspace workflowstore.FeatureWorkspace, pr
 		Discovery:   GuidedDiscoverySection{State: string(assessment.State), Destination: string(assessment.Destination), Rationale: assessment.Rationale, Continuation: assessment.Continuation, Currentness: string(assessment.Currentness), Basis: currentness.Basis, ReopenState: guidedReopenState(assessment), HasCurrentRevision: assessment.Revision != nil, Blockers: append([]string(nil), assessment.Blockers...), RestorationActions: append([]string(nil), assessment.RestorationActions...), PendingIntegrations: append([]string(nil), assessment.PendingIntegrations...), ActiveOperations: append([]string(nil), assessment.ActiveOperations...), RouteMaterialOpen: append([]string(nil), assessment.RouteMaterialOpen...), RequiredEvidence: append([]string(nil), assessment.RequiredEvidence...)},
 		Currentness: GuidedCurrentnessSection{Readiness: string(currentness.Readiness), Owner: currentness.StaleOwner, BlockedOperation: currentness.BlockedOperation, Effect: currentness.Effect, RecoveryCategory: currentness.RecoveryCategory},
 		Authority:   GuidedAuthoritySection{CurrentRevisionNumber: currentRevisionNumber, Layers: append([]string(nil), layers...)},
-		Planning:    planning, Delivery: delivery, Prototype: prototype,
+		Planning:    planning, Delivery: delivery, Prototype: prototype, Program: program,
 		Completion:       GuidedCompletionSection{Gates: gates, Ready: GuidedCompletionReady(gates), Recorded: completion.CurrentDecision != nil, Decision: decisionValue},
 		Recovery:         recovery,
 		Diagnostics:      GuidedDiagnosticsSection{Stale: nonEmpty(currentness.StaleOwner, currentness.BlockedOperation, currentness.Effect), Historical: guidedHistoricalDiagnostics(currentness, assessment), Discovery: append([]string(nil), assessment.Blockers...), Delivery: append([]string(nil), delivery.Diagnostics...), Prototype: append([]string(nil), prototype.Diagnostics...)},
