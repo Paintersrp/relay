@@ -1049,7 +1049,7 @@ func refSchema(name string) *orderedValue {
 func surfaceContractSchema() *orderedValue {
 	return stringEnumSchema([]string{
 		"wayfinder-workspace.v1", "wayfinder-discovery.v1", "wayfinder-investigation.v1",
-		"planner-authoring.v1", "planner-ticket-frontier.v1",
+		"planner-authoring.v1", "planner-ticket-frontier.v2",
 		"auditor-review.v1", "auditor-audit.v1",
 	})
 }

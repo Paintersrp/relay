@@ -49,7 +49,7 @@ func TestCanonicalPacketGoldenMatrix(t *testing.T) {
 		"planner.delivery_ticket":                 "337b3453b2c16706c25d658b0d5f8b9dcb3d7617743e69a5148c5bf5e03d47a0",
 		"planner.transition_plan":                 "18920b03a5b6e2fad12d0f47ffcbf92555e031f9c23f00fe73da5aae57444d43",
 		"planner.delivery_ticket_remediation":     "6507dce620c1870c870e904e34c86f3802cf27ee0b3e3e29ca8957a64b97b78c",
-		"planner.ticket_frontier":                 "cc2543f6c137b72f02a10ede96a274eb040aa879cf813446d58a81e86934332a",
+		"planner.ticket_frontier":                 "ebd4147d8b28fdaf0174f04b598e7ac1f86f60ed7855ccb03cd77409c2353c79",
 		"auditor.requirements_review":             "f31f6eba7374c850854c2e21475e6cba854a4b02cec389938cb63a2d2fa43597",
 		"auditor.shared_design_review":            "24d6b3bdf4e9118d3bda128be651985b06770ba92a493727cb512deaf41f43c0",
 		"auditor.delivery_plan_review":            "54f99384b64917653243b58a99eac390ec6f4afcb37e82baa494dcceea17b1ac",

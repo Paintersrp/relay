@@ -208,6 +208,23 @@ func TestPlannerTicketFrontierMutationResultSchemaUpgradePreservesRows(t *testin
 	assertExecFails(t, db, `DELETE FROM mcp_mutation_results WHERE id = 1`)
 }
 
+func TestPlannerTicketFrontierV2SurfaceSchemaAdmitsActiveSurface(t *testing.T) {
+	db := openMigrationTestDB(t, "planner-ticket-frontier-v2")
+	defer db.Close()
+
+	goose.SetBaseFS(WorkflowMigrationsFS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.Up(db, "workflow_migrations"); err != nil {
+		t.Fatal(err)
+	}
+
+	insertMutationResult(t, db, 1, "planner-ticket-frontier.v2", "create_operation_packet", "planner-ticket-frontier-v2", "create_operation_packet_result")
+	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('unknown-surface.v1', 'create_operation_packet', 'unknown-surface', ?, 'v1', ?, 'create_operation_packet_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+	assertExecFails(t, db, `INSERT INTO mcp_mutation_results (surface_contract_id, tool_name, mutation_id, surface_manifest_sha256, semantic_identity_version, semantic_request_sha256, result_kind, result_identity_json, result_sha256) VALUES ('planner-ticket-frontier.v2', 'submit_plan', 'mismatched-valid-pair', ?, 'v1', ?, 'submit_plan_result', '{}', ?)`, migrationTestHash, migrationTestHash, migrationTestHash)
+}
+
 func TestSourceIndexGenerationSchemaUpgradeAndGuards(t *testing.T) {
 	db := openMigrationTestDB(t, "source-index-generation")
 	defer db.Close()

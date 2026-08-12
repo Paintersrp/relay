@@ -65,3 +65,65 @@ func TestTicketRoleProfilesExposeOnlyPlannerRead(t *testing.T) {
 		t.Fatalf("profile operation mismatch: %#v", profile)
 	}
 }
+
+// TestPlannerTicketFrontierPublishesCanonicalV2Contract asserts the published
+// planner.ticket_frontier operation exposes the canonical v2 workspace
+// frontier surface, semantic projection, and Planner ticket_frontier manifest
+// domain, with no separate v2 operation ID and no retained v1 identity.
+func TestPlannerTicketFrontierPublishesCanonicalV2Contract(t *testing.T) {
+	operation, ok := LookupPublishedOperation(PlannerTicketFrontierOperationID)
+	if !ok {
+		t.Fatal("published planner.ticket_frontier operation is missing")
+	}
+	if operation.OperationID != "planner.ticket_frontier" {
+		t.Fatalf("operation ID = %q, want planner.ticket_frontier", operation.OperationID)
+	}
+	if operation.SurfaceContract != "planner-ticket-frontier.v2" {
+		t.Fatalf("surface = %q, want planner-ticket-frontier.v2", operation.SurfaceContract)
+	}
+	if operation.PacketSemanticProjection != "relay.semantic.ticket-frontier-read.v2" {
+		t.Fatalf("packet semantic projection = %q, want relay.semantic.ticket-frontier-read.v2", operation.PacketSemanticProjection)
+	}
+	if operation.ManifestDomain != "ticket_frontier" {
+		t.Fatalf("manifest domain = %q, want ticket_frontier", operation.ManifestDomain)
+	}
+	operations, err := ListPublishedOperations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range operations {
+		if candidate.OperationID == "planner.ticket_frontier_v2" {
+			t.Fatal("planner.ticket_frontier_v2 is separately registered")
+		}
+		if candidate.SurfaceContract == "planner-ticket-frontier.v1" || candidate.PacketSemanticProjection == "relay.semantic.ticket-frontier-read.v1" {
+			t.Fatalf("active v1 frontier identity remains published on %q", candidate.OperationID)
+		}
+	}
+}
+
+// TestPlannerTicketFrontierRoutePublishesV2Surface asserts the published
+// frontier route binds planner.ticket_frontier to the v2 surface and no route
+// publishes the former v1 frontier surface.
+func TestPlannerTicketFrontierRoutePublishesV2Surface(t *testing.T) {
+	routes, err := ListRouteDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, route := range routes {
+		if route.Surface == "planner-ticket-frontier.v1" {
+			t.Fatal("frontier v1 route surface remains published")
+		}
+		for _, operation := range route.Operations {
+			if operation == PlannerTicketFrontierOperationID {
+				if route.Surface != "planner-ticket-frontier.v2" {
+					t.Fatalf("frontier route surface = %q, want planner-ticket-frontier.v2", route.Surface)
+				}
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("planner.ticket_frontier is not a published route member")
+	}
+}

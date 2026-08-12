@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"testing"
 
@@ -94,5 +96,62 @@ func TestTicketRoleSurfacesExposeOnlyPlannerFrontier(t *testing.T) {
 	surfaces := TicketRoleSurfaces()
 	if len(surfaces) != 1 || surfaces[0].Role != registry.Role("planner") || len(surfaces[0].Operations) != 1 || surfaces[0].Operations[0] != registry.PlannerTicketFrontierOperationID {
 		t.Fatalf("surfaces = %#v", surfaces)
+	}
+}
+
+// TestTicketFrontierSemanticIdentityResolvesCanonicalV2 asserts the MCP
+// admission identity resolves the canonical v2 frontier semantic projection
+// and surface through the published registry, never the former v1 identity.
+func TestTicketFrontierSemanticIdentityResolvesCanonicalV2(t *testing.T) {
+	identity := TicketFrontierOperationIdentity{
+		ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID),
+		Action: string(registry.TicketActionReadFrontier), FeatureSlug: "checkout", RequestedUnitID: "P4-T1",
+	}
+	if got := identity.SemanticIdentityVersion(); got != "relay.semantic.ticket-frontier-read.v2" {
+		t.Fatalf("semantic identity version = %q, want relay.semantic.ticket-frontier-read.v2", got)
+	}
+	operation, ok := registry.TicketOperationForAction(registry.TicketActionReadFrontier)
+	if !ok {
+		t.Fatal("frontier operation is not registered")
+	}
+	if operation.SurfaceContract != "planner-ticket-frontier.v2" || operation.PacketSemanticProjection != "relay.semantic.ticket-frontier-read.v2" || operation.ManifestDomain != "ticket_frontier" {
+		t.Fatalf("published frontier operation = %#v", operation)
+	}
+}
+
+// TestTicketFrontierFingerprintBindsCanonicalV2Identity reconstructs the
+// fingerprint basis exactly and asserts SemanticRequestSHA256 derives from the
+// canonical v2 surface and semantic projection rather than the former v1
+// identity.
+func TestTicketFrontierFingerprintBindsCanonicalV2Identity(t *testing.T) {
+	identity := TicketFrontierOperationIdentity{
+		ExpectedPacketID: "packet-1", OperationID: string(registry.PlannerTicketFrontierOperationID),
+		Action: string(registry.TicketActionReadFrontier), FeatureSlug: "checkout", RequestedUnitID: "P4-T1",
+	}
+	fingerprint, err := identity.SemanticRequestSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestSHA256, ok := registry.RouteContractSHA256("planner-ticket-frontier.v2")
+	if !ok {
+		t.Fatal("frontier v2 surface manifest is unavailable")
+	}
+	encoded, err := json.Marshal(struct {
+		SemanticIdentityVersion string                          `json:"semantic_identity_version"`
+		SurfaceContract         string                          `json:"surface_contract"`
+		SurfaceManifestSHA256   string                          `json:"surface_manifest_sha256"`
+		Identity                TicketFrontierOperationIdentity `json:"identity"`
+	}{
+		SemanticIdentityVersion: "relay.semantic.ticket-frontier-read.v2",
+		SurfaceContract:         "planner-ticket-frontier.v2",
+		SurfaceManifestSHA256:   manifestSHA256,
+		Identity:                identity,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(encoded)
+	if got := hex.EncodeToString(sum[:]); got != fingerprint {
+		t.Fatalf("fingerprint = %q, want canonical v2 fingerprint %q", fingerprint, got)
 	}
 }

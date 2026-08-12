@@ -710,7 +710,7 @@ func assertToolFamilies(t *testing.T, surface routecontracts.AppSurface, tools [
 	t.Helper()
 	want := map[routecontracts.AppSurface][]string{
 		routecontracts.AppSurfaceWayfinder: {"wayfinder-workspace-v1__", "wayfinder-discovery-v1__", "wayfinder-investigation-v1__"},
-		routecontracts.AppSurfacePlanner:   {"planner-authoring-v1__", "planner-ticket-frontier-v1__"},
+		routecontracts.AppSurfacePlanner:   {"planner-authoring-v1__", "planner-ticket-frontier-v2__"},
 		routecontracts.AppSurfaceAuditor:   {"auditor-review-v1__", "auditor-audit-v1__"},
 	}[surface]
 	for _, prefix := range want {

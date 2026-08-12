@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -211,11 +212,11 @@ func TestLifecycleDeliveryPlanMaterializesCurrentFeatureWorkspaceRoute(t *testin
 func TestLifecycleTicketFrontierMaterializesCurrentFeatureWorkspaceRoute(t *testing.T) {
 	f := newPlannerDerivedFixture(t, false)
 	result := createPlannerDerivedPacket(t, f, "planner.ticket_frontier", "")
-	if result.Replay || result.Packet.Summary.OperationID != "planner.ticket_frontier" || result.Packet.Summary.SurfaceContract != "planner-ticket-frontier.v1" || result.Packet.Summary.Role != "planner" {
+	if result.Replay || result.Packet.Summary.OperationID != "planner.ticket_frontier" || result.Packet.Summary.SurfaceContract != "planner-ticket-frontier.v2" || result.Packet.Summary.Role != "planner" {
 		t.Fatalf("frontier packet = %#v", result)
 	}
-	mutation, err := f.store.GetMCPMutationResult(f.ctx, workflowstore.MCPMutationKey{SurfaceContractID: "planner-ticket-frontier.v1", ToolName: string(registry.MutationToolCreateOperationPacket), MutationID: "create-planner.ticket_frontier"})
-	if err != nil || mutation.SurfaceContractID != "planner-ticket-frontier.v1" || mutation.ToolName != string(registry.MutationToolCreateOperationPacket) || mutation.MutationID != "create-planner.ticket_frontier" || mutation.ResultIdentityJSON != string(result.Mutation.ResultIdentityJSON) || mutation.ResultSHA256 != result.Mutation.ResultSHA256 {
+	mutation, err := f.store.GetMCPMutationResult(f.ctx, workflowstore.MCPMutationKey{SurfaceContractID: "planner-ticket-frontier.v2", ToolName: string(registry.MutationToolCreateOperationPacket), MutationID: "create-planner.ticket_frontier"})
+	if err != nil || mutation.SurfaceContractID != "planner-ticket-frontier.v2" || mutation.ToolName != string(registry.MutationToolCreateOperationPacket) || mutation.MutationID != "create-planner.ticket_frontier" || mutation.ResultIdentityJSON != string(result.Mutation.ResultIdentityJSON) || mutation.ResultSHA256 != result.Mutation.ResultSHA256 {
 		t.Fatalf("persisted frontier mutation = %#v, err=%v", mutation, err)
 	}
 	data, _, _ := readPlannerDerivedInput(t, f, result, "current_feature_workspace_route")
@@ -232,8 +233,12 @@ func TestLifecycleTicketFrontierMaterializesCurrentFeatureWorkspaceRoute(t *test
 		CommitOID     string `json:"commit_oid"`
 	}
 	var manifestDomain struct {
-		Domain  string            `json:"domain"`
-		Members []json.RawMessage `json:"members"`
+		Domain  string `json:"domain"`
+		Members []struct {
+			Path struct {
+				PathBytesBase64 string `json:"path_bytes_base64"`
+			} `json:"path"`
+		} `json:"members"`
 	}
 	if err := json.Unmarshal(document["relay_specs"], &relaySpecs); err != nil {
 		t.Fatal(err)
@@ -241,8 +246,21 @@ func TestLifecycleTicketFrontierMaterializesCurrentFeatureWorkspaceRoute(t *test
 	if err := json.Unmarshal(document["manifest_domain"], &manifestDomain); err != nil {
 		t.Fatal(err)
 	}
-	if relaySpecs.RepositoryKey != "" || relaySpecs.CommitOID != "" || manifestDomain.Domain != "" || len(manifestDomain.Members) != 0 {
-		t.Fatalf("manifestless governance was fabricated: %s %s", document["relay_specs"], document["manifest_domain"])
+	if relaySpecs.RepositoryKey != "relay-specs" || relaySpecs.CommitOID == "" {
+		t.Fatalf("frontier governance binding was not materialized: %s", document["relay_specs"])
+	}
+	if manifestDomain.Domain != "ticket_frontier" {
+		t.Fatalf("frontier manifest domain = %q, want ticket_frontier", manifestDomain.Domain)
+	}
+	wantMembers := []string{"contracts/cross-cutting.md", "contracts/delivery-plan.md", "contracts/delivery-ticket.md", "contracts/ticket-frontier.md"}
+	if len(manifestDomain.Members) != len(wantMembers) {
+		t.Fatalf("frontier manifest members = %d, want %d: %s", len(manifestDomain.Members), len(wantMembers), document["manifest_domain"])
+	}
+	for index, want := range wantMembers {
+		raw, err := base64.StdEncoding.DecodeString(manifestDomain.Members[index].Path.PathBytesBase64)
+		if err != nil || string(raw) != want {
+			t.Fatalf("frontier manifest member %d path = %q, want %q", index, string(raw), want)
+		}
 	}
 	var before int
 	if err := f.store.DB().QueryRow(`SELECT COUNT(*) FROM operation_packets`).Scan(&before); err != nil {

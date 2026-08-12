@@ -32,3 +32,39 @@ func TestRouteManifestIdentityIsCanonicalAndComplete(t *testing.T) {
 		}
 	}
 }
+
+// TestPlannerFrontierAuthorityResolvesPinnedTicketFrontierDomain asserts the
+// published planner frontier route binds planner.ticket_frontier to the
+// pinned Planner ticket_frontier manifest domain and loads its exact pinned
+// manifest members.
+func TestPlannerFrontierAuthorityResolvesPinnedTicketFrontierDomain(t *testing.T) {
+	set, err := BuildMCPRouteManifests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, manifest := range set.Manifests {
+		if manifest.SurfaceContract != "planner-ticket-frontier.v2" {
+			continue
+		}
+		if manifest.Role != "planner" || len(manifest.Operations) != 1 || manifest.Operations[0].OperationID != "planner.ticket_frontier" || manifest.Operations[0].ManifestDomain != "ticket_frontier" {
+			t.Fatalf("frontier route manifest = %#v", manifest)
+		}
+		if manifest.Operations[0].PacketSemanticProjection != "relay.semantic.ticket-frontier-read.v2" {
+			t.Fatalf("frontier semantic projection = %q, want relay.semantic.ticket-frontier-read.v2", manifest.Operations[0].PacketSemanticProjection)
+		}
+		if len(manifest.DomainAuthority) != 1 || manifest.DomainAuthority[0].Domain != "ticket_frontier" {
+			t.Fatalf("frontier domain authority = %#v", manifest.DomainAuthority)
+		}
+		wantMembers := []string{"contracts/cross-cutting.md", "contracts/delivery-plan.md", "contracts/delivery-ticket.md", "contracts/ticket-frontier.md"}
+		if len(manifest.DomainAuthority[0].Members) != len(wantMembers) {
+			t.Fatalf("frontier domain members = %d, want %d", len(manifest.DomainAuthority[0].Members), len(wantMembers))
+		}
+		for index, want := range wantMembers {
+			if manifest.DomainAuthority[0].Members[index].Path != want {
+				t.Fatalf("frontier domain member %d = %q, want %q", index, manifest.DomainAuthority[0].Members[index].Path, want)
+			}
+		}
+		return
+	}
+	t.Fatal("Planner frontier route is missing")
+}

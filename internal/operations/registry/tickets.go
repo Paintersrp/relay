@@ -1,8 +1,10 @@
 package registry
 
 const (
-	PlannerTicketFrontierOperationID OperationID       = "planner.ticket_frontier"
-	PlannerTicketFrontierSurface     SurfaceContractID = "planner-ticket-frontier.v1"
+	PlannerTicketFrontierOperationID        OperationID       = "planner.ticket_frontier"
+	PlannerTicketFrontierSurface            SurfaceContractID = "planner-ticket-frontier.v2"
+	PlannerTicketFrontierSemanticProjection string            = "relay.semantic.ticket-frontier-read.v2"
+	PlannerTicketFrontierManifestDomain     ManifestDomain    = "ticket_frontier"
 
 	TicketActionReadFrontier              AllowedAction = "read_ticket_frontier"
 	TicketActionPublish                   AllowedAction = "publish_ticket"

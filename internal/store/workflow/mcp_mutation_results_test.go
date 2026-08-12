@@ -157,7 +157,7 @@ func TestMCPMutationResultPersistsPlannerTicketFrontierExactly(t *testing.T) {
 	store, _ := openWorkflowTestStore(t)
 	resultJSON := `{"operation_id":"planner.ticket_frontier"}`
 	params := CreateMCPMutationResultParams{
-		SurfaceContractID:       "planner-ticket-frontier.v1",
+		SurfaceContractID:       "planner-ticket-frontier.v2",
 		ToolName:                "create_operation_packet",
 		MutationID:              "planner-ticket-frontier",
 		SurfaceManifestSHA256:   strings.Repeat("a", 64),

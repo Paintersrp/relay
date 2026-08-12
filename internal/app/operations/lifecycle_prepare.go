@@ -507,9 +507,9 @@ func repositoryAuthorityError(repoTarget string, err error) error {
 
 func (s *LifecycleService) prepareGovernance(ctx context.Context, packetID string, operation registry.OperationDefinition, request lifecycleRequest, repositories repositoryPreparation) (packet.GovernanceBinding, packet.ManifestDomainBinding, []PublicationVaultInput, workflowrepos.ResolvedRevision, error) {
 	if operation.ManifestDomain == "" {
-		// Published manifestless packets, including Wayfinder bootstrap and the
-		// Planner ticket frontier, bind Project repositories without fabricating
-		// a Planner or Auditor governance identity.
+		// Published manifestless packets, including Wayfinder bootstrap
+		// operations, bind Project repositories without fabricating a Planner
+		// or Auditor governance identity.
 		return packet.GovernanceBinding{}, packet.ManifestDomainBinding{}, nil, workflowrepos.ResolvedRevision{}, nil
 	}
 	manifestPath := governanceManifestPath(operation.Role)
