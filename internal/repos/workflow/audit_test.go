@@ -2,6 +2,7 @@ package workflowrepos
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -155,13 +156,13 @@ func TestVerifyIntegrationRepositoryRequiresExactPreservation(t *testing.T) {
 	git("add", ".")
 	git("commit", "-m", "two")
 	two := git("rev-parse", "HEAD")
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, two, []string{two}, nil, "clean", ""); err != nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, two, []string{two}, nil, "clean", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, strings.Repeat("f", 40), []string{two}, nil, "clean", ""); err == nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, strings.Repeat("f", 40), []string{two}, nil, "clean", ""); err == nil {
 		t.Fatal("unknown integrated commit passed")
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, base, []string{two}, nil, "clean", ""); err == nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, base, []string{two}, nil, "clean", ""); err == nil {
 		t.Fatal("non-preserving integrated commit passed")
 	}
 	git("checkout", "-b", "feature", base)
@@ -174,18 +175,112 @@ func TestVerifyIntegrationRepositoryRequiresExactPreservation(t *testing.T) {
 	git("checkout", "main")
 	git("merge", "--no-ff", "feature", "-m", "merge feature")
 	merge := git("rev-parse", "HEAD")
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "clean", ""); err != nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, merge, []string{two, feature}, nil, "clean", ""); err != nil {
 		t.Fatalf("clean multi-parent merge failed: %v", err)
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "mechanically_resolved", "arbitrary"); err == nil {
-		t.Fatal("arbitrary conflict evidence passed")
+	for _, evidence := range []string{"arbitrary", "mechanically_resolved:" + merge} {
+		if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, merge, []string{two, feature}, nil, "mechanically_resolved", evidence); err == nil {
+			t.Fatalf("fabricated conflict evidence passed: %q", evidence)
+		}
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "mechanically_resolved", "mechanically_resolved:"+merge); err != nil {
-		t.Fatalf("exact mechanical conflict evidence failed: %v", err)
-	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, merge, []string{two, feature}, nil, "material_conflict", "material conflict"); err == nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, merge, []string{two, feature}, nil, "material_conflict", "material conflict"); err == nil {
 		t.Fatal("material conflict passed")
 	}
+}
+
+func TestVerifyIntegrationRepositoryVerifiesFactualMechanicalConflictEvidence(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(root, "conflict.txt"), []byte("base\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "conflict.txt"), []byte("ours\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "ours")
+	ours := run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	if err := os.WriteFile(filepath.Join(root, "conflict.txt"), []byte("theirs\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "theirs")
+	theirs := run("rev-parse", "HEAD")
+	run("checkout", "main")
+	mergeCommand := exec.Command("git", "merge", "feature", "-m", "merge feature")
+	mergeCommand.Dir = root
+	if err := mergeCommand.Run(); err == nil {
+		t.Fatal("expected merge conflict")
+	}
+	stage := strings.Fields(run("ls-files", "-u"))
+	if len(stage) < 12 {
+		t.Fatalf("conflict stages = %q", stage)
+	}
+	run("checkout", "--theirs", "conflict.txt")
+	run("add", "conflict.txt")
+	run("commit", "-m", "resolve conflict")
+	integrated := run("rev-parse", "HEAD")
+	parents := strings.Fields(run("rev-list", "--parents", "-n", "1", integrated))[1:]
+	entry := func(commit string) IntegrationConflictBlob {
+		fields := strings.Fields(run("ls-tree", commit, "--", "conflict.txt"))
+		if len(fields) != 4 {
+			t.Fatalf("tree entry %s = %q", commit, fields)
+		}
+		return IntegrationConflictBlob{Commit: commit, Mode: fields[0], OID: fields[2]}
+	}
+	evidenceBytes, err := json.Marshal(IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts:         []IntegrationConflictPath{{Path: "conflict.txt", Base: entry(base), Ours: entry(ours), Theirs: entry(theirs), Resolved: entry(integrated)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := string(evidenceBytes)
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence); err != nil {
+		t.Fatalf("valid factual conflict evidence failed: %v", err)
+	}
+	for _, mutate := range []func(*IntegrationConflictEvidence){
+		func(e *IntegrationConflictEvidence) { e.AssignmentID = "wrong-assignment" },
+		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Path = "missing.txt" },
+		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Ours.OID = strings.Repeat("0", 40) },
+		func(e *IntegrationConflictEvidence) { e.IntegratedCommit = base },
+	} {
+		mutated := jsonEvidence(t, evidence)
+		mutate(&mutated)
+		bytes, err := json.Marshal(mutated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", string(bytes)); err == nil {
+			t.Fatal("fabricated or mismatched conflict evidence passed")
+		}
+	}
+}
+
+func jsonEvidence(t *testing.T, encoded string) IntegrationConflictEvidence {
+	t.Helper()
+	var evidence IntegrationConflictEvidence
+	if err := json.Unmarshal([]byte(encoded), &evidence); err != nil {
+		t.Fatal(err)
+	}
+	return evidence
 }
 
 func sliceContains(haystack []string, needle string) bool {

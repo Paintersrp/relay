@@ -98,12 +98,12 @@ type IntegrationDependency struct {
 }
 
 func integrationRepositoryVerifierForStore(store *workflowstore.Store) integrationRepositoryVerifier {
-	return func(ctx context.Context, repo, branch, base, integrated string, bound, omitted []string, conflictResolution, conflictEvidence string) error {
+	return func(ctx context.Context, repo, assignmentID, branch, base, integrated string, bound, omitted []string, conflictResolution, conflictEvidence string) error {
 		target, err := store.GetRepositoryTarget(ctx, repo)
 		if err != nil {
 			return err
 		}
-		_, err = workflowrepos.VerifyIntegrationRepository(ctx, target.LocalPath, branch, base, integrated, bound, omitted, conflictResolution, conflictEvidence)
+		_, err = workflowrepos.VerifyIntegrationRepository(ctx, target.LocalPath, assignmentID, branch, base, integrated, bound, omitted, conflictResolution, conflictEvidence)
 		return err
 	}
 }
@@ -693,10 +693,10 @@ func (s *Service) AdmitIntegrationMergeResult(ctx context.Context, workspace, di
 	if strings.TrimSpace(workspace) == "" || strings.TrimSpace(dispatchID) == "" || strings.TrimSpace(assignmentID) == "" || version < 1 {
 		return IntegrationMergeResult{}, ErrInvalidInput
 	}
-	if !sha40.MatchString(strings.ToLower(strings.TrimSpace(input.IntegratedCommit))) || strings.TrimSpace(input.PreservationIdentity) == "" || strings.TrimSpace(input.PreservationIdentity) != input.PreservationIdentity || !validConflictResolution(input.IntegratedCommit, input.ConflictResolution, input.ConflictEvidence) {
+	input.IntegratedCommit = strings.ToLower(strings.TrimSpace(input.IntegratedCommit))
+	if !sha40.MatchString(input.IntegratedCommit) || strings.TrimSpace(input.PreservationIdentity) == "" || strings.TrimSpace(input.PreservationIdentity) != input.PreservationIdentity || !validConflictResolution(input.IntegratedCommit, input.ConflictResolution, input.ConflictEvidence) {
 		return IntegrationMergeResult{}, ErrInvalidInput
 	}
-	input.IntegratedCommit = strings.ToLower(strings.TrimSpace(input.IntegratedCommit))
 	for _, outcome := range input.Validations {
 		if outcome.Status != "passed" && outcome.Status != "failed" {
 			return IntegrationMergeResult{}, ErrInvalidInput
@@ -784,7 +784,8 @@ func validConflictResolution(integratedCommit, resolution, evidence string) bool
 	case "clean":
 		return evidence == ""
 	case "mechanically_resolved":
-		return evidence == "mechanically_resolved:"+integratedCommit
+		_, err := workflowrepos.ParseIntegrationConflictEvidence(integratedCommit, evidence)
+		return err == nil
 	case "material_conflict":
 		return evidence != ""
 	default:
@@ -933,7 +934,7 @@ func (s *Service) VerifyIntegration(ctx context.Context, workspace, dispatchID, 
 			}
 			if s.repositoryVerifier == nil {
 				failure = "repository preservation verifier is unavailable"
-			} else if err := s.repositoryVerifier(ctx, assignment.repo, assignment.branch, assignment.base, integratedCommit, bound, omitted, conflictResolution, conflictEvidence); err != nil {
+			} else if err := s.repositoryVerifier(ctx, assignment.repo, assignmentID, assignment.branch, assignment.base, integratedCommit, bound, omitted, conflictResolution, conflictEvidence); err != nil {
 				failure = err.Error()
 			}
 		}

@@ -3,9 +3,12 @@ package workflowrepos
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,6 +53,116 @@ type AuditFileChange struct {
 
 type AuditGitRunner interface {
 	Run(ctx context.Context, directory string, maxBytes int, args ...string) ([]byte, error)
+}
+
+const integrationConflictEvidenceVersion = 1
+
+var integrationGitObjectID = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// IntegrationConflictEvidence is the canonical runtime evidence returned by
+// an external Merge for a mechanically resolved conflict. It is transport
+// evidence, not authored planning authority.
+type IntegrationConflictEvidence struct {
+	Version            int                       `json:"version"`
+	AssignmentID       string                    `json:"assignment_id"`
+	BaseCommit         string                    `json:"base_commit"`
+	ConstituentCommits []string                  `json:"constituent_commits"`
+	IntegratedCommit   string                    `json:"integrated_commit"`
+	IntegratedParents  []string                  `json:"integrated_parents"`
+	Conflicts          []IntegrationConflictPath `json:"conflicts"`
+}
+
+type IntegrationConflictPath struct {
+	Path     string                  `json:"path"`
+	Base     IntegrationConflictBlob `json:"base"`
+	Ours     IntegrationConflictBlob `json:"ours"`
+	Theirs   IntegrationConflictBlob `json:"theirs"`
+	Resolved IntegrationConflictBlob `json:"resolved"`
+}
+
+type IntegrationConflictBlob struct {
+	Commit string `json:"commit"`
+	Mode   string `json:"mode"`
+	OID    string `json:"oid"`
+}
+
+// ParseIntegrationConflictEvidence accepts only the canonical JSON form. The
+// repository verifier performs the stronger assignment and Git-object checks.
+func ParseIntegrationConflictEvidence(integrated, encoded string) (IntegrationConflictEvidence, error) {
+	if strings.TrimSpace(encoded) != encoded || encoded == "" {
+		return IntegrationConflictEvidence{}, errors.New("conflict evidence must be canonical JSON")
+	}
+	decoder := json.NewDecoder(strings.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	var evidence IntegrationConflictEvidence
+	if err := decoder.Decode(&evidence); err != nil {
+		return IntegrationConflictEvidence{}, fmt.Errorf("decode conflict evidence: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return IntegrationConflictEvidence{}, errors.New("conflict evidence contains multiple JSON values")
+		}
+		return IntegrationConflictEvidence{}, fmt.Errorf("decode conflict evidence trailer: %w", err)
+	}
+	canonical, err := json.Marshal(evidence)
+	if err != nil || string(canonical) != encoded {
+		return IntegrationConflictEvidence{}, errors.New("conflict evidence is not canonical JSON")
+	}
+	if evidence.Version != integrationConflictEvidenceVersion || !integrationGitObjectID.MatchString(integrated) || evidence.IntegratedCommit != integrated || evidence.AssignmentID == "" || strings.TrimSpace(evidence.AssignmentID) != evidence.AssignmentID || evidence.BaseCommit == "" || len(evidence.ConstituentCommits) == 0 || len(evidence.IntegratedParents) == 0 || len(evidence.Conflicts) == 0 {
+		return IntegrationConflictEvidence{}, errors.New("conflict evidence identity is incomplete")
+	}
+	if !integrationGitObjectID.MatchString(evidence.BaseCommit) || !integrationGitObjectID.MatchString(evidence.IntegratedCommit) {
+		return IntegrationConflictEvidence{}, errors.New("conflict evidence commit identity is invalid")
+	}
+	for _, commit := range append(append([]string{}, evidence.ConstituentCommits...), evidence.IntegratedParents...) {
+		if !integrationGitObjectID.MatchString(commit) {
+			return IntegrationConflictEvidence{}, errors.New("conflict evidence parent identity is invalid")
+		}
+	}
+	seenPaths := map[string]bool{}
+	previousPath := ""
+	for _, conflict := range evidence.Conflicts {
+		if !validGitPath(conflict.Path) || seenPaths[conflict.Path] || (previousPath != "" && conflict.Path <= previousPath) {
+			return IntegrationConflictEvidence{}, errors.New("conflict evidence path is invalid")
+		}
+		seenPaths[conflict.Path] = true
+		previousPath = conflict.Path
+		for _, object := range []IntegrationConflictBlob{conflict.Base, conflict.Ours, conflict.Theirs, conflict.Resolved} {
+			if !integrationGitObjectID.MatchString(object.Commit) || !validGitTreeObject(object.Mode, object.OID) {
+				return IntegrationConflictEvidence{}, errors.New("conflict evidence object identity is invalid")
+			}
+		}
+	}
+	return evidence, nil
+}
+
+func validGitPath(path string) bool {
+	if path == "" || strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || strings.ContainsAny(path, "\x00\r\n\t") {
+		return false
+	}
+	for _, part := range strings.Split(path, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func validGitMode(mode string) bool {
+	if len(mode) != 6 {
+		return false
+	}
+	for _, char := range mode {
+		if char < '0' || char > '7' {
+			return false
+		}
+	}
+	return true
+}
+
+func validGitTreeObject(mode, oid string) bool {
+	return (mode == "" && oid == "") || (validGitMode(mode) && integrationGitObjectID.MatchString(oid))
 }
 
 type auditNumstatEntry struct {
@@ -105,8 +218,15 @@ func InspectAuditCommit(ctx context.Context, localPath, expectedBranch, baseComm
 }
 
 // VerifyIntegrationRepository grounds an external Merge claim in the target
-// repository rather than trusting caller-supplied preservation text.
-func VerifyIntegrationRepository(ctx context.Context, localPath, branch, base, integrated string, bound, omitted []string, conflictResolution, conflictEvidence string) (string, error) {
+// repository and the exact immutable Integration Assignment.
+func VerifyIntegrationRepository(ctx context.Context, localPath, assignmentID, branch, base, integrated string, bound, omitted []string, conflictResolution, conflictEvidence string) (string, error) {
+	return verifyIntegrationRepository(ctx, localPath, assignmentID, branch, base, integrated, bound, omitted, conflictResolution, conflictEvidence)
+}
+
+func verifyIntegrationRepository(ctx context.Context, localPath, assignmentID, branch, base, integrated string, bound, omitted []string, conflictResolution, conflictEvidence string) (string, error) {
+	if strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(assignmentID) != assignmentID {
+		return "Integration Assignment identity is required", fmt.Errorf("invalid assignment identity")
+	}
 	runner := boundedGitRunner{}
 	check := func(args ...string) error {
 		_, err := runner.Run(ctx, localPath, 64*1024, args...)
@@ -141,13 +261,115 @@ func VerifyIntegrationRepository(ctx context.Context, localPath, branch, base, i
 	if conflictResolution == "material_conflict" {
 		return "material merge conflict cannot be admitted", fmt.Errorf("material conflict")
 	}
-	if conflictResolution == "mechanically_resolved" && conflictEvidence != "mechanically_resolved:"+integrated {
-		return "mechanically resolved conflict evidence does not bind the integrated commit", fmt.Errorf("invalid conflict evidence")
-	}
 	if conflictResolution != "clean" && conflictResolution != "mechanically_resolved" {
 		return "merge conflict resolution state is invalid", fmt.Errorf("invalid conflict resolution")
 	}
+	if conflictResolution == "clean" {
+		if conflictEvidence != "" {
+			return "clean integration must not carry conflict evidence", fmt.Errorf("unexpected conflict evidence")
+		}
+		return "repository preservation verified", nil
+	}
+	evidence, err := ParseIntegrationConflictEvidence(integrated, conflictEvidence)
+	if err != nil {
+		return "mechanically resolved conflict evidence is not factual canonical evidence", err
+	}
+	if evidence.AssignmentID != assignmentID {
+		return "conflict evidence does not bind the Integration Assignment", fmt.Errorf("assignment mismatch")
+	}
+	if evidence.BaseCommit != base || !equalStrings(evidence.ConstituentCommits, bound) {
+		return "conflict evidence does not bind the repository baseline and constituents", fmt.Errorf("integration identity mismatch")
+	}
+	parents, err := integrationCommitParents(ctx, runner, localPath, integrated)
+	if err != nil || !equalStrings(parents, evidence.IntegratedParents) {
+		return "conflict evidence does not match the integrated commit parents", fmt.Errorf("integrated parent mismatch")
+	}
+	for _, conflict := range evidence.Conflicts {
+		if !containsString(bound, conflict.Ours.Commit) || !containsString(bound, conflict.Theirs.Commit) || conflict.Ours.Commit != parents[0] || !containsString(parents[1:], conflict.Theirs.Commit) || conflict.Base.Commit != base {
+			return "conflict evidence source commits are not the bound integration", fmt.Errorf("conflict source mismatch")
+		}
+		for _, source := range []IntegrationConflictBlob{conflict.Base, conflict.Ours, conflict.Theirs} {
+			actual, err := integrationTreeEntry(ctx, runner, localPath, source.Commit, conflict.Path)
+			if err != nil || actual.Mode != source.Mode || actual.OID != source.OID {
+				return "conflict evidence source tree entry does not match Git", fmt.Errorf("source tree mismatch for %s", conflict.Path)
+			}
+		}
+		if conflictBlobIdentity(conflict.Base) == conflictBlobIdentity(conflict.Ours) || conflictBlobIdentity(conflict.Base) == conflictBlobIdentity(conflict.Theirs) || conflictBlobIdentity(conflict.Ours) == conflictBlobIdentity(conflict.Theirs) {
+			return "conflict evidence does not identify three divergent Git conflict stages", fmt.Errorf("conflict stages are not divergent for %s", conflict.Path)
+		}
+		actual, err := integrationTreeEntry(ctx, runner, localPath, integrated, conflict.Path)
+		if err != nil || actual.Mode != conflict.Resolved.Mode || actual.OID != conflict.Resolved.OID || conflict.Resolved.Commit != integrated {
+			return "conflict evidence resolved tree entry does not match Git", fmt.Errorf("resolved tree mismatch for %s", conflict.Path)
+		}
+	}
 	return "repository preservation verified", nil
+}
+
+func conflictBlobIdentity(blob IntegrationConflictBlob) string {
+	return blob.Mode + ":" + blob.OID
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func integrationCommitParents(ctx context.Context, runner AuditGitRunner, localPath, integrated string) ([]string, error) {
+	output, err := runner.Run(ctx, localPath, 64*1024, "rev-list", "--parents", "-n", "1", integrated)
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(output))
+	if len(fields) < 2 || fields[0] != integrated {
+		return nil, errors.New("integrated commit parent list is invalid")
+	}
+	return fields[1:], nil
+}
+
+func integrationTreeEntry(ctx context.Context, runner AuditGitRunner, localPath, commit, path string) (IntegrationConflictBlob, error) {
+	output, err := runner.Run(ctx, localPath, 64*1024, "ls-tree", "-z", "--full-tree", commit, "--", path)
+	if err != nil {
+		return IntegrationConflictBlob{}, err
+	}
+	entries := bytes.Split(output, []byte{0})
+	var found IntegrationConflictBlob
+	for _, entry := range entries {
+		if len(entry) == 0 {
+			continue
+		}
+		parts := bytes.SplitN(entry, []byte{'\t'}, 2)
+		if len(parts) != 2 || string(parts[1]) != path {
+			continue
+		}
+		fields := strings.Fields(string(parts[0]))
+		if len(fields) != 3 || !validGitMode(fields[0]) || fields[1] == "" || !integrationGitObjectID.MatchString(fields[2]) {
+			return IntegrationConflictBlob{}, errors.New("Git tree entry is invalid")
+		}
+		if found.OID != "" {
+			return IntegrationConflictBlob{}, errors.New("Git tree path is not unique")
+		}
+		found.Mode, found.OID = fields[0], fields[2]
+	}
+	if found.OID == "" {
+		return IntegrationConflictBlob{}, nil
+	}
+	return found, nil
 }
 
 func InspectAuditCommitWithRunner(ctx context.Context, localPath, expectedBranch, baseCommit, auditedCommit string, runner AuditGitRunner) (AuditCommitEvidence, error) {

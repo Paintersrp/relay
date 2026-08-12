@@ -402,6 +402,10 @@ func TestAdmitMergeResultBindsExactOutcomesAndIsImmutable(t *testing.T) {
 		{"rewritten evidence obligation", func(input *IntegrationMergeResultInput) { input.Evidence[0].Obligation = "rewritten" }},
 		{"invalid commit", func(input *IntegrationMergeResultInput) { input.IntegratedCommit = "not-a-commit" }},
 		{"blank preservation identity", func(input *IntegrationMergeResultInput) { input.PreservationIdentity = " " }},
+		{"arbitrary mechanical conflict evidence", func(input *IntegrationMergeResultInput) {
+			input.ConflictResolution = "mechanically_resolved"
+			input.ConflictEvidence = "mechanically_resolved:" + input.IntegratedCommit
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture, fixtureMembers := integrationReadyFixture(t)
@@ -516,6 +520,23 @@ func TestVerifyIntegrationFailureIsImmutableEvidenceAndFreshAssignmentRetries(t 
 	}
 }
 
+func TestVerifyIntegrationMaterialConflictCannotComplete(t *testing.T) {
+	ctx := context.Background()
+	f, members := integrationReadyFixture(t)
+	dispatch := f.assignmentDispatch(t)
+	assignment := generateAssignment(t, f, dispatch.ID, members[0].ID, members[1].ID)
+	input := assignmentMergeInput(assignment, -1)
+	input.ConflictResolution = "material_conflict"
+	input.ConflictEvidence = "Merge reported a material conflict"
+	if _, err := f.svc.AdmitIntegrationMergeResult(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1, input); err != nil {
+		t.Fatal(err)
+	}
+	verification, err := f.svc.VerifyIntegration(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1)
+	if err != nil || verification.Outcome != "failed" || f.count(t, "delivery_ticket_revision_satisfactions") != 0 {
+		t.Fatalf("material conflict verification = %#v, %v", verification, err)
+	}
+}
+
 func TestVerifyIntegrationFailsClosedOnStaleConstituentAndOmittedNeverAdvance(t *testing.T) {
 	ctx := context.Background()
 	f, members := integrationReadyFixture(t)
@@ -589,7 +610,7 @@ func TestVerifyIntegrationPreservationIsGroundedAndOpaqueTextIsInsufficient(t *t
 	f, members := integrationReadyFixture(t)
 	dispatch := f.assignmentDispatch(t)
 	assignment := generateAssignment(t, f, dispatch.ID, members[0].ID, members[1].ID)
-	f.svc.repositoryVerifier = func(_ context.Context, _, _, _, integrated string, _, _ []string, _, _ string) error {
+	f.svc.repositoryVerifier = func(_ context.Context, _, _, _, _, integrated string, _, _ []string, _, _ string) error {
 		if integrated == strings.Repeat("d", 40) {
 			return errors.New("integrated commit is not repository evidence")
 		}
