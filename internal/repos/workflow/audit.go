@@ -104,6 +104,51 @@ func InspectAuditCommit(ctx context.Context, localPath, expectedBranch, baseComm
 	return InspectAuditCommitWithRunner(ctx, localPath, expectedBranch, baseCommit, auditedCommit, runner)
 }
 
+// VerifyIntegrationRepository grounds an external Merge claim in the target
+// repository rather than trusting caller-supplied preservation text.
+func VerifyIntegrationRepository(ctx context.Context, localPath, branch, base, integrated string, bound, omitted []string, conflictEvidence string) (string, error) {
+	runner := boundedGitRunner{}
+	check := func(args ...string) error {
+		_, err := runner.Run(ctx, localPath, 64*1024, args...)
+		return err
+	}
+	if err := check("cat-file", "-e", integrated+"^{commit}"); err != nil {
+		return "integrated commit does not exist", err
+	}
+	branchHead, err := runner.Run(ctx, localPath, 64*1024, "rev-parse", "--verify", "refs/heads/"+branch)
+	if err != nil || strings.TrimSpace(string(branchHead)) != integrated {
+		return "integrated commit is not the bound target branch tip", fmt.Errorf("branch tip mismatch")
+	}
+	if err := check("merge-base", "--is-ancestor", base, integrated); err != nil {
+		return "integrated commit is not based on the bound common baseline", err
+	}
+	for _, commit := range bound {
+		if err := check("cat-file", "-e", commit+"^{commit}"); err != nil {
+			return "bound accepted commit does not exist", err
+		}
+		if err := check("merge-base", "--is-ancestor", commit, integrated); err != nil {
+			return "integrated commit does not preserve a bound accepted commit", err
+		}
+	}
+	for _, commit := range omitted {
+		if err := check("cat-file", "-e", commit+"^{commit}"); err != nil {
+			return "omitted Program constituent commit cannot be resolved", err
+		}
+		if err := check("merge-base", "--is-ancestor", commit, integrated); err == nil {
+			return "integrated commit includes an omitted Program constituent", fmt.Errorf("omitted commit %s is an ancestor", commit)
+		}
+	}
+	parents, err := runner.Run(ctx, localPath, 64*1024, "rev-list", "--parents", "-n", "1", integrated)
+	if err != nil {
+		return "integrated commit parents cannot be inspected", err
+	}
+	parentCount := len(strings.Fields(string(parents))) - 1
+	if parentCount > 1 && strings.TrimSpace(conflictEvidence) == "" {
+		return "conflict-resolution evidence is required for a merge commit", fmt.Errorf("missing conflict evidence")
+	}
+	return strings.TrimSpace(string(parents)), nil
+}
+
 func InspectAuditCommitWithRunner(ctx context.Context, localPath, expectedBranch, baseCommit, auditedCommit string, runner AuditGitRunner) (AuditCommitEvidence, error) {
 	if runner == nil {
 		return AuditCommitEvidence{}, fmt.Errorf("audit Git runner is required")

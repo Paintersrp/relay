@@ -7,7 +7,7 @@ import (
 )
 
 func TestPinnedCurrentAuthorityCatalog(t *testing.T) {
-	if AuthorityRepository != "Paintersrp/relay-specs" || AuthorityCommit != "9ea40ac112d0683affc10ba6bad2d15efe9e59f4" {
+	if AuthorityRepository != "Paintersrp/relay-specs" || AuthorityCommit != "c166ca6020e86dad50e68962d733c7c7eb996b5e" {
 		t.Fatalf("authority = %s@%s", AuthorityRepository, AuthorityCommit)
 	}
 	want := []struct {
@@ -17,7 +17,7 @@ func TestPinnedCurrentAuthorityCatalog(t *testing.T) {
 		{KindPlan, "1.0", "schemas/plan.schema.json", "03a75ab1352d27193ec27b5aec9f449e65daf69de66d6897ab74672bdc705cf8"},
 		{KindDeterministicOperations, "1.0", "schemas/deterministic-operations.schema.json", "630d5e028c243deae76038e3e44b6c4ff9a3f482f32d1aece69573ba04e9df28"},
 		{KindAuditPacket, "4.0", "schemas/audit-packet.schema.json", "2fdf6769701c937c83869a2ec656146ce6b3cc75f3918ae38c42f01336071dcf"},
-		{KindDeliveryTicket, "2.0", "schemas/delivery-ticket.schema.json", "681f0b9fa9ce60fb6d6f325426fc1d935385de63ea74324606fc7858dd5a9b0b"},
+		{KindDeliveryTicket, "2.0", "schemas/delivery-ticket.schema.json", "2d98c1bef35520da13ffb87a33c77bd64ee279c888ecd6764c076a9d476074e1"},
 		{KindTransitionPlan, "1.0", "schemas/transition-plan.schema.json", "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
 		{KindDeliveryPlan, "1.0", "schemas/delivery-plan.schema.json", "bafc8d30d67cd6c15181a65e6e69d0c384d1372aa13c2ad873298d3bfba0f18e"},
 	}
@@ -37,7 +37,7 @@ func TestPinnedAuthorityDeliveryTicketSchemaIsExactV20(t *testing.T) {
 	if !ok {
 		t.Fatal("delivery ticket schema missing")
 	}
-	if definition.ProducerVersion != "2.0" || definition.SHA256 != "681f0b9fa9ce60fb6d6f325426fc1d935385de63ea74324606fc7858dd5a9b0b" {
+	if definition.ProducerVersion != "2.0" || definition.SHA256 != "2d98c1bef35520da13ffb87a33c77bd64ee279c888ecd6764c076a9d476074e1" {
 		t.Fatalf("delivery ticket definition = %+v", definition)
 	}
 	// The embedded bytes are exactly the pinned authority schema bytes: the

@@ -8,31 +8,39 @@ type scopeModel struct {
 }
 
 type DeliveryTicketDocument struct {
-	FeatureSlug               string                            `json:"feature_slug"`
-	TicketID                  string                            `json:"ticket_id"`
-	Revision                  int64                             `json:"revision"`
-	ReplacesRevision          *int64                            `json:"replaces_revision"`
-	RepoTarget                string                            `json:"repo_target"`
-	Branch                    string                            `json:"branch"`
-	BaseCommit                string                            `json:"base_commit"`
-	Goal                      string                            `json:"goal"`
-	Context                   string                            `json:"context"`
-	Scope                     scopeModel                        `json:"scope"`
-	DependsOn                 []DeliveryTicketDependency        `json:"depends_on"`
-	RequiredInvariants        []string                          `json:"required_invariants"`
-	ForbiddenBehaviors        []string                          `json:"forbidden_behaviors"`
-	ImplementationObligations []DeliveryTicketObligation        `json:"implementation_obligations"`
-	ProofObligations          []string                          `json:"proof_obligations"`
-	ValidationCommands        []DeliveryTicketValidationCommand `json:"validation_commands"`
-	TransitionApplicability   string                            `json:"transition_applicability"`
-	ExplicitDeferrals         []string                          `json:"explicit_deferrals"`
-	Cancellation              *DeliveryTicketCancellation       `json:"cancellation,omitempty"`
-	Completion                []string                          `json:"completion_criteria"`
+	FeatureSlug               string                                `json:"feature_slug"`
+	TicketID                  string                                `json:"ticket_id"`
+	Revision                  int64                                 `json:"revision"`
+	ReplacesRevision          *int64                                `json:"replaces_revision"`
+	RepoTarget                string                                `json:"repo_target"`
+	Branch                    string                                `json:"branch"`
+	BaseCommit                string                                `json:"base_commit"`
+	Goal                      string                                `json:"goal"`
+	Context                   string                                `json:"context"`
+	Scope                     scopeModel                            `json:"scope"`
+	DependsOn                 []DeliveryTicketDependency            `json:"depends_on"`
+	SharedDesignConstraints   []DeliveryTicketCrossMemberConstraint `json:"shared_design_constraints,omitempty"`
+	RequiredInvariants        []string                              `json:"required_invariants"`
+	ForbiddenBehaviors        []string                              `json:"forbidden_behaviors"`
+	ImplementationObligations []DeliveryTicketObligation            `json:"implementation_obligations"`
+	ProofObligations          []string                              `json:"proof_obligations"`
+	ValidationCommands        []DeliveryTicketValidationCommand     `json:"validation_commands"`
+	TransitionApplicability   string                                `json:"transition_applicability"`
+	ExplicitDeferrals         []string                              `json:"explicit_deferrals"`
+	Cancellation              *DeliveryTicketCancellation           `json:"cancellation,omitempty"`
+	Completion                []string                              `json:"completion_criteria"`
 }
 
 type DeliveryTicketDependency struct {
 	TicketID string `json:"ticket_id"`
 	Revision int64  `json:"revision"`
+}
+
+// DeliveryTicketCrossMemberConstraint is the structured, Ticket-carried
+// Shared Design authority for integration constraints beyond dependencies.
+type DeliveryTicketCrossMemberConstraint struct {
+	Kind     string                     `json:"kind"`
+	Requires []DeliveryTicketDependency `json:"requires"`
 }
 
 type DeliveryTicketObligation struct {

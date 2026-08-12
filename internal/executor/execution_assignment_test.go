@@ -57,7 +57,7 @@ func TestBuildExecutionAssignmentTicketOnlyCanonicalContract(t *testing.T) {
 		t.Fatalf("validation commands lost order or text: %#v", commands)
 	}
 	role, ok := decoded["standing_role"].(map[string]any)
-	if !ok || role["authority_repository"] != "Paintersrp/relay-specs" || role["authority_commit"] != "9ea40ac112d0683affc10ba6bad2d15efe9e59f4" || role["source_path"] != "agents/orchestrator.md" {
+	if !ok || role["authority_repository"] != "Paintersrp/relay-specs" || role["authority_commit"] != "c166ca6020e86dad50e68962d733c7c7eb996b5e" || role["source_path"] != "agents/orchestrator.md" {
 		t.Fatalf("standing role = %#v", role)
 	}
 }

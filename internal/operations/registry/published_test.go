@@ -17,7 +17,7 @@ func TestPublishedContractsArePinnedClosedAndDefensive(t *testing.T) {
 	if len(operations) != 16 || len(routes) != 7 {
 		t.Fatalf("operations=%d routes=%d", len(operations), len(routes))
 	}
-	// The pinned 9ea40ac manifests publish the Planner Delivery Plan and the
+	// The pinned c166ca manifests publish the Planner Delivery Plan and the
 	// Auditor Delivery Plan Review operations on their exact surfaces and
 	// manifest domains, with their family tools mounted on the same routes.
 	for _, wanted := range []struct {

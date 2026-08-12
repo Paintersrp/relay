@@ -27,9 +27,12 @@ var (
 var sha40 = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 type Service struct {
-	store       *workflowstore.Store
-	assignments assignmentPreparer
+	store              *workflowstore.Store
+	assignments        assignmentPreparer
+	repositoryVerifier integrationRepositoryVerifier
 }
+
+type integrationRepositoryVerifier func(context.Context, string, string, string, string, []string, []string, string) error
 
 type assignmentPreparer interface {
 	PrepareExecutionAssignment(context.Context, string) (executor.ExecutionAssignmentResult, error)
@@ -158,7 +161,7 @@ func NewService(s *workflowstore.Store, v packages.SourceVaultReader) (*Service,
 	if e != nil {
 		return nil, e
 	}
-	return &Service{s, a}, nil
+	return &Service{store: s, assignments: a, repositoryVerifier: integrationRepositoryVerifierForStore(s)}, nil
 }
 
 type PreparedMember struct {

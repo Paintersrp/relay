@@ -12,6 +12,7 @@ import (
 
 	appaudits "relay/internal/app/audits"
 	workflowartifacts "relay/internal/artifacts/workflow"
+	workflowrepos "relay/internal/repos/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -86,14 +87,31 @@ type IntegrationExecutionAssignment struct {
 // IntegrationSharedDesign carries the applicable Ticket-carried Shared Design
 // constraints of one bound constituent without adding semantics.
 type IntegrationSharedDesign struct {
-	RequiredInvariants []string                `json:"required_invariants"`
-	ForbiddenBehaviors []string                `json:"forbidden_behaviors"`
-	DependsOn          []IntegrationDependency `json:"depends_on"`
+	RequiredInvariants []string                            `json:"required_invariants"`
+	ForbiddenBehaviors []string                            `json:"forbidden_behaviors"`
+	DependsOn          []IntegrationDependency             `json:"depends_on"`
+	Constraints        []IntegrationSharedDesignConstraint `json:"constraints"`
 }
 
 type IntegrationDependency struct {
 	TicketID string `json:"ticket_id"`
 	Revision int64  `json:"revision"`
+}
+
+type IntegrationSharedDesignConstraint struct {
+	Kind     string                  `json:"kind"`
+	Requires []IntegrationDependency `json:"requires"`
+}
+
+func integrationRepositoryVerifierForStore(store *workflowstore.Store) integrationRepositoryVerifier {
+	return func(ctx context.Context, repo, branch, base, integrated string, bound, omitted []string, conflict string) error {
+		target, err := store.GetRepositoryTarget(ctx, repo)
+		if err != nil {
+			return err
+		}
+		_, err = workflowrepos.VerifyIntegrationRepository(ctx, target.LocalPath, branch, base, integrated, bound, omitted, conflict)
+		return err
+	}
 }
 
 type IntegrationValidationCommand struct {
@@ -303,6 +321,9 @@ func (s *Service) GenerateIntegrationAssignment(ctx context.Context, workspace, 
 		if err := s.verifySubsetDependencyClosure(ctx, t, members, selected); err != nil {
 			return err
 		}
+		if err := s.verifySubsetSharedDesignClosure(ctx, t, selected); err != nil {
+			return err
+		}
 		assignmentID := workflowstore.NewIntegrationAssignmentID()
 		document, err := s.buildIntegrationAssignmentDocument(ctx, t, dispatchID, assignmentID, repo, branch, base, selected)
 		if err != nil {
@@ -450,13 +471,7 @@ func (s *Service) verifyConstituentEligibility(ctx context.Context, t *workflows
 	return nil
 }
 
-// verifySubsetDependencyClosure rejects a subset when any selected or omitted
-// Ticket dependency requires a missing Program member: neither a bound
-// constituent's dependency nor an omitted constituent's dependency may require
-// a dispatch member the Assignment does not bind. The Ticket-carried Shared
-// Design constraint surface is the same exact dependency topology, so this
-// check also covers atomicity and valid-intermediate-state constraints that
-// would require a missing member.
+// verifySubsetDependencyClosure checks only ordinary executable dependencies.
 func (s *Service) verifySubsetDependencyClosure(ctx context.Context, t *workflowstore.Tx, members, selected []integrationMemberFacts) error {
 	d := t.DB()
 	selectedByMember := map[string]bool{}
@@ -492,6 +507,34 @@ func (s *Service) verifySubsetDependencyClosure(ctx context.Context, t *workflow
 			return err
 		}
 		rows.Close()
+	}
+	return nil
+}
+
+// verifySubsetSharedDesignClosure independently checks the structured
+// Ticket-carried Shared Design authority. A missing or unresolvable reference
+// fails closed; dependency rows are not treated as a substitute for it.
+func (s *Service) verifySubsetSharedDesignClosure(ctx context.Context, t *workflowstore.Tx, selected []integrationMemberFacts) error {
+	selectedTickets := map[string]bool{}
+	for _, member := range selected {
+		selectedTickets[member.ticketID] = true
+	}
+	for _, member := range selected {
+		projection, err := s.loadConstituentTicketProjection(ctx, t, member)
+		if err != nil {
+			return ErrAdmission
+		}
+		for _, constraint := range projection.SharedDesignConstraints {
+			for _, required := range constraint.Requires {
+				if !selectedTickets[required.TicketID] {
+					return ErrAdmission
+				}
+				var revision int64
+				if err := t.DB().QueryRowContext(ctx, `SELECT revision_number FROM delivery_ticket_revisions r JOIN delivery_tickets t ON t.id=r.delivery_ticket_row_id WHERE t.ticket_id=? AND r.revision_number=?`, required.TicketID, required.Revision).Scan(&revision); err != nil || revision != required.Revision {
+					return ErrAdmission
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -533,6 +576,13 @@ func (s *Service) buildIntegrationAssignmentDocument(ctx context.Context, t *wor
 		}
 		for _, dependency := range projection.DependsOn {
 			constituent.SharedDesign.DependsOn = append(constituent.SharedDesign.DependsOn, IntegrationDependency{TicketID: dependency.TicketID, Revision: dependency.Revision})
+		}
+		for _, constraint := range projection.SharedDesignConstraints {
+			bound := IntegrationSharedDesignConstraint{Kind: constraint.Kind}
+			for _, required := range constraint.Requires {
+				bound.Requires = append(bound.Requires, IntegrationDependency{TicketID: required.TicketID, Revision: required.Revision})
+			}
+			constituent.SharedDesign.Constraints = append(constituent.SharedDesign.Constraints, bound)
 		}
 		for _, command := range projection.ValidationCommands {
 			constituent.ValidationCommands = append(constituent.ValidationCommands, IntegrationValidationCommand{WorkingDirectory: command.WorkingDirectory, Command: command.Command, Expected: command.Expected})
@@ -818,7 +868,9 @@ func (s *Service) ReadIntegrationMergeResult(ctx context.Context, workspace, dis
 		return IntegrationMergeResult{}, err
 	}
 	defer rows.Close()
+	seenConstituents := 0
 	for rows.Next() {
+		seenConstituents++
 		var outcome IntegrationValidationOutcome
 		if err := rows.Scan(&outcome.Sequence, &outcome.ConstituentSequence, &outcome.Command, &outcome.Expected, &outcome.Status, &outcome.Evidence); err != nil {
 			return IntegrationMergeResult{}, err
@@ -849,8 +901,7 @@ func (s *Service) ReadIntegrationMergeResult(ctx context.Context, workspace, dis
 // reruns the combined validation and never re-audits an accepted constituent.
 // A successful pass is the only basis for the ordinary completed outcome of
 // each bound constituent's current Ticket revision, recorded through the
-// existing satisfaction mechanism; omitted constituents never advance and
-// stale bound constituents are skipped. A failed verification records
+// existing satisfaction mechanism; omitted constituents never advance. A failed verification records
 // immutable failure evidence and creates no completed outcome.
 func (s *Service) VerifyIntegration(ctx context.Context, workspace, dispatchID, assignmentID string, version int64) (IntegrationVerification, error) {
 	if strings.TrimSpace(workspace) == "" || strings.TrimSpace(dispatchID) == "" || strings.TrimSpace(assignmentID) == "" || version < 1 {
@@ -867,8 +918,8 @@ func (s *Service) VerifyIntegration(ctx context.Context, workspace, dispatchID, 
 			return ErrConflict
 		}
 		var mergeRow int64
-		var integratedCommit, preservationIdentity string
-		if err := d.QueryRowContext(ctx, `SELECT id, integrated_commit, preservation_identity FROM program_integration_merge_results WHERE assignment_row_id=?`, assignment.rowID).Scan(&mergeRow, &integratedCommit, &preservationIdentity); errors.Is(err, sql.ErrNoRows) {
+		var integratedCommit, preservationIdentity, conflictEvidence string
+		if err := d.QueryRowContext(ctx, `SELECT id, integrated_commit, preservation_identity, COALESCE(conflict_evidence,'') FROM program_integration_merge_results WHERE assignment_row_id=?`, assignment.rowID).Scan(&mergeRow, &integratedCommit, &preservationIdentity, &conflictEvidence); errors.Is(err, sql.ErrNoRows) {
 			return ErrConflict
 		} else if err != nil {
 			return err
@@ -876,9 +927,24 @@ func (s *Service) VerifyIntegration(ctx context.Context, workspace, dispatchID, 
 		if !sha40.MatchString(integratedCommit) || preservationIdentity == "" {
 			return ErrConflict
 		}
-		failure, err := s.verifyIntegrationFacts(ctx, t, workspace, dispatchID, assignmentID, assignment)
+		document, err := decodeIntegrationAssignmentDocument(assignmentID, dispatchID, assignment.repo, assignment.branch, assignment.base, assignment.content, assignment.sha256)
 		if err != nil {
 			return err
+		}
+		failure, err := s.verifyIntegrationFacts(ctx, t, workspace, dispatchID, assignmentID, assignment, document)
+		if err != nil {
+			return err
+		}
+		if failure == "" {
+			bound, omitted, err := s.integrationCommitSets(ctx, d, assignment.rowID, dispatchID)
+			if err != nil {
+				return err
+			}
+			if s.repositoryVerifier == nil {
+				failure = "repository preservation verifier is unavailable"
+			} else if err := s.repositoryVerifier(ctx, assignment.repo, assignment.branch, assignment.base, integratedCommit, bound, omitted, conflictEvidence); err != nil {
+				failure = err.Error()
+			}
 		}
 		if failure == "" {
 			failure, err = s.verifyIntegrationOutcomes(ctx, d, assignment.rowID)
@@ -915,22 +981,45 @@ func (s *Service) VerifyIntegration(ctx context.Context, workspace, dispatchID, 
 	return result, err
 }
 
-// verifyIntegrationFacts re-verifies the exact bound authority of every
-// constituent at verification time: Ticket identity and revision still current,
-// accepted commit and pushed branch, selected package identity, Execution
-// Assignment identity, recorded accepted isolated-audit decision identity,
-// executed authority lineage, and the exact dispatch repository basis.
-func (s *Service) verifyIntegrationFacts(ctx context.Context, t *workflowstore.Tx, workspace, dispatchID, assignmentID string, assignment integrationAssignmentRow) (string, error) {
-	rows, err := t.DB().QueryContext(ctx, `SELECT e.id, e.audited_commit, e.pushed_branch, e.delivery_ticket_revision_row_id, e.execution_package_row_id, e.assignment_artifact_row_id, e.authority_revision_row_id, e.source_closure_row_id FROM program_integration_assignment_constituents c JOIN program_integration_eligibilities e ON e.id=c.eligibility_row_id WHERE c.assignment_row_id=? ORDER BY c.sequence`, assignment.rowID)
+// verifyIntegrationFacts re-verifies every exact fact carried by the immutable
+// Assignment. Any missing, replaced, superseded, or mismatched fact fails the
+// complete Assignment; completion never receives a chance to skip a stale row.
+func (s *Service) verifyIntegrationFacts(ctx context.Context, t *workflowstore.Tx, workspace, dispatchID, assignmentID string, assignment integrationAssignmentRow, document IntegrationAssignmentDocument) (string, error) {
+	var dispatchRepo, dispatchBranch, dispatchBase string
+	if err := t.DB().QueryRowContext(ctx, `SELECT repo_target, branch, base_commit FROM program_dispatches WHERE dispatch_id=?`, dispatchID).Scan(&dispatchRepo, &dispatchBranch, &dispatchBase); err != nil {
+		return "", err
+	}
+	if dispatchRepo != assignment.repo || dispatchBranch != assignment.branch || dispatchBase != assignment.base {
+		return "dispatch repository basis mismatch", nil
+	}
+	rows, err := t.DB().QueryContext(ctx, `SELECT c.sequence, e.id, e.eligibility_id, e.audited_commit, e.pushed_branch, e.delivery_ticket_revision_row_id, e.execution_package_row_id, e.assignment_artifact_row_id, e.authority_revision_row_id, e.source_closure_row_id, e.dispatch_member_row_id, m.id, m.prepared_member_id, m.execution_package_row_id, m.run_row_id, m.ticket_revision_row_id, m.assignment_artifact_row_id, ticket.ticket_id, tv.revision_number, p.package_id, r.run_id, a.artifact_id, a.sha256 FROM program_integration_assignment_constituents c JOIN program_integration_eligibilities e ON e.id=c.eligibility_row_id JOIN program_dispatch_members dm ON dm.id=e.dispatch_member_row_id JOIN program_prepared_members m ON m.id=dm.prepared_member_row_id JOIN delivery_ticket_revisions tv ON tv.id=e.delivery_ticket_revision_row_id JOIN delivery_tickets ticket ON ticket.id=tv.delivery_ticket_row_id JOIN execution_packages p ON p.id=e.execution_package_row_id JOIN runs r ON r.id=m.run_row_id JOIN artifacts a ON a.id=e.assignment_artifact_row_id WHERE c.assignment_row_id=? ORDER BY c.sequence`, assignment.rowID)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
+	seenConstituents := 0
 	for rows.Next() {
-		var eligibilityRow, boundRevision, packageRow, artifactRow, authority, source int64
-		var acceptedCommit, pushedBranch string
-		if err := rows.Scan(&eligibilityRow, &acceptedCommit, &pushedBranch, &boundRevision, &packageRow, &artifactRow, &authority, &source); err != nil {
+		seenConstituents++
+		var sequence, eligibilityRow, boundRevision, packageRow, artifactRow, authority, source, dispatchMemberRow, preparedMemberRow, preparedPackageRow, preparedRunRow, preparedRevisionRow, preparedArtifactRow int64
+		var eligibilityID, acceptedCommit, pushedBranch, memberID, ticketID, packageID, runID, artifactID, artifactSHA string
+		var ticketRevision int64
+		if err := rows.Scan(&sequence, &eligibilityRow, &eligibilityID, &acceptedCommit, &pushedBranch, &boundRevision, &packageRow, &artifactRow, &authority, &source, &dispatchMemberRow, &preparedMemberRow, &memberID, &preparedPackageRow, &preparedRunRow, &preparedRevisionRow, &preparedArtifactRow, &ticketID, &ticketRevision, &packageID, &runID, &artifactID, &artifactSHA); err != nil {
 			return "", err
+		}
+		if sequence < 1 || int(sequence) > len(document.Constituents) || int(sequence) != seenConstituents {
+			return "Assignment constituent sequence mismatch", nil
+		}
+		bound := document.Constituents[int(sequence)-1]
+		if preparedPackageRow != packageRow || preparedRunRow == 0 || preparedRevisionRow != boundRevision || preparedArtifactRow != artifactRow || bound.MemberID != memberID || bound.TicketID != ticketID || bound.TicketRevision != ticketRevision || bound.EligibilityID != eligibilityID || bound.AcceptedCommit != acceptedCommit || bound.PushedBranch != pushedBranch || bound.PackageID != packageID || bound.RunID != runID || bound.ExecutionAssignment.ArtifactID != artifactID || bound.ExecutionAssignment.SHA256 != artifactSHA {
+			return "bound Assignment constituent authority mismatch", nil
+		}
+		var current int64
+		if err := t.DB().QueryRowContext(ctx, `SELECT current_revision_row_id FROM delivery_tickets WHERE id=(SELECT delivery_ticket_row_id FROM delivery_ticket_revisions WHERE id=?)`, boundRevision).Scan(&current); err != nil || current != boundRevision {
+			return "bound Ticket revision is stale or no longer current", nil
+		}
+		var preparedRepo, preparedBranch, preparedBase string
+		if err := t.DB().QueryRowContext(ctx, `SELECT repo_target, branch, base_commit FROM program_prepared_members WHERE id=?`, preparedMemberRow).Scan(&preparedRepo, &preparedBranch, &preparedBase); err != nil || preparedRepo != dispatchRepo || preparedBranch != dispatchBranch || preparedBase != dispatchBase {
+			return "prepared constituent repository basis mismatch", nil
 		}
 		var outcome, resultBranch, resultHead string
 		if err := t.DB().QueryRowContext(ctx, `SELECT r.outcome, r.branch, r.branch_head_sha FROM program_dispatch_results r JOIN program_integration_eligibilities e ON e.dispatch_member_row_id=r.dispatch_member_row_id WHERE e.id=?`, eligibilityRow).Scan(&outcome, &resultBranch, &resultHead); err != nil {
@@ -939,34 +1028,107 @@ func (s *Service) verifyIntegrationFacts(ctx context.Context, t *workflowstore.T
 		if outcome != "done" || resultBranch != pushedBranch || resultHead != acceptedCommit {
 			return "bound accepted commit or pushed branch mismatch", nil
 		}
-		var decision, decisionCommit string
-		if err := t.DB().QueryRowContext(ctx, `SELECT ad.decision, ad.audited_commit FROM audit_decisions ad JOIN audit_ticket_revision_decisions d ON d.audit_decision_row_id=ad.id JOIN program_integration_eligibilities e ON e.audit_ticket_revision_decision_row_id=d.id WHERE e.id=?`, eligibilityRow).Scan(&decision, &decisionCommit); err != nil {
+		var decisionID, decision, decisionCommit string
+		if err := t.DB().QueryRowContext(ctx, `SELECT ad.audit_decision_id, ad.decision, ad.audited_commit FROM audit_decisions ad JOIN audit_ticket_revision_decisions d ON d.audit_decision_row_id=ad.id JOIN program_integration_eligibilities e ON e.audit_ticket_revision_decision_row_id=d.id WHERE e.id=?`, eligibilityRow).Scan(&decisionID, &decision, &decisionCommit); err != nil {
 			return "", err
 		}
-		if decision != "accepted" || decisionCommit != acceptedCommit {
+		if decision != "accepted" || decisionID != bound.AuditDecisionID || decisionCommit != acceptedCommit {
 			return "bound accepted isolated-audit decision mismatch", nil
+		}
+		var obligationRevision, obligationPackage, obligationAuthority, obligationSource int64
+		if err := t.DB().QueryRowContext(ctx, `SELECT o.delivery_ticket_revision_row_id, o.execution_package_row_id, o.authority_revision_row_id, o.source_closure_row_id FROM audit_packet_ticket_obligations o JOIN audit_ticket_revision_decisions d ON d.audit_packet_ticket_obligation_row_id=o.id JOIN program_integration_eligibilities e ON e.audit_ticket_revision_decision_row_id=d.id WHERE e.id=?`, eligibilityRow).Scan(&obligationRevision, &obligationPackage, &obligationAuthority, &obligationSource); err != nil || obligationRevision != boundRevision || obligationPackage != packageRow || obligationAuthority != authority || obligationSource != source {
+			return "executed authority lineage mismatch", nil
+		}
+		var boundAuthority, boundSource int64
+		if err := t.DB().QueryRowContext(ctx, `SELECT authority_revision_row_id, source_closure_row_id FROM program_integration_eligibilities WHERE id=?`, eligibilityRow).Scan(&boundAuthority, &boundSource); err != nil || boundAuthority != authority || boundSource != source {
+			return "eligibility authority lineage mismatch", nil
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
+	if len(document.Constituents) == 0 || len(document.Constituents) != countAssignmentConstituents(ctx, t.DB(), assignment.rowID) {
+		return "Assignment has no constituents", nil
+	}
 	return "", nil
+}
+
+func countAssignmentConstituents(ctx context.Context, d *sql.Tx, assignmentRow int64) int {
+	var count int
+	if err := d.QueryRowContext(ctx, `SELECT count(*) FROM program_integration_assignment_constituents WHERE assignment_row_id=?`, assignmentRow).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
+func (s *Service) integrationCommitSets(ctx context.Context, d *sql.Tx, assignmentRow int64, dispatchID string) ([]string, []string, error) {
+	rows, err := d.QueryContext(ctx, `SELECT e.audited_commit, c.assignment_row_id FROM program_integration_eligibilities e JOIN program_integration_assignment_constituents c ON c.eligibility_row_id=e.id WHERE c.assignment_row_id=? ORDER BY c.sequence`, assignmentRow)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	boundSet := map[string]bool{}
+	var bound []string
+	for rows.Next() {
+		var commit string
+		var row int64
+		if err := rows.Scan(&commit, &row); err != nil {
+			return nil, nil, err
+		}
+		boundSet[commit] = true
+		bound = append(bound, commit)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	all, err := d.QueryContext(ctx, `SELECT e.audited_commit FROM program_integration_eligibilities e JOIN program_dispatch_members dm ON dm.id=e.dispatch_member_row_id JOIN program_dispatches p ON p.id=dm.dispatch_row_id WHERE p.dispatch_id=?`, dispatchID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer all.Close()
+	var omitted []string
+	for all.Next() {
+		var commit string
+		if err := all.Scan(&commit); err != nil {
+			return nil, nil, err
+		}
+		if !boundSet[commit] {
+			omitted = append(omitted, commit)
+		}
+	}
+	return bound, omitted, all.Err()
 }
 
 // verifyIntegrationOutcomes confirms the exact execution and success of every
 // bound combined validation requirement and every bound required evidence item
 // as recorded by the admitted Merge result.
 func (s *Service) verifyIntegrationOutcomes(ctx context.Context, d *sql.Tx, assignmentRow int64) (string, error) {
-	rows, err := d.QueryContext(ctx, `SELECT sequence, status FROM program_integration_validation_outcomes WHERE merge_result_row_id=(SELECT id FROM program_integration_merge_results WHERE assignment_row_id=?) ORDER BY sequence`, assignmentRow)
+	var content string
+	if err := d.QueryRowContext(ctx, `SELECT content FROM program_integration_assignments WHERE id=?`, assignmentRow).Scan(&content); err != nil {
+		return "unable to resolve bound outcome counts", nil
+	}
+	var document IntegrationAssignmentDocument
+	if err := json.Unmarshal([]byte(content), &document); err != nil {
+		return "unable to decode bound outcome identities", nil
+	}
+	expectedValidations, expectedEvidence := len(document.CombinedValidation), len(document.RequiredEvidence)
+	rows, err := d.QueryContext(ctx, `SELECT sequence, constituent_sequence, command, expected, status FROM program_integration_validation_outcomes WHERE merge_result_row_id=(SELECT id FROM program_integration_merge_results WHERE assignment_row_id=?) ORDER BY sequence`, assignmentRow)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
+	actualValidations := 0
 	for rows.Next() {
+		actualValidations++
 		var sequence int
+		var constituentSequence int
+		var command, expected string
 		var status string
-		if err := rows.Scan(&sequence, &status); err != nil {
+		if err := rows.Scan(&sequence, &constituentSequence, &command, &expected, &status); err != nil {
 			return "", err
+		}
+		if sequence < 1 || sequence > len(document.CombinedValidation) || constituentSequence != document.CombinedValidation[sequence-1].ConstituentSequence || command != document.CombinedValidation[sequence-1].Command || expected != document.CombinedValidation[sequence-1].Expected {
+			return "combined validation identity mismatch", nil
 		}
 		if status != "passed" {
 			return fmt.Sprintf("combined validation outcome %d did not pass", sequence), nil
@@ -975,30 +1137,45 @@ func (s *Service) verifyIntegrationOutcomes(ctx context.Context, d *sql.Tx, assi
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
+	if actualValidations != expectedValidations {
+		return "combined validation outcome count mismatch", nil
+	}
 	rows.Close()
-	rows, err = d.QueryContext(ctx, `SELECT sequence, status FROM program_integration_evidence_outcomes WHERE merge_result_row_id=(SELECT id FROM program_integration_merge_results WHERE assignment_row_id=?) ORDER BY sequence`, assignmentRow)
+	rows, err = d.QueryContext(ctx, `SELECT sequence, constituent_sequence, obligation, kind, status FROM program_integration_evidence_outcomes WHERE merge_result_row_id=(SELECT id FROM program_integration_merge_results WHERE assignment_row_id=?) ORDER BY sequence`, assignmentRow)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
+	actualEvidence := 0
 	for rows.Next() {
+		actualEvidence++
 		var sequence int
+		var constituentSequence int
+		var obligation, kind string
 		var status string
-		if err := rows.Scan(&sequence, &status); err != nil {
+		if err := rows.Scan(&sequence, &constituentSequence, &obligation, &kind, &status); err != nil {
 			return "", err
+		}
+		if sequence < 1 || sequence > len(document.RequiredEvidence) || constituentSequence != document.RequiredEvidence[sequence-1].ConstituentSequence || obligation != document.RequiredEvidence[sequence-1].Obligation || kind != document.RequiredEvidence[sequence-1].Kind {
+			return "required evidence identity mismatch", nil
 		}
 		if status != "passed" {
 			return fmt.Sprintf("required evidence outcome %d did not pass", sequence), nil
 		}
 	}
-	return "", rows.Err()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if actualEvidence != expectedEvidence {
+		return "required evidence outcome count mismatch", nil
+	}
+	return "", nil
 }
 
 // completeBoundConstituents invokes the existing ordinary completed-outcome
-// mechanism for every bound constituent whose Ticket revision is still the
-// exact current revision. Omitted constituents never advance; a bound
-// constituent whose revision was replaced is skipped and never completes from
-// its isolated audit.
+// mechanism for every constituent only after verifyIntegrationFacts has
+// established that the complete bound subset is current. It never silently
+// skips a bound constituent.
 func (s *Service) completeBoundConstituents(ctx context.Context, t *workflowstore.Tx, assignmentRow, verificationRow int64) ([]IntegrationCompletion, error) {
 	rows, err := t.DB().QueryContext(ctx, `SELECT c.id, e.audit_ticket_revision_decision_row_id, e.delivery_ticket_revision_row_id, m.prepared_member_id, ticket.ticket_id, tv.revision_number FROM program_integration_assignment_constituents c JOIN program_integration_eligibilities e ON e.id=c.eligibility_row_id JOIN program_dispatch_members dm ON dm.id=e.dispatch_member_row_id JOIN program_prepared_members m ON m.id=dm.prepared_member_row_id JOIN delivery_ticket_revisions tv ON tv.id=e.delivery_ticket_revision_row_id JOIN delivery_tickets ticket ON ticket.id=tv.delivery_ticket_row_id WHERE c.assignment_row_id=? ORDER BY c.sequence`, assignmentRow)
 	if err != nil {
@@ -1014,20 +1191,14 @@ func (s *Service) completeBoundConstituents(ctx context.Context, t *workflowstor
 			return nil, err
 		}
 		completion := IntegrationCompletion{MemberID: memberID, TicketID: ticketID, TicketRevision: revision}
-		var current int64
-		if err := t.DB().QueryRowContext(ctx, `SELECT current_revision_row_id FROM delivery_tickets WHERE id=(SELECT delivery_ticket_row_id FROM delivery_ticket_revisions WHERE id=?)`, revisionRow).Scan(&current); err != nil {
+		satisfaction, err := t.CreateDeliveryTicketRevisionSatisfaction(ctx, workflowstore.CreateDeliveryTicketRevisionSatisfactionParams{DeliveryTicketRevisionRowID: revisionRow, AuditTicketRevisionDecisionRowID: decisionRow})
+		if err != nil {
 			return nil, err
 		}
-		if current == revisionRow {
-			satisfaction, err := t.CreateDeliveryTicketRevisionSatisfaction(ctx, workflowstore.CreateDeliveryTicketRevisionSatisfactionParams{DeliveryTicketRevisionRowID: revisionRow, AuditTicketRevisionDecisionRowID: decisionRow})
-			if err != nil {
-				return nil, err
-			}
-			if _, err := t.DB().ExecContext(ctx, `INSERT INTO program_integration_completions(verification_row_id,assignment_constituent_row_id,satisfaction_row_id) VALUES(?,?,?)`, verificationRow, constituentRow, satisfaction.ID); err != nil {
-				return nil, err
-			}
-			completion.Completed = true
+		if _, err := t.DB().ExecContext(ctx, `INSERT INTO program_integration_completions(verification_row_id,assignment_constituent_row_id,satisfaction_row_id) VALUES(?,?,?)`, verificationRow, constituentRow, satisfaction.ID); err != nil {
+			return nil, err
 		}
+		completion.Completed = true
 		completions = append(completions, completion)
 	}
 	return completions, rows.Err()

@@ -14,7 +14,7 @@ import (
 
 const (
 	AuthorityRepository = "Paintersrp/relay-specs"
-	AuthorityCommit     = "9ea40ac112d0683affc10ba6bad2d15efe9e59f4"
+	AuthorityCommit     = "c166ca6020e86dad50e68962d733c7c7eb996b5e"
 )
 
 type Kind string
@@ -51,7 +51,7 @@ var authoritativeCatalog = []catalogEntry{
 	{Kind: KindPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/plan.schema.json", Filename: "plan.schema.json", SHA256: "03a75ab1352d27193ec27b5aec9f449e65daf69de66d6897ab74672bdc705cf8"},
 	{Kind: KindDeterministicOperations, ProducerVersion: "1.0", AuthorityPath: "schemas/deterministic-operations.schema.json", Filename: "deterministic-operations.schema.json", SHA256: "630d5e028c243deae76038e3e44b6c4ff9a3f482f32d1aece69573ba04e9df28"},
 	{Kind: KindAuditPacket, ProducerVersion: "4.0", AuthorityPath: "schemas/audit-packet.schema.json", Filename: "audit-packet.schema.json", SHA256: "2fdf6769701c937c83869a2ec656146ce6b3cc75f3918ae38c42f01336071dcf"},
-	{Kind: KindDeliveryTicket, ProducerVersion: "2.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "681f0b9fa9ce60fb6d6f325426fc1d935385de63ea74324606fc7858dd5a9b0b"},
+	{Kind: KindDeliveryTicket, ProducerVersion: "2.0", AuthorityPath: "schemas/delivery-ticket.schema.json", Filename: "delivery-ticket.schema.json", SHA256: "2d98c1bef35520da13ffb87a33c77bd64ee279c888ecd6764c076a9d476074e1"},
 	{Kind: KindTransitionPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/transition-plan.schema.json", Filename: "transition-plan.schema.json", SHA256: "73b552bac0201d9aa6ad907b8faad1fe6b5b88367fff18840306c8da82e5e9ec"},
 	{Kind: KindDeliveryPlan, ProducerVersion: "1.0", AuthorityPath: "schemas/delivery-plan.schema.json", Filename: "delivery-plan.schema.json", SHA256: "bafc8d30d67cd6c15181a65e6e69d0c384d1372aa13c2ad873298d3bfba0f18e"},
 }

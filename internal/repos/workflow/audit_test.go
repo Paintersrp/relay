@@ -129,6 +129,43 @@ func TestInspectAuditCommitCapturesExactRange(t *testing.T) {
 	}
 }
 
+func TestVerifyIntegrationRepositoryRequiresExactPreservation(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-b", "main")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(root, "one.txt"), []byte("one\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-m", "one")
+	base := git("rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "two.txt"), []byte("two\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-m", "two")
+	two := git("rev-parse", "HEAD")
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, two, []string{two}, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, strings.Repeat("f", 40), []string{two}, nil, "opaque"); err == nil {
+		t.Fatal("unknown integrated commit passed")
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "main", base, base, []string{two}, nil, "opaque"); err == nil {
+		t.Fatal("non-preserving integrated commit passed")
+	}
+}
+
 func sliceContains(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {

@@ -87,6 +87,7 @@ func renderDeliveryTicket(ticket *DeliveryTicketDocument) (string, error) {
 	writeBulletSection(&b, "### Out of Scope", ticket.Scope.OutOfScope)
 
 	writeTicketDependencies(&b, ticket.DependsOn)
+	writeSharedDesignConstraints(&b, ticket.SharedDesignConstraints)
 	writeBulletOrNone(&b, "## Required Invariants", ticket.RequiredInvariants)
 	writeBulletOrNone(&b, "## Forbidden Behaviors", ticket.ForbiddenBehaviors)
 	writeImplementationObligations(&b, ticket.ImplementationObligations)
@@ -122,6 +123,21 @@ func writeTicketDependencies(b *strings.Builder, dependencies []DeliveryTicketDe
 	}
 	for _, dependency := range dependencies {
 		fmt.Fprintf(b, "- `%s` revision %d\n", dependency.TicketID, dependency.Revision)
+	}
+	b.WriteString("\n")
+}
+
+func writeSharedDesignConstraints(b *strings.Builder, constraints []DeliveryTicketCrossMemberConstraint) {
+	b.WriteString("## Shared Design Constraints\n\n")
+	if len(constraints) == 0 {
+		b.WriteString("None\n\n")
+		return
+	}
+	for _, constraint := range constraints {
+		fmt.Fprintf(b, "- %s requires:\n", constraint.Kind)
+		for _, required := range constraint.Requires {
+			fmt.Fprintf(b, "  - `%s` revision %d\n", required.TicketID, required.Revision)
+		}
 	}
 	b.WriteString("\n")
 }

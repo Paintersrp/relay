@@ -19,6 +19,10 @@ import (
 // Assignment derivation consumes need to vary; the document is otherwise the
 // canonical active ticket shape.
 func programMemberTicketBytes(ticketID string, revision int64, invariants, proofs, completions []string, dependsOn []map[string]any) []byte {
+	return programMemberTicketBytesWithConstraints(ticketID, revision, invariants, proofs, completions, dependsOn, nil)
+}
+
+func programMemberTicketBytesWithConstraints(ticketID string, revision int64, invariants, proofs, completions []string, dependsOn []map[string]any, constraints []map[string]any) []byte {
 	document := map[string]any{
 		"schema_version":             "2.0",
 		"feature_slug":               "program",
@@ -32,6 +36,7 @@ func programMemberTicketBytes(ticketID string, revision int64, invariants, proof
 		"context":                    "Program context.",
 		"scope":                      map[string]any{"in_scope": []string{"Deliver."}, "out_of_scope": []string{"Other."}},
 		"depends_on":                 dependsOn,
+		"shared_design_constraints":  constraints,
 		"required_invariants":        invariants,
 		"forbidden_behaviors":        []string{},
 		"implementation_obligations": []map[string]any{{"source_area": nil, "obligation": "Implement the obligation.", "prerequisites": []string{}}},
@@ -162,7 +167,7 @@ func (f *programRuntimeFixture) establishEligibility(t *testing.T, member Prepar
 // results and durable eligibility bound to the exact recorded facts. The
 // workspace current authority revision is set so the existing ordinary
 // satisfaction guard accepts the completed outcome at verification.
-func integrationReadyFixture(t *testing.T) (*programRuntimeFixture, []PreparedMember) {
+func integrationReadyFixture(t *testing.T, constraints ...[]map[string]any) (*programRuntimeFixture, []PreparedMember) {
 	t.Helper()
 	f := newProgramRuntimeFixture(t)
 	ctx := context.Background()
@@ -190,7 +195,13 @@ func integrationReadyFixture(t *testing.T) (*programRuntimeFixture, []PreparedMe
 	if err := f.svc.RecordDispatchResult(ctx, f.workspace, dispatch.ID, 1, result); err != nil {
 		t.Fatal(err)
 	}
-	f.establishEligibility(t, members[0], programMemberTicketBytes("T-ONE", 1, []string{"Invariant one."}, []string{"Prove one."}, []string{"User can complete one."}, nil))
+	var firstTicket []byte
+	if len(constraints) != 0 {
+		firstTicket = programMemberTicketBytesWithConstraints("T-ONE", 1, []string{"Invariant one."}, []string{"Prove one."}, []string{"User can complete one."}, nil, constraints[0])
+	} else {
+		firstTicket = programMemberTicketBytes("T-ONE", 1, []string{"Invariant one."}, []string{"Prove one."}, []string{"User can complete one."}, nil)
+	}
+	f.establishEligibility(t, members[0], firstTicket)
 	f.establishEligibility(t, members[1], programMemberTicketBytes("T-TWO", 1, []string{"Invariant two."}, []string{"Prove two."}, []string{"User can complete two."}, nil))
 	return f, members
 }
@@ -316,6 +327,24 @@ func TestGenerateIntegrationAssignmentRejectsIneligibleSubsets(t *testing.T) {
 		if _, err := f.svc.GenerateIntegrationAssignment(ctx, f.workspace, dispatch.ID, 1, tc.ids); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("%s error = %v", tc.name, err)
 		}
+	}
+}
+
+func TestGenerateIntegrationAssignmentRejectsIndependentSharedDesignConstraint(t *testing.T) {
+	ctx := context.Background()
+	f, members := integrationReadyFixture(t, []map[string]any{{"kind": "atomicity", "requires": []map[string]any{{"ticket_id": "T-TWO", "revision": 1}}}})
+	dispatch := f.assignmentDispatch(t)
+	if _, err := f.svc.GenerateIntegrationAssignment(ctx, f.workspace, dispatch.ID, 1, []string{members[0].ID}); !errors.Is(err, ErrAdmission) {
+		t.Fatalf("missing Shared Design member error = %v", err)
+	}
+}
+
+func TestGenerateIntegrationAssignmentFailsClosedOnUnresolvableSharedDesignConstraint(t *testing.T) {
+	ctx := context.Background()
+	f, members := integrationReadyFixture(t, []map[string]any{{"kind": "valid_intermediate_state", "requires": []map[string]any{{"ticket_id": "T-MISSING", "revision": 1}}}})
+	dispatch := f.assignmentDispatch(t)
+	if _, err := f.svc.GenerateIntegrationAssignment(ctx, f.workspace, dispatch.ID, 1, []string{members[0].ID}); !errors.Is(err, ErrAdmission) {
+		t.Fatalf("unresolvable Shared Design authority error = %v", err)
 	}
 }
 
@@ -509,7 +538,7 @@ func TestVerifyIntegrationFailureIsImmutableEvidenceAndFreshAssignmentRetries(t 
 	}
 }
 
-func TestVerifyIntegrationSkipsStaleConstituentsAndOmittedNeverAdvance(t *testing.T) {
+func TestVerifyIntegrationFailsClosedOnStaleConstituentAndOmittedNeverAdvance(t *testing.T) {
 	ctx := context.Background()
 	f, members := integrationReadyFixture(t)
 	dispatch := f.assignmentDispatch(t)
@@ -521,25 +550,15 @@ func TestVerifyIntegrationSkipsStaleConstituentsAndOmittedNeverAdvance(t *testin
 		t.Fatal(err)
 	}
 	verification, err := f.svc.VerifyIntegration(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1)
-	if err != nil || verification.Outcome != "passed" {
+	if err != nil || verification.Outcome != "failed" || verification.FailureReason == "" {
 		t.Fatalf("verification = %#v, %v", verification, err)
-	}
-	for index, completion := range verification.Completed {
-		if completion.MemberID != members[index].ID {
-			t.Fatalf("completion order = %#v", verification.Completed)
-		}
-		// The stale first member never advances; the still-current second
-		// member completes exactly once.
-		if completion.Completed != (index == 1) {
-			t.Fatalf("stale or omitted constituent advanced: %#v", completion)
-		}
 	}
 	var satisfactions int
 	if err := f.store.DB().QueryRowContext(ctx, `SELECT count(*) FROM delivery_ticket_revision_satisfactions`).Scan(&satisfactions); err != nil {
 		t.Fatal(err)
 	}
-	if satisfactions != 1 {
-		t.Fatalf("stale constituents produced %d satisfactions, want 1", satisfactions)
+	if satisfactions != 0 {
+		t.Fatalf("stale constituents produced %d satisfactions, want 0", satisfactions)
 	}
 	// The omitted-constituent rule: an Assignment binding only the first member
 	// never advances the second.
@@ -567,6 +586,69 @@ func TestVerifyIntegrationSkipsStaleConstituentsAndOmittedNeverAdvance(t *testin
 	state, err := f2.svc.ReadWorkspaceProgramState(ctx, f2.workspace)
 	if err != nil || len(state.Eligible) != 1 || state.Eligible[0].MemberID != members2[1].ID {
 		t.Fatalf("omitted member eligibility = %#v, %v", state.Eligible, err)
+	}
+}
+
+func TestVerifyIntegrationRevalidatesBoundIdentityAndLineage(t *testing.T) {
+	ctx := context.Background()
+	mutations := []struct {
+		name  string
+		alter func(*programRuntimeFixture, IntegrationAssignmentResult, []PreparedMember)
+	}{
+		{"package", func(f *programRuntimeFixture, _ IntegrationAssignmentResult, m []PreparedMember) {
+			if _, err := f.store.DB().ExecContext(ctx, "DROP TRIGGER program_integration_eligibility_immutable"); err != nil {
+				t.Fatal(err)
+			}
+			f.update(t, "UPDATE program_integration_eligibilities SET execution_package_row_id=execution_package_row_id+1 WHERE eligibility_id=?", "integration-eligibility-"+m[0].ID)
+		}},
+		{"execution assignment digest", func(f *programRuntimeFixture, _ IntegrationAssignmentResult, m []PreparedMember) {
+			f.update(t, "UPDATE artifacts SET sha256=? WHERE artifact_id=?", strings.Repeat("9", 64), m[0].AssignmentArtifactID)
+		}},
+		{"pushed branch", func(f *programRuntimeFixture, _ IntegrationAssignmentResult, m []PreparedMember) {
+			if _, err := f.store.DB().ExecContext(ctx, "DROP TRIGGER program_integration_eligibility_immutable"); err != nil {
+				t.Fatal(err)
+			}
+			f.update(t, "UPDATE program_integration_eligibilities SET pushed_branch='other' WHERE eligibility_id=?", "integration-eligibility-"+m[0].ID)
+		}},
+	}
+	for _, tc := range mutations {
+		t.Run(tc.name, func(t *testing.T) {
+			f, members := integrationReadyFixture(t)
+			dispatch := f.assignmentDispatch(t)
+			assignment := generateAssignment(t, f, dispatch.ID, members[0].ID)
+			tc.alter(f, assignment, members)
+			if _, err := f.svc.AdmitIntegrationMergeResult(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1, assignmentMergeInput(assignment, -1)); err != nil {
+				t.Fatal(err)
+			}
+			verification, err := f.svc.VerifyIntegration(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1)
+			if err != nil || verification.Outcome != "failed" {
+				t.Fatalf("verification = %#v, %v", verification, err)
+			}
+			if got := f.count(t, "delivery_ticket_revision_satisfactions"); got != 0 {
+				t.Fatalf("satisfactions = %d", got)
+			}
+		})
+	}
+}
+
+func TestVerifyIntegrationPreservationIsGroundedAndOpaqueTextIsInsufficient(t *testing.T) {
+	ctx := context.Background()
+	f, members := integrationReadyFixture(t)
+	dispatch := f.assignmentDispatch(t)
+	assignment := generateAssignment(t, f, dispatch.ID, members[0].ID)
+	f.svc.repositoryVerifier = func(_ context.Context, _, _, _, integrated string, _, _ []string, _ string) error {
+		if integrated == strings.Repeat("d", 40) {
+			return errors.New("integrated commit is not repository evidence")
+		}
+		return nil
+	}
+	input := assignmentMergeInput(assignment, -1)
+	if _, err := f.svc.AdmitIntegrationMergeResult(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1, input); err != nil {
+		t.Fatal(err)
+	}
+	verification, err := f.svc.VerifyIntegration(ctx, f.workspace, dispatch.ID, assignment.AssignmentID, 1)
+	if err != nil || verification.Outcome != "failed" || f.count(t, "delivery_ticket_revision_satisfactions") != 0 {
+		t.Fatalf("verification = %#v, %v", verification, err)
 	}
 }
 
