@@ -16,6 +16,7 @@ import (
 type fakeService struct {
 	prepared []app.PreparedMember
 	dispatch app.Dispatch
+	handoff  app.Handoff
 	result   app.DispatchResultInput
 }
 
@@ -32,6 +33,9 @@ func (f *fakeService) RecordDispatchResult(_ context.Context, _, _ string, _ int
 }
 func (f *fakeService) Read(context.Context, string, string) (app.Dispatch, error) {
 	return f.dispatch, nil
+}
+func (f *fakeService) ReadHandoff(context.Context, string, string) (app.Handoff, error) {
+	return f.handoff, nil
 }
 func (f *fakeService) ListPrepared(context.Context, string) ([]app.PreparedMember, error) {
 	return f.prepared, nil
@@ -78,5 +82,51 @@ func TestProgramRoutesStrictDecodeAndExactReadListResultProjection(t *testing.T)
 	var reply map[string]bool
 	if err := json.Unmarshal(response.Body.Bytes(), &reply); err != nil || !reply["recorded"] {
 		t.Fatalf("result reply=%s err=%v", response.Body.String(), err)
+	}
+}
+
+func TestProgramHandoffReturnsCanonicalTicketIdentityAndEmbeddedAssignment(t *testing.T) {
+	assignment := []byte(`{"schema_version":"1.0","run":{"run_id":"run-1"},"ticket":{"ticket_id":"T-ONE","revision_number":1},"repository":{"target":"relay","branch":"main","base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`)
+	service := &fakeService{handoff: app.Handoff{
+		DispatchID:  "dispatch-1",
+		WorkspaceID: "workspace-1",
+		RepoTarget:  "relay",
+		Branch:      "main",
+		BaseCommit:  strings.Repeat("a", 40),
+		Members: []app.HandoffMember{
+			{Sequence: 1, MemberID: "program-member-1", TicketID: "T-ONE", TicketRevision: 1, PackageID: "package-1", RunID: "run-1", AssignmentArtifactID: "artifact-1", AssignmentSHA256: strings.Repeat("2", 64), Assignment: json.RawMessage(assignment), RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40)},
+			{Sequence: 2, MemberID: "program-member-2", TicketID: "T-TWO", TicketRevision: 2, PackageID: "package-2", RunID: "run-2", AssignmentArtifactID: "artifact-2", AssignmentSHA256: strings.Repeat("2", 64), Assignment: json.RawMessage([]byte(`{"schema_version":"1.0","run":{"run_id":"run-2"}}`)), RepoTarget: "relay", Branch: "main", BaseCommit: strings.Repeat("a", 40)},
+		},
+	}}
+	router := programRouter(service)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/feature-workspaces/workspace-1/program-dispatches/dispatch-1/handoff", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("handoff status=%d body=%s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, want := range []string{`"DispatchID":"dispatch-1"`, `"WorkspaceID":"workspace-1"`, `"TicketID":"T-ONE"`, `"TicketRevision":1`, `"TicketID":"T-TWO"`, `"TicketRevision":2`, `"Assignment":{"schema_version":"1.0","run":{"run_id":"run-1"}`, `"BaseCommit":"` + strings.Repeat("a", 40) + `"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("handoff body %s missing %q", body, want)
+		}
+	}
+	if strings.Contains(body, "TicketRevisionRowID") {
+		t.Fatalf("handoff body exposes an internal ticket revision row ID: %s", body)
+	}
+	var decoded struct {
+		DispatchID string
+		Members    []struct {
+			Sequence   int
+			Assignment json.RawMessage
+		}
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.DispatchID != "dispatch-1" || len(decoded.Members) != 2 || decoded.Members[0].Sequence != 1 || decoded.Members[1].Sequence != 2 {
+		t.Fatalf("handoff order = %#v", decoded)
+	}
+	if string(decoded.Members[0].Assignment) != string(assignment) {
+		t.Fatalf("embedded assignment = %s, want %s", decoded.Members[0].Assignment, assignment)
 	}
 }

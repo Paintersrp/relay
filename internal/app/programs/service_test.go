@@ -1,8 +1,12 @@
 package programs
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -26,10 +30,46 @@ type programRuntimeFixture struct {
 	base         string
 }
 
-type fakeAssignmentPreparer struct{ artifact workflowstore.Artifact }
+type fakeAssignmentPreparer struct {
+	artifact  workflowstore.Artifact
+	artifacts map[string]workflowstore.Artifact
+	bytes     map[string][]byte
+	errors    map[string]error
+}
 
 func (f fakeAssignmentPreparer) PrepareExecutionAssignment(context.Context, string) (executor.ExecutionAssignmentResult, error) {
 	return executor.ExecutionAssignmentResult{Artifact: f.artifact}, nil
+}
+
+func (f fakeAssignmentPreparer) LoadExecutionAssignment(_ context.Context, runID string) (executor.ExecutionAssignmentResult, error) {
+	if f.errors != nil && f.errors[runID] != nil {
+		return executor.ExecutionAssignmentResult{}, f.errors[runID]
+	}
+	content := f.bytes[runID]
+	if content == nil {
+		return executor.ExecutionAssignmentResult{}, ErrDispatch
+	}
+	artifact := f.artifacts[runID]
+	if artifact.ArtifactID == "" {
+		artifact = f.artifact
+	}
+	return executor.ExecutionAssignmentResult{Artifact: artifact, Bytes: append([]byte(nil), content...)}, nil
+}
+
+// canonicalAssignmentBytes is the exact immutable Execution Assignment content
+// the fake assignment service serves per Run. It is valid canonical JSON so
+// the handoff wire embedding can be verified byte-for-byte.
+func canonicalAssignmentBytes(runID, ticketID string, revision int64, repo, branch, base string) []byte {
+	content, err := json.Marshal(executor.ExecutionAssignment{
+		SchemaVersion: "1.0",
+		Run:           executor.ExecutionAssignmentRun{RunID: runID},
+		Ticket:        executor.ExecutionAssignmentTicket{TicketID: ticketID, RevisionNumber: revision},
+		Repository:    executor.ExecutionAssignmentRepository{Target: repo, Branch: branch, BaseCommit: base},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return append(content, '\n')
 }
 
 func TestPrepareAdmitsApprovedSetupReadyPackageAndRejectsInvalidTransitions(t *testing.T) {
@@ -139,6 +179,131 @@ func TestProgramDispatchStoreLifecycleAndGuards(t *testing.T) {
 	}
 	if _, err := f.store.DB().ExecContext(ctx, "DELETE FROM program_prepared_members"); err == nil {
 		t.Fatal("prepared member delete succeeded")
+	}
+}
+
+func TestReadHandoffRoundTripsCanonicalMemberAuthorityInDispatchSequence(t *testing.T) {
+	ctx := context.Background()
+	f := newProgramRuntimeFixture(t)
+	members := []PreparedMember{
+		f.member(t, "one", "relay", "main", programSHA, "prepared"),
+		f.member(t, "two", "relay", "main", programSHA, "prepared"),
+	}
+	dispatch, err := f.svc.CreateDispatch(ctx, f.workspace, 1, []string{members[0].ID, members[1].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketIDs := []string{"T-ONE", "T-TWO"}
+	bytesByRun := map[string][]byte{}
+	fake := fakeAssignmentPreparer{bytes: bytesByRun, artifacts: map[string]workflowstore.Artifact{}}
+	for i, m := range members {
+		content := canonicalAssignmentBytes(m.RunID, ticketIDs[i], 1, m.RepoTarget, m.Branch, m.BaseCommit)
+		bytesByRun[m.RunID] = content
+		fake.artifacts[m.RunID] = f.assignmentArtifact(t, m.AssignmentArtifactID)
+	}
+	f.svc.assignments = fake
+	handoff, err := f.svc.ReadHandoff(ctx, f.workspace, dispatch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handoff.DispatchID != dispatch.ID || handoff.WorkspaceID != f.workspace || handoff.RepoTarget != "relay" || handoff.Branch != "main" || handoff.BaseCommit != programSHA {
+		t.Fatalf("handoff header = %#v", handoff)
+	}
+	if len(handoff.Members) != 2 {
+		t.Fatalf("handoff members = %#v", handoff.Members)
+	}
+	for i, m := range members {
+		got := handoff.Members[i]
+		if got.Sequence != i+1 || got.MemberID != m.ID || got.TicketID != ticketIDs[i] || got.TicketRevision != 1 || got.PackageID != m.PackageID || got.RunID != m.RunID || got.AssignmentArtifactID != m.AssignmentArtifactID || got.AssignmentSHA256 != strings.Repeat("2", 64) || got.RepoTarget != m.RepoTarget || got.Branch != m.Branch || got.BaseCommit != m.BaseCommit {
+			t.Fatalf("handoff member %d = %#v", i, got)
+		}
+		if !bytes.Equal(got.Assignment, bytesByRun[m.RunID]) {
+			t.Fatalf("handoff member %d assignment bytes differ from canonical content", i)
+		}
+	}
+	// The Assignment content survives the wire serialization exactly: the
+	// marshaled handoff embeds the canonical Execution Assignment JSON
+	// document (Go's Marshal compacts only insignificant surrounding
+	// whitespace and never alters the document structure), so decoding the
+	// wire member Assignment yields the identical authority content.
+	wire, err := json.Marshal(handoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Members []struct{ Assignment json.RawMessage }
+	}
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for i, m := range members {
+		var want, gotWire executor.ExecutionAssignment
+		if err := json.Unmarshal(bytesByRun[m.RunID], &want); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(decoded.Members[i].Assignment, &gotWire); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(gotWire, want) {
+			t.Fatalf("wire member %d assignment document = %#v, want %#v", i, gotWire, want)
+		}
+	}
+}
+
+func TestReadHandoffIsReadOnlyAndFailsClosedOnUnresolvableAssignment(t *testing.T) {
+	ctx := context.Background()
+	f := newProgramRuntimeFixture(t)
+	members := []PreparedMember{
+		f.member(t, "one", "relay", "main", programSHA, "prepared"),
+		f.member(t, "two", "relay", "main", programSHA, "prepared"),
+	}
+	dispatch, err := f.svc.CreateDispatch(ctx, f.workspace, 1, []string{members[0].ID, members[1].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytesByRun := map[string][]byte{}
+	for i, m := range members {
+		bytesByRun[m.RunID] = canonicalAssignmentBytes(m.RunID, []string{"T-ONE", "T-TWO"}[i], 1, m.RepoTarget, m.Branch, m.BaseCommit)
+	}
+	before := f.programStateSnapshot(t)
+	// The second member's bound Execution Assignment is unresolvable: the
+	// handoff must fail closed without emitting a partial projection.
+	f.svc.assignments = fakeAssignmentPreparer{
+		bytes:     map[string][]byte{members[0].RunID: bytesByRun[members[0].RunID]},
+		artifacts: map[string]workflowstore.Artifact{members[0].RunID: f.assignmentArtifact(t, members[0].AssignmentArtifactID)},
+		errors:    map[string]error{members[1].RunID: errors.New("bound execution assignment is missing")},
+	}
+	if _, err := f.svc.ReadHandoff(ctx, f.workspace, dispatch.ID); err == nil {
+		t.Fatal("handoff succeeded despite unresolvable member assignment")
+	}
+	f.assertProgramStateUnchanged(t, before)
+	// A bound assignment that resolves to a different artifact also fails
+	// closed instead of transporting mismatched authority.
+	f.svc.assignments = fakeAssignmentPreparer{
+		bytes:     bytesByRun,
+		artifacts: map[string]workflowstore.Artifact{members[0].RunID: f.assignmentArtifact(t, members[0].AssignmentArtifactID), members[1].RunID: f.assignmentArtifact(t, members[0].AssignmentArtifactID)},
+	}
+	if _, err := f.svc.ReadHandoff(ctx, f.workspace, dispatch.ID); !errors.Is(err, ErrDispatch) {
+		t.Fatalf("mismatched assignment error = %v, want ErrDispatch", err)
+	}
+	f.assertProgramStateUnchanged(t, before)
+	// The healed read emits the complete handoff without mutating anything.
+	f.svc.assignments = fakeAssignmentPreparer{
+		bytes:     bytesByRun,
+		artifacts: map[string]workflowstore.Artifact{members[0].RunID: f.assignmentArtifact(t, members[0].AssignmentArtifactID), members[1].RunID: f.assignmentArtifact(t, members[1].AssignmentArtifactID)},
+	}
+	handoff, err := f.svc.ReadHandoff(ctx, f.workspace, dispatch.ID)
+	if err != nil || len(handoff.Members) != 2 {
+		t.Fatalf("healed handoff = %#v, %v", handoff, err)
+	}
+	f.assertProgramStateUnchanged(t, before)
+}
+
+func TestReadHandoffRejectsUnknownDispatch(t *testing.T) {
+	ctx := context.Background()
+	f := newProgramRuntimeFixture(t)
+	if _, err := f.svc.ReadHandoff(ctx, f.workspace, "dispatch-missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ReadHandoff() = %v, want ErrNotFound", err)
 	}
 }
 
@@ -283,10 +448,69 @@ func (f *programRuntimeFixture) update(t *testing.T, query string, args ...any) 
 func (f *programRuntimeFixture) assignmentArtifact(t *testing.T, artifactID string) workflowstore.Artifact {
 	t.Helper()
 	var artifact workflowstore.Artifact
-	if err := f.store.DB().QueryRowContext(context.Background(), "SELECT id,artifact_id FROM artifacts WHERE artifact_id=?", artifactID).Scan(&artifact.ID, &artifact.ArtifactID); err != nil {
+	if err := f.store.DB().QueryRowContext(context.Background(), "SELECT id,artifact_id,sha256 FROM artifacts WHERE artifact_id=?", artifactID).Scan(&artifact.ID, &artifact.ArtifactID, &artifact.SHA256); err != nil {
 		t.Fatal(err)
 	}
 	return artifact
+}
+
+// programStateSnapshot captures every lifecycle surface the Program handoff
+// read must leave untouched: audit, satisfaction, result, dispatch, prepared
+// member, and Delivery Ticket current-revision state.
+type programStateSnapshot struct {
+	satisfactions, audits, dispatchResults, executionResults int
+	dispatchStatus                                           string
+	preparedStates, ticketCurrentRevisions                   string
+}
+
+func (f *programRuntimeFixture) programStateSnapshot(t *testing.T) programStateSnapshot {
+	t.Helper()
+	var s programStateSnapshot
+	s.satisfactions = f.count(t, "delivery_ticket_revision_satisfactions")
+	s.audits = f.count(t, "audit_decisions")
+	s.dispatchResults = f.count(t, "program_dispatch_results")
+	s.executionResults = f.count(t, "program_execution_results")
+	if err := f.store.DB().QueryRow("SELECT status FROM program_dispatches").Scan(&s.dispatchStatus); err != nil {
+		t.Fatal(err)
+	}
+	s.preparedStates = f.column(t, "SELECT prepared_member_id,state FROM program_prepared_members ORDER BY id")
+	s.ticketCurrentRevisions = f.column(t, "SELECT COALESCE(current_revision_row_id,0) FROM delivery_tickets ORDER BY id")
+	return s
+}
+
+func (f *programRuntimeFixture) assertProgramStateUnchanged(t *testing.T, before programStateSnapshot) {
+	t.Helper()
+	if after := f.programStateSnapshot(t); after != before {
+		t.Fatalf("program read mutated lifecycle: before=%+v after=%+v", before, after)
+	}
+}
+
+func (f *programRuntimeFixture) column(t *testing.T, query string) string {
+	t.Helper()
+	rows, err := f.store.DB().Query(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out strings.Builder
+	width, _ := rows.Columns()
+	for rows.Next() {
+		values := make([]any, len(width))
+		for i := range values {
+			values[i] = new(any)
+		}
+		if err := rows.Scan(values...); err != nil {
+			t.Fatal(err)
+		}
+		for i := range values {
+			out.WriteString(strings.TrimSpace(string(fmt.Sprintf("%v", *values[i].(*any)))))
+			out.WriteString("|")
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out.String()
 }
 
 func (f *programRuntimeFixture) advanceTicketRevision(t *testing.T, revision int64) {

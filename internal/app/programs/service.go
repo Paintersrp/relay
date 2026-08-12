@@ -5,6 +5,7 @@ package programs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -32,6 +33,7 @@ type Service struct {
 
 type assignmentPreparer interface {
 	PrepareExecutionAssignment(context.Context, string) (executor.ExecutionAssignmentResult, error)
+	LoadExecutionAssignment(context.Context, string) (executor.ExecutionAssignmentResult, error)
 }
 
 // ReadWorkspaceProgramState implements the guided program-owner read without
@@ -100,6 +102,50 @@ type DispatchResultInput struct {
 }
 type MemberResultInput struct{ MemberID, Outcome, Branch, BranchHeadSHA, Blocker string }
 
+// Handoff is the read-only Program Dispatch transport projection for the
+// external Program Orchestrator. It is derived entirely from already-persisted
+// immutable Relay authority and never creates or mutates semantic authority.
+// It transports the exact canonical Execution Assignment content per member so
+// the orchestrator needs no further Relay lookup for member authority. It is
+// transport only: it replaces no Delivery Ticket or Execution Assignment
+// authority, adds no Program-level compatibility decision, and performs no
+// merge, integration, audit, or remediation transition. Ticket-carried Shared
+// Design constraints already bound by each Execution Assignment (authority
+// layers, repository instructions, validation commands, deterministic
+// operations, delivery ticket document identity) ride inside the embedded
+// Assignment content rather than being reinterpreted here.
+type Handoff struct {
+	DispatchID  string
+	WorkspaceID string
+	RepoTarget  string
+	Branch      string
+	BaseCommit  string
+	Members     []HandoffMember
+}
+
+// HandoffMember carries the canonical Delivery Ticket identity (TicketID and
+// exact revision number), the immutable prepared-member identity, the bound
+// Run/package/artifact identities, and the exact immutable Execution
+// Assignment content bytes for one Dispatch member, in Dispatch sequence.
+type HandoffMember struct {
+	Sequence             int
+	MemberID             string
+	TicketID             string
+	TicketRevision       int64
+	PackageID            string
+	RunID                string
+	AssignmentArtifactID string
+	AssignmentSHA256     string
+	// Assignment is the exact canonical Execution Assignment JSON content as
+	// produced and byte-verified by the execution assignment service. It is
+	// embedded verbatim so the Program Orchestrator can execute from this
+	// handoff alone.
+	Assignment json.RawMessage
+	RepoTarget string
+	Branch     string
+	BaseCommit string
+}
+
 func (s *Service) Read(c context.Context, w, id string) (Dispatch, error) {
 	var o Dispatch
 	err := s.store.DB().QueryRowContext(c, `SELECT d.dispatch_id,w.workspace_id,d.repo_target,d.branch,d.base_commit,d.status,COALESCE(x.later_integration_risks,'') FROM program_dispatches d JOIN feature_workspaces w ON w.id=d.workspace_row_id LEFT JOIN program_execution_results x ON x.dispatch_row_id=d.id WHERE d.dispatch_id=? AND w.workspace_id=?`, id, w).Scan(&o.ID, &o.WorkspaceID, &o.RepoTarget, &o.Branch, &o.BaseCommit, &o.Status, &o.LaterIntegrationRisks)
@@ -119,6 +165,47 @@ func (s *Service) Read(c context.Context, w, id string) (Dispatch, error) {
 		if err := rows.Scan(&m.ID, &m.PackageID, &m.RunID, &m.AssignmentArtifactID, &m.RepoTarget, &m.Branch, &m.BaseCommit, &m.State, &m.TicketRevisionRowID, &m.Outcome, &m.ResultBranch, &m.BranchHeadSHA, &m.Blocker); err != nil {
 			return Dispatch{}, err
 		}
+		o.Members = append(o.Members, m)
+	}
+	return o, rows.Err()
+}
+
+// ReadHandoff projects one immutable Dispatch as a self-contained Program
+// Orchestrator handoff. Member order is the immutable Dispatch sequence and
+// each member embeds the exact canonical Execution Assignment content loaded
+// through the same byte-verifying application service that generated it. A
+// missing, corrupt, or unverifiable bound assignment fails closed: no partial
+// handoff is emitted and nothing is written.
+func (s *Service) ReadHandoff(c context.Context, w, id string) (Handoff, error) {
+	var o Handoff
+	err := s.store.DB().QueryRowContext(c, `SELECT d.dispatch_id,w.workspace_id,d.repo_target,d.branch,d.base_commit FROM program_dispatches d JOIN feature_workspaces w ON w.id=d.workspace_row_id WHERE d.dispatch_id=? AND w.workspace_id=?`, id, w).Scan(&o.DispatchID, &o.WorkspaceID, &o.RepoTarget, &o.Branch, &o.BaseCommit)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Handoff{}, ErrNotFound
+	}
+	if err != nil {
+		return Handoff{}, err
+	}
+	rows, err := s.store.DB().QueryContext(c, `SELECT dm.sequence,m.prepared_member_id,t.ticket_id,tv.revision_number,p.package_id,r.run_id,a.artifact_id,a.sha256,m.repo_target,m.branch,m.base_commit,m.assignment_artifact_row_id FROM program_dispatch_members dm JOIN program_prepared_members m ON m.id=dm.prepared_member_row_id JOIN execution_packages p ON p.id=m.execution_package_row_id JOIN runs r ON r.id=m.run_row_id JOIN artifacts a ON a.id=m.assignment_artifact_row_id JOIN delivery_ticket_revisions tv ON tv.id=m.ticket_revision_row_id JOIN delivery_tickets t ON t.id=tv.delivery_ticket_row_id WHERE dm.dispatch_row_id=(SELECT id FROM program_dispatches WHERE dispatch_id=?) ORDER BY dm.sequence`, id)
+	if err != nil {
+		return Handoff{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m HandoffMember
+		var artifactRowID int64
+		if err := rows.Scan(&m.Sequence, &m.MemberID, &m.TicketID, &m.TicketRevision, &m.PackageID, &m.RunID, &m.AssignmentArtifactID, &m.AssignmentSHA256, &m.RepoTarget, &m.Branch, &m.BaseCommit, &artifactRowID); err != nil {
+			return Handoff{}, err
+		}
+		loaded, e := s.assignments.LoadExecutionAssignment(c, m.RunID)
+		if e != nil {
+			return Handoff{}, e
+		}
+		// Fail closed unless the verified assignment resolved to the exact
+		// artifact the immutable prepared member is bound to.
+		if loaded.Artifact.ID != artifactRowID || loaded.Artifact.ArtifactID != m.AssignmentArtifactID || loaded.Artifact.SHA256 != m.AssignmentSHA256 {
+			return Handoff{}, ErrDispatch
+		}
+		m.Assignment = append(json.RawMessage(nil), loaded.Bytes...)
 		o.Members = append(o.Members, m)
 	}
 	return o, rows.Err()

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { RelayFeatureWorkspaceProgram } from "./RelayFeatureWorkspaceProgram";
 
-const api = vi.hoisted(() => ({ listProgramMembers: vi.fn(), prepareProgramMember: vi.fn(), cancelProgramMember: vi.fn(), createProgramDispatch: vi.fn(), getProgramDispatch: vi.fn(), recordProgramDispatchResult: vi.fn() }));
+const api = vi.hoisted(() => ({ listProgramMembers: vi.fn(), prepareProgramMember: vi.fn(), cancelProgramMember: vi.fn(), createProgramDispatch: vi.fn(), getProgramDispatch: vi.fn(), getProgramHandoff: vi.fn(), recordProgramDispatchResult: vi.fn() }));
 vi.mock("@/features/relay-programs", () => api);
 const member = (id: string, packageId: string) => ({ id, packageId, runId: `run-${id}`, assignmentArtifactId: `artifact-${id}`, repoTarget: "relay", branch: "main", baseCommit: "a".repeat(40), state: "prepared", ticketRevisionRowId: 1, outcome: "", resultBranch: "", branchHeadSha: "", blocker: "" });
 const dispatch = { id: "dispatch-1", workspaceId: "workspace-1", repoTarget: "relay", branch: "main", baseCommit: "a".repeat(40), status: "dispatched", laterIntegrationRisks: "", members: [member("member-1", "package-1"), member("member-2", "package-2")] };
@@ -28,5 +28,25 @@ describe("Feature Workspace Program journey", () => {
     expect(await screen.findByText("Terminal result recorded.")).toBeInTheDocument();
     expect(screen.getByText(/package-1: done · program\/package-1/)).toBeInTheDocument();
     expect(screen.queryByText(/package-2: blocked · main/)).not.toBeInTheDocument();
+  });
+
+  it("copies the exact backend-provided Program handoff instead of reconstructing it in the browser", async () => {
+    const raw = `{"DispatchID":"dispatch-1","WorkspaceID":"workspace-1","RepoTarget":"relay","Branch":"main","BaseCommit":"${"a".repeat(40)}","Members":[{"Sequence":1,"MemberID":"member-1","TicketID":"T-ONE","TicketRevision":1,"PackageID":"package-1","RunID":"run-1","AssignmentArtifactID":"artifact-1","AssignmentSHA256":"${"2".repeat(64)}","Assignment":{"schema_version":"1.0","run":{"run_id":"run-1"}},"RepoTarget":"relay","Branch":"main","BaseCommit":"${"a".repeat(40)}"}]}`;
+    api.listProgramMembers.mockResolvedValue([member("member-1", "package-1"), member("member-2", "package-2")]);
+    api.createProgramDispatch.mockResolvedValue(dispatch);
+    api.getProgramHandoff.mockResolvedValue({ text: raw, handoff: { dispatchId: "dispatch-1", workspaceId: "workspace-1", repoTarget: "relay", branch: "main", baseCommit: "a".repeat(40), members: [] } });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    // user-event installs its own clipboard stub during setup(); install the
+    // assertion mock afterwards so the component copies via exactly this stub.
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    renderProgram();
+    await user.click(await screen.findByLabelText("Select package-1")); await user.click(screen.getByLabelText("Select package-2")); await user.click(screen.getByRole("button", { name: "Create immutable dispatch" }));
+    const copyButton = await screen.findByRole("button", { name: "Copy Program handoff" });
+    expect(screen.queryByRole("button", { name: "Copy dispatch ID" })).not.toBeInTheDocument();
+    await user.click(copyButton);
+    expect(api.getProgramHandoff).toHaveBeenCalledWith("workspace-1", "dispatch-1");
+    expect(await screen.findByText("Complete Program Orchestrator handoff copied.")).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(raw);
   });
 });

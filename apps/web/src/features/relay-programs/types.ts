@@ -1,2 +1,5 @@
 export interface ProgramMember { id: string; packageId: string; runId: string; assignmentArtifactId: string; repoTarget: string; branch: string; baseCommit: string; state: string; outcome: string; resultBranch: string; branchHeadSha: string; blocker: string; ticketRevisionRowId: number; }
 export interface ProgramDispatch { id: string; workspaceId: string; repoTarget: string; branch: string; baseCommit: string; status: string; laterIntegrationRisks: string; members: ProgramMember[]; }
+export interface ProgramHandoffMember { sequence: number; memberId: string; ticketId: string; ticketRevision: number; packageId: string; runId: string; assignmentArtifactId: string; assignmentSha256: string; assignment: unknown; repoTarget: string; branch: string; baseCommit: string; }
+export interface ProgramHandoff { dispatchId: string; workspaceId: string; repoTarget: string; branch: string; baseCommit: string; members: ProgramHandoffMember[]; }
+export interface ProgramHandoffResult { handoff: ProgramHandoff; text: string; }

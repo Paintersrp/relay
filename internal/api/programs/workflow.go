@@ -17,6 +17,7 @@ type Service interface {
 	CreateDispatch(context.Context, string, int64, []string) (app.Dispatch, error)
 	RecordDispatchResult(context.Context, string, string, int64, app.DispatchResultInput) error
 	Read(context.Context, string, string) (app.Dispatch, error)
+	ReadHandoff(context.Context, string, string) (app.Handoff, error)
 	ListPrepared(context.Context, string) ([]app.PreparedMember, error)
 }
 
@@ -112,6 +113,15 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	x, e := h.service.Read(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "dispatchID"))
 	reply(w, x, e, 200)
 }
+
+// Handoff returns the exact read-only Program Orchestrator handoff projection
+// for one immutable Dispatch: canonical Ticket ID and revision per member plus
+// the embedded immutable Execution Assignment authority content. It is a pure
+// transport read with no side effects.
+func (h *Handler) Handoff(w http.ResponseWriter, r *http.Request) {
+	x, e := h.service.ReadHandoff(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "dispatchID"))
+	reply(w, x, e, 200)
+}
 func (h *Handler) ListPrepared(w http.ResponseWriter, r *http.Request) {
 	x, e := h.service.ListPrepared(r.Context(), chi.URLParam(r, "workspaceID"))
 	reply(w, x, e, 200)
@@ -122,5 +132,6 @@ func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/feature-workspaces/{workspaceID}/program-dispatches", h.Dispatch)
 	r.Get("/feature-workspaces/{workspaceID}/program-members", h.ListPrepared)
 	r.Get("/feature-workspaces/{workspaceID}/program-dispatches/{dispatchID}", h.Get)
+	r.Get("/feature-workspaces/{workspaceID}/program-dispatches/{dispatchID}/handoff", h.Handoff)
 	r.Post("/feature-workspaces/{workspaceID}/program-dispatches/{dispatchID}/result", h.Result)
 }

@@ -119,3 +119,22 @@ export async function requestWorkflowJson<T>(method: WorkflowHttpMethod, path: s
     throw new RelayApiError(`Network error during ${method} ${path}: ${message}`, 503, path, method);
   }
 }
+
+// requestWorkflowText returns the exact raw response body for transport
+// payloads whose bytes must be preserved verbatim (for example the Program
+// Dispatch handoff the operator copies for the external Program Orchestrator).
+export async function requestWorkflowText(method: WorkflowHttpMethod, path: string): Promise<string> {
+  try {
+    const response = await fetch(workflowApiUrl(path), { method, headers: { Accept: "application/json" } });
+    const text = await response.text();
+    if (!response.ok) {
+      const shape = parseErrorShape(text);
+      throw new RelayApiError(shape?.message || `${method} ${path} failed with status ${response.status}`, response.status, path, method, shape);
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof RelayApiError) throw error;
+    const message = error instanceof Error ? error.message : "Unknown network error";
+    throw new RelayApiError(`Network error during ${method} ${path}: ${message}`, 503, path, method);
+  }
+}
