@@ -454,6 +454,9 @@ func verifyIntegrationRepository(ctx context.Context, localPath, assignmentID, b
 		if !equalConflictStages(conflict.Stages, actualStages) {
 			return "conflict evidence stages do not match Git's emitted conflict stages", fmt.Errorf("conflict stage mismatch")
 		}
+		if err := verifyConflictResolutionCoverage(conflict.Stages, conflict.Resolved); err != nil {
+			return "conflict evidence resolved outcomes do not cover the exact Git conflict", fmt.Errorf("conflict resolution coverage: %w", err)
+		}
 		for _, resolved := range conflict.Resolved {
 			if err := verifyIntegratedResolvedEntry(ctx, runner, localPath, integrated, resolved); err != nil {
 				return "conflict evidence resolved tree entry does not match Git", fmt.Errorf("resolved tree mismatch for %s: %w", resolved.Path, err)
@@ -473,6 +476,53 @@ func equalConflictStages(left, right []IntegrationConflictStage) bool {
 		}
 	}
 	return true
+}
+
+// verifyConflictResolutionCoverage ties every claimed resolved outcome to the
+// exact Git conflict-stage relation of one bound merge. The stages are the
+// already-verified exact tuples Git emitted, so they are the only source of
+// truth for what the conflict implicates. A truthful resolved entry about the
+// integrated commit is not valid resolution evidence unless it accounts for
+// this exact conflict.
+//
+// The rule follows Git's actual stage structure without duplicating merge
+// semantics: a path carrying two or more stage tuples is an ordinary
+// same-path conflict whose outcome the evidence must explicitly claim exactly
+// once, as present or absent. A path carrying a single stage tuple belongs to
+// a path-asymmetric rename-style relation (for example rename/rename with
+// stage 1 at the base path and stages 2 and 3 at the two rename targets);
+// such relations are never collapsed into a same-path model, and any claimed
+// outcome must simply be one of the relation's own stage paths. Every
+// resolved path must belong to the stage-path set of this exact relation;
+// unrelated paths fail even when they truthfully describe the integrated
+// commit, and omitted ordinary conflict paths fail instead of being inferred
+// from the integrated tree.
+func verifyConflictResolutionCoverage(stages []IntegrationConflictStage, resolved []IntegrationResolvedEntry) error {
+	stageCountByPath := make(map[string]int, len(stages))
+	for _, stage := range stages {
+		stageCountByPath[stage.Path]++
+	}
+	for _, entry := range resolved {
+		if _, ok := stageCountByPath[entry.Path]; !ok {
+			return fmt.Errorf("resolved path %q is not part of the conflict", entry.Path)
+		}
+	}
+	for path, stageCount := range stageCountByPath {
+		if stageCount < 2 {
+			continue
+		}
+		covered := false
+		for _, entry := range resolved {
+			if entry.Path == path {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			return fmt.Errorf("conflict path %q lacks a resolved outcome", path)
+		}
+	}
+	return nil
 }
 
 func equalStrings(left, right []string) bool {

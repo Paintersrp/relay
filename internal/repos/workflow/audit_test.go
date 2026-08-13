@@ -591,8 +591,11 @@ func TestVerifyIntegrationRepositoryRejectsAbsentOutcomeWhenPathExists(t *testin
 	}
 }
 
-func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *testing.T) {
-	root := t.TempDir()
+// seedRenameRenameConflict builds a repository whose base file is renamed to
+// rr-a.txt on main and to rr-b.txt on the feature branch, producing Git's
+// path-asymmetric rename/rename conflict.
+func seedRenameRenameConflict(t *testing.T, root string) (base, ours, theirs string) {
+	t.Helper()
 	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	run("init", "-b", "main")
 	run("config", "user.email", "test@example.com")
@@ -600,15 +603,22 @@ func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *tes
 	writeRepoFile(t, root, "original.txt", "l1\nl2\nl3\nl4\nl5\nl6\n")
 	run("add", ".")
 	run("commit", "-m", "base")
-	base := run("rev-parse", "HEAD")
+	base = run("rev-parse", "HEAD")
 	run("mv", "original.txt", "rr-a.txt")
 	run("commit", "-m", "rename a")
-	ours := run("rev-parse", "HEAD")
+	ours = run("rev-parse", "HEAD")
 	run("checkout", "-b", "feature", base)
 	run("mv", "original.txt", "rr-b.txt")
 	run("commit", "-m", "rename b")
-	theirs := run("rev-parse", "HEAD")
+	theirs = run("rev-parse", "HEAD")
 	run("checkout", "main")
+	return base, ours, theirs
+}
+
+func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedRenameRenameConflict(t, root)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
 	if len(stages) != 3 || stages[0].Stage != 1 || stages[1].Stage != 2 || stages[2].Stage != 3 {
 		t.Fatalf("rename/rename stages = %+v", stages)
@@ -634,8 +644,217 @@ func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *tes
 	}
 }
 
-func TestVerifyIntegrationRepositoryRejectsEvidenceOmittingAReportedConflictPath(t *testing.T) {
+func TestVerifyConflictResolutionCoverage(t *testing.T) {
+	stage := func(s int, path string) IntegrationConflictStage {
+		return IntegrationConflictStage{Stage: s, Path: path, Mode: "100644", OID: strings.Repeat("0", 40)}
+	}
+	present := func(path string) IntegrationResolvedEntry {
+		return IntegrationResolvedEntry{Path: path, State: "present", Mode: "100644", OID: strings.Repeat("1", 40), Commit: strings.Repeat("d", 40)}
+	}
+	absent := func(path string) IntegrationResolvedEntry {
+		return IntegrationResolvedEntry{Path: path, State: "absent", Commit: strings.Repeat("d", 40)}
+	}
+	contentStages := []IntegrationConflictStage{stage(1, "conflict.txt"), stage(2, "conflict.txt"), stage(3, "conflict.txt")}
+	renameStages := []IntegrationConflictStage{stage(1, "original.txt"), stage(2, "rr-a.txt"), stage(3, "rr-b.txt")}
+	multiStages := []IntegrationConflictStage{
+		stage(1, "a.txt"), stage(2, "a.txt"), stage(3, "a.txt"),
+		stage(1, "b.txt"), stage(2, "b.txt"), stage(3, "b.txt"),
+	}
+	tests := []struct {
+		name     string
+		stages   []IntegrationConflictStage
+		resolved []IntegrationResolvedEntry
+		wantOK   bool
+	}{
+		{"same-path conflict requires present outcome", contentStages, []IntegrationResolvedEntry{present("conflict.txt")}, true},
+		{"same-path conflict requires absent outcome", contentStages, []IntegrationResolvedEntry{absent("conflict.txt")}, true},
+		{"truthful unrelated present path is rejected", contentStages, []IntegrationResolvedEntry{present("README.md")}, false},
+		{"truthful unrelated absent path is rejected", contentStages, []IntegrationResolvedEntry{absent("README.md")}, false},
+		{"extraneous unrelated path is rejected", contentStages, []IntegrationResolvedEntry{present("conflict.txt"), absent("README.md")}, false},
+		{"omitted conflicted path is rejected", contentStages, []IntegrationResolvedEntry{present("other.txt")}, false},
+		{"rename/rename outcome on a stage path is accepted", renameStages, []IntegrationResolvedEntry{present("rr-b.txt")}, true},
+		{"rename/rename unrelated outcome is rejected", renameStages, []IntegrationResolvedEntry{present("README.md")}, false},
+		{"multiple conflicts require complete coverage", multiStages, []IntegrationResolvedEntry{present("a.txt"), present("b.txt")}, true},
+		{"multiple conflicts reject an omitted path", multiStages, []IntegrationResolvedEntry{present("a.txt")}, false},
+		{"multiple conflicts reject an unrelated substitute", multiStages, []IntegrationResolvedEntry{present("a.txt"), absent("README.md")}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := verifyConflictResolutionCoverage(tt.stages, tt.resolved)
+			if tt.wantOK && err != nil {
+				t.Fatalf("expected valid coverage, got: %v", err)
+			}
+			if !tt.wantOK && err == nil {
+				t.Fatal("expected rejection, coverage passed")
+			}
+		})
+	}
+}
+
+// seedContentConflictWithExtra builds the same content-conflict repository as
+// seedContentConflict plus an unrelated README.md present at base and in the
+// integrated commit, so truthful-but-unrelated resolved entries can be built.
+func seedContentConflictWithExtra(t *testing.T, root string) (base, ours, theirs string) {
+	t.Helper()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	writeRepoFile(t, root, "conflict.txt", "base\n")
+	writeRepoFile(t, root, "README.md", "readme\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	base = run("rev-parse", "HEAD")
+	writeRepoFile(t, root, "conflict.txt", "ours\n")
+	run("add", ".")
+	run("commit", "-m", "ours")
+	ours = run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	writeRepoFile(t, root, "conflict.txt", "theirs\n")
+	run("add", ".")
+	run("commit", "-m", "theirs")
+	theirs = run("rev-parse", "HEAD")
+	run("checkout", "main")
+	return base, ours, theirs
+}
+
+func TestVerifyIntegrationRepositoryRejectsUnrelatedOrIncompleteResolvedEvidence(t *testing.T) {
 	root := t.TempDir()
+	base, ours, theirs := seedContentConflictWithExtra(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	if len(stages) != 3 || stages[0].Path != "conflict.txt" || stages[1].Path != "conflict.txt" || stages[2].Path != "conflict.txt" {
+		t.Fatalf("content conflict stages = %+v", stages)
+	}
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	evidence := func(resolved ...IntegrationResolvedEntry) string {
+		return marshalEvidence(t, IntegrationConflictEvidence{
+			Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+			ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+			IntegratedParents: parents,
+			Conflicts: []IntegrationMergeConflict{{
+				Ours: ours, Theirs: theirs,
+				Stages:   append([]IntegrationConflictStage(nil), stages...),
+				Resolved: resolved,
+			}},
+		})
+	}
+	conflictPresent := resolvedTreeEntry(t, run, integrated, "conflict.txt")
+	unrelatedPresent := resolvedTreeEntry(t, run, integrated, "README.md")
+	unrelatedAbsent := IntegrationResolvedEntry{Path: "other.txt", State: "absent", Commit: integrated}
+	for _, tc := range []struct {
+		name     string
+		resolved []IntegrationResolvedEntry
+	}{
+		{"truthful unrelated present path cannot satisfy the conflict", []IntegrationResolvedEntry{unrelatedPresent}},
+		{"truthful unrelated absent path cannot satisfy the conflict", []IntegrationResolvedEntry{unrelatedAbsent}},
+		{"correct path plus extraneous unrelated path fails", []IntegrationResolvedEntry{conflictPresent, unrelatedPresent}},
+		{"omitted conflicted path fails", []IntegrationResolvedEntry{unrelatedAbsent}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(tc.resolved...)); err == nil {
+				t.Fatalf("resolved evidence passed: %+v", tc.resolved)
+			}
+		})
+	}
+	// The same-path conflict with its exact resolved outcome still passes.
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(conflictPresent)); err != nil {
+		t.Fatalf("exact same-path resolution failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryAcceptsSamePathConflictResolvedByDeletion(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedContentConflict(t, root)
+	stages, integrated, parents := captureConflictStagesResolved(t, root, base, ours, theirs, func(root string) {
+		if err := os.Remove(filepath.Join(root, "conflict.txt")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages: stages,
+			Resolved: []IntegrationResolvedEntry{{
+				Path: "conflict.txt", State: "absent", Commit: integrated,
+			}},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
+		t.Fatalf("same-path conflict resolved by deletion failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryRequiresCompleteMultiPathConflictResolution(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedTwoPathContentConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	if len(stages) != 6 {
+		t.Fatalf("two-path conflict stages = %+v", stages)
+	}
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	evidence := func(resolved ...IntegrationResolvedEntry) string {
+		return marshalEvidence(t, IntegrationConflictEvidence{
+			Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+			ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+			IntegratedParents: parents,
+			Conflicts: []IntegrationMergeConflict{{
+				Ours: ours, Theirs: theirs,
+				Stages:   append([]IntegrationConflictStage(nil), stages...),
+				Resolved: resolved,
+			}},
+		})
+	}
+	aPresent := resolvedTreeEntry(t, run, integrated, "a.txt")
+	bPresent := resolvedTreeEntry(t, run, integrated, "b.txt")
+	unrelatedAbsent := IntegrationResolvedEntry{Path: "other.txt", State: "absent", Commit: integrated}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(aPresent, bPresent)); err != nil {
+		t.Fatalf("complete two-path resolution failed: %v", err)
+	}
+	for _, tc := range []struct {
+		name     string
+		resolved []IntegrationResolvedEntry
+	}{
+		{"one conflicted path omitted fails", []IntegrationResolvedEntry{aPresent}},
+		{"one conflicted path substituted by an unrelated path fails", []IntegrationResolvedEntry{aPresent, unrelatedAbsent}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(tc.resolved...)); err == nil {
+				t.Fatalf("resolved evidence passed: %+v", tc.resolved)
+			}
+		})
+	}
+}
+
+func TestVerifyIntegrationRepositoryRejectsUnrelatedResolvedRenameEvidence(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedRenameRenameConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages: stages,
+			Resolved: []IntegrationResolvedEntry{
+				resolvedTreeEntry(t, run, integrated, "rr-b.txt"),
+				{Path: "other.txt", State: "absent", Commit: integrated},
+			},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
+		t.Fatal("rename/rename evidence with an unrelated resolved path passed")
+	}
+}
+
+// seedTwoPathContentConflict builds a repository with two independent
+// same-path content conflicts (a.txt and b.txt) in one ours/theirs relation.
+func seedTwoPathContentConflict(t *testing.T, root string) (base, ours, theirs string) {
+	t.Helper()
 	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	run("init", "-b", "main")
 	run("config", "user.email", "test@example.com")
@@ -644,19 +863,26 @@ func TestVerifyIntegrationRepositoryRejectsEvidenceOmittingAReportedConflictPath
 	writeRepoFile(t, root, "b.txt", "base-b\n")
 	run("add", ".")
 	run("commit", "-m", "base")
-	base := run("rev-parse", "HEAD")
+	base = run("rev-parse", "HEAD")
 	writeRepoFile(t, root, "a.txt", "ours-a\n")
 	writeRepoFile(t, root, "b.txt", "ours-b\n")
 	run("add", ".")
 	run("commit", "-m", "ours")
-	ours := run("rev-parse", "HEAD")
+	ours = run("rev-parse", "HEAD")
 	run("checkout", "-b", "feature", base)
 	writeRepoFile(t, root, "a.txt", "theirs-a\n")
 	writeRepoFile(t, root, "b.txt", "theirs-b\n")
 	run("add", ".")
 	run("commit", "-m", "theirs")
-	theirs := run("rev-parse", "HEAD")
+	theirs = run("rev-parse", "HEAD")
 	run("checkout", "main")
+	return base, ours, theirs
+}
+
+func TestVerifyIntegrationRepositoryRejectsEvidenceOmittingAReportedConflictPath(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedTwoPathContentConflict(t, root)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
 	var onlyA []IntegrationConflictStage
 	for _, stage := range stages {
