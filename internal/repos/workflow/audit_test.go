@@ -625,7 +625,10 @@ func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *tes
 	}
 	// The rename/rename conflict is path-asymmetric: stage 1 stays at the base
 	// path while stages 2 and 3 use the two distinct rename targets. It must
-	// never be collapsed into a single same-path representation.
+	// never be collapsed into a single same-path representation, and the
+	// resolved evidence must project an explicit final state for every unique
+	// stage path: original.txt is absent from the integrated tree while both
+	// rename targets remain present.
 	if stages[0].Path != "original.txt" || stages[1].Path != "rr-a.txt" || stages[2].Path != "rr-b.txt" {
 		t.Fatalf("rename/rename stages are not path-asymmetric: %+v", stages)
 	}
@@ -635,8 +638,12 @@ func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *tes
 		IntegratedParents: parents,
 		Conflicts: []IntegrationMergeConflict{{
 			Ours: ours, Theirs: theirs,
-			Stages:   stages,
-			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "rr-b.txt")},
+			Stages: stages,
+			Resolved: []IntegrationResolvedEntry{
+				{Path: "original.txt", State: "absent", Commit: integrated},
+				resolvedTreeEntry(t, run, integrated, "rr-a.txt"),
+				resolvedTreeEntry(t, run, integrated, "rr-b.txt"),
+			},
 		}},
 	}
 	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
@@ -656,6 +663,9 @@ func TestVerifyConflictResolutionCoverage(t *testing.T) {
 	}
 	contentStages := []IntegrationConflictStage{stage(1, "conflict.txt"), stage(2, "conflict.txt"), stage(3, "conflict.txt")}
 	renameStages := []IntegrationConflictStage{stage(1, "original.txt"), stage(2, "rr-a.txt"), stage(3, "rr-b.txt")}
+	addAddStages := []IntegrationConflictStage{stage(2, "added.txt"), stage(3, "added.txt")}
+	deleteModifyStages := []IntegrationConflictStage{stage(1, "dm.txt"), stage(3, "dm.txt")}
+	singleStage := []IntegrationConflictStage{stage(2, "one.txt")}
 	multiStages := []IntegrationConflictStage{
 		stage(1, "a.txt"), stage(2, "a.txt"), stage(3, "a.txt"),
 		stage(1, "b.txt"), stage(2, "b.txt"), stage(3, "b.txt"),
@@ -668,15 +678,26 @@ func TestVerifyConflictResolutionCoverage(t *testing.T) {
 	}{
 		{"same-path conflict requires present outcome", contentStages, []IntegrationResolvedEntry{present("conflict.txt")}, true},
 		{"same-path conflict requires absent outcome", contentStages, []IntegrationResolvedEntry{absent("conflict.txt")}, true},
+		{"same-path conflict with no resolved outcome fails", contentStages, nil, false},
 		{"truthful unrelated present path is rejected", contentStages, []IntegrationResolvedEntry{present("README.md")}, false},
 		{"truthful unrelated absent path is rejected", contentStages, []IntegrationResolvedEntry{absent("README.md")}, false},
 		{"extraneous unrelated path is rejected", contentStages, []IntegrationResolvedEntry{present("conflict.txt"), absent("README.md")}, false},
 		{"omitted conflicted path is rejected", contentStages, []IntegrationResolvedEntry{present("other.txt")}, false},
-		{"rename/rename outcome on a stage path is accepted", renameStages, []IntegrationResolvedEntry{present("rr-b.txt")}, true},
+		{"add/add without stage one requires the single-path outcome", addAddStages, []IntegrationResolvedEntry{present("added.txt")}, true},
+		{"add/add without stage one omitting the outcome fails", addAddStages, []IntegrationResolvedEntry{absent("other.txt")}, false},
+		{"delete/modify without stage two accepts present outcome", deleteModifyStages, []IntegrationResolvedEntry{present("dm.txt")}, true},
+		{"delete/modify without stage two accepts absent outcome", deleteModifyStages, []IntegrationResolvedEntry{absent("dm.txt")}, true},
+		{"single-stage path still requires an outcome", singleStage, []IntegrationResolvedEntry{present("one.txt")}, true},
+		{"single-stage path without an outcome fails", singleStage, nil, false},
+		{"rename/rename full path-state projection passes", renameStages, []IntegrationResolvedEntry{absent("original.txt"), present("rr-a.txt"), present("rr-b.txt")}, true},
+		{"rename/rename with only one stage-path outcome fails", renameStages, []IntegrationResolvedEntry{present("rr-b.txt")}, false},
+		{"rename/rename omitting one stage path fails", renameStages, []IntegrationResolvedEntry{absent("original.txt"), present("rr-b.txt")}, false},
 		{"rename/rename unrelated outcome is rejected", renameStages, []IntegrationResolvedEntry{present("README.md")}, false},
+		{"rename/rename with an unrelated extra path fails", renameStages, []IntegrationResolvedEntry{absent("original.txt"), present("rr-a.txt"), present("rr-b.txt"), absent("README.md")}, false},
 		{"multiple conflicts require complete coverage", multiStages, []IntegrationResolvedEntry{present("a.txt"), present("b.txt")}, true},
 		{"multiple conflicts reject an omitted path", multiStages, []IntegrationResolvedEntry{present("a.txt")}, false},
 		{"multiple conflicts reject an unrelated substitute", multiStages, []IntegrationResolvedEntry{present("a.txt"), absent("README.md")}, false},
+		{"multiple conflicts reject an unrelated extra path", multiStages, []IntegrationResolvedEntry{present("a.txt"), present("b.txt"), absent("README.md")}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -819,6 +840,7 @@ func TestVerifyIntegrationRepositoryRequiresCompleteMultiPathConflictResolution(
 	}{
 		{"one conflicted path omitted fails", []IntegrationResolvedEntry{aPresent}},
 		{"one conflicted path substituted by an unrelated path fails", []IntegrationResolvedEntry{aPresent, unrelatedAbsent}},
+		{"complete set plus an unrelated extra path fails", []IntegrationResolvedEntry{aPresent, bPresent, unrelatedAbsent}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(tc.resolved...)); err == nil {
@@ -841,13 +863,91 @@ func TestVerifyIntegrationRepositoryRejectsUnrelatedResolvedRenameEvidence(t *te
 			Ours: ours, Theirs: theirs,
 			Stages: stages,
 			Resolved: []IntegrationResolvedEntry{
-				resolvedTreeEntry(t, run, integrated, "rr-b.txt"),
+				{Path: "original.txt", State: "absent", Commit: integrated},
 				{Path: "other.txt", State: "absent", Commit: integrated},
+				resolvedTreeEntry(t, run, integrated, "rr-a.txt"),
+				resolvedTreeEntry(t, run, integrated, "rr-b.txt"),
 			},
 		}},
 	}
 	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
 		t.Fatal("rename/rename evidence with an unrelated resolved path passed")
+	}
+}
+
+// TestVerifyIntegrationRepositoryRejectsIncompleteAsymmetricResolvedEvidence
+// verifies that a rename/rename conflict cannot be resolved by evidence that
+// accounts for only part of the exact stage-path domain: every unique stage
+// path needs an explicit present or absent final state.
+func TestVerifyIntegrationRepositoryRejectsIncompleteAsymmetricResolvedEvidence(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedRenameRenameConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	evidence := func(resolved ...IntegrationResolvedEntry) string {
+		return marshalEvidence(t, IntegrationConflictEvidence{
+			Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+			ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+			IntegratedParents: parents,
+			Conflicts: []IntegrationMergeConflict{{
+				Ours: ours, Theirs: theirs,
+				Stages:   append([]IntegrationConflictStage(nil), stages...),
+				Resolved: resolved,
+			}},
+		})
+	}
+	for _, tc := range []struct {
+		name     string
+		resolved []IntegrationResolvedEntry
+	}{
+		{"only the stage-3 path is resolved", []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "rr-b.txt")}},
+		{"the stage-1 path is omitted", []IntegrationResolvedEntry{
+			{Path: "original.txt", State: "absent", Commit: integrated},
+			resolvedTreeEntry(t, run, integrated, "rr-b.txt"),
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(tc.resolved...)); err == nil {
+				t.Fatalf("incomplete rename/rename evidence passed: %+v", tc.resolved)
+			}
+		})
+	}
+}
+
+// TestVerifyIntegrationRepositoryRejectsFalseAsymmetricResolvedStates verifies
+// that rename/rename present and absent claims are independently checked
+// against the exact integrated commit rather than trusted from the evidence.
+func TestVerifyIntegrationRepositoryRejectsFalseAsymmetricResolvedStates(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedRenameRenameConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	evidence := func(resolved ...IntegrationResolvedEntry) string {
+		return marshalEvidence(t, IntegrationConflictEvidence{
+			Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+			ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+			IntegratedParents: parents,
+			Conflicts: []IntegrationMergeConflict{{
+				Ours: ours, Theirs: theirs,
+				Stages:   append([]IntegrationConflictStage(nil), stages...),
+				Resolved: resolved,
+			}},
+		})
+	}
+	falsePresent := IntegrationResolvedEntry{Path: "original.txt", State: "present", Mode: "100644", OID: strings.Repeat("1", 40), Commit: integrated}
+	falseAbsent := IntegrationResolvedEntry{Path: "rr-b.txt", State: "absent", Commit: integrated}
+	for _, tc := range []struct {
+		name     string
+		resolved []IntegrationResolvedEntry
+	}{
+		{"false present on an integrated-absent stage path", []IntegrationResolvedEntry{falsePresent, resolvedTreeEntry(t, run, integrated, "rr-a.txt"), resolvedTreeEntry(t, run, integrated, "rr-b.txt")}},
+		{"false absent on an integrated-present stage path", []IntegrationResolvedEntry{{Path: "original.txt", State: "absent", Commit: integrated}, resolvedTreeEntry(t, run, integrated, "rr-a.txt"), falseAbsent}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence(tc.resolved...)); err == nil {
+				t.Fatalf("false rename/rename resolved state passed: %+v", tc.resolved)
+			}
+		})
 	}
 }
 

@@ -485,42 +485,33 @@ func equalConflictStages(left, right []IntegrationConflictStage) bool {
 // integrated commit is not valid resolution evidence unless it accounts for
 // this exact conflict.
 //
-// The rule follows Git's actual stage structure without duplicating merge
-// semantics: a path carrying two or more stage tuples is an ordinary
-// same-path conflict whose outcome the evidence must explicitly claim exactly
-// once, as present or absent. A path carrying a single stage tuple belongs to
-// a path-asymmetric rename-style relation (for example rename/rename with
-// stage 1 at the base path and stages 2 and 3 at the two rename targets);
-// such relations are never collapsed into a same-path model, and any claimed
-// outcome must simply be one of the relation's own stage paths. Every
-// resolved path must belong to the stage-path set of this exact relation;
-// unrelated paths fail even when they truthfully describe the integrated
-// commit, and omitted ordinary conflict paths fail instead of being inferred
-// from the integrated tree.
+// The exact conflict path domain is the set of unique paths appearing in the
+// stage tuples, regardless of how many stage tuples a path carries. An
+// ordinary same-path conflict (stages 1/2/3 on one path) and a path-asymmetric
+// rename relation (stage 1 at the base path and stages 2 and 3 at the two
+// distinct rename targets) both project onto their unique stage paths: every
+// unique stage path needs exactly one explicit resolved outcome, present or
+// absent, so the resolved path set must equal the unique stage-path set
+// exactly. Unrelated resolved paths fail even when they truthfully describe
+// the integrated commit, and omitted stage paths fail instead of being
+// inferred from the integrated tree.
 func verifyConflictResolutionCoverage(stages []IntegrationConflictStage, resolved []IntegrationResolvedEntry) error {
-	stageCountByPath := make(map[string]int, len(stages))
+	stagePaths := make(map[string]struct{}, len(stages))
 	for _, stage := range stages {
-		stageCountByPath[stage.Path]++
+		stagePaths[stage.Path] = struct{}{}
 	}
+	if len(resolved) != len(stagePaths) {
+		return fmt.Errorf("resolved outcomes must cover every unique conflict stage path exactly once")
+	}
+	resolvedPaths := make(map[string]struct{}, len(resolved))
 	for _, entry := range resolved {
-		if _, ok := stageCountByPath[entry.Path]; !ok {
+		if _, ok := stagePaths[entry.Path]; !ok {
 			return fmt.Errorf("resolved path %q is not part of the conflict", entry.Path)
 		}
-	}
-	for path, stageCount := range stageCountByPath {
-		if stageCount < 2 {
-			continue
+		if _, ok := resolvedPaths[entry.Path]; ok {
+			return fmt.Errorf("resolved path %q appears more than once", entry.Path)
 		}
-		covered := false
-		for _, entry := range resolved {
-			if entry.Path == path {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			return fmt.Errorf("conflict path %q lacks a resolved outcome", path)
-		}
+		resolvedPaths[entry.Path] = struct{}{}
 	}
 	return nil
 }
