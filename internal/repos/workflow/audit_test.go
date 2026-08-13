@@ -248,6 +248,14 @@ func seedContentConflict(t *testing.T, root string) (base, ours, theirs string) 
 // its parents.
 func captureConflictStages(t *testing.T, root, base, ours, theirs string) (stages []IntegrationConflictStage, integrated string, parents []string) {
 	t.Helper()
+	return captureConflictStagesResolved(t, root, base, ours, theirs, nil)
+}
+
+// captureConflictStagesResolved is captureConflictStages with a resolver hook
+// invoked on the conflicted worktree before the resolution is staged, so a
+// test can mechanically resolve a conflict to a deletion.
+func captureConflictStagesResolved(t *testing.T, root, base, ours, theirs string, resolve func(root string)) (stages []IntegrationConflictStage, integrated string, parents []string) {
+	t.Helper()
 	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	mergeCommand := exec.Command("git", "merge", "feature", "-m", "merge feature")
 	mergeCommand.Dir = root
@@ -259,6 +267,9 @@ func captureConflictStages(t *testing.T, root, base, ours, theirs string) (stage
 		t.Fatal("merge produced no conflicted stages")
 	}
 	stages = parseUnmergedIndex(t, lines)
+	if resolve != nil {
+		resolve(root)
+	}
 	run("add", "-A")
 	run("commit", "-m", "resolve conflict")
 	integrated = run("rev-parse", "HEAD")
@@ -299,7 +310,7 @@ func resolvedTreeEntry(t *testing.T, run func(args ...string) string, commit, pa
 	if len(fields) != 4 {
 		t.Fatalf("tree entry for %s at %s = %q", path, commit, fields)
 	}
-	return IntegrationResolvedEntry{Path: path, Mode: fields[0], OID: fields[2], Commit: commit}
+	return IntegrationResolvedEntry{Path: path, State: "present", Mode: fields[0], OID: fields[2], Commit: commit}
 }
 
 func TestVerifyIntegrationRepositoryVerifiesFactualMechanicalConflictEvidence(t *testing.T) {
@@ -497,6 +508,89 @@ func TestVerifyIntegrationRepositoryVerifiesDeleteModifyWithAbsentSide(t *testin
 	}
 }
 
+func TestVerifyIntegrationRepositoryVerifiesDeleteModifyResolvedByDeletion(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	writeRepoFile(t, root, "dm.txt", "base-dm\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	if err := os.Remove(filepath.Join(root, "dm.txt")); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "delete ours")
+	ours := run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	writeRepoFile(t, root, "dm.txt", "modified-theirs\n")
+	run("add", ".")
+	run("commit", "-m", "modify theirs")
+	theirs := run("rev-parse", "HEAD")
+	run("checkout", "main")
+	stages, integrated, parents := captureConflictStagesResolved(t, root, base, ours, theirs, func(root string) {
+		if err := os.Remove(filepath.Join(root, "dm.txt")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if len(stages) != 2 || stages[0].Stage != 1 || stages[1].Stage != 3 {
+		t.Fatalf("delete/modify stages = %+v", stages)
+	}
+	absent := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages: stages,
+			Resolved: []IntegrationResolvedEntry{{
+				Path: "dm.txt", State: "absent", Commit: integrated,
+			}},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, absent)); err != nil {
+		t.Fatalf("delete/modify resolved by deletion failed: %v", err)
+	}
+	present := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages: stages,
+			Resolved: []IntegrationResolvedEntry{{
+				Path: "dm.txt", State: "present", Mode: "100644", OID: strings.Repeat("0", 40), Commit: integrated,
+			}},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, present)); err == nil {
+		t.Fatal("present resolution passed for a path absent from the integrated commit")
+	}
+}
+
+func TestVerifyIntegrationRepositoryRejectsAbsentOutcomeWhenPathExists(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedContentConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages: stages,
+			Resolved: []IntegrationResolvedEntry{{
+				Path: "conflict.txt", State: "absent", Commit: integrated,
+			}},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
+		t.Fatal("absent resolution passed for a path present in the integrated commit")
+	}
+}
+
 func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *testing.T) {
 	root := t.TempDir()
 	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
@@ -651,6 +745,82 @@ func jsonEvidence(t *testing.T, encoded string) IntegrationConflictEvidence {
 		t.Fatal(err)
 	}
 	return evidence
+}
+
+// canonicalResolvedEvidence marshals an evidence document whose only conflict
+// relation carries the given resolved entries in a canonical form.
+func canonicalResolvedEvidence(t *testing.T, resolved ...IntegrationResolvedEntry) string {
+	t.Helper()
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: strings.Repeat("a", 40),
+		ConstituentCommits: []string{strings.Repeat("b", 40), strings.Repeat("c", 40)},
+		IntegratedCommit:   strings.Repeat("d", 40),
+		IntegratedParents:  []string{strings.Repeat("b", 40), strings.Repeat("c", 40)},
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: strings.Repeat("b", 40), Theirs: strings.Repeat("c", 40),
+			Stages: []IntegrationConflictStage{
+				{Stage: 1, Path: "conflict.txt", Mode: "100644", OID: strings.Repeat("1", 40)},
+				{Stage: 2, Path: "conflict.txt", Mode: "100644", OID: strings.Repeat("2", 40)},
+				{Stage: 3, Path: "conflict.txt", Mode: "100644", OID: strings.Repeat("3", 40)},
+			},
+			Resolved: resolved,
+		}},
+	}
+	return marshalEvidence(t, evidence)
+}
+
+func TestParseIntegrationConflictEvidenceValidatesResolvedStates(t *testing.T) {
+	integrated := strings.Repeat("d", 40)
+	present := IntegrationResolvedEntry{Path: "conflict.txt", State: "present", Mode: "100644", OID: strings.Repeat("4", 40), Commit: integrated}
+	absent := IntegrationResolvedEntry{Path: "conflict.txt", State: "absent", Commit: integrated}
+	tests := []struct {
+		name     string
+		wantOK   bool
+		resolved []IntegrationResolvedEntry
+	}{
+		{"present with exact mode and oid", true, []IntegrationResolvedEntry{present}},
+		{"absent without mode and oid", true, []IntegrationResolvedEntry{absent}},
+		{"absent with mode is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "absent", Mode: "100644", Commit: integrated}}},
+		{"absent with oid is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "absent", OID: strings.Repeat("4", 40), Commit: integrated}}},
+		{"absent with mode and oid is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "absent", Mode: "100644", OID: strings.Repeat("4", 40), Commit: integrated}}},
+		{"present without mode is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "present", OID: strings.Repeat("4", 40), Commit: integrated}}},
+		{"present without oid is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "present", Mode: "100644", Commit: integrated}}},
+		{"present without mode and oid is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "present", Commit: integrated}}},
+		{"invalid state is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "deleted", Mode: "100644", OID: strings.Repeat("4", 40), Commit: integrated}}},
+		{"empty state is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", Mode: "100644", OID: strings.Repeat("4", 40), Commit: integrated}}},
+		{"empty resolved set is rejected", false, nil},
+		{"duplicate resolved path is rejected", false, []IntegrationResolvedEntry{present, absent}},
+		{"non-canonical resolved ordering is rejected", false, []IntegrationResolvedEntry{
+			{Path: "z.txt", State: "present", Mode: "100644", OID: strings.Repeat("5", 40), Commit: integrated},
+			{Path: "a.txt", State: "present", Mode: "100644", OID: strings.Repeat("4", 40), Commit: integrated},
+		}},
+		{"invalid path is rejected", false, []IntegrationResolvedEntry{{Path: "../up", State: "absent", Commit: integrated}}},
+		{"invalid commit is rejected", false, []IntegrationResolvedEntry{{Path: "conflict.txt", State: "absent", Commit: "not-a-commit"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseIntegrationConflictEvidence(integrated, canonicalResolvedEvidence(t, tt.resolved...))
+			if tt.wantOK && err != nil {
+				t.Fatalf("expected valid evidence, got: %v", err)
+			}
+			if !tt.wantOK && err == nil {
+				t.Fatalf("expected rejection, evidence passed: %+v", tt.resolved)
+			}
+		})
+	}
+}
+
+func TestParseIntegrationConflictEvidenceRejectsUnknownOrNonCanonicalResolvedJSON(t *testing.T) {
+	integrated := strings.Repeat("d", 40)
+	base := canonicalResolvedEvidence(t, IntegrationResolvedEntry{Path: "conflict.txt", State: "present", Mode: "100644", OID: strings.Repeat("4", 40), Commit: integrated})
+	unknown := strings.Replace(base, `"path":"conflict.txt"`, `"path":"conflict.txt","extra":"x"`, 1)
+	if _, err := ParseIntegrationConflictEvidence(integrated, unknown); err == nil {
+		t.Fatal("unknown resolved field passed")
+	}
+	nonCanonical := strings.Replace(base, `"state":"present"`, `"state" : "present"`, 1)
+	if _, err := ParseIntegrationConflictEvidence(integrated, nonCanonical); err == nil {
+		t.Fatal("non-canonical resolved JSON passed")
+	}
 }
 
 func sliceContains(haystack []string, needle string) bool {

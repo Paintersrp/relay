@@ -97,12 +97,21 @@ type IntegrationConflictStage struct {
 	OID   string `json:"oid"`
 }
 
+const (
+	integrationResolvedStatePresent = "present"
+	integrationResolvedStateAbsent  = "absent"
+)
+
 // IntegrationResolvedEntry is one resolved path claimed by the Merge evidence
-// in the exact integrated commit tree.
+// in the exact integrated commit tree. State present means the path exists in
+// the integrated commit with the exact mode and object ID; state absent means
+// the path must not exist in the integrated commit. Mode and OID are present
+// only for the present state; a deletion is never encoded with fake values.
 type IntegrationResolvedEntry struct {
 	Path   string `json:"path"`
-	Mode   string `json:"mode"`
-	OID    string `json:"oid"`
+	State  string `json:"state"`
+	Mode   string `json:"mode,omitempty"`
+	OID    string `json:"oid,omitempty"`
 	Commit string `json:"commit"`
 }
 
@@ -190,8 +199,20 @@ func validateCanonicalConflictResolved(resolved []IntegrationResolvedEntry) erro
 	}
 	previousPath := ""
 	for _, entry := range resolved {
-		if !validGitMode(entry.Mode) || !integrationGitObjectID.MatchString(entry.OID) || !integrationGitObjectID.MatchString(entry.Commit) || !validGitPath(entry.Path) {
+		if !validGitPath(entry.Path) || !integrationGitObjectID.MatchString(entry.Commit) {
 			return errors.New("conflict evidence resolved identity is invalid")
+		}
+		switch entry.State {
+		case integrationResolvedStatePresent:
+			if !validGitMode(entry.Mode) || !integrationGitObjectID.MatchString(entry.OID) {
+				return errors.New("conflict evidence resolved present entry is invalid")
+			}
+		case integrationResolvedStateAbsent:
+			if entry.Mode != "" || entry.OID != "" {
+				return errors.New("conflict evidence resolved absent entry carries mode or object ID")
+			}
+		default:
+			return errors.New("conflict evidence resolved state is invalid")
 		}
 		if previousPath != "" && entry.Path <= previousPath {
 			return errors.New("conflict evidence resolved entries are not canonical")
@@ -434,9 +455,8 @@ func verifyIntegrationRepository(ctx context.Context, localPath, assignmentID, b
 			return "conflict evidence stages do not match Git's emitted conflict stages", fmt.Errorf("conflict stage mismatch")
 		}
 		for _, resolved := range conflict.Resolved {
-			actual, err := integrationTreeEntry(ctx, runner, localPath, integrated, resolved.Path)
-			if err != nil || actual.Mode != resolved.Mode || actual.OID != resolved.OID || resolved.Commit != integrated {
-				return "conflict evidence resolved tree entry does not match Git", fmt.Errorf("resolved tree mismatch for %s", resolved.Path)
+			if err := verifyIntegratedResolvedEntry(ctx, runner, localPath, integrated, resolved); err != nil {
+				return "conflict evidence resolved tree entry does not match Git", fmt.Errorf("resolved tree mismatch for %s: %w", resolved.Path, err)
 			}
 		}
 	}
@@ -486,6 +506,32 @@ func integrationCommitParents(ctx context.Context, runner AuditGitRunner, localP
 		return nil, errors.New("integrated commit parent list is invalid")
 	}
 	return fields[1:], nil
+}
+
+// verifyIntegratedResolvedEntry independently checks one claimed resolved
+// outcome against the exact integrated commit. A present resolution must match
+// the exact mode and object ID of the integrated tree entry; an absent
+// resolution must be a path the integrated commit does not contain. A Git
+// lookup failure or an ambiguous result fails closed rather than trusting the
+// caller's assertion.
+func verifyIntegratedResolvedEntry(ctx context.Context, runner AuditGitRunner, localPath, integrated string, resolved IntegrationResolvedEntry) error {
+	if resolved.Commit != integrated {
+		return fmt.Errorf("resolved entry is not bound to the integrated commit")
+	}
+	actual, err := integrationTreeEntry(ctx, runner, localPath, integrated, resolved.Path)
+	if err != nil {
+		return err
+	}
+	if resolved.State == integrationResolvedStateAbsent {
+		if actual.OID != "" {
+			return fmt.Errorf("path %q exists in the integrated commit", resolved.Path)
+		}
+		return nil
+	}
+	if actual.Mode != resolved.Mode || actual.OID != resolved.OID {
+		return fmt.Errorf("integrated tree entry for %q does not match the claimed resolution", resolved.Path)
+	}
+	return nil
 }
 
 func integrationTreeEntry(ctx context.Context, runner AuditGitRunner, localPath, commit, path string) (IntegrationConflictBlob, error) {
