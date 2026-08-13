@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -188,124 +189,421 @@ func TestVerifyIntegrationRepositoryRequiresExactPreservation(t *testing.T) {
 	}
 }
 
-func TestVerifyIntegrationRepositoryVerifiesFactualMechanicalConflictEvidence(t *testing.T) {
-	root := t.TempDir()
-	run := func(args ...string) string {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = root
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
+func integrationGitRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+	return strings.TrimSpace(string(out))
+}
+
+func writeRepoFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func marshalEvidence(t *testing.T, evidence IntegrationConflictEvidence) string {
+	t.Helper()
+	bytes, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(bytes)
+}
+
+// seedContentConflict builds a repository with three commits: base on main, an
+// ours commit that rewrites conflict.txt on main, and a theirs commit on the
+// feature branch rooted at base that rewrites conflict.txt differently.
+func seedContentConflict(t *testing.T, root string) (base, ours, theirs string) {
+	t.Helper()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	run("init", "-b", "main")
 	run("config", "user.email", "test@example.com")
 	run("config", "user.name", "Test")
-	if err := os.WriteFile(filepath.Join(root, "conflict.txt"), []byte("base\n"), 0600); err != nil {
-		t.Fatal(err)
+	writeRepoFile(t, root, "conflict.txt", "base\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	base = run("rev-parse", "HEAD")
+	writeRepoFile(t, root, "conflict.txt", "ours\n")
+	run("add", ".")
+	run("commit", "-m", "ours")
+	ours = run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	writeRepoFile(t, root, "conflict.txt", "theirs\n")
+	run("add", ".")
+	run("commit", "-m", "theirs")
+	theirs = run("rev-parse", "HEAD")
+	run("checkout", "main")
+	return base, ours, theirs
+}
+
+// captureConflictStages merges the feature branch into main (already at ours),
+// captures the exact conflict-stage tuples Git placed in the index, resolves
+// the conflict, and returns the stages plus the resolved integrated commit and
+// its parents.
+func captureConflictStages(t *testing.T, root, base, ours, theirs string) (stages []IntegrationConflictStage, integrated string, parents []string) {
+	t.Helper()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	mergeCommand := exec.Command("git", "merge", "feature", "-m", "merge feature")
+	mergeCommand.Dir = root
+	if out, err := mergeCommand.CombinedOutput(); err == nil {
+		t.Fatalf("expected merge conflict, merge succeeded: %s", out)
 	}
+	lines := strings.Split(strings.TrimSpace(run("ls-files", "-u")), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatal("merge produced no conflicted stages")
+	}
+	stages = parseUnmergedIndex(t, lines)
+	run("add", "-A")
+	run("commit", "-m", "resolve conflict")
+	integrated = run("rev-parse", "HEAD")
+	parents = strings.Fields(run("rev-list", "--parents", "-n", "1", integrated))[1:]
+	if len(parents) < 2 || parents[0] != ours || !containsString(parents[1:], theirs) {
+		t.Fatalf("integrated parents = %v, want %s and %s", parents, ours, theirs)
+	}
+	return stages, integrated, parents
+}
+
+// parseUnmergedIndex parses `git ls-files -u` output ("<mode> <oid> <stage>\t<path>")
+// into the exact conflict-stage tuples, independently of the merge-tree parser
+// under test.
+func parseUnmergedIndex(t *testing.T, lines []string) []IntegrationConflictStage {
+	t.Helper()
+	stages := make([]IntegrationConflictStage, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.Split(line, "\t")
+		if len(parts) != 2 {
+			t.Fatalf("unmerged entry = %q", line)
+		}
+		fields := strings.Fields(parts[0])
+		if len(fields) != 3 {
+			t.Fatalf("unmerged fields = %q", parts[0])
+		}
+		stage, err := strconv.Atoi(fields[2])
+		if err != nil || stage < 1 || stage > 3 {
+			t.Fatalf("unmerged stage = %q", fields[2])
+		}
+		stages = append(stages, IntegrationConflictStage{Stage: stage, Path: parts[1], Mode: fields[0], OID: fields[1]})
+	}
+	return stages
+}
+
+func resolvedTreeEntry(t *testing.T, run func(args ...string) string, commit, path string) IntegrationResolvedEntry {
+	t.Helper()
+	fields := strings.Fields(run("ls-tree", commit, "--", path))
+	if len(fields) != 4 {
+		t.Fatalf("tree entry for %s at %s = %q", path, commit, fields)
+	}
+	return IntegrationResolvedEntry{Path: path, Mode: fields[0], OID: fields[2], Commit: commit}
+}
+
+func TestVerifyIntegrationRepositoryVerifiesFactualMechanicalConflictEvidence(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedContentConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	if len(stages) != 3 || stages[0].Stage != 1 || stages[1].Stage != 2 || stages[2].Stage != 3 {
+		t.Fatalf("content conflict stages = %+v", stages)
+	}
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages:   stages,
+			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "conflict.txt")},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
+		t.Fatalf("valid factual conflict evidence failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryRejectsFabricatedOrMismatchedStageEvidence(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedContentConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	resolved := []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "conflict.txt")}
+	mutations := []struct {
+		name   string
+		mutate func(*IntegrationConflictEvidence)
+	}{
+		{"wrong assignment", func(e *IntegrationConflictEvidence) { e.AssignmentID = "wrong-assignment" }},
+		{"wrong base", func(e *IntegrationConflictEvidence) { e.BaseCommit = strings.Repeat("a", 40) }},
+		{"wrong constituent", func(e *IntegrationConflictEvidence) { e.ConstituentCommits = []string{ours} }},
+		{"wrong parents", func(e *IntegrationConflictEvidence) { e.IntegratedParents = []string{theirs, ours} }},
+		{"wrong integrated commit", func(e *IntegrationConflictEvidence) { e.IntegratedCommit = base }},
+		{"wrong ours relation", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Ours = strings.Repeat("e", 40) }},
+		{"wrong theirs relation", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Theirs = strings.Repeat("f", 40) }},
+		{"wrong stage-1 oid", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Stages[0].OID = strings.Repeat("1", 40) }},
+		{"wrong stage-2 oid", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Stages[1].OID = strings.Repeat("2", 40) }},
+		{"wrong stage-3 oid", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Stages[2].OID = strings.Repeat("3", 40) }},
+		{"wrong stage mode", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Stages[1].Mode = "100755" }},
+		{"wrong stage path", func(e *IntegrationConflictEvidence) { e.Conflicts[0].Stages[2].Path = "other.txt" }},
+		{"omitted git stage", func(e *IntegrationConflictEvidence) {
+			e.Conflicts[0].Stages = []IntegrationConflictStage{e.Conflicts[0].Stages[0], e.Conflicts[0].Stages[2]}
+		}},
+		{"fabricated extra stage", func(e *IntegrationConflictEvidence) {
+			e.Conflicts[0].Stages = append(e.Conflicts[0].Stages, IntegrationConflictStage{Stage: 1, Path: "fabricated.txt", Mode: "100644", OID: strings.Repeat("c", 40)})
+		}},
+	}
+	for _, tc := range mutations {
+		t.Run(tc.name, func(t *testing.T) {
+			evidence := IntegrationConflictEvidence{
+				Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+				ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+				IntegratedParents: parents,
+				Conflicts: []IntegrationMergeConflict{{
+					Ours: ours, Theirs: theirs,
+					Stages:   append([]IntegrationConflictStage(nil), stages...),
+					Resolved: append([]IntegrationResolvedEntry(nil), resolved...),
+				}},
+			}
+			tc.mutate(&evidence)
+			if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
+				t.Fatalf("%s evidence passed", tc.name)
+			}
+		})
+	}
+}
+
+func TestVerifyIntegrationRepositoryRejectsMismatchedResolvedEntry(t *testing.T) {
+	root := t.TempDir()
+	base, ours, theirs := seedContentConflict(t, root)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	resolved := resolvedTreeEntry(t, run, integrated, "conflict.txt")
+	for _, mutate := range []func(*IntegrationResolvedEntry){
+		func(e *IntegrationResolvedEntry) { e.OID = strings.Repeat("0", 40) },
+		func(e *IntegrationResolvedEntry) { e.Mode = "100755" },
+		func(e *IntegrationResolvedEntry) { e.Path = "missing.txt" },
+		func(e *IntegrationResolvedEntry) { e.Commit = base },
+	} {
+		mutated := resolved
+		mutate(&mutated)
+		evidence := IntegrationConflictEvidence{
+			Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+			ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+			IntegratedParents: parents,
+			Conflicts: []IntegrationMergeConflict{{
+				Ours: ours, Theirs: theirs,
+				Stages:   append([]IntegrationConflictStage(nil), stages...),
+				Resolved: []IntegrationResolvedEntry{mutated},
+			}},
+		}
+		if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
+			t.Fatalf("resolved mutation passed: %+v", mutated)
+		}
+	}
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages:   stages,
+			Resolved: []IntegrationResolvedEntry{resolved},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
+		t.Fatalf("valid resolved entry failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryVerifiesAddAddWithoutStageOne(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	writeRepoFile(t, root, "base.txt", "base\n")
 	run("add", ".")
 	run("commit", "-m", "base")
 	base := run("rev-parse", "HEAD")
-	if err := os.WriteFile(filepath.Join(root, "conflict.txt"), []byte("ours\n"), 0600); err != nil {
+	writeRepoFile(t, root, "add.txt", "ours-add\n")
+	run("add", ".")
+	run("commit", "-m", "add ours")
+	ours := run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	writeRepoFile(t, root, "add.txt", "theirs-add\n")
+	run("add", ".")
+	run("commit", "-m", "add theirs")
+	theirs := run("rev-parse", "HEAD")
+	run("checkout", "main")
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	if len(stages) != 2 || stages[0].Stage != 2 || stages[1].Stage != 3 {
+		t.Fatalf("add/add stages = %+v", stages)
+	}
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages:   stages,
+			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "add.txt")},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
+		t.Fatalf("add/add conflict evidence failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryVerifiesDeleteModifyWithAbsentSide(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	writeRepoFile(t, root, "dm.txt", "base-dm\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	if err := os.Remove(filepath.Join(root, "dm.txt")); err != nil {
 		t.Fatal(err)
 	}
+	run("add", "-A")
+	run("commit", "-m", "delete ours")
+	ours := run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	writeRepoFile(t, root, "dm.txt", "modified-theirs\n")
+	run("add", ".")
+	run("commit", "-m", "modify theirs")
+	theirs := run("rev-parse", "HEAD")
+	run("checkout", "main")
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	if len(stages) != 2 || stages[0].Stage != 1 || stages[1].Stage != 3 {
+		t.Fatalf("delete/modify stages = %+v", stages)
+	}
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages:   stages,
+			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "dm.txt")},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
+		t.Fatalf("delete/modify conflict evidence failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryVerifiesAsymmetricRenameConflictPaths(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	writeRepoFile(t, root, "original.txt", "l1\nl2\nl3\nl4\nl5\nl6\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	run("mv", "original.txt", "rr-a.txt")
+	run("commit", "-m", "rename a")
+	ours := run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature", base)
+	run("mv", "original.txt", "rr-b.txt")
+	run("commit", "-m", "rename b")
+	theirs := run("rev-parse", "HEAD")
+	run("checkout", "main")
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	if len(stages) != 3 || stages[0].Stage != 1 || stages[1].Stage != 2 || stages[2].Stage != 3 {
+		t.Fatalf("rename/rename stages = %+v", stages)
+	}
+	// The rename/rename conflict is path-asymmetric: stage 1 stays at the base
+	// path while stages 2 and 3 use the two distinct rename targets. It must
+	// never be collapsed into a single same-path representation.
+	if stages[0].Path != "original.txt" || stages[1].Path != "rr-a.txt" || stages[2].Path != "rr-b.txt" {
+		t.Fatalf("rename/rename stages are not path-asymmetric: %+v", stages)
+	}
+	evidence := IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages:   stages,
+			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "rr-b.txt")},
+		}},
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err != nil {
+		t.Fatalf("rename/rename conflict evidence failed: %v", err)
+	}
+}
+
+func TestVerifyIntegrationRepositoryRejectsEvidenceOmittingAReportedConflictPath(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	writeRepoFile(t, root, "a.txt", "base-a\n")
+	writeRepoFile(t, root, "b.txt", "base-b\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	writeRepoFile(t, root, "a.txt", "ours-a\n")
+	writeRepoFile(t, root, "b.txt", "ours-b\n")
 	run("add", ".")
 	run("commit", "-m", "ours")
 	ours := run("rev-parse", "HEAD")
 	run("checkout", "-b", "feature", base)
-	if err := os.WriteFile(filepath.Join(root, "conflict.txt"), []byte("theirs\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeRepoFile(t, root, "a.txt", "theirs-a\n")
+	writeRepoFile(t, root, "b.txt", "theirs-b\n")
 	run("add", ".")
 	run("commit", "-m", "theirs")
 	theirs := run("rev-parse", "HEAD")
 	run("checkout", "main")
-	mergeCommand := exec.Command("git", "merge", "feature", "-m", "merge feature")
-	mergeCommand.Dir = root
-	if err := mergeCommand.Run(); err == nil {
-		t.Fatal("expected merge conflict")
-	}
-	stage := strings.Fields(run("ls-files", "-u"))
-	if len(stage) < 12 {
-		t.Fatalf("conflict stages = %q", stage)
-	}
-	run("checkout", "--theirs", "conflict.txt")
-	run("add", "conflict.txt")
-	run("commit", "-m", "resolve conflict")
-	integrated := run("rev-parse", "HEAD")
-	parents := strings.Fields(run("rev-list", "--parents", "-n", "1", integrated))[1:]
-	entry := func(commit string) IntegrationConflictBlob {
-		fields := strings.Fields(run("ls-tree", commit, "--", "conflict.txt"))
-		if len(fields) != 4 {
-			t.Fatalf("tree entry %s = %q", commit, fields)
+	stages, integrated, parents := captureConflictStages(t, root, base, ours, theirs)
+	var onlyA []IntegrationConflictStage
+	for _, stage := range stages {
+		if stage.Path == "a.txt" {
+			onlyA = append(onlyA, stage)
 		}
-		return IntegrationConflictBlob{Commit: commit, Mode: fields[0], OID: fields[2]}
 	}
-	evidenceBytes, err := json.Marshal(IntegrationConflictEvidence{
+	if len(onlyA) != 3 {
+		t.Fatalf("two-path conflict stages = %+v", stages)
+	}
+	evidence := IntegrationConflictEvidence{
 		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
 		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
 		IntegratedParents: parents,
-		Conflicts:         []IntegrationConflictPath{{Path: "conflict.txt", Base: entry(base), Ours: entry(ours), Theirs: entry(theirs), Resolved: entry(integrated)}},
-	})
-	if err != nil {
-		t.Fatal(err)
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages:   onlyA,
+			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "a.txt")},
+		}},
 	}
-	evidence := string(evidenceBytes)
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", evidence); err != nil {
-		t.Fatalf("valid factual conflict evidence failed: %v", err)
-	}
-	for _, mutate := range []func(*IntegrationConflictEvidence){
-		func(e *IntegrationConflictEvidence) { e.AssignmentID = "wrong-assignment" },
-		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Path = "missing.txt" },
-		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Base.OID = strings.Repeat("0", 40) },
-		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Ours.OID = strings.Repeat("0", 40) },
-		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Theirs.OID = strings.Repeat("0", 40) },
-		func(e *IntegrationConflictEvidence) { e.IntegratedCommit = base },
-	} {
-		mutated := jsonEvidence(t, evidence)
-		mutate(&mutated)
-		bytes, err := json.Marshal(mutated)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", string(bytes)); err == nil {
-			t.Fatal("fabricated or mismatched conflict evidence passed")
-		}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
+		t.Fatal("evidence hiding a Git-reported conflict path passed")
 	}
 }
 
 func TestVerifyIntegrationRepositoryRejectsDivergentButCleanSamePathEvidence(t *testing.T) {
 	root := t.TempDir()
-	run := func(args ...string) string {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = root
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
+	run := func(args ...string) string { return integrationGitRun(t, root, args...) }
 	run("init", "-b", "main")
 	run("config", "user.email", "test@example.com")
 	run("config", "user.name", "Test")
-	if err := os.WriteFile(filepath.Join(root, "same.txt"), []byte("base-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\nbase-f\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeRepoFile(t, root, "same.txt", "base-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\nbase-f\n")
 	run("add", ".")
 	run("commit", "-m", "base")
 	base := run("rev-parse", "HEAD")
 	run("checkout", "-b", "ours")
-	if err := os.WriteFile(filepath.Join(root, "same.txt"), []byte("ours-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\nbase-f\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeRepoFile(t, root, "same.txt", "ours-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\nbase-f\n")
 	run("commit", "-am", "ours")
 	ours := run("rev-parse", "HEAD")
 	run("checkout", "-b", "theirs", base)
-	if err := os.WriteFile(filepath.Join(root, "same.txt"), []byte("base-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\ntheirs-f\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeRepoFile(t, root, "same.txt", "base-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\ntheirs-f\n")
 	run("commit", "-am", "theirs")
 	theirs := run("rev-parse", "HEAD")
 	run("checkout", "-b", "integrated", ours)
@@ -314,23 +612,34 @@ func TestVerifyIntegrationRepositoryRejectsDivergentButCleanSamePathEvidence(t *
 	run("checkout", "main")
 	integrated := run("rev-parse", "HEAD")
 	parents := strings.Fields(run("rev-list", "--parents", "-n", "1", integrated))[1:]
-	entry := func(commit string) IntegrationConflictBlob {
+	blob := func(commit string) IntegrationConflictStage {
 		fields := strings.Fields(run("ls-tree", commit, "--", "same.txt"))
 		if len(fields) != 4 {
 			t.Fatalf("tree entry %s = %q", commit, fields)
 		}
-		return IntegrationConflictBlob{Commit: commit, Mode: fields[0], OID: fields[2]}
+		return IntegrationConflictStage{Path: "same.txt", Mode: fields[0], OID: fields[2]}
 	}
-	evidenceBytes, err := json.Marshal(IntegrationConflictEvidence{
+	baseEntry := blob(base)
+	oursEntry := blob(ours)
+	theirsEntry := blob(theirs)
+	if baseEntry.OID == oursEntry.OID || baseEntry.OID == theirsEntry.OID || oursEntry.OID == theirsEntry.OID {
+		t.Fatal("clean divergent test blobs must all differ")
+	}
+	evidence := IntegrationConflictEvidence{
 		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
 		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
 		IntegratedParents: parents,
-		Conflicts:         []IntegrationConflictPath{{Path: "same.txt", Base: entry(base), Ours: entry(ours), Theirs: entry(theirs), Resolved: entry(integrated)}},
-	})
-	if err != nil {
-		t.Fatal(err)
+		Conflicts: []IntegrationMergeConflict{{
+			Ours: ours, Theirs: theirs,
+			Stages: []IntegrationConflictStage{
+				{Stage: 1, Path: baseEntry.Path, Mode: baseEntry.Mode, OID: baseEntry.OID},
+				{Stage: 2, Path: oursEntry.Path, Mode: oursEntry.Mode, OID: oursEntry.OID},
+				{Stage: 3, Path: theirsEntry.Path, Mode: theirsEntry.Mode, OID: theirsEntry.OID},
+			},
+			Resolved: []IntegrationResolvedEntry{resolvedTreeEntry(t, run, integrated, "same.txt")},
+		}},
 	}
-	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", string(evidenceBytes)); err == nil {
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", marshalEvidence(t, evidence)); err == nil {
 		t.Fatal("clean divergent same-path merge was accepted as a conflict")
 	}
 }

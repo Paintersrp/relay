@@ -61,25 +61,52 @@ var integrationGitObjectID = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // IntegrationConflictEvidence is the canonical runtime evidence returned by
 // an external Merge for a mechanically resolved conflict. It is transport
-// evidence, not authored planning authority.
+// evidence, not authored planning authority. Conflicts is one exact record per
+// bound ours/theirs merge relation, each carrying the exact conflict-stage
+// tuples Git emitted for that merge and the resolved integrated-tree entries.
 type IntegrationConflictEvidence struct {
-	Version            int                       `json:"version"`
-	AssignmentID       string                    `json:"assignment_id"`
-	BaseCommit         string                    `json:"base_commit"`
-	ConstituentCommits []string                  `json:"constituent_commits"`
-	IntegratedCommit   string                    `json:"integrated_commit"`
-	IntegratedParents  []string                  `json:"integrated_parents"`
-	Conflicts          []IntegrationConflictPath `json:"conflicts"`
+	Version            int                        `json:"version"`
+	AssignmentID       string                     `json:"assignment_id"`
+	BaseCommit         string                     `json:"base_commit"`
+	ConstituentCommits []string                   `json:"constituent_commits"`
+	IntegratedCommit   string                     `json:"integrated_commit"`
+	IntegratedParents  []string                   `json:"integrated_parents"`
+	Conflicts          []IntegrationMergeConflict `json:"conflicts"`
 }
 
-type IntegrationConflictPath struct {
-	Path     string                  `json:"path"`
-	Base     IntegrationConflictBlob `json:"base"`
-	Ours     IntegrationConflictBlob `json:"ours"`
-	Theirs   IntegrationConflictBlob `json:"theirs"`
-	Resolved IntegrationConflictBlob `json:"resolved"`
+// IntegrationMergeConflict is the exact conflict evidence of one bound
+// ours/theirs merge relation. Stages are the exact conflicted-file stage
+// tuples Git emitted for the merge; Resolved are the resolved paths claimed in
+// the exact integrated commit tree.
+type IntegrationMergeConflict struct {
+	Ours     string                     `json:"ours"`
+	Theirs   string                     `json:"theirs"`
+	Stages   []IntegrationConflictStage `json:"stages"`
+	Resolved []IntegrationResolvedEntry `json:"resolved"`
 }
 
+// IntegrationConflictStage is one exact conflicted-file tuple from Git's
+// higher-order index/stage representation: mode, object ID, stage number, and
+// path. Stage 1 is the common/base entry, stage 2 the ours entry, and stage 3
+// the theirs entry when Git emits each; any stage may be absent and stages of
+// one logical conflict may use different paths.
+type IntegrationConflictStage struct {
+	Stage int    `json:"stage"`
+	Path  string `json:"path"`
+	Mode  string `json:"mode"`
+	OID   string `json:"oid"`
+}
+
+// IntegrationResolvedEntry is one resolved path claimed by the Merge evidence
+// in the exact integrated commit tree.
+type IntegrationResolvedEntry struct {
+	Path   string `json:"path"`
+	Mode   string `json:"mode"`
+	OID    string `json:"oid"`
+	Commit string `json:"commit"`
+}
+
+// IntegrationConflictBlob is one ordinary tree entry read from a commit.
 type IntegrationConflictBlob struct {
 	Commit string `json:"commit"`
 	Mode   string `json:"mode"`
@@ -120,21 +147,58 @@ func ParseIntegrationConflictEvidence(integrated, encoded string) (IntegrationCo
 			return IntegrationConflictEvidence{}, errors.New("conflict evidence parent identity is invalid")
 		}
 	}
-	seenPaths := map[string]bool{}
-	previousPath := ""
+	previousRelation := ""
 	for _, conflict := range evidence.Conflicts {
-		if !validGitPath(conflict.Path) || seenPaths[conflict.Path] || (previousPath != "" && conflict.Path <= previousPath) {
-			return IntegrationConflictEvidence{}, errors.New("conflict evidence path is invalid")
+		if !integrationGitObjectID.MatchString(conflict.Ours) || !integrationGitObjectID.MatchString(conflict.Theirs) {
+			return IntegrationConflictEvidence{}, errors.New("conflict evidence relation identity is invalid")
 		}
-		seenPaths[conflict.Path] = true
-		previousPath = conflict.Path
-		for _, object := range []IntegrationConflictBlob{conflict.Base, conflict.Ours, conflict.Theirs, conflict.Resolved} {
-			if !integrationGitObjectID.MatchString(object.Commit) || !validGitTreeObject(object.Mode, object.OID) {
-				return IntegrationConflictEvidence{}, errors.New("conflict evidence object identity is invalid")
-			}
+		relation := conflict.Ours + ":" + conflict.Theirs
+		if previousRelation != "" && relation <= previousRelation {
+			return IntegrationConflictEvidence{}, errors.New("conflict evidence relations are not canonical")
+		}
+		previousRelation = relation
+		if err := validateCanonicalConflictStages(conflict.Stages); err != nil {
+			return IntegrationConflictEvidence{}, err
+		}
+		if err := validateCanonicalConflictResolved(conflict.Resolved); err != nil {
+			return IntegrationConflictEvidence{}, err
 		}
 	}
 	return evidence, nil
+}
+
+func validateCanonicalConflictStages(stages []IntegrationConflictStage) error {
+	if len(stages) == 0 {
+		return errors.New("conflict evidence stages are empty")
+	}
+	previousPath, previousStage := "", 0
+	for _, stage := range stages {
+		if stage.Stage < 1 || stage.Stage > 3 || !validGitMode(stage.Mode) || !integrationGitObjectID.MatchString(stage.OID) || !validGitPath(stage.Path) {
+			return errors.New("conflict evidence stage identity is invalid")
+		}
+		if previousStage != 0 && (stage.Path < previousPath || (stage.Path == previousPath && stage.Stage <= previousStage)) {
+			return errors.New("conflict evidence stages are not canonical")
+		}
+		previousPath, previousStage = stage.Path, stage.Stage
+	}
+	return nil
+}
+
+func validateCanonicalConflictResolved(resolved []IntegrationResolvedEntry) error {
+	if len(resolved) == 0 {
+		return errors.New("conflict evidence resolved entries are empty")
+	}
+	previousPath := ""
+	for _, entry := range resolved {
+		if !validGitMode(entry.Mode) || !integrationGitObjectID.MatchString(entry.OID) || !integrationGitObjectID.MatchString(entry.Commit) || !validGitPath(entry.Path) {
+			return errors.New("conflict evidence resolved identity is invalid")
+		}
+		if previousPath != "" && entry.Path <= previousPath {
+			return errors.New("conflict evidence resolved entries are not canonical")
+		}
+		previousPath = entry.Path
+	}
+	return nil
 }
 
 func validGitPath(path string) bool {
@@ -159,10 +223,6 @@ func validGitMode(mode string) bool {
 		}
 	}
 	return true
-}
-
-func validGitTreeObject(mode, oid string) bool {
-	return (mode == "" && oid == "") || (validGitMode(mode) && integrationGitObjectID.MatchString(oid))
 }
 
 type auditNumstatEntry struct {
@@ -212,10 +272,14 @@ func (boundedGitRunner) Run(ctx context.Context, directory string, maxBytes int,
 	return append([]byte(nil), stdout.data.Bytes()...), nil
 }
 
-func (boundedGitRunner) runMergeTree(ctx context.Context, directory string, base, ours, theirs string) ([]string, error) {
+// runMergeTree runs the read-only, deterministic merge computation for the
+// exact bound base/ours/theirs commits and returns Git's result tree OID plus
+// the exact conflicted-file stage tuples (mode, object ID, stage, path) Git
+// emitted. It never touches the worktree or the index.
+func (boundedGitRunner) runMergeTree(ctx context.Context, directory string, base, ours, theirs string) (string, []IntegrationConflictStage, error) {
 	commandCtx, cancel := context.WithTimeout(ctx, auditGitTimeout)
 	defer cancel()
-	command := exec.CommandContext(commandCtx, "git", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z", "--merge-base", base, ours, theirs)
+	command := exec.CommandContext(commandCtx, "git", "merge-tree", "--write-tree", "--no-messages", "-z", "--merge-base", base, ours, theirs)
 	command.Dir = directory
 	stdout := &auditBoundedBuffer{limit: 64 * 1024}
 	stderr := &auditBoundedBuffer{limit: 64 * 1024}
@@ -227,28 +291,63 @@ func (boundedGitRunner) runMergeTree(ctx context.Context, directory string, base
 		if !errors.As(err, &exitErr) || (exitErr.ExitCode() != 1 && exitErr.ExitCode() != 0) {
 			detail := strings.TrimSpace(stderr.data.String())
 			if detail != "" {
-				return nil, fmt.Errorf("git merge-tree: %w: %s", err, detail)
+				return "", nil, fmt.Errorf("git merge-tree: %w: %s", err, detail)
 			}
-			return nil, fmt.Errorf("git merge-tree: %w", err)
+			return "", nil, fmt.Errorf("git merge-tree: %w", err)
 		}
 	}
 	parts := bytes.Split(stdout.data.Bytes(), []byte{0})
-	if len(parts) == 0 || len(parts[0]) != 40 || !integrationGitObjectID.MatchString(string(parts[0])) {
-		return nil, errors.New("Git merge-tree output does not contain a valid result tree")
+	if len(parts) < 2 || len(parts[0]) != 40 || !integrationGitObjectID.MatchString(string(parts[0])) {
+		return "", nil, errors.New("Git merge-tree output does not contain a valid result tree")
 	}
-	paths := make([]string, 0, len(parts)-1)
-	for _, part := range parts[1:] {
-		if len(part) == 0 {
-			continue
-		}
-		path := string(part)
-		if !validGitPath(path) {
-			return nil, errors.New("Git merge-tree output contains an invalid conflict path")
-		}
-		paths = append(paths, path)
+	if len(parts[len(parts)-1]) != 0 {
+		return "", nil, errors.New("Git merge-tree output is not NUL-terminated")
 	}
-	sort.Strings(paths)
-	return paths, nil
+	stages := make([]IntegrationConflictStage, 0, len(parts)-2)
+	for _, part := range parts[1 : len(parts)-1] {
+		stage, err := parseMergeTreeStage(part)
+		if err != nil {
+			return "", nil, err
+		}
+		stages = append(stages, stage)
+	}
+	sort.Slice(stages, func(i, j int) bool {
+		if stages[i].Path != stages[j].Path {
+			return stages[i].Path < stages[j].Path
+		}
+		return stages[i].Stage < stages[j].Stage
+	})
+	for i := 1; i < len(stages); i++ {
+		if stages[i].Path == stages[i-1].Path && stages[i].Stage == stages[i-1].Stage {
+			return "", nil, errors.New("Git merge-tree output contains duplicate conflict stages")
+		}
+	}
+	return string(parts[0]), stages, nil
+}
+
+// parseMergeTreeStage parses one NUL-delimited conflicted-file tuple of the
+// machine-readable merge-tree section: "<mode> <object> <stage>\t<path>".
+func parseMergeTreeStage(entry []byte) (IntegrationConflictStage, error) {
+	header, pathBytes, found := bytes.Cut(entry, []byte{'\t'})
+	if !found {
+		return IntegrationConflictStage{}, errors.New("Git merge-tree conflict entry is missing a path")
+	}
+	fields := strings.Fields(string(header))
+	if len(fields) != 3 {
+		return IntegrationConflictStage{}, errors.New("Git merge-tree conflict entry is malformed")
+	}
+	if !validGitMode(fields[0]) || !integrationGitObjectID.MatchString(fields[1]) {
+		return IntegrationConflictStage{}, errors.New("Git merge-tree conflict entry has an invalid mode or object ID")
+	}
+	stage, err := strconv.Atoi(fields[2])
+	if err != nil || stage < 1 || stage > 3 {
+		return IntegrationConflictStage{}, errors.New("Git merge-tree conflict entry has an invalid stage")
+	}
+	path := string(pathBytes)
+	if !validGitPath(path) {
+		return IntegrationConflictStage{}, errors.New("Git merge-tree conflict entry has an invalid path")
+	}
+	return IntegrationConflictStage{Stage: stage, Path: path, Mode: fields[0], OID: fields[1]}, nil
 }
 
 func InspectAuditCommit(ctx context.Context, localPath, expectedBranch, baseCommit, auditedCommit string) (AuditCommitEvidence, error) {
@@ -324,32 +423,36 @@ func verifyIntegrationRepository(ctx context.Context, localPath, assignmentID, b
 		return "conflict evidence does not match the integrated commit parents", fmt.Errorf("integrated parent mismatch")
 	}
 	for _, conflict := range evidence.Conflicts {
-		if !containsString(bound, conflict.Ours.Commit) || !containsString(bound, conflict.Theirs.Commit) || conflict.Ours.Commit != parents[0] || !containsString(parents[1:], conflict.Theirs.Commit) || conflict.Base.Commit != base {
+		if !containsString(bound, conflict.Ours) || !containsString(bound, conflict.Theirs) || conflict.Ours != parents[0] || !containsString(parents[1:], conflict.Theirs) {
 			return "conflict evidence source commits are not the bound integration", fmt.Errorf("conflict source mismatch")
 		}
-		for _, source := range []IntegrationConflictBlob{conflict.Base, conflict.Ours, conflict.Theirs} {
-			actual, err := integrationTreeEntry(ctx, runner, localPath, source.Commit, conflict.Path)
-			if err != nil || actual.Mode != source.Mode || actual.OID != source.OID {
-				return "conflict evidence source tree entry does not match Git", fmt.Errorf("source tree mismatch for %s", conflict.Path)
+		resultTree, actualStages, err := runner.runMergeTree(ctx, localPath, base, conflict.Ours, conflict.Theirs)
+		if err != nil || !integrationGitObjectID.MatchString(resultTree) {
+			return "Git cannot produce conflict stages for the bound merge", fmt.Errorf("merge conflict stages unavailable: %v", err)
+		}
+		if !equalConflictStages(conflict.Stages, actualStages) {
+			return "conflict evidence stages do not match Git's emitted conflict stages", fmt.Errorf("conflict stage mismatch")
+		}
+		for _, resolved := range conflict.Resolved {
+			actual, err := integrationTreeEntry(ctx, runner, localPath, integrated, resolved.Path)
+			if err != nil || actual.Mode != resolved.Mode || actual.OID != resolved.OID || resolved.Commit != integrated {
+				return "conflict evidence resolved tree entry does not match Git", fmt.Errorf("resolved tree mismatch for %s", resolved.Path)
 			}
-		}
-		if conflictBlobIdentity(conflict.Base) == conflictBlobIdentity(conflict.Ours) || conflictBlobIdentity(conflict.Base) == conflictBlobIdentity(conflict.Theirs) || conflictBlobIdentity(conflict.Ours) == conflictBlobIdentity(conflict.Theirs) {
-			return "conflict evidence does not identify three divergent Git conflict stages", fmt.Errorf("conflict stages are not divergent for %s", conflict.Path)
-		}
-		conflictedPaths, err := runner.runMergeTree(ctx, localPath, base, conflict.Ours.Commit, conflict.Theirs.Commit)
-		if err != nil || !containsString(conflictedPaths, conflict.Path) {
-			return "Git does not report the supplied path as an actual merge conflict", fmt.Errorf("merge conflict mismatch for %s: %v", conflict.Path, err)
-		}
-		actual, err := integrationTreeEntry(ctx, runner, localPath, integrated, conflict.Path)
-		if err != nil || actual.Mode != conflict.Resolved.Mode || actual.OID != conflict.Resolved.OID || conflict.Resolved.Commit != integrated {
-			return "conflict evidence resolved tree entry does not match Git", fmt.Errorf("resolved tree mismatch for %s", conflict.Path)
 		}
 	}
 	return "repository preservation verified", nil
 }
 
-func conflictBlobIdentity(blob IntegrationConflictBlob) string {
-	return blob.Mode + ":" + blob.OID
+func equalConflictStages(left, right []IntegrationConflictStage) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func equalStrings(left, right []string) bool {
