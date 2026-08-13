@@ -212,6 +212,45 @@ func (boundedGitRunner) Run(ctx context.Context, directory string, maxBytes int,
 	return append([]byte(nil), stdout.data.Bytes()...), nil
 }
 
+func (boundedGitRunner) runMergeTree(ctx context.Context, directory string, base, ours, theirs string) ([]string, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, auditGitTimeout)
+	defer cancel()
+	command := exec.CommandContext(commandCtx, "git", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z", "--merge-base", base, ours, theirs)
+	command.Dir = directory
+	stdout := &auditBoundedBuffer{limit: 64 * 1024}
+	stderr := &auditBoundedBuffer{limit: 64 * 1024}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || (exitErr.ExitCode() != 1 && exitErr.ExitCode() != 0) {
+			detail := strings.TrimSpace(stderr.data.String())
+			if detail != "" {
+				return nil, fmt.Errorf("git merge-tree: %w: %s", err, detail)
+			}
+			return nil, fmt.Errorf("git merge-tree: %w", err)
+		}
+	}
+	parts := bytes.Split(stdout.data.Bytes(), []byte{0})
+	if len(parts) == 0 || len(parts[0]) != 40 || !integrationGitObjectID.MatchString(string(parts[0])) {
+		return nil, errors.New("Git merge-tree output does not contain a valid result tree")
+	}
+	paths := make([]string, 0, len(parts)-1)
+	for _, part := range parts[1:] {
+		if len(part) == 0 {
+			continue
+		}
+		path := string(part)
+		if !validGitPath(path) {
+			return nil, errors.New("Git merge-tree output contains an invalid conflict path")
+		}
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
 func InspectAuditCommit(ctx context.Context, localPath, expectedBranch, baseCommit, auditedCommit string) (AuditCommitEvidence, error) {
 	runner := boundedGitRunner{}
 	return InspectAuditCommitWithRunner(ctx, localPath, expectedBranch, baseCommit, auditedCommit, runner)
@@ -296,6 +335,10 @@ func verifyIntegrationRepository(ctx context.Context, localPath, assignmentID, b
 		}
 		if conflictBlobIdentity(conflict.Base) == conflictBlobIdentity(conflict.Ours) || conflictBlobIdentity(conflict.Base) == conflictBlobIdentity(conflict.Theirs) || conflictBlobIdentity(conflict.Ours) == conflictBlobIdentity(conflict.Theirs) {
 			return "conflict evidence does not identify three divergent Git conflict stages", fmt.Errorf("conflict stages are not divergent for %s", conflict.Path)
+		}
+		conflictedPaths, err := runner.runMergeTree(ctx, localPath, base, conflict.Ours.Commit, conflict.Theirs.Commit)
+		if err != nil || !containsString(conflictedPaths, conflict.Path) {
+			return "Git does not report the supplied path as an actual merge conflict", fmt.Errorf("merge conflict mismatch for %s: %v", conflict.Path, err)
 		}
 		actual, err := integrationTreeEntry(ctx, runner, localPath, integrated, conflict.Path)
 		if err != nil || actual.Mode != conflict.Resolved.Mode || actual.OID != conflict.Resolved.OID || conflict.Resolved.Commit != integrated {

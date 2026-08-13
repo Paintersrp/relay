@@ -259,7 +259,9 @@ func TestVerifyIntegrationRepositoryVerifiesFactualMechanicalConflictEvidence(t 
 	for _, mutate := range []func(*IntegrationConflictEvidence){
 		func(e *IntegrationConflictEvidence) { e.AssignmentID = "wrong-assignment" },
 		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Path = "missing.txt" },
+		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Base.OID = strings.Repeat("0", 40) },
 		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Ours.OID = strings.Repeat("0", 40) },
+		func(e *IntegrationConflictEvidence) { e.Conflicts[0].Theirs.OID = strings.Repeat("0", 40) },
 		func(e *IntegrationConflictEvidence) { e.IntegratedCommit = base },
 	} {
 		mutated := jsonEvidence(t, evidence)
@@ -271,6 +273,65 @@ func TestVerifyIntegrationRepositoryVerifiesFactualMechanicalConflictEvidence(t 
 		if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", string(bytes)); err == nil {
 			t.Fatal("fabricated or mismatched conflict evidence passed")
 		}
+	}
+}
+
+func TestVerifyIntegrationRepositoryRejectsDivergentButCleanSamePathEvidence(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(root, "same.txt"), []byte("base-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\nbase-f\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	run("checkout", "-b", "ours")
+	if err := os.WriteFile(filepath.Join(root, "same.txt"), []byte("ours-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\nbase-f\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "ours")
+	ours := run("rev-parse", "HEAD")
+	run("checkout", "-b", "theirs", base)
+	if err := os.WriteFile(filepath.Join(root, "same.txt"), []byte("base-a\ncontext-b\ncontext-c\ncontext-d\ncontext-e\ntheirs-f\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "theirs")
+	theirs := run("rev-parse", "HEAD")
+	run("checkout", "-b", "integrated", ours)
+	run("merge", "--no-ff", "theirs", "-m", "merge theirs")
+	run("branch", "-f", "main", "integrated")
+	run("checkout", "main")
+	integrated := run("rev-parse", "HEAD")
+	parents := strings.Fields(run("rev-list", "--parents", "-n", "1", integrated))[1:]
+	entry := func(commit string) IntegrationConflictBlob {
+		fields := strings.Fields(run("ls-tree", commit, "--", "same.txt"))
+		if len(fields) != 4 {
+			t.Fatalf("tree entry %s = %q", commit, fields)
+		}
+		return IntegrationConflictBlob{Commit: commit, Mode: fields[0], OID: fields[2]}
+	}
+	evidenceBytes, err := json.Marshal(IntegrationConflictEvidence{
+		Version: 1, AssignmentID: "assignment-1", BaseCommit: base,
+		ConstituentCommits: []string{ours, theirs}, IntegratedCommit: integrated,
+		IntegratedParents: parents,
+		Conflicts:         []IntegrationConflictPath{{Path: "same.txt", Base: entry(base), Ours: entry(ours), Theirs: entry(theirs), Resolved: entry(integrated)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyIntegrationRepository(context.Background(), root, "assignment-1", "main", base, integrated, []string{ours, theirs}, nil, "mechanically_resolved", string(evidenceBytes)); err == nil {
+		t.Fatal("clean divergent same-path merge was accepted as a conflict")
 	}
 }
 
